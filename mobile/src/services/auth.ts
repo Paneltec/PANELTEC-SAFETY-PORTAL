@@ -312,3 +312,73 @@ export async function fullWipe(): Promise<void> {
 export async function logout(): Promise<void> {
   return clearSession();
 }
+
+// ── Onboarding (QR card → app) ───────────────────────────────────────
+// Restored in the takeover (post-.132cx). The web landing page at
+// /m/onboard/<token> hands the app `paneltec://onboard?token=…`; the app
+// redeems the token for a temp session, lets the worker choose a 4-digit
+// PIN, then signs in with that PIN so the normal pin-login session is used.
+
+export function generateDeviceId(): string {
+  const rnd = () => Math.random().toString(36).slice(2, 10);
+  return `dev_${Date.now().toString(36)}_${rnd()}${rnd()}`;
+}
+
+/** Return the stored device id, creating and storing one if this phone has none yet. */
+export async function ensureDeviceId(): Promise<string> {
+  const existing = await getDeviceId();
+  if (existing) return existing;
+  const id = generateDeviceId();
+  await setDeviceId(id);
+  return id;
+}
+
+export interface OnboardingRedeemResponse {
+  user: { name: string; simpro_employee_id: string; company_id: string; company_name: string };
+  temp_session: string;
+}
+
+export async function redeemOnboardingToken(token: string, deviceId: string): Promise<OnboardingRedeemResponse> {
+  let resp: Response;
+  try {
+    resp = await fetch(`${API}/api/mobile/onboarding/redeem`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token.trim(), device_id: deviceId }),
+    });
+  } catch {
+    throw new Error("Couldn't reach the Paneltec server. Check your internet connection and try again.");
+  }
+  if (!resp.ok) {
+    let detail = 'This setup code is not valid or has already been used. Ask the office for a new one.';
+    try { const b = await resp.json(); if (typeof b?.detail === 'string') detail = b.detail; } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+  return resp.json();
+}
+
+/** Store the worker's chosen PIN using the onboarding temp session. */
+export async function setPinWithTempSession(pin: string, tempSession: string, deviceId: string): Promise<void> {
+  const resp = await fetch(`${API}/api/mobile/auth/pin-set`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tempSession}` },
+    body: JSON.stringify({ pin_hash: pin, device_id: deviceId }),
+  });
+  if (!resp.ok) {
+    let detail = 'Could not save your PIN. Please try again.';
+    try { const b = await resp.json(); if (typeof b?.detail === 'string') detail = b.detail; } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+}
+
+/** Pull a setup token out of whatever a QR scan returned (web link or app link). */
+export function extractOnboardingToken(raw: string): string | null {
+  const v = (raw || '').trim();
+  if (!v) return null;
+  const m1 = v.match(/[?&]token=([^&#\s]+)/);
+  if (m1) return decodeURIComponent(m1[1]);
+  const m2 = v.match(/\/m\/onboard\/([^/?#\s]+)/);
+  if (m2) return decodeURIComponent(m2[1]);
+  if (/^[A-Za-z0-9_-]{6,64}$/.test(v)) return v; // typed setup code
+  return null;
+}
