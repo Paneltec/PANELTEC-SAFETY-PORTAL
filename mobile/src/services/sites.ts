@@ -130,6 +130,7 @@ export async function fetchSites(
 export async function workerSignIn(
   siteId: string,
   gps?: { lat: number; lng: number },
+  jobId?: string | null,
 ): Promise<any> {
   const headers = await authHeaders();
   const { data } = await axios.post(
@@ -138,6 +139,7 @@ export async function workerSignIn(
       gps_lat: gps?.lat ?? null,
       gps_long: gps?.lng ?? null,
       answers: [],
+      job_id: jobId ?? null,   // ties the sign-on to the issued daily job
     },
     { headers },
   );

@@ -165,18 +165,7 @@ export default function ProfileScreen() {
           subtitle="Safe Work Method Statements"
           onPress={() => router.push({ pathname: '/profile/swms/[id]', params: { id: 'list' } } as never)}
         />
-        <NavRow
-          testID="profile-nav-payroll"
-          icon="wallet-outline"
-          iconColor="#64748B"
-          iconBg="#E2E8F0"
-          title="Payroll"
-          subtitle="Coming soon"
-          badge="STUB"
-          badgeColor={Colors.textTertiary}
-          onPress={() => {}}
-          disabled
-        />
+        
 
         <View style={s.divider} />
 
@@ -237,7 +226,7 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
-  scroll: { paddingBottom: 32 },
+  scroll: { paddingBottom: 32, paddingTop: 8 },
 
   navyHeader: {
     backgroundColor: Colors.navy,
@@ -264,25 +253,26 @@ const s = StyleSheet.create({
   // Nav rows
   navRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+    paddingHorizontal: 14, paddingVertical: 12, minHeight: 66,
+    marginHorizontal: 16, marginBottom: 8, borderRadius: 14,
+    backgroundColor: Colors.card,
+    borderWidth: 1, borderColor: Colors.cardBorder,
   },
   navRowDisabled: { opacity: 0.5 },
   navIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   navInfo: { flex: 1 },
-  navTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  navSubtitle: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
+  navTitle: { fontSize: 15, fontWeight: '700', color: Colors.onCard },
+  navSubtitle: { fontSize: 12, color: Colors.onCardMuted, marginTop: 2 },
   badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 11, fontWeight: '700' },
-  divider: { height: 8, backgroundColor: Colors.navy },
+  divider: { height: 8 },
 
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     marginHorizontal: 16, marginTop: 16, paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1.5, borderColor: Colors.errorSoft, backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.cardBorder, backgroundColor: Colors.card, minHeight: 52,
   },
-  logoutText: { fontSize: 15, fontWeight: '600', color: Colors.error },
+  logoutText: { fontSize: 15, fontWeight: '700', color: '#F87171' },
 
   footer: { alignItems: 'center', marginTop: 24, gap: 6, opacity: 0.3 },
   version: { fontSize: 10, color: Colors.textTertiary },

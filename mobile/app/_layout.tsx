@@ -119,7 +119,7 @@ function PreviewBanner() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+export default RootLayout;
 
 function RootLayout() {
   useEffect(() => {
@@ -146,6 +146,9 @@ function RootLayout() {
             <Stack.Screen name="visitor" />
             <Stack.Screen name="forms" />
             <Stack.Screen name="profile" />
+            <Stack.Screen name="capture" />
+            <Stack.Screen name="job" />
+            <Stack.Screen name="site" />
           </Stack>
         </QueryClientProvider>
       </CrashRecoveryGate>
