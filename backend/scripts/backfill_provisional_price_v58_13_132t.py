@@ -32,8 +32,17 @@ load_dotenv("/app/backend/.env")
 
 from db import db  # noqa: E402
 
-PROVISIONAL_RATE = 3.00
-PROVISIONAL_TAG = "provisional_static_3.00"
+PROVISIONAL_RATE = 2.25
+PROVISIONAL_TAG = "provisional_static_2.25"
+# v58.13.132de — legacy tag kept in the recognition set so historical
+# rows populated by the .132t backfill are still detected + excluded
+# from $/L outlier calc + surfaced on the has_provisional banner.
+# v58.13.132de — PROVISIONAL_RATE is now sourced from
+# `fuel_price_settings.get_org_provisional_price(org_id)` at call time
+# rather than being hard-coded. This module constant remains only as
+# an emergency-fallback value used if the collection is unreachable.
+LEGACY_PROVISIONAL_TAGS = {"provisional_static_3.00", "provisional_static_2.25"}
+PROVISIONAL_PRICE = 2.25
 
 
 async def main() -> None:

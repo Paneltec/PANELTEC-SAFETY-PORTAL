@@ -27,28 +27,20 @@ export const SCHEMATIC_CLUSTERS = [
   { key: 'register',     label: 'Register',     color: '#6366F1', anchor: { x: 950,  y: 1265 }, labelPos: { x: 950,  y: 1490 } },
   { key: 'settings',     label: 'Settings',     color: '#8B5CF6', anchor: { x: 525,  y: 900 },  labelPos: { x: 380,  y: 475  } },
 
-  // v58.13.132cx — Mobile App section (grouped below top-level clusters).
-  // 20 sub-clusters carrying `parent_section: 'mobile'`.
-  { key: 'mobile_before_login',    label: 'Before Login',                             color: '#14B8A6', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_home_admin',      label: 'Home · Admin',                             color: '#0D9488', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_home_paneltec',   label: 'Home · Paneltec Civil',                    color: '#0D9488', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_home_viatec',     label: 'Home · Viatec Traffic',                    color: '#0D9488', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_home_contractor', label: 'Home · External Contractor',               color: '#0D9488', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_general',    label: 'Tab · Forms · General',                   color: '#06B6D4', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_swms',       label: 'Tab · Forms · SWMS',                      color: '#0284C7', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_prestart',   label: 'Tab · Forms · Pre-Start',                 color: '#0891B2', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_inspection', label: 'Tab · Forms · Inspection',                color: '#6366F1', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_nearmiss',   label: 'Tab · Forms · Near Miss',                 color: '#F59E0B', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_incident',   label: 'Tab · Forms · Incident',                  color: '#F43F5E', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_toolbox',    label: 'Tab · Forms · Toolbox',                   color: '#14B8A6', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_admin',      label: 'Tab · Forms · Admin (hidden)',            color: '#64748B', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_hazard',     label: 'Tab · Forms · Hazard (hidden)',           color: '#F59E0B', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_risk',       label: 'Tab · Forms · Risk Assessment (hidden)',  color: '#8B5CF6', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_forms_sitediary',  label: 'Tab · Forms · Site Diary (hidden)',       color: '#818CF8', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_profile',         label: 'Tab · Profile',                            color: '#0891B2', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_toolbox',         label: 'Tab · Toolbox Meetings',                   color: '#0284C7', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_modals',          label: 'Site Sign-In / Out',                       color: '#64748B', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
-  { key: 'mobile_visitor',         label: 'Visitor Wizard',                           color: '#818CF8', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  // v58.13.132dd — Mobile App section fully re-baked after `.132cz`
+  // replaced the 26-screen legacy UI with the new 8-screen mockup +
+  // 7-tab bar. Read-only audit of `mobile/app/**/*.tsx` on `.132dc`.
+  // 10 sub-clusters carrying `parent_section: 'mobile'`.
+  { key: 'mobile_auth',     label: 'Auth',                       color: '#14B8A6', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_tabs',     label: 'Tab Bar',                    color: '#0D9488', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_home',     label: 'Tab · Home',                 color: '#06B6D4', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_records',  label: 'Tab · My Work · Records',    color: '#0284C7', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_job',      label: 'Home · Job Detail / Signed On', color: '#0891B2', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_prestart', label: 'Tab · QR Scan · Pre-Start',  color: '#6366F1', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_profile',  label: 'Tab · Profile',              color: '#0891B2', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_askai',    label: 'Tab · Ask AI',               color: '#8B5CF6', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_stub',     label: 'Placeholder Tabs (STUB)',    color: '#64748B', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
+  { key: 'mobile_visitor',  label: 'Visitor Wizard',             color: '#818CF8', parent_section: 'mobile', anchor: { x: 0, y: 0 }, labelPos: { x: 0, y: 0 } },
 ];
 
 export const SCHEMATIC_SUB_CLUSTERS = [
@@ -107,115 +99,71 @@ export const SCHEMATIC_NODES = [
   { id: 'integrations-textmagic', cluster: 'integrations', label: 'TextMagic',     icon: 'MessageSquare', route: '/app/settings/integrations/textmagic',     x: 330, y: 400 },
 
   // ═══════════════════════ MOBILE APP ═══════════════════════
+  //
+  // v58.13.132dd — Re-baked after `.132cz` replaced the 26-screen
+  // legacy UI. Enumeration source: read-only audit of `mobile/app/
+  // **/*.tsx` on `.132dc`. 10 sub-clusters, 43 nodes. Screens with
+  // `testID=` attributes from the mobile source are noted so the
+  // Expo specialist can pair schematic cards to component testIDs.
 
-  // Before Login (3 nodes)
-  { id: 'mobile-splash',           cluster: 'mobile_before_login', label: 'Auth / Splash / Router',            icon: 'Rocket',   route: null, desc: 'app/index.tsx — decides between welcome / pin-entry / home based on device_id + session.', x: 0, y: 0 },
-  { id: 'mobile-welcome-qr',       cluster: 'mobile_before_login', label: 'Auth / Welcome / QR Scan',          icon: 'QrCode',   route: null, desc: 'app/(auth)/welcome.tsx — first-launch QR device provisioning + manual device_id fallback.', x: 0, y: 0 },
-  { id: 'mobile-pin-entry',        cluster: 'mobile_before_login', label: 'Auth / PIN Entry / Welcome Back',   icon: 'KeyRound', route: null, desc: 'app/(auth)/pin-entry.tsx — 4-digit PIN pad; fetches device-hint for "Welcome back {name}" greeting.', x: 0, y: 0 },
+  // Auth (3)
+  { id: 'mobile-splash',       cluster: 'mobile_auth', label: 'Auth / Splash / Router',           icon: 'Rocket',   route: null, desc: 'app/index.tsx — routes user to (auth) or (tabs) based on device_id + session.', x: 0, y: 0 },
+  { id: 'mobile-auth-welcome', cluster: 'mobile_auth', label: 'Auth / Welcome / QR Provisioning', icon: 'QrCode',   route: null, desc: 'app/(auth)/welcome.tsx — first-launch QR device bind + manual device_id fallback.', x: 0, y: 0 },
+  { id: 'mobile-auth-pin',     cluster: 'mobile_auth', label: 'Auth / PIN Entry (Welcome-Back)',  icon: 'KeyRound', route: null, desc: 'app/(auth)/pin-entry.tsx — 4-digit PIN pad + "Welcome back {name}" greeting from device-hint.', x: 0, y: 0 },
 
-  // Home · Admin (8 tiles — grid only, dynamic Daily Job tile omitted per Stephen's .132cu decision)
-  { id: 'mobile-home-admin-forms',    cluster: 'mobile_home_admin', label: 'Home / Admin / Forms Library', icon: 'FileText',    route: null, desc: 'ADMIN_MODULES.forms → routes to /(tabs)/forms.', x: 0, y: 0 },
-  { id: 'mobile-home-admin-workers',  cluster: 'mobile_home_admin', label: 'Home / Admin / Workers',       icon: 'Users',       route: null, desc: 'ADMIN_MODULES.workers — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-admin-sites',    cluster: 'mobile_home_admin', label: 'Home / Admin / Sites',         icon: 'MapPin',      route: null, desc: 'ADMIN_MODULES.sites — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-admin-swms',     cluster: 'mobile_home_admin', label: 'Home / Admin / SWMS',          icon: 'ShieldCheck', route: null, desc: 'ADMIN_MODULES.swms — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-admin-fleet',    cluster: 'mobile_home_admin', label: 'Home / Admin / Fleet',         icon: 'Truck',       route: null, desc: 'ADMIN_MODULES.fleet — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-admin-reports',  cluster: 'mobile_home_admin', label: 'Home / Admin / Reports',       icon: 'BarChart',    route: null, desc: 'ADMIN_MODULES.reports — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-admin-settings', cluster: 'mobile_home_admin', label: 'Home / Admin / Settings',      icon: 'Settings',    route: null, desc: 'ADMIN_MODULES.settings — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-admin-audit',    cluster: 'mobile_home_admin', label: 'Home / Admin / Audit Log',     icon: 'List',        route: null, desc: 'ADMIN_MODULES.audit — stub tile.', x: 0, y: 0 },
+  // Tab Bar (7 — ordered per (tabs)/_layout.tsx)
+  { id: 'mobile-tab-home',     cluster: 'mobile_tabs', label: 'Tab / Home',      icon: 'Home',         route: null, desc: '(tabs)/_layout.tsx tab 1 — Home tab entry.', x: 0, y: 0 },
+  { id: 'mobile-tab-qrscan',   cluster: 'mobile_tabs', label: 'Tab / QR Scan',   icon: 'QrCode',       route: null, desc: '(tabs)/_layout.tsx tab 2 — QR Scan tab entry.', x: 0, y: 0 },
+  { id: 'mobile-tab-outbox',   cluster: 'mobile_tabs', label: 'Tab / Outbox',    icon: 'CloudUpload',  route: null, desc: '(tabs)/_layout.tsx tab 3 — Outbox tab entry (placeholder — see Placeholder Tabs).', x: 0, y: 0 },
+  { id: 'mobile-tab-fleet',    cluster: 'mobile_tabs', label: 'Tab / Fleet',     icon: 'Car',          route: null, desc: '(tabs)/_layout.tsx tab 4 — Fleet tab entry (placeholder — see Placeholder Tabs).', x: 0, y: 0 },
+  { id: 'mobile-tab-mywork',   cluster: 'mobile_tabs', label: 'Tab / My Work',   icon: 'Briefcase',    route: null, desc: '(tabs)/_layout.tsx tab 5 — My Work tab entry.', x: 0, y: 0 },
+  { id: 'mobile-tab-profile',  cluster: 'mobile_tabs', label: 'Tab / Profile',   icon: 'User',         route: null, desc: '(tabs)/_layout.tsx tab 6 — Profile tab entry.', x: 0, y: 0 },
+  { id: 'mobile-tab-askai',    cluster: 'mobile_tabs', label: 'Tab / Ask AI',    icon: 'Sparkles',     route: null, desc: '(tabs)/_layout.tsx tab 7 — Ask AI tab entry.', x: 0, y: 0 },
 
-  // Home · Paneltec Civil (6 tiles)
-  { id: 'mobile-home-paneltec-forms',      cluster: 'mobile_home_paneltec', label: 'Home / Paneltec Civil / Forms',      icon: 'FileText',      route: null, desc: 'CIVIL_MODULES.forms → routes to /(tabs)/forms.', x: 0, y: 0 },
-  { id: 'mobile-home-paneltec-prestarts',  cluster: 'mobile_home_paneltec', label: 'Home / Paneltec Civil / Pre-Starts', icon: 'CheckSquare',   route: null, desc: 'CIVIL_MODULES.prestarts — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-paneltec-swms',       cluster: 'mobile_home_paneltec', label: 'Home / Paneltec Civil / My SWMS',    icon: 'ShieldCheck',   route: null, desc: 'CIVIL_MODULES.swms — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-paneltec-timesheets', cluster: 'mobile_home_paneltec', label: 'Home / Paneltec Civil / Timesheets', icon: 'Clock',         route: null, desc: 'CIVIL_MODULES.timesheets — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-paneltec-hazards',    cluster: 'mobile_home_paneltec', label: 'Home / Paneltec Civil / Hazards',    icon: 'AlertTriangle', route: null, desc: 'CIVIL_MODULES.hazards — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-paneltec-incidents',  cluster: 'mobile_home_paneltec', label: 'Home / Paneltec Civil / Incidents',  icon: 'AlertCircle',   route: null, desc: 'CIVIL_MODULES.incidents — stub tile.', x: 0, y: 0 },
+  // Home (8) — home.tsx default viewMode + surface elements
+  { id: 'mobile-home-view',          cluster: 'mobile_home', label: 'Home / Screen (default)',           icon: 'Home',         route: null, desc: 'app/(tabs)/home.tsx viewMode=home — testID=home-screen.', x: 0, y: 0 },
+  { id: 'mobile-home-briefing',      cluster: 'mobile_home', label: 'Home / Intelligence Briefing Card', icon: 'Sparkles',     route: null, desc: 'testID=home-briefing-card — pulls from GET /api/mobile/ai/briefing.', x: 0, y: 0 },
+  { id: 'mobile-home-compliance',    cluster: 'mobile_home', label: 'Home / Today\'s Compliance List',   icon: 'ClipboardCheck', route: null, desc: 'testID=home-compliance-title — daily compliance items.', x: 0, y: 0 },
+  { id: 'mobile-home-notif-banner',  cluster: 'mobile_home', label: 'Home / Notification Banner',        icon: 'Bell',         route: null, desc: 'testID=home-notification-banner — opens Job Detail (viewMode=job_detail).', x: 0, y: 0 },
+  { id: 'mobile-home-signon-banner', cluster: 'mobile_home', label: 'Home / Signed-On Banner',           icon: 'MapPin',       route: null, desc: 'testID=home-signed-on-banner — opens Signed-On view (viewMode=signed_on).', x: 0, y: 0 },
+  { id: 'mobile-home-action-prestart', cluster: 'mobile_home', label: 'Home / Action · Start Pre-Start',  icon: 'CheckSquare',  route: null, desc: 'testID=home-action-prestart — routes to /(tabs)/qr-scan for pre-start QR bind.', x: 0, y: 0 },
+  { id: 'mobile-home-action-signon',   cluster: 'mobile_home', label: 'Home / Action · Sign On to Site',   icon: 'LogIn',        route: null, desc: 'testID=home-action-signon — opens Signed-On view for site sign-on.', x: 0, y: 0 },
+  { id: 'mobile-home-action-hazard',   cluster: 'mobile_home', label: 'Home / Action · Report Hazard',      icon: 'AlertTriangle',route: null, desc: 'testID=home-action-hazard — hazard-report entry point (STUB — no handler yet).', x: 0, y: 0 },
 
-  // Home · Viatec Traffic (6 tiles)
-  { id: 'mobile-home-viatec-forms',      cluster: 'mobile_home_viatec', label: 'Home / Viatec Traffic / Forms',           icon: 'FileText',     route: null, desc: 'VIATEC_MODULES.forms → routes to /(tabs)/forms.', x: 0, y: 0 },
-  { id: 'mobile-home-viatec-sitescan',   cluster: 'mobile_home_viatec', label: 'Home / Viatec Traffic / Site Scan',       icon: 'ScanLine',     route: null, desc: 'VIATEC_MODULES.sitescan — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-viatec-prestarts',  cluster: 'mobile_home_viatec', label: 'Home / Viatec Traffic / Pre-Starts',      icon: 'CheckSquare',  route: null, desc: 'VIATEC_MODULES.prestarts — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-viatec-incidents',  cluster: 'mobile_home_viatec', label: 'Home / Viatec Traffic / Incident Report', icon: 'AlertCircle',  route: null, desc: 'VIATEC_MODULES.incidents — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-viatec-swms',       cluster: 'mobile_home_viatec', label: 'Home / Viatec Traffic / My SWMS',         icon: 'ShieldCheck',  route: null, desc: 'VIATEC_MODULES.swms — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-viatec-timesheets', cluster: 'mobile_home_viatec', label: 'Home / Viatec Traffic / Timesheets',      icon: 'Clock',        route: null, desc: 'VIATEC_MODULES.timesheets — stub tile.', x: 0, y: 0 },
+  // Home · Job Detail / Signed-On (2 — home.tsx view modes)
+  { id: 'mobile-home-job-detail', cluster: 'mobile_job', label: 'Home / Ad-hoc Job Detail',  icon: 'ClipboardList', route: null, desc: 'app/(tabs)/home.tsx viewMode=job_detail — testID=home-job-detail — surfaces the active daily_job_assignment.', x: 0, y: 0 },
+  { id: 'mobile-home-signed-on',  cluster: 'mobile_job', label: 'Home / Signed-On Screen',   icon: 'MapCheck',      route: null, desc: 'app/(tabs)/home.tsx viewMode=signed_on — testID=home-signed-on — site attendance + sign-off button.', x: 0, y: 0 },
 
-  // Home · External Contractor (2 tiles)
-  { id: 'mobile-home-contractor-swms', cluster: 'mobile_home_contractor', label: 'Home / External Contractor / Assigned SWMS',    icon: 'ShieldCheck', route: null, desc: 'CONTRACTOR_MODULES.swms — stub tile.', x: 0, y: 0 },
-  { id: 'mobile-home-contractor-ack',  cluster: 'mobile_home_contractor', label: 'Home / External Contractor / Acknowledgements', icon: 'CheckCircle2',route: null, desc: 'CONTRACTOR_MODULES.ack — stub tile.', x: 0, y: 0 },
+  // QR Scan / Pre-Start (2)
+  { id: 'mobile-qrscan',       cluster: 'mobile_prestart', label: 'Tab / QR Scan · Screen',   icon: 'QrCode',      route: null, desc: 'app/(tabs)/qr-scan.tsx — barcode scanner for vehicle/site bind + pre-start entry.', x: 0, y: 0 },
+  { id: 'mobile-prestart-form', cluster: 'mobile_prestart', label: 'Tab / QR Scan · Pre-Start Form', icon: 'FileText', route: null, desc: 'Post-scan pre-start form — POSTs to /api/mobile/prestart/submit.', x: 0, y: 0 },
 
-  // Tab · Forms · General (12 templates)
-  { id: 'mobile-form-general-asbestos',         cluster: 'mobile_forms_general', label: 'Home / Forms / General / Asbestos Awareness / Class B Removal', icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-byda',             cluster: 'mobile_forms_general', label: 'Home / Forms / General / BYDA / Utility Awareness',             icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-confined-space',   cluster: 'mobile_forms_general', label: 'Home / Forms / General / Confined Space Entry Permit',          icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-crane-lift',       cluster: 'mobile_forms_general', label: 'Home / Forms / General / Crane Lift / Rigging Plan',            icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-excavation',       cluster: 'mobile_forms_general', label: 'Home / Forms / General / Excavation / Trench Permit',           icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-hazard-reporting', cluster: 'mobile_forms_general', label: 'Home / Forms / General / Hazard Reporting Form',                icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-hot-work',         cluster: 'mobile_forms_general', label: 'Home / Forms / General / Hot Work Permit',                      icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-jsea',             cluster: 'mobile_forms_general', label: 'Home / Forms / General / JSEA — Job Safety & Environmental Analysis', icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-swms-signon',      cluster: 'mobile_forms_general', label: 'Home / Forms / General / SWMS Sign-On',                         icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-visitor-register', cluster: 'mobile_forms_general', label: 'Home / Forms / General / Site Sign-In / Visitor Register',      icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-working-heights',  cluster: 'mobile_forms_general', label: 'Home / Forms / General / Working at Heights Permit',            icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
-  { id: 'mobile-form-general-safety-checklist', cluster: 'mobile_forms_general', label: 'Home / Forms / General / Site-Safety-Checklist',                icon: 'FileText', route: null, desc: 'db.form_templates category=general.', x: 0, y: 0 },
+  // My Work · Records (6 — from CATEGORY_ICONS in my-work.tsx, matching GET /api/mobile/records/mine groups)
+  { id: 'mobile-records-prestart',   cluster: 'mobile_records', label: 'Home / My Work / Pre-Starts',   icon: 'CheckSquare',   route: null, desc: 'my-work.tsx record-group pre_start — testID=record-group-pre_start.', x: 0, y: 0 },
+  { id: 'mobile-records-toolbox',    cluster: 'mobile_records', label: 'Home / My Work / Toolbox Talks', icon: 'Users',        route: null, desc: 'my-work.tsx record-group toolbox — testID=record-group-toolbox.', x: 0, y: 0 },
+  { id: 'mobile-records-incident',   cluster: 'mobile_records', label: 'Home / My Work / Incidents',    icon: 'AlertCircle',   route: null, desc: 'my-work.tsx record-group incident — testID=record-group-incident.', x: 0, y: 0 },
+  { id: 'mobile-records-inspection', cluster: 'mobile_records', label: 'Home / My Work / Inspections',  icon: 'Search',        route: null, desc: 'my-work.tsx record-group inspection — testID=record-group-inspection.', x: 0, y: 0 },
+  { id: 'mobile-records-general',    cluster: 'mobile_records', label: 'Home / My Work / General',      icon: 'FileText',      route: null, desc: 'my-work.tsx record-group general — testID=record-group-general.', x: 0, y: 0 },
+  { id: 'mobile-records-nearmiss',   cluster: 'mobile_records', label: 'Home / My Work / Near Miss',    icon: 'AlertTriangle', route: null, desc: 'my-work.tsx record-group near_miss — testID=record-group-near_miss.', x: 0, y: 0 },
 
-  // Tab · Forms · SWMS (4 — bridged from db.swms)
-  { id: 'mobile-form-swms-concrete-cutting',   cluster: 'mobile_forms_swms', label: 'Home / Forms / SWMS / Concrete or Asphalt Cutting',                icon: 'ShieldCheck', route: null, desc: 'db.swms status=approved.', x: 0, y: 0 },
-  { id: 'mobile-form-swms-confined-space',     cluster: 'mobile_forms_swms', label: 'Home / Forms / SWMS / Confined Space Entry — Culvert C7',          icon: 'ShieldCheck', route: null, desc: 'db.swms status=draft.', x: 0, y: 0 },
-  { id: 'mobile-form-swms-material-lift',      cluster: 'mobile_forms_swms', label: 'Home / Forms / SWMS / Material Lift — Precast Panels Delivery',   icon: 'ShieldCheck', route: null, desc: 'db.swms status=changes_requested.', x: 0, y: 0 },
-  { id: 'mobile-form-swms-traffic-management', cluster: 'mobile_forms_swms', label: 'Home / Forms / SWMS / Traffic Management — Erskineville Turnout', icon: 'ShieldCheck', route: null, desc: 'db.swms status=approved.', x: 0, y: 0 },
+  // Profile (8 — NavRows + Sign Out from profile.tsx)
+  { id: 'mobile-profile-personal',   cluster: 'mobile_profile', label: 'Home / Profile / Personal Information', icon: 'IdCard',        route: null, desc: 'testID=profile-nav-personal — Personal Information NavRow.', x: 0, y: 0 },
+  { id: 'mobile-profile-certs',      cluster: 'mobile_profile', label: 'Home / Profile / My Certifications',    icon: 'BadgeCheck',    route: null, desc: 'testID=profile-nav-certs — Certifications NavRow.', x: 0, y: 0 },
+  { id: 'mobile-profile-inductions', cluster: 'mobile_profile', label: 'Home / Profile / My Inductions',        icon: 'GraduationCap', route: null, desc: 'testID=profile-nav-inductions — Inductions NavRow.', x: 0, y: 0 },
+  { id: 'mobile-profile-id-card',    cluster: 'mobile_profile', label: 'Home / Profile / Digital ID Card',      icon: 'CreditCard',    route: null, desc: 'testID=profile-nav-idcard — Digital ID Card NavRow.', x: 0, y: 0 },
+  { id: 'mobile-profile-fleet',      cluster: 'mobile_profile', label: 'Home / Profile / My Fleet',             icon: 'Truck',         route: null, desc: 'testID=profile-nav-fleet — My Fleet NavRow.', x: 0, y: 0 },
+  { id: 'mobile-profile-swms',       cluster: 'mobile_profile', label: 'Home / Profile / My SWMS',              icon: 'ShieldCheck',   route: null, desc: 'testID=profile-nav-swms — My SWMS NavRow.', x: 0, y: 0 },
+  { id: 'mobile-profile-settings',   cluster: 'mobile_profile', label: 'Home / Profile / Settings',             icon: 'Settings',      route: null, desc: 'testID=profile-nav-settings — Settings (session timeout, fingerprint, change password, admin links).', x: 0, y: 0 },
+  { id: 'mobile-profile-signout',    cluster: 'mobile_profile', label: 'Home / Profile / Sign Out',             icon: 'LogOut',        route: null, desc: 'testID=profile-logout-btn — clears session + returns to (auth)/welcome.', x: 0, y: 0 },
 
-  // Tab · Forms · Pre-Start (10)
-  { id: 'mobile-form-prestart-cvt',              cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / CVT Daily Pre-Start',               icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-heavy-eq',         cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Construction Heavy Equipment Pre-Op Checklist', icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-daily',            cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Daily Pre-Start',                   icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-equipment-preuse', cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Equipment Pre-Use Checklist',       icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-heavy-vehicle',    cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Heavy Vehicle Daily Check',         icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-plant-checklist',  cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Plant Pre-Start Checklist (Heavy Equipment)', icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-tip-truck',        cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Tip Truck Daily Pre-Start',         icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-vacuum-truck',     cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Vacuum Truck (VT) Daily Pre-Start', icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-vehicle-preuse',   cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Vehicle Pre-Use Inspection',        icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
-  { id: 'mobile-form-prestart-weekly',           cluster: 'mobile_forms_prestart', label: 'Home / Forms / Pre-Start / Weekly Pre-Start',                  icon: 'CheckSquare', route: null, desc: 'db.form_templates category=pre_start.', x: 0, y: 0 },
+  // Ask AI (1)
+  { id: 'mobile-askai', cluster: 'mobile_askai', label: 'Tab / Ask AI · Screen', icon: 'Sparkles', route: null, desc: 'app/(tabs)/ask-ai.tsx — LLM chat via POST /api/mobile/ai/ask, role-scoped.', x: 0, y: 0 },
 
-  // Tab · Forms · Inspection (5)
-  { id: 'mobile-form-inspection-27-point',   cluster: 'mobile_forms_inspection', label: 'Home / Forms / Inspection / 27 Point Visual Inspection', icon: 'Search', route: null, desc: 'db.form_templates category=inspection.', x: 0, y: 0 },
-  { id: 'mobile-form-inspection-scaffold',   cluster: 'mobile_forms_inspection', label: 'Home / Forms / Inspection / Daily Scaffold Inspection',  icon: 'Search', route: null, desc: 'db.form_templates category=inspection.', x: 0, y: 0 },
-  { id: 'mobile-form-inspection-daily-site', cluster: 'mobile_forms_inspection', label: 'Home / Forms / Inspection / Daily Site Inspection',      icon: 'Search', route: null, desc: 'db.form_templates category=inspection.', x: 0, y: 0 },
-  { id: 'mobile-form-inspection-end-of-day', cluster: 'mobile_forms_inspection', label: 'Home / Forms / Inspection / End of Day Site Sign-Off',   icon: 'Search', route: null, desc: 'db.form_templates category=inspection.', x: 0, y: 0 },
-  { id: 'mobile-form-inspection-vehicle',    cluster: 'mobile_forms_inspection', label: 'Home / Forms / Inspection / Vehicle Inspection Report',  icon: 'Search', route: null, desc: 'db.form_templates category=inspection.', x: 0, y: 0 },
+  // Placeholder Tabs (2 — STUB screens)
+  { id: 'mobile-stub-outbox', cluster: 'mobile_stub', label: 'Tab / Outbox (STUB)', icon: 'CloudUpload', route: null, desc: 'STUB — app/(tabs)/outbox.tsx renders "All caught up" empty state. Real offline-queue UI pending.', x: 0, y: 0 },
+  { id: 'mobile-stub-fleet',  cluster: 'mobile_stub', label: 'Tab / Fleet (STUB)',  icon: 'Car',         route: null, desc: 'STUB — app/(tabs)/fleet.tsx renders "Coming soon" empty state. Vehicle tracking / Navixy pending.', x: 0, y: 0 },
 
-  // Tab · Forms · Near Miss (1)
-  { id: 'mobile-form-nearmiss-report', cluster: 'mobile_forms_nearmiss', label: 'Home / Forms / Near Miss / Near Miss Report', icon: 'AlertTriangle', route: null, desc: 'db.form_templates category=near_miss.', x: 0, y: 0 },
 
-  // Tab · Forms · Incident (2)
-  { id: 'mobile-form-incident-report',        cluster: 'mobile_forms_incident', label: 'Home / Forms / Incident / Incident Report',        icon: 'AlertCircle', route: null, desc: 'db.form_templates category=incident.', x: 0, y: 0 },
-  { id: 'mobile-form-incident-test-hot-work', cluster: 'mobile_forms_incident', label: 'Home / Forms / Incident / Test Hot Work Permit',   icon: 'AlertCircle', route: null, desc: 'db.form_templates category=incident.', x: 0, y: 0 },
-
-  // Tab · Forms · Toolbox (2)
-  { id: 'mobile-form-toolbox-talk',       cluster: 'mobile_forms_toolbox', label: 'Home / Forms / Toolbox / Toolbox Talk',            icon: 'Users', route: null, desc: 'db.form_templates category=toolbox.', x: 0, y: 0 },
-  { id: 'mobile-form-toolbox-attendance', cluster: 'mobile_forms_toolbox', label: 'Home / Forms / Toolbox / Toolbox Talk Attendance', icon: 'Users', route: null, desc: 'db.form_templates category=toolbox.', x: 0, y: 0 },
-
-  // HIDDEN clusters — API returns them, mobile UI drops them.
-  { id: 'mobile-form-admin-drug-alcohol',       cluster: 'mobile_forms_admin',     label: 'Home / Forms / Admin / Drug & Alcohol Test Record', icon: 'Lock', route: null, desc: 'STUB — hidden from mobile UI. CATEGORY_ORDER admin-gate trips because getStoredUser().role is undefined for PIN-login sessions. Fix routed to a follow-up Expo ship.', x: 0, y: 0 },
-  { id: 'mobile-form-hazard-construction-ssra', cluster: 'mobile_forms_hazard',    label: 'Home / Forms / Hazard / Construction & Excavation SSRA', icon: 'AlertTriangle', route: null, desc: 'STUB — hidden from mobile UI. db.form_templates category=hazard is outside CATEGORY_ORDER so groupByCategory drops it.', x: 0, y: 0 },
-  { id: 'mobile-form-hazard-viatec-ssra',       cluster: 'mobile_forms_hazard',    label: 'Home / Forms / Hazard / Viatec Traffic Solutions SSRA',  icon: 'AlertTriangle', route: null, desc: 'STUB — hidden from mobile UI. db.form_templates category=hazard is outside CATEGORY_ORDER so groupByCategory drops it.', x: 0, y: 0 },
-  { id: 'mobile-form-risk-ttm',                 cluster: 'mobile_forms_risk',      label: 'Home / Forms / Risk Assessment / TTM Risk Assessment & Treatment Register', icon: 'Scale', route: null, desc: 'STUB — hidden from mobile UI. db.form_templates category=risk_assessment is outside CATEGORY_ORDER so groupByCategory drops it.', x: 0, y: 0 },
-  { id: 'mobile-form-sitediary-vts',            cluster: 'mobile_forms_sitediary', label: 'Home / Forms / Site Diary / VTS Tight Site Audit',       icon: 'BookOpen', route: null, desc: 'STUB — hidden from mobile UI. db.form_templates category=site_diary is outside CATEGORY_ORDER so groupByCategory drops it.', x: 0, y: 0 },
-
-  // Tab · Profile (8 — 7 NavRows + 1 cert-detail sub-screen. Payroll is a disabled STUB in the mobile UI.)
-  { id: 'mobile-profile-personal',    cluster: 'mobile_profile', label: 'Home / Profile / Personal Information',    icon: 'IdCard',        route: null, desc: 'app/profile/personal.tsx — contact, address, emergency contacts.', x: 0, y: 0 },
-  { id: 'mobile-profile-certs',       cluster: 'mobile_profile', label: 'Home / Profile / My Certifications',       icon: 'BadgeCheck',    route: null, desc: 'app/profile/certifications.tsx.', x: 0, y: 0 },
-  { id: 'mobile-profile-cert-detail', cluster: 'mobile_profile', label: 'Home / Profile / Certification Detail',    icon: 'FileBadge',     route: null, desc: 'app/profile/certifications/[id].tsx — sub-screen.', x: 0, y: 0 },
-  { id: 'mobile-profile-inductions',  cluster: 'mobile_profile', label: 'Home / Profile / My Inductions',           icon: 'GraduationCap', route: null, desc: 'app/profile/inductions.tsx.', x: 0, y: 0 },
-  { id: 'mobile-profile-id-card',     cluster: 'mobile_profile', label: 'Home / Profile / Digital ID Card',         icon: 'CreditCard',    route: null, desc: 'app/profile/id-card.tsx — worker QR + photo digital ID.', x: 0, y: 0 },
-  { id: 'mobile-profile-fleet',       cluster: 'mobile_profile', label: 'Home / Profile / My Fleet',                icon: 'Truck',         route: null, desc: 'app/profile/fleet/[id].tsx.', x: 0, y: 0 },
-  { id: 'mobile-profile-swms',        cluster: 'mobile_profile', label: 'Home / Profile / My SWMS Viewer',          icon: 'ShieldCheck',   route: null, desc: 'app/profile/swms/[id].tsx.', x: 0, y: 0 },
-  { id: 'mobile-profile-payroll',     cluster: 'mobile_profile', label: 'Home / Profile / Payroll',                 icon: 'Wallet',        route: null, desc: 'STUB — Disabled ("coming soon") in mobile UI. app/(tabs)/profile.tsx renders a disabled NavRow with badge="STUB".', x: 0, y: 0 },
-
-  // Tab · Toolbox Meetings (1)
-  { id: 'mobile-tab-toolbox',   cluster: 'mobile_toolbox', label: 'Tab / Toolbox Meetings',  icon: 'Users',  route: null, desc: 'app/(tabs)/toolbox.tsx — empty-state placeholder, Plaud recorder pending.', x: 0, y: 0 },
-
-  // Site Sign-In / Out Modals (2)
-  { id: 'mobile-modal-signin',  cluster: 'mobile_modals', label: 'Modal / Site Sign-In',  icon: 'LogIn',  route: null, desc: 'src/components/SignInModal.tsx.', x: 0, y: 0 },
-  { id: 'mobile-modal-signout', cluster: 'mobile_modals', label: 'Modal / Site Sign-Out', icon: 'LogOut', route: null, desc: 'src/components/SignOutModal.tsx.', x: 0, y: 0 },
 
   // Visitor Wizard (4 steps)
   { id: 'mobile-visitor-step1', cluster: 'mobile_visitor', label: 'Visitor / Step 1 · Photo',      icon: 'Camera',      route: null, desc: 'app/visitor/[siteId]/step1.tsx.', x: 0, y: 0 },

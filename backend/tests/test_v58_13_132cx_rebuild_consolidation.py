@@ -44,37 +44,25 @@ API = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/
 # ─────────────────────────── static-file assertions ────────────────────────────
 
 
+
+
 EXPECTED_MOBILE_SUB_CLUSTERS = [
-    ("mobile_before_login",     3),
-    ("mobile_home_admin",       8),
-    ("mobile_home_paneltec",    6),
-    ("mobile_home_viatec",      6),
-    ("mobile_home_contractor",  2),
-    ("mobile_forms_general",   12),
-    ("mobile_forms_swms",       4),
-    ("mobile_forms_prestart",  10),
-    ("mobile_forms_inspection", 5),
-    ("mobile_forms_nearmiss",   1),
-    ("mobile_forms_incident",   2),
-    ("mobile_forms_toolbox",    2),
-    ("mobile_forms_admin",      1),
-    ("mobile_forms_hazard",     2),
-    ("mobile_forms_risk",       1),
-    ("mobile_forms_sitediary",  1),
-    ("mobile_profile",          8),
-    ("mobile_toolbox",          1),
-    ("mobile_modals",           2),
-    ("mobile_visitor",          4),
-]
+    # v58.13.132dd — the 20-cluster/81-node .132cx lock was rendered
+    # stale by the `.132cz` Expo rewrite. New shape (10 clusters /
+    # 43 nodes) is pinned in test_v58_13_132dd_schematic_rebake.py.
+]  # noqa: F841 — sentinel kept for import-compat with old test collectors
+_ = pytest  # noqa: F841 — reference so lint doesn't flag the re-import
 TOTAL_MOBILE_NODES = sum(n for _, n in EXPECTED_MOBILE_SUB_CLUSTERS)
 
 
+@pytest.mark.skip(reason="superseded by .132dd 10-cluster rebake")
 def test_registry_has_twenty_mobile_sub_clusters():
     src = REGISTRY_JS.read_text(encoding="utf-8")
     for key, _ in EXPECTED_MOBILE_SUB_CLUSTERS:
         assert f"key: '{key}'" in src, f"sub-cluster {key!r} missing"
 
 
+@pytest.mark.skip(reason="superseded by .132dd")
 def test_mobile_node_distribution_matches_snapshot():
     src = REGISTRY_JS.read_text(encoding="utf-8")
     counts = Counter()
@@ -91,6 +79,7 @@ def test_mobile_node_distribution_matches_snapshot():
     assert sum(counts.values()) == TOTAL_MOBILE_NODES
 
 
+@pytest.mark.skip(reason="superseded by .132dd")
 def test_every_mobile_label_carries_parent_path():
     src = REGISTRY_JS.read_text(encoding="utf-8")
     allowed_prefixes = (
@@ -116,6 +105,7 @@ def test_every_mobile_label_carries_parent_path():
         )
 
 
+@pytest.mark.skip(reason="superseded by .132dd")
 def test_page_wires_mobile_section():
     src = PAGE_JSX.read_text(encoding="utf-8")
     for key, _ in EXPECTED_MOBILE_SUB_CLUSTERS:
@@ -124,6 +114,7 @@ def test_page_wires_mobile_section():
     assert 'data-testid="schematic-mobile-section-title"' in src
 
 
+@pytest.mark.skip(reason="superseded by .132dd — hidden forms clusters removed")
 def test_hidden_forms_clusters_marked_stub():
     src = REGISTRY_JS.read_text(encoding="utf-8")
     for line in src.splitlines():
@@ -135,6 +126,7 @@ def test_hidden_forms_clusters_marked_stub():
         )
 
 
+@pytest.mark.skip(reason="superseded by .132dd — profile rebaked")
 def test_payroll_profile_node_marked_stub():
     src = REGISTRY_JS.read_text(encoding="utf-8")
     payroll = [l for l in src.splitlines() if "id: 'mobile-profile-payroll'" in l]
@@ -151,7 +143,7 @@ def test_gitignore_has_apk_block():
 
 
 def _tail(s: str) -> str:
-    m = re.search(r"paneltec-v160\.3\.9\.58\.13\.132c([a-z]+)", s)
+    m = re.search(r"paneltec-v160\.3\.9\.58\.13\.132([a-z]+)", s)
     assert m
     return m.group(1)
 

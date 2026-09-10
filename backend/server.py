@@ -557,9 +557,11 @@ api.include_router(fleet_fuel_asset_router)
 # path order via its own `/fleet/fuel/reports` prefix.
 from fleet_fuel_reports import (  # noqa: E402
     router as fleet_fuel_reports_router,
-    ensure_indexes as fleet_fuel_reports_ensure_indexes,
-)
+    ensure_indexes as fleet_fuel_reports_ensure_indexes,)
 api.include_router(fleet_fuel_reports_router)
+# v58.13.132de — admin-editable fuel-price settings + audit history.
+from fuel_price_settings import router as fuel_price_settings_router  # noqa: E402
+api.include_router(fuel_price_settings_router)
 api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)

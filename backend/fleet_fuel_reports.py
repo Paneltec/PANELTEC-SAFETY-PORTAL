@@ -33,6 +33,11 @@ from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 from fleet import require_fleet_register_enabled
+from fuel_price_settings import (
+    PROVISIONAL_PRICE_SOURCES,
+    effective_total_price,
+    get_org_price_state,
+)
 
 log = logging.getLogger("paneltec.fuel.reports")
 
@@ -153,12 +158,39 @@ async def _aggregate(
     }
     txs = [d async for d in db.fuel_transactions.find(q, projection)]
 
-    # v58.13.132t — Any row currently carrying the .132t provisional
-    # $3.00 placeholder? Answer surfaces on `totals.has_provisional`
-    # so the FE can render the amber banner.
-    has_provisional = any(
-        (t.get("price_source") == "provisional_static_3.00") for t in txs
-    )
+    # v58.13.132df / .132dg — Read-time re-pricing. Fetch the current
+    # provisional price AND the override flag in a single Mongo
+    # round-trip, then rewrite `total_price` on every tx via
+    # `effective_total_price(...)`.
+    provisional_price, override_smartfill = await get_org_price_state(org_id)
+    # Capture the "any row is provisional" signal BEFORE the loop
+    # overwrites `total_price`, so the FE banner reflects marker AND
+    # imputed rows (both re-priced at read time). When the override
+    # flag is on, ALL rows are re-priced — banner fires whenever
+    # there is at least one fill in the range.
+    def _is_provisional(t: dict) -> bool:
+        if override_smartfill:
+            try:
+                return float(t.get("litres") or 0) > 0
+            except (TypeError, ValueError):
+                return False
+        if t.get("price_source") in PROVISIONAL_PRICE_SOURCES:
+            return True
+        try:
+            litres = float(t.get("litres") or 0)
+            tp = float(t.get("total_price") or 0)
+        except (TypeError, ValueError):
+            return False
+        return litres > 0 and tp <= 0
+    has_provisional = any(_is_provisional(t) for t in txs)
+    for t in txs:
+        t["total_price"] = effective_total_price(
+            t, provisional_price, override_smartfill,
+        )
+
+    # v58.13.132t + .132df — `has_provisional` computed above (before
+    # the re-price loop) so it reflects both marker-tagged rows AND
+    # imputed rows (no price on import). Drives the FE amber banner.
 
     # Key selector per scope.
     def _key_label(t: dict) -> tuple[str, str]:
@@ -390,7 +422,7 @@ async def _aggregate(
     # $/L outlier signal is real, not driven by the $3.00 placeholder.
     real_priced = [r for r in outlier_rows
                     if r["dpl"] is not None
-                    and r.get("price_source") != "provisional_static_3.00"]
+                    and r.get("price_source") not in ("provisional_static_3.00", "provisional_static_2.25")]
     real_priced.sort(key=lambda r: (-r["dpl"], r["date_iso"]))
     # v58.13.132bz — Enrich outlier rows with linked / inferred rego
     # so the FE outlier table can show the vehicle involved in each

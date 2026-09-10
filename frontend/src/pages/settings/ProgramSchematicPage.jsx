@@ -57,29 +57,19 @@ const CLUSTER_ORDER = [
   'settings',
 ];
 
-// v58.13.132cx — Mobile App section. 20 sub-clusters rendered below
-// the top-level clusters under a section-header divider. See
-// `programSchematic.js` for the full node inventory.
+// v58.13.132dd — Mobile App section. 10 sub-clusters rebuilt from
+// the read-only audit of `mobile/app/**/*.tsx` after `.132cz` replaced
+// the 26-screen legacy UI with the new 8-screen mockup + 7-tab bar.
 const MOBILE_SUB_CLUSTER_ORDER = [
-  'mobile_before_login',
-  'mobile_home_admin',
-  'mobile_home_paneltec',
-  'mobile_home_viatec',
-  'mobile_home_contractor',
-  'mobile_forms_general',
-  'mobile_forms_swms',
-  'mobile_forms_prestart',
-  'mobile_forms_inspection',
-  'mobile_forms_nearmiss',
-  'mobile_forms_incident',
-  'mobile_forms_toolbox',
-  'mobile_forms_admin',
-  'mobile_forms_hazard',
-  'mobile_forms_risk',
-  'mobile_forms_sitediary',
+  'mobile_auth',
+  'mobile_tabs',
+  'mobile_home',
+  'mobile_job',
+  'mobile_prestart',
+  'mobile_records',
   'mobile_profile',
-  'mobile_toolbox',
-  'mobile_modals',
+  'mobile_askai',
+  'mobile_stub',
   'mobile_visitor',
 ];
 
@@ -94,27 +84,17 @@ const CLUSTER_ACCENT = {
   compliance:   'amber',
   register:     'rose',
   settings:     'violet',
-  // v58.13.132cx — mobile sub-cluster accents.
-  mobile_before_login:    'teal',
-  mobile_home_admin:      'teal600',
-  mobile_home_paneltec:   'teal600',
-  mobile_home_viatec:     'teal600',
-  mobile_home_contractor: 'teal600',
-  mobile_forms_general:    'cyan',
-  mobile_forms_swms:       'sky600',
-  mobile_forms_prestart:   'cyan600',
-  mobile_forms_inspection: 'indigo',
-  mobile_forms_nearmiss:   'amber',
-  mobile_forms_incident:   'rose',
-  mobile_forms_toolbox:    'teal',
-  mobile_forms_admin:      'slate',
-  mobile_forms_hazard:     'amber',
-  mobile_forms_risk:       'violet',
-  mobile_forms_sitediary:  'indigo400',
-  mobile_profile:          'cyan600',
-  mobile_toolbox:          'sky600',
-  mobile_modals:           'slate',
-  mobile_visitor:          'indigo400',
+  // v58.13.132dd — mobile sub-cluster accents (10 clusters).
+  mobile_auth:     'teal',
+  mobile_tabs:     'teal600',
+  mobile_home:     'cyan',
+  mobile_job:      'cyan600',
+  mobile_prestart: 'indigo',
+  mobile_records:  'sky600',
+  mobile_profile:  'cyan600',
+  mobile_askai:    'violet',
+  mobile_stub:     'slate',
+  mobile_visitor:  'indigo400',
 };
 
 const ACCENT_STYLES = {
@@ -197,27 +177,17 @@ const CLUSTER_ICON = {
   compliance:   'ShieldCheck',
   register:     'Boxes',
   settings:     'Settings',
-  // v58.13.132cx — mobile sub-cluster icons.
-  mobile_before_login:     'LogIn',
-  mobile_home_admin:       'ShieldCheck',
-  mobile_home_paneltec:    'HardHat',
-  mobile_home_viatec:      'TrafficCone',
-  mobile_home_contractor:  'UserCheck',
-  mobile_forms_general:    'FileText',
-  mobile_forms_swms:       'ShieldCheck',
-  mobile_forms_prestart:   'CheckSquare',
-  mobile_forms_inspection: 'Search',
-  mobile_forms_nearmiss:   'AlertTriangle',
-  mobile_forms_incident:   'AlertCircle',
-  mobile_forms_toolbox:    'Users',
-  mobile_forms_admin:      'Lock',
-  mobile_forms_hazard:     'AlertTriangle',
-  mobile_forms_risk:       'Scale',
-  mobile_forms_sitediary:  'BookOpen',
-  mobile_profile:          'UserCircle',
-  mobile_toolbox:          'Users',
-  mobile_modals:           'PanelBottomOpen',
-  mobile_visitor:          'UserPlus',
+  // v58.13.132dd — mobile sub-cluster icons (10 clusters).
+  mobile_auth:     'LogIn',
+  mobile_tabs:     'Menu',
+  mobile_home:     'Home',
+  mobile_job:      'ClipboardList',
+  mobile_prestart: 'CheckSquare',
+  mobile_records:  'FolderOpen',
+  mobile_profile:  'UserCircle',
+  mobile_askai:    'Sparkles',
+  mobile_stub:     'CloudOff',
+  mobile_visitor:  'UserPlus',
 };
 
 function IconTile({ node, cluster, onClick }) {

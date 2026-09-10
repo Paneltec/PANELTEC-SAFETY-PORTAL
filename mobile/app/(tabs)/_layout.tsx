@@ -1,6 +1,6 @@
 /**
- * Tab layout — v58.13.132cz
- * 7 tabs: HOME · QR SCAN · OUTBOX · FLEET · MY WORK · PROFILE · ASK AI
+ * Tab layout — v58.13.132di
+ * 8 tabs: HOME · FORMS · QR SCAN · OUTBOX · FLEET · MY WORK · PROFILE · ASK AI
  */
 import React from 'react';
 import { Tabs } from 'expo-router';
@@ -45,6 +45,15 @@ export default function TabLayout() {
           title: 'Home',
           tabBarIcon: ({ focused, color, size }) => (
             <TabIcon name={focused ? 'home' : 'home-outline'} focused={focused} color={color} size={22} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="forms"
+        options={{
+          title: 'Forms',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'document-text' : 'document-text-outline'} focused={focused} color={color} size={22} />
           ),
         }}
       />

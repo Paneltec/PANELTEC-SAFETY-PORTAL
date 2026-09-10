@@ -72,17 +72,21 @@ export interface CategoryMeta {
 }
 
 export const CATEGORY_ORDER: CategoryMeta[] = [
-  { key: 'general',   label: 'General',   color: '#475569', bgColor: '#E2E8F0', icon: 'document-text-outline' },
+  { key: 'general',         label: 'General',         color: '#475569', bgColor: '#E2E8F0', icon: 'document-text-outline' },
   // v58.13.132l — SWMS category (safety document authority · navy tone).
   // Records live in db.swms; backend/forms.py bridges them into this list
   // with `is_swms=true` so the tap routes to /profile/swms/[id].
-  { key: 'swms',      label: 'SWMS',      color: '#0F172A', bgColor: '#CBD5E1', icon: 'shield-checkmark-outline' },
-  { key: 'pre_start', label: 'Pre-Start', color: '#0369A1', bgColor: '#E0F2FE', icon: 'clipboard-outline' },
-  { key: 'inspection',label: 'Inspection', color: '#1D4ED8', bgColor: '#DBEAFE', icon: 'search-outline' },
-  { key: 'near_miss', label: 'Near Miss', color: '#C2410C', bgColor: '#FED7AA', icon: 'alert-circle-outline' },
-  { key: 'incident',  label: 'Incident',  color: '#BE123C', bgColor: '#FDE2E4', icon: 'warning-outline' },
-  { key: 'toolbox',   label: 'Toolbox',   color: '#92400E', bgColor: '#FEF3C7', icon: 'people-outline' },
-  { key: 'admin',     label: 'Admin Only', color: '#64748B', bgColor: '#CBD5E1', icon: 'lock-closed-outline' },
+  { key: 'swms',            label: 'SWMS',            color: '#0F172A', bgColor: '#CBD5E1', icon: 'shield-checkmark-outline' },
+  { key: 'pre_start',       label: 'Pre-Start',       color: '#0369A1', bgColor: '#E0F2FE', icon: 'clipboard-outline' },
+  { key: 'inspection',      label: 'Inspection',      color: '#1D4ED8', bgColor: '#DBEAFE', icon: 'search-outline' },
+  // v58.13.132di — previously hidden categories now rendered in correct position
+  { key: 'hazard',          label: 'Hazard',          color: '#EA580C', bgColor: '#FED7AA', icon: 'flame-outline' },
+  { key: 'near_miss',       label: 'Near Miss',       color: '#C2410C', bgColor: '#FED7AA', icon: 'alert-circle-outline' },
+  { key: 'incident',        label: 'Incident',        color: '#BE123C', bgColor: '#FDE2E4', icon: 'warning-outline' },
+  { key: 'risk_assessment', label: 'Risk Assessment', color: '#7C3AED', bgColor: '#EDE9FE', icon: 'analytics-outline' },
+  { key: 'site_diary',      label: 'Site Diary',      color: '#0891B2', bgColor: '#CFFAFE', icon: 'book-outline' },
+  { key: 'toolbox',         label: 'Toolbox',         color: '#92400E', bgColor: '#FEF3C7', icon: 'people-outline' },
+  { key: 'admin',           label: 'Admin Only',      color: '#64748B', bgColor: '#CBD5E1', icon: 'lock-closed-outline' },
 ];
 
 export function getCategoryMeta(key: string): CategoryMeta {

@@ -161,6 +161,7 @@ function RootLayout() {
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="visitor" />
+            <Stack.Screen name="forms" />
           </Stack>
         </QueryClientProvider>
       </CrashRecoveryGate>

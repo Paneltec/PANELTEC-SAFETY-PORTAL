@@ -373,7 +373,18 @@ export default function AdminAssignDailyJobs() {
                         {w.name}
                       </div>
                       <div className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap">
-                        <span>{w.phone || 'no phone'}</span>
+                        {w.phone ? (
+                          <a
+                            href={`tel:${w.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            data-testid={`worker-row-phone-${w.id}`}
+                            className="text-slate-500 hover:text-blue-700 hover:underline"
+                          >
+                            {w.phone}
+                          </a>
+                        ) : (
+                          <span data-testid={`worker-row-phone-${w.id}`} className="text-slate-400">—</span>
+                        )}
                         <span
                           data-testid={`worker-role-chip-${w.id}`}
                           className={`inline-flex items-center px-1.5 py-0 rounded-full text-[9px] uppercase font-bold tracking-wider border ${roleClass}`}
@@ -484,6 +495,17 @@ export default function AdminAssignDailyJobs() {
                       }
                     />
                     <span className="font-medium text-slate-700">{a.worker_name || '(worker removed)'}</span>
+                    {a.worker_phone ? (
+                      <a
+                        href={`tel:${a.worker_phone}`}
+                        data-testid={`assignment-phone-${a.id}`}
+                        className="text-xs text-slate-500 hover:text-blue-700 hover:underline"
+                      >
+                        {a.worker_phone}
+                      </a>
+                    ) : (
+                      <span data-testid={`assignment-phone-${a.id}`} className="text-xs text-slate-400">—</span>
+                    )}
                     <span className="text-slate-500">→ {a.site_name || a.site_id}</span>
                     {a.assigned_by_name && (
                       <span className="text-xs text-slate-400 italic">by {a.assigned_by_name}</span>
@@ -535,7 +557,17 @@ export default function AdminAssignDailyJobs() {
                       {filledPill('worker')}
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      {selectedWorker.phone || 'no phone'}
+                      {selectedWorker.phone ? (
+                        <a
+                          href={`tel:${selectedWorker.phone}`}
+                          data-testid="worker-header-phone"
+                          className="text-slate-600 hover:text-blue-700 hover:underline font-medium"
+                        >
+                          {selectedWorker.phone}
+                        </a>
+                      ) : (
+                        <span data-testid="worker-header-phone" className="text-slate-400">no phone on record</span>
+                      )}
                       {selectedWorker.email && ` · ${selectedWorker.email}`}
                     </div>
                   </div>

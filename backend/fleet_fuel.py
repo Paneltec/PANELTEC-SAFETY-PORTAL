@@ -61,6 +61,11 @@ from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 from fleet import require_fleet_register_enabled
+from fuel_price_settings import (
+    PROVISIONAL_PRICE_SOURCES,
+    effective_total_price,
+    get_org_price_state,
+)
 
 log = logging.getLogger("paneltec.fuel")
 
@@ -1055,7 +1060,7 @@ async def _import_csv(
                 # channel for the `backfill_provisional_price_v58_13_132t`
                 # placeholder.
                 incoming_tp = updates.get("total_price")
-                had_provisional = dup.get("price_source") == "provisional_static_3.00"
+                had_provisional = dup.get("price_source") in ("provisional_static_3.00", "provisional_static_2.25")
                 if had_provisional and incoming_tp is not None:
                     updates["price_source"] = None
                     updates["price_provisional_at"] = None
@@ -1663,7 +1668,35 @@ async def list_transactions(
     cursor = (db.fuel_transactions.find(q, {"_id": 0})
               .sort("timestamp", -1)
               .skip((page - 1) * size).limit(size))
-    return {"items": [d async for d in cursor], "total": total, "page": page, "size": size}
+    items = [d async for d in cursor]
+    # v58.13.132dh — Reprice `total_price` + `computed_price_per_litre`
+    # at read time so the Per-Fill Transactions table follows the
+    # currently effective toggle. Stored values in Mongo are never
+    # mutated — this is a pure display overlay. Under
+    # `provisional_all`, EVERY row (including real SmartFill) shows
+    # provisional $/L. Under `smartfill_with_fallback`, only
+    # provisional-tagged / imputed rows are rewritten (matches the
+    # aggregations in `_aggregate` + `asset_fuel_summary`).
+    provisional_price, override_smartfill = await get_org_price_state(user["org_id"])
+    for it in items:
+        new_total = effective_total_price(it, provisional_price, override_smartfill)
+        it["total_price"] = new_total
+        try:
+            litres = float(it.get("litres") or 0)
+        except (TypeError, ValueError):
+            litres = 0.0
+        if litres > 0:
+            it["computed_price_per_litre"] = round(new_total / litres, 4)
+    return {"items": items, "total": total, "page": page, "size": size,
+            # v58.13.132dh — Surface the effective settings so the FE
+            # can render the "Provisional override active" badge
+            # without a second round-trip.
+            "price_state": {
+                "provisional_price_per_litre": provisional_price,
+                "override_smartfill_real": override_smartfill,
+                "override_mode": ("provisional_all"
+                                  if override_smartfill
+                                  else "smartfill_with_fallback")}}
 
 
 @router.get("/anomalies")
@@ -2249,31 +2282,77 @@ async def asset_fuel_summary(
 
     base_q = {"org_id": org_id, "asset_id": asset_id, "deleted_at": None}
 
+    # v58.13.132df — Read-time re-pricing pipeline stage. Splits each
+    # window's price sum into two buckets so we can apply the current
+    # provisional rate at read time:
+    #   · `real_total_price`     — sum of `total_price` on rows with
+    #                              a real SmartFill price
+    #                              (`price_source` NOT in the
+    #                              provisional set AND total_price>0).
+    #   · `provisional_litres`   — sum of `litres` on rows that are
+    #                              provisional-tagged OR missing a
+    #                              real price. These are priced in
+    #                              Python via `litres * current_price`.
+    _prov_price_sources = list(PROVISIONAL_PRICE_SOURCES)
+    _is_provisional_expr = {
+        "$or": [
+            {"$in": [{"$ifNull": ["$price_source", ""]}, _prov_price_sources]},
+            {"$and": [
+                {"$gt": [{"$ifNull": ["$litres", 0]}, 0]},
+                {"$lte": [{"$ifNull": ["$total_price", 0]}, 0]},
+            ]},
+        ],
+    }
+    _group_split = {
+        "_id": None,
+        "total_litres": {"$sum": {"$ifNull": ["$litres", 0]}},
+        "real_total_price": {
+            "$sum": {
+                "$cond": [
+                    _is_provisional_expr,
+                    0,
+                    {"$ifNull": ["$total_price", 0]},
+                ],
+            },
+        },
+        "provisional_litres": {
+            "$sum": {
+                "$cond": [
+                    _is_provisional_expr,
+                    {"$ifNull": ["$litres", 0]},
+                    0,
+                ],
+            },
+        },
+        "count": {"$sum": 1},
+    }
+    # v58.13.132dg — Fetch price + override in a single round-trip.
+    # When override_smartfill=True, the split above still runs but
+    # we ignore `real_total_price` in the Python payload — every
+    # litre is repriced at provisional × current price.
+    provisional_price, override_smartfill = await get_org_price_state(org_id)
+
     # 1. Latest transaction (drives last_fill + match_confidence).
     latest = await db.fuel_transactions.find_one(
         base_q, {"_id": 0}, sort=[("timestamp", -1)],
     )
 
-    # 2. YTD totals.
+    # 2. YTD totals — split real vs provisional.
     ytd_agg = await db.fuel_transactions.aggregate([
         {"$match": {**base_q, "timestamp": {"$gte": ytd_start}}},
-        {"$group": {"_id": None,
-                    "total_litres": {"$sum": {"$ifNull": ["$litres", 0]}},
-                    "total_price":  {"$sum": {"$ifNull": ["$total_price", 0]}},
-                    "count":        {"$sum": 1}}},
+        {"$group": _group_split},
     ]).to_list(1)
 
-    # 3. Rolling 30d.
+    # 3. Rolling 30d — split + odometer/hours range for consumption.
     d30_agg = await db.fuel_transactions.aggregate([
         {"$match": {**base_q, "timestamp": {"$gte": d30_start}}},
-        {"$group": {"_id": None,
-                    "total_litres": {"$sum": {"$ifNull": ["$litres", 0]}},
-                    "total_price":  {"$sum": {"$ifNull": ["$total_price", 0]}},
-                    "count":        {"$sum": 1},
-                    "min_odo":      {"$min": "$odometer_km"},
-                    "max_odo":      {"$max": "$odometer_km"},
-                    "min_hours":    {"$min": "$engine_hours"},
-                    "max_hours":    {"$max": "$engine_hours"}}},
+        {"$group": {
+            **_group_split,
+            "min_odo":   {"$min": "$odometer_km"},
+            "max_odo":   {"$max": "$odometer_km"},
+            "min_hours": {"$min": "$engine_hours"},
+            "max_hours": {"$max": "$engine_hours"},
+        }},
     ]).to_list(1)
 
     # 4. Anomalies 90d.
@@ -2303,9 +2382,25 @@ async def asset_fuel_summary(
     ytd = ytd_agg[0] if ytd_agg else {}
     d30 = d30_agg[0] if d30_agg else {}
     ytd_litres = float(ytd.get("total_litres") or 0)
-    ytd_price = float(ytd.get("total_price") or 0)
+    # v58.13.132df / .132dg — Reprice at read-time: real portion is
+    # stored, provisional portion is `litres * current_provisional_price`.
+    # When override_smartfill=True, ALL litres get repriced (real
+    # portion is folded into provisional).
+    if override_smartfill:
+        ytd_price = ytd_litres * provisional_price
+    else:
+        ytd_price = (
+            float(ytd.get("real_total_price") or 0)
+            + float(ytd.get("provisional_litres") or 0) * provisional_price
+        )
     d30_litres = float(d30.get("total_litres") or 0)
-    d30_price = float(d30.get("total_price") or 0)
+    if override_smartfill:
+        d30_price = d30_litres * provisional_price
+    else:
+        d30_price = (
+            float(d30.get("real_total_price") or 0)
+            + float(d30.get("provisional_litres") or 0) * provisional_price
+        )
     d30_count = int(d30.get("count") or 0)
 
     # Consumption: prefer odometer basis when both min & max are
@@ -2351,7 +2446,14 @@ async def asset_fuel_summary(
             "date": latest.get("date_iso") if latest else None,
             "time_local": (latest.get("time_local") or "")[:5] if latest else None,
             "litres": latest.get("litres") if latest else None,
-            "total_price": latest.get("total_price") if latest else None,
+            # v58.13.132df / .132dg — Reprice at read-time; passes
+            # the override flag through so real prices are folded
+            # into provisional when the toggle is on.
+            "total_price": (
+                effective_total_price(latest, provisional_price,
+                                      override_smartfill)
+                if latest else None
+            ),
             "station": latest.get("from_site") if latest else None,
             "driver": latest.get("driver") if latest else None,
         } if latest else None,
@@ -2419,10 +2521,37 @@ async def card_summary(
 
     base = {"org_id": org_id, "card_number": card_number, "deleted_at": None}
 
+    # v58.13.132df — Read-time re-pricing pipeline stage (same shape
+    # as `asset_fuel_summary`). Real SmartFill prices flow through
+    # unchanged; provisional-tagged or price-less rows get priced at
+    # `litres * current_provisional_price` in Python below.
+    _prov_price_sources = list(PROVISIONAL_PRICE_SOURCES)
+    _is_provisional_expr = {
+        "$or": [
+            {"$in": [{"$ifNull": ["$price_source", ""]}, _prov_price_sources]},
+            {"$and": [
+                {"$gt": [{"$ifNull": ["$litres", 0]}, 0]},
+                {"$lte": [{"$ifNull": ["$total_price", 0]}, 0]},
+            ]},
+        ],
+    }
+    _split_sums = {
+        "real_total_price": {
+            "$sum": {"$cond": [_is_provisional_expr, 0,
+                               {"$ifNull": ["$total_price", 0]}]},
+        },
+        "provisional_litres": {
+            "$sum": {"$cond": [_is_provisional_expr,
+                               {"$ifNull": ["$litres", 0]}, 0]},
+        },
+    }
+    # v58.13.132dg — Price + override toggle in one round-trip.
+    provisional_price, override_smartfill = await get_org_price_state(org_id)
+
     all_agg = await db.fuel_transactions.aggregate([
         {"$match": base},
         {"$group": {"_id": None,
-                    "total_price": {"$sum": {"$ifNull": ["$total_price", 0]}},
+                    **_split_sums,
                     "total_litres": {"$sum": {"$ifNull": ["$litres", 0]}},
                     "count": {"$sum": 1},
                     "first_ts": {"$min": "$timestamp"},
@@ -2431,7 +2560,7 @@ async def card_summary(
     ytd_agg = await db.fuel_transactions.aggregate([
         {"$match": {**base, "timestamp": {"$gte": ytd}}},
         {"$group": {"_id": None,
-                    "total_price": {"$sum": {"$ifNull": ["$total_price", 0]}},
+                    **_split_sums,
                     "total_litres": {"$sum": {"$ifNull": ["$litres", 0]}},
                     "count": {"$sum": 1}}},
     ]).to_list(1)
@@ -2467,7 +2596,20 @@ async def card_summary(
     all0 = all_agg[0] if all_agg else {}
     ytd0 = ytd_agg[0] if ytd_agg else {}
     all_litres = float(all0.get("total_litres") or 0)
-    all_price = float(all0.get("total_price") or 0)
+    # v58.13.132df / .132dg — Reprice at read-time. Override=True
+    # folds real prices into the provisional bucket.
+    if override_smartfill:
+        all_price = all_litres * provisional_price
+        ytd_price = float(ytd0.get("total_litres") or 0) * provisional_price
+    else:
+        all_price = (
+            float(all0.get("real_total_price") or 0)
+            + float(all0.get("provisional_litres") or 0) * provisional_price
+        )
+        ytd_price = (
+            float(ytd0.get("real_total_price") or 0)
+            + float(ytd0.get("provisional_litres") or 0) * provisional_price
+        )
     payload = {
         "card_number": card_number,
         "generated_at": now.isoformat(),
@@ -2485,7 +2627,7 @@ async def card_summary(
             "last_seen": all0.get("last_ts"),
         },
         "ytd": {
-            "total_price": round(float(ytd0.get("total_price") or 0), 2),
+            "total_price": round(ytd_price, 2),
             "total_litres": round(float(ytd0.get("total_litres") or 0), 2),
             "fill_count": int(ytd0.get("count") or 0),
         },
