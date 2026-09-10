@@ -194,3 +194,16 @@
   - frontend/public/service-worker.js (bump)
   - backend/mobile_home.py (version comment)
   - backend/scripts/check_version_files_v58_8_1.py (regex fix for alphanumeric versions)
+
+## Iteration 7 — v58.13.132cz: Total UI Replacement (8 screens, 7-tab nav)
+- **Commit**: c89c8b396e361e9adf60d6ed3933e3cca1b40e76
+- **Date**: 2026-04-16
+- **Changes**:
+  - Archived 26 old screens → `app/_archived_pre_132cz/`
+  - Built 7-tab bottom nav: HOME · QR SCAN · OUTBOX · FLEET · MY WORK · PROFILE · ASK AI
+  - 8 new screens: Home (briefing + compliance), My Records (grouped), QR Scan (pre-start form), Signed On, Job Detail, Profile, Ask AI, Outbox/Fleet placeholders
+  - Created `src/services/mockData.ts` with RED-flagged mocked data
+  - Version bumped `.132cz` across all 3 canonical files
+  - MOCKED: /api/mobile/records/mine, /api/users/me, AI briefing, pre-start submission, sign-on, Ask AI
+  - REAL: pin-login, device-hint, daily-jobs/today
+- **Files modified**: (tabs)/_layout, (tabs)/home, (tabs)/qr-scan, (tabs)/outbox, (tabs)/fleet, (tabs)/my-work, (tabs)/profile, (tabs)/ask-ai, src/services/mockData.ts, _layout.tsx, src/lib/version.ts, frontend version files
