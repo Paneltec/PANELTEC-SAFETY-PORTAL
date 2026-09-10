@@ -207,3 +207,20 @@
   - MOCKED: /api/mobile/records/mine, /api/users/me, AI briefing, pre-start submission, sign-on, Ask AI
   - REAL: pin-login, device-hint, daily-jobs/today
 - **Files modified**: (tabs)/_layout, (tabs)/home, (tabs)/qr-scan, (tabs)/outbox, (tabs)/fleet, (tabs)/my-work, (tabs)/profile, (tabs)/ask-ai, src/services/mockData.ts, _layout.tsx, src/lib/version.ts, frontend version files
+
+## Iteration 8 — v58.13.132dc: Wire all mocked screens to real backend
+- **Commit**: b67e939
+- **Date**: 2026-04-16
+- **Changes**:
+  - Version bumped .132dc across 4 canonical slots (pre-commit 4-slot guard passed without escape hatch)
+  - Created `src/services/apiClient.ts` — shared `authGet`/`authPost` with 401→redirect and 429→countdown
+  - Fixed `/api/users/me` 401: root cause was wrong endpoint. Correct endpoint is `GET /api/auth/me`
+  - Wired Profile to `GET /api/auth/me` — shows real user data with green "Live" banner
+  - Wired My Records to `GET /api/mobile/records/mine` — shows 6 real groups, 187 total records
+  - Wired Home AI Briefing to `GET /api/mobile/ai/briefing` — shows real briefing + severity badge
+  - Wired Pre-Start Submit to `POST /api/mobile/prestart/submit` — returns real submission_id
+  - Wired Ask AI to `POST /api/mobile/ai/ask` — real AI answers (confirmed via page.evaluate)
+  - Wired Signed On to `POST /api/mobile/sites/{site_id}/sign-on`
+  - Removed all red MOCKED banners/badges from wired screens
+  - Fixed role_id vs role: all active screens use `user?.role_id || user?.role` pattern
+- **Files modified**: apiClient.ts (new), home.tsx, profile.tsx, my-work.tsx, qr-scan.tsx, ask-ai.tsx, version.ts, version.js, service-worker.js
