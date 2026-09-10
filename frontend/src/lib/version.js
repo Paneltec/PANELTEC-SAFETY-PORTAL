@@ -12980,7 +12980,7 @@
 //   · Session token stored via expo-secure-store (native) / AsyncStorage (web).
 //   · Logout clears session but preserves device_id.
 //   · RUNNING_VERSION + MOBILE_BUNDLE_VERSION + CACHE_VERSION + EXPECTED_CACHE_VERSION all bumped.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cx';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cz';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

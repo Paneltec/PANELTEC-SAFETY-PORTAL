@@ -1,5 +1,5 @@
 /**
- * v58.13.132cj — Root layout (crash-safe rewrite).
+ * v58.13.132cz — Root layout (crash-safe rewrite).
  *
  * Changes from .132al:
  *   - Sentry native DISABLED (enableNative: false) — suspected Android crash cause
@@ -161,8 +161,6 @@ function RootLayout() {
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="visitor" />
-            <Stack.Screen name="forms" />
-            <Stack.Screen name="profile" />
           </Stack>
         </QueryClientProvider>
       </CrashRecoveryGate>

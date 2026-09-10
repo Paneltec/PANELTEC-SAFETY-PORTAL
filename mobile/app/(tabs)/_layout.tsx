@@ -1,16 +1,20 @@
 /**
- * Tab layout — v58.13.132ac
- * 3 tabs: Home, Forms, Profile
- * v58.13.132ac — Sites tab REMOVED. The Sites screen concept is
- * superseded by the daily-job SMS flow: a worker's "site" is derived
- * from their accepted `daily_job_assignment`, not from a Sites list.
- * The Toolbox screen stays hidden from the tab bar (opened via home
- * tile only) via `href: null`.
+ * Tab layout — v58.13.132cz
+ * 7 tabs: HOME · QR SCAN · OUTBOX · FLEET · MY WORK · PROFILE · ASK AI
  */
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
+
+function TabIcon({ name, focused, color, size }: {
+  name: keyof typeof Ionicons.glyphMap;
+  focused: boolean;
+  color: string;
+  size: number;
+}) {
+  return <Ionicons name={name} size={size} color={color} />;
+}
 
 export default function TabLayout() {
   return (
@@ -18,16 +22,20 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: Colors.orange,
-        tabBarInactiveTintColor: Colors.muted,
+        tabBarInactiveTintColor: Colors.slate400,
         tabBarStyle: {
-          backgroundColor: Colors.tabBar,
+          backgroundColor: Colors.white,
           borderTopColor: Colors.border,
-          paddingBottom: 4,
-          height: 56,
+          borderTopWidth: 1,
+          paddingBottom: 6,
+          paddingTop: 6,
+          height: 64,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
+          fontSize: 9,
+          fontWeight: '700',
+          letterSpacing: 0.3,
+          textTransform: 'uppercase',
         },
       }}
     >
@@ -35,17 +43,44 @@ export default function TabLayout() {
         name="home"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'home' : 'home-outline'} focused={focused} color={color} size={22} />
           ),
         }}
       />
       <Tabs.Screen
-        name="forms"
+        name="qr-scan"
         options={{
-          title: 'Forms',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'document-text' : 'document-text-outline'} size={24} color={color} />
+          title: 'QR Scan',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'qr-code' : 'qr-code-outline'} focused={focused} color={color} size={22} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="outbox"
+        options={{
+          title: 'Outbox',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'cloud-upload' : 'cloud-upload-outline'} focused={focused} color={color} size={22} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="fleet"
+        options={{
+          title: 'Fleet',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'car' : 'car-outline'} focused={focused} color={color} size={22} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="my-work"
+        options={{
+          title: 'My Work',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'briefcase' : 'briefcase-outline'} focused={focused} color={color} size={22} />
           ),
         }}
       />
@@ -53,29 +88,18 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'person' : 'person-outline'} focused={focused} color={color} size={22} />
           ),
         }}
       />
-      {/* v58.13.132ab — Toolbox screen; hidden from tab bar, opened via
-          home tile only. `href: null` keeps expo-router from mounting a
-          tab-bar entry for it. */}
       <Tabs.Screen
-        name="toolbox"
+        name="ask-ai"
         options={{
-          href: null,
-          title: 'Toolbox',
-        }}
-      />
-      {/* v58.13.132ac — `sites` tab entry deleted. The physical file
-          `(tabs)/sites.tsx` is also removed. If a stale route file
-          reappears, expo-router will auto-mount it — `href: null`
-          below is a defensive muzzle so a resurrection still hides it. */}
-      <Tabs.Screen
-        name="sites"
-        options={{
-          href: null,
+          title: 'Ask AI',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'sparkles' : 'sparkles-outline'} focused={focused} color={color} size={22} />
+          ),
         }}
       />
     </Tabs>
