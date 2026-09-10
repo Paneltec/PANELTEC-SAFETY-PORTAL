@@ -36,7 +36,7 @@
 // registry, and every `data-testid` value are UNCHANGED. Downstream
 // `test_program_schematic_routes_v47.py` continues to pass.
 
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as LucideIcons from 'lucide-react';
@@ -47,6 +47,8 @@ import {
   SCHEMATIC_SUB_CLUSTERS,
   SCHEMATIC_NODES,
 } from '../../lib/programSchematic';
+import api, { apiError } from '@/lib/api';
+import { useCan } from '@/lib/permissions';
 
 const CLUSTER_ORDER = [
   'integrations',
@@ -190,39 +192,83 @@ const CLUSTER_ICON = {
   mobile_visitor:  'UserPlus',
 };
 
-function IconTile({ node, cluster, onClick }) {
+function IconTile({ node, cluster, onClick, overlay, editMode, onSetStatus }) {
   const Icon = LucideIcons[node.icon] || LucideIcons.Circle;
+  // v58.13.132di — Overlay-driven status: 'dropped' fades the tile,
+  // 'added' rings it green, 'kept' (or null) renders normally.
+  const status = overlay?.status || 'kept';
+  const isDropped = status === 'dropped';
+  const isAdded = status === 'added';
+  const label = overlay?.custom_label || node.label;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      // v58.5 — Lightened. Off-white surface with soft slate border,
-      // subtle hover lift; text stays high-contrast slate-900. Icons
-      // shrunk ~35%. Target tile ~100 px tall (was ~140).
-      className="group flex flex-col items-center justify-start gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2.5 hover:bg-white hover:border-slate-300 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300 transition"
-      data-testid={`schematic-node-${node.id}`}
-      style={{ minHeight: 100 }}
-    >
-      <div
-        // Icon container also shrinks (w/h 10 vs old 14) — keeps the
-        // coloured chip readable without dominating the tile.
-        className="w-9 h-9 rounded-full flex items-center justify-center ring-1 group-hover:scale-105 transition-transform"
-        style={{
-          background: `${cluster.color}18`,
-          borderColor: `${cluster.color}66`,
-          boxShadow: `0 0 0 1px ${cluster.color}33`,
-        }}
+    <div className="relative" data-testid={`schematic-tile-wrap-${node.id}`}>
+      <button
+        type="button"
+        onClick={editMode ? undefined : onClick}
+        disabled={editMode}
+        className={[
+          'group w-full flex flex-col items-center justify-start gap-1.5 rounded-xl border px-2.5 py-2.5',
+          'focus:outline-none focus:ring-2 focus:ring-slate-300 transition',
+          isDropped
+            ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed'
+            : isAdded
+              ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200'
+              : 'border-slate-200 bg-slate-50 hover:bg-white hover:border-slate-300 hover:shadow-sm',
+        ].join(' ')}
+        data-testid={`schematic-node-${node.id}`}
+        data-overlay-status={status}
+        style={{ minHeight: 100 }}
       >
-        <Icon size={18} style={{ color: cluster.color }} strokeWidth={2.25} />
-      </div>
-      <div className="text-center text-[12px] font-semibold text-slate-800 leading-tight px-0.5">
-        {node.label}
-      </div>
-    </button>
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center ring-1 group-hover:scale-105 transition-transform"
+          style={{
+            background: `${cluster.color}18`,
+            borderColor: `${cluster.color}66`,
+            boxShadow: `0 0 0 1px ${cluster.color}33`,
+          }}
+        >
+          <Icon size={18} style={{ color: cluster.color }} strokeWidth={2.25} />
+        </div>
+        <div className={[
+          'text-center text-[12px] font-semibold leading-tight px-0.5',
+          isDropped ? 'text-slate-500 line-through' : 'text-slate-800',
+        ].join(' ')}>
+          {label}
+        </div>
+      </button>
+      {editMode && (
+        <div
+          className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-white border border-slate-300 rounded-full shadow-sm px-1 py-0.5"
+          data-testid={`schematic-tile-editbar-${node.id}`}
+        >
+          {[
+            { key: 'kept',    label: 'K', title: 'Kept',    color: 'text-slate-700 hover:bg-slate-100' },
+            { key: 'dropped', label: 'D', title: 'Dropped', color: 'text-rose-700 hover:bg-rose-50' },
+            { key: 'added',   label: 'A', title: 'Added',   color: 'text-emerald-700 hover:bg-emerald-50' },
+          ].map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSetStatus(s.key); }}
+              title={s.title}
+              data-testid={`schematic-tile-status-${node.id}-${s.key}`}
+              className={[
+                'w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center',
+                status === s.key
+                  ? 'bg-slate-900 text-white'
+                  : s.color,
+              ].join(' ')}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function ClusterCard({ cluster, accent, nodes, onNavigate }) {
+function ClusterCard({ cluster, accent, nodes, onNavigate, overlays, editMode, onSetStatus }) {
   const styles = ACCENT_STYLES[accent] || ACCENT_STYLES.sky;
   const HeaderIcon = LucideIcons[CLUSTER_ICON[cluster.key]] || LucideIcons.Box;
 
@@ -288,6 +334,9 @@ function ClusterCard({ cluster, accent, nodes, onNavigate }) {
               key={n.id}
               node={n}
               cluster={cluster}
+              overlay={overlays?.[cluster.key]?.[n.node_key || n.id]}
+              editMode={editMode}
+              onSetStatus={(status) => onSetStatus(cluster.key, n.node_key || n.id, status)}
               onClick={() => onNavigate(n)}
             />
           ))}
@@ -314,6 +363,9 @@ function ClusterCard({ cluster, accent, nodes, onNavigate }) {
                     key={n.id}
                     node={n}
                     cluster={cluster}
+                    overlay={overlays?.[cluster.key]?.[n.node_key || n.id]}
+                    editMode={editMode}
+                    onSetStatus={(status) => onSetStatus(cluster.key, n.node_key || n.id, status)}
                     onClick={() => onNavigate(n)}
                   />
                 ))}
@@ -333,7 +385,73 @@ export default function ProgramSchematicPage() {
     [],
   );
 
+  // v58.13.132di — Overlay Edit-mode wiring.
+  //   · GET /api/program-schematic/overlays — grouped { cluster: { node: overlay } }
+  //   · PUT /api/program-schematic/overlays/:cluster/:node — { status, ... }
+  //   · DELETE /api/program-schematic/overlays/:cluster/:node — revert to default
+  //   · POST /api/program-schematic/overlays/new — add a custom node (deferred)
+  // Edit is gated on `users.edit`, matching the backend `require_permission`.
+  const canEditOverlays = useCan()('users', 'edit');
+  const [overlays, setOverlays] = useState({});
+  const [editMode, setEditMode] = useState(false);
+  const [busyKey, setBusyKey] = useState(null);
+
+  const loadOverlays = useCallback(async () => {
+    try {
+      const { data } = await api.get('/program-schematic/overlays');
+      setOverlays(data || {});
+    } catch (e) {
+      // Non-fatal — the page still renders the static registry.
+      // eslint-disable-next-line no-console
+      console.warn('overlays load failed', apiError(e));
+    }
+  }, []);
+  useEffect(() => { loadOverlays(); }, [loadOverlays]);
+
+  const onSetStatus = useCallback(async (clusterKey, nodeKey, status) => {
+    if (!canEditOverlays) return;
+    const key = `${clusterKey}:${nodeKey}`;
+    setBusyKey(key);
+    try {
+      if (status === 'kept' && !overlays?.[clusterKey]?.[nodeKey]) {
+        // No overlay exists and we're setting the default — no-op.
+        return;
+      }
+      if (status === 'kept') {
+        // Revert to default by deleting the overlay.
+        await api.delete(`/program-schematic/overlays/${clusterKey}/${nodeKey}`);
+        setOverlays((prev) => {
+          const next = { ...prev };
+          if (next[clusterKey]) {
+            const clusterCopy = { ...next[clusterKey] };
+            delete clusterCopy[nodeKey];
+            next[clusterKey] = clusterCopy;
+          }
+          return next;
+        });
+      } else {
+        const { data } = await api.put(
+          `/program-schematic/overlays/${clusterKey}/${nodeKey}`,
+          { status },
+        );
+        setOverlays((prev) => ({
+          ...prev,
+          [clusterKey]: { ...(prev[clusterKey] || {}), [nodeKey]: data },
+        }));
+      }
+      toast.success(`Marked ${nodeKey} as ${status}`);
+    } catch (e) {
+      toast.error(apiError(e) || 'Overlay save failed');
+    } finally {
+      setBusyKey(null);
+    }
+  }, [canEditOverlays, overlays]);
+  // Silence unused-var lint when busyKey isn't shown yet (kept for the
+  // save spinner state that the toast covers today).
+  void busyKey;
+
   const onNavigate = (node) => {
+    if (editMode) return;
     if (!node.route) {
       toast('This module is a stub — Phase 2 will fill it in.');
       return;
@@ -359,6 +477,37 @@ export default function ProgramSchematicPage() {
           testId="program-schematic-header"
           textClassName="text-slate-900"
         />
+
+        {/* v58.13.132di — Overlay Edit-mode toolbar (admin only). */}
+        {canEditOverlays && (
+          <div
+            className="flex items-center gap-2 mb-4 -mt-2"
+            data-testid="schematic-overlay-toolbar"
+          >
+            <button
+              type="button"
+              onClick={() => setEditMode((v) => !v)}
+              data-testid="schematic-overlay-edit-toggle"
+              className={[
+                'inline-flex items-center gap-1.5 rounded-full text-xs font-semibold px-3 py-1.5 border transition',
+                editMode
+                  ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50',
+              ].join(' ')}
+            >
+              {editMode ? 'Exit edit mode' : 'Edit overlays'}
+            </button>
+            {editMode && (
+              <span
+                className="text-[11px] text-slate-500"
+                data-testid="schematic-overlay-hint"
+              >
+                Click <b>K</b> / <b>D</b> / <b>A</b> on any tile to mark it
+                Kept, Dropped, or Added. Changes save immediately.
+              </span>
+            )}
+          </div>
+        )}
 
         {/* v58.13.132bj — Legend row now uses the same Tailwind
             palette as the cards. Preserved so at-a-glance colour ↔
@@ -402,6 +551,9 @@ export default function ProgramSchematicPage() {
                 cluster={cluster}
                 accent={accent}
                 nodes={clusterNodes}
+                overlays={overlays}
+                editMode={editMode}
+                onSetStatus={onSetStatus}
                 onNavigate={onNavigate}
               />
             );
@@ -454,6 +606,9 @@ export default function ProgramSchematicPage() {
                 cluster={cluster}
                 accent={accent}
                 nodes={clusterNodes}
+                overlays={overlays}
+                editMode={editMode}
+                onSetStatus={onSetStatus}
                 onNavigate={onNavigate}
               />
             );

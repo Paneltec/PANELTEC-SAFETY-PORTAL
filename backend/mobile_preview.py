@@ -57,17 +57,31 @@ PREVIEW_EXP_MINUTES = 15
 # allowlists, so a Live Preview admin sees a single "Paneltec Civil"
 # option instead of 18 fine-grained roles. The underlying roles are
 # preserved untouched — this is a preview-UX aggregation only.
-SCOPE_KEYS = {"paneltec_civil", "viatec_traffic", "admin"}
+#
+# v58.13.132di — Added `external_contractor` scope. The FE 4-role
+# picker (`SCOPES` set in `MobileModulesSection.jsx`) already includes
+# it, so before .132di the Expo iframe would 400 when an admin picked
+# External Contractor in the "Preview as role" dropdown. The mobile
+# bundle surfaced the 400 as an error alert inside the bezel which
+# read to admins like a broken preview.
+SCOPE_KEYS = {"paneltec_civil", "viatec_traffic", "admin", "external_contractor"}
 SCOPE_META = {
-    "paneltec_civil":  {"label": "Paneltec Civil",
-                        "company_id": "2",
-                        "matches": ("paneltec", "civil")},
-    "viatec_traffic":  {"label": "Viatec Traffic Solutions",
-                        "company_id": "3",
-                        "matches": ("viatec", "traffic")},
-    "admin":           {"label": "Admin",
-                        "company_id": None,
-                        "matches": ("admin", "owner", "manager", "hseq")},
+    "paneltec_civil":      {"label": "Paneltec Civil",
+                            "company_id": "2",
+                            "matches": ("paneltec", "civil")},
+    "viatec_traffic":      {"label": "Viatec Traffic Solutions",
+                            "company_id": "3",
+                            "matches": ("viatec", "traffic")},
+    "admin":               {"label": "Admin",
+                            "company_id": None,
+                            "matches": ("admin", "owner", "manager", "hseq")},
+    # v58.13.132di — External Contractor union: any role_id containing
+    # `contractor` or the canonical `external_contractor` matrix row.
+    # Falls back to the `worker` baseline when a fresh org has no
+    # contractor rows in the mobile-modules matrix.
+    "external_contractor": {"label": "External Contractor",
+                            "company_id": None,
+                            "matches": ("contractor",)},
 }
 
 
@@ -168,8 +182,9 @@ async def mint_preview_user(
         )
         # Represent the scope as a role for downstream shims — admin scope
         # maps to `admin` so the mobile home resolves the full-access
-        # matrix; the two field-worker scopes map to `worker` since they
-        # both share the worker persona.
+        # matrix; the two field-worker scopes + `external_contractor`
+        # map to `worker` since they all share the worker persona at
+        # the mobile-home tile-grid level.
         effective_role = "admin" if scope == "admin" else "worker"
 
     role_id_final = (effective_role or "").strip()
