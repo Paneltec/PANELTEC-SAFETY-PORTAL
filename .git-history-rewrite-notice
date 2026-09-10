@@ -1,0 +1,66 @@
+# Git History Rewrite Notice
+
+**Date of rewrite:** 2026-09-10 (UTC)
+**Ship:** `v58.13.132cw` (APK purge) + `v58.13.132cx` (rebuild consolidation) + `v58.13.132cy` (force-push to GitHub)
+
+## What happened
+
+The git history of this repository was rewritten to purge ~452 MB of Android APK build artefacts (`backend/static/downloads/*.apk`) from every commit that ever touched them. The APKs are pre-built binaries produced by EAS Build — they don't belong in source control and were making the repo unpushable.
+
+- **Before rewrite:** ~132 MiB packed + ~389 MiB loose objects.
+- **After rewrite:** ~150 MiB packed + 0 loose. **Net .git footprint reduction ≈ 370 MB.**
+- Every one of the 728 pre-rewrite commits was rehashed; **every SHA in `main` has changed.**
+
+## SHA transition
+
+| Point | Old (pre-`.132cw`) | New (post-`.132cx`) |
+|---|---|---|
+| Tip of `main` after rewrite | `02f373459aabd1b3d619a822b54b4ca8e72fb5af` | `6c1427199a0639c39a4f246fee1391b717761333` (this commit's parent) |
+| Immediate predecessor (`.132cl`) | any pre-`.132cw` SHA carrying `.132cl` label | `c2f5960f50c7fd86cf8b883b781300f245b55da4` |
+
+The `backup-pre-force-push-132cy` local branch retains the pre-`.132cx` tip (`c2f5960` = `.132cl`) for one final rescue window; it will be deleted in a future ship.
+
+## Impact on existing clones
+
+If you had a local clone of this repo from **before 2026-09-10**, your `main` no longer fast-forwards from `origin/main`. You must either:
+
+1. **Re-clone (recommended):**
+   ```
+   cd .. && rm -rf PANELTEC-SAFETY-PORTAL
+   git clone https://github.com/Paneltec/PANELTEC-SAFETY-PORTAL.git
+   ```
+
+2. **Hard-reset your existing clone to the new remote tip:**
+   ```
+   git fetch origin
+   git checkout main
+   git reset --hard origin/main
+   ```
+   **Warning:** any uncommitted local work will be lost.
+
+3. **Rebase your feature branches onto the new `main`:**
+   ```
+   git fetch origin
+   git checkout your-feature-branch
+   git rebase --onto origin/main <old-main-SHA> your-feature-branch
+   ```
+
+## Follow-up: don't push APKs again
+
+`.gitignore` now blocks `backend/static/downloads/*.apk`. Do not `-f`-add APK binaries. Deliver Android builds via EAS artefact hosting or a signed release URL — the FastAPI endpoint at `/api/mobile/downloads/android/latest.apk` reads from the working-tree copy (which stays on the server via CI / deploy pipeline), not from git.
+
+## Full incident record
+
+See in-repo memos:
+- `memory/v58_13_132cw_apk_cleanup_and_gitignore_shipped_finish_deferred.md` — root cause + damage report.
+- `memory/v58_13_132cx_rebuild_consolidation_shipped_finish_deferred.md` — how the 9 lost ships were reconstructed.
+- `memory/v58_13_132cy_github_force_push_shipped_finish_deferred.md` — force-push execution log.
+
+## Prevention playbook for future `git filter-repo` runs
+
+1. **ALWAYS** `git stash push --include-untracked --message "pre-filter-repo WIP"` first.
+2. Or `git commit -am 'wip: pre-filter-repo snapshot'` on a throwaway branch.
+3. Only THEN run `git filter-repo` — ideally **without** `--force` so the tool enforces a clean tree.
+4. `git stash pop` after filter-repo completes.
+5. Verify `git status` + `git reflog` before continuing.
+6. Never chain `git filter-repo --force` when any working-tree state matters.
