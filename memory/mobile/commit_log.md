@@ -224,3 +224,14 @@
   - Removed all red MOCKED banners/badges from wired screens
   - Fixed role_id vs role: all active screens use `user?.role_id || user?.role` pattern
 - **Files modified**: apiClient.ts (new), home.tsx, profile.tsx, my-work.tsx, qr-scan.tsx, ask-ai.tsx, version.ts, version.js, service-worker.js
+
+## Iteration 9 — v58.13.132di: role_id fix + CATEGORY_ORDER + version sync
+- **Commit**: e43eb9d
+- **Date**: 2026-04-16
+- **Changes**:
+  - Fixed role_id vs role bug: `forms.tsx` now reads `u?.role_id || u?.role` (was `u?.role` only, hiding Admin category)
+  - Extended CATEGORY_ORDER: added `hazard`, `risk_assessment`, `site_diary` (3 previously invisible categories)
+  - Restored Forms tab + forms route stack from archive (archived during .132cz)
+  - Added Forms as 2nd tab in 8-tab layout
+  - Version synced to .132di across all 4 slots (pre-commit passes without escape hatch)
+- **Files modified**: forms.tsx (new), (tabs)/_layout.tsx, _layout.tsx, forms.ts (CATEGORY_ORDER), version.ts, version.js, service-worker.js, app/forms/ (6 restored route files)
