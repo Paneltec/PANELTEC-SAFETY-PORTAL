@@ -168,3 +168,29 @@
   - frontend/public/service-worker.js (bump)
   - backend/mobile_home.py (version comment)
 - **Web files referenced**: None (backend contract from .132ci)
+
+## Iteration 7 — v58.13.132cl: Paneltec Group header + "Welcome back" flow
+- **Commit**: 99c5e03
+- **Date**: 2026-09-10
+- **Changes**:
+  - Brand renamed from "Paneltec Civil" to "Paneltec Group" across Wordmark, welcome, home, app.json
+  - PIN screen fetches GET /api/auth/mobile/device-hint on mount
+  - Bound device → "Welcome back {first_name}" with role/org subtitle
+  - Unbound device → generic "Enter your 4-digit PIN" with first-time hint
+  - "Not you?" link: fullWipe() → re-provisioning via welcome screen
+  - Device-hint cached in-memory per session, graceful fallback on 429/error
+  - Home header shows "PANELTEC GROUP" brand; role pill preserves actual role_label
+  - Version bumped to .132cl
+  - 3 device-framed screenshots
+- **Files modified**:
+  - app/(auth)/pin-entry.tsx (rewrite — device-hint + welcome back)
+  - app/(auth)/welcome.tsx (title → "Paneltec Group")
+  - app/(tabs)/home.tsx (brand text in header)
+  - app.json (name → "Paneltec Group Field")
+  - src/services/auth.ts (fetchDeviceHint, clearDeviceHintCache)
+  - src/components/Wordmark.tsx (rewrite — "PANELTEC GROUP")
+  - src/lib/version.ts (bump)
+  - frontend/src/lib/version.js (bump + changelog)
+  - frontend/public/service-worker.js (bump)
+  - backend/mobile_home.py (version comment)
+  - backend/scripts/check_version_files_v58_8_1.py (regex fix for alphanumeric versions)

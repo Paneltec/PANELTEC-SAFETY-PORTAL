@@ -12963,6 +12963,13 @@
 //   · Admin drawer at `/app/settings/users` already lists both
 //     roles side-by-side with the same edit affordances — no FE
 //     code change needed.
+// v58.13.132cl — Mobile: Paneltec Group header + "Welcome back" flow.
+//   · Renamed brand from "Paneltec Civil" to "Paneltec Group" (holding company) across splash, PIN, home, Wordmark, app.json.
+//   · PIN screen fetches GET /api/auth/mobile/device-hint on mount.
+//   · Bound device → "Welcome back {first_name}" with role/org subtitle; "Not you?" unlink link.
+//   · Unbound device → generic "Enter your 4-digit PIN" with first-time setup hint.
+//   · Hint cached in-memory per session. Rate-limit / network errors fall back to generic greeting.
+//   · RUNNING_VERSION + MOBILE_BUNDLE_VERSION + CACHE_VERSION + EXPECTED_CACHE_VERSION bumped.
 // v58.13.132cj — Mobile onboarding rewrite: kill role-picker, PIN → role auto-detect.
 //   · Rewrote mobile onboarding flow: QR-scan device provisioning → PIN login → role-based landing.
 //   · Eliminated the "Choose Paneltec Civil / Viatec Traffic" division picker at launch.
@@ -12973,7 +12980,7 @@
 //   · Session token stored via expo-secure-store (native) / AsyncStorage (web).
 //   · Logout clears session but preserves device_id.
 //   · RUNNING_VERSION + MOBILE_BUNDLE_VERSION + CACHE_VERSION + EXPECTED_CACHE_VERSION all bumped.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cj';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cl';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -12994,7 +13001,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cj';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132cj';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132cl';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

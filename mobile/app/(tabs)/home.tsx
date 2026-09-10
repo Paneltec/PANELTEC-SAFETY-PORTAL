@@ -129,6 +129,8 @@ export default function HomeScreen() {
     <View testID="home-screen" style={[s.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={[s.header, { backgroundColor: config.accent === Colors.viatec ? Colors.viatec : Colors.navy }]}>
+        {/* Holding-company brand — always "Paneltec Group" */}
+        <Text testID="home-brand-name" style={s.brandName}>Paneltec Group</Text>
         <View style={s.headerTop}>
           <View style={s.headerLeft}>
             <Text testID="home-greeting" style={s.greeting}>{greeting}</Text>
@@ -149,7 +151,7 @@ export default function HomeScreen() {
         <View style={s.rolePill}>
           <View style={[s.roleDot, { backgroundColor: config.accent }]} />
           <Text testID="home-role-id" style={s.rolePillText}>
-            {config.title}
+            {roleLabel || config.title}
           </Text>
         </View>
       </View>
@@ -211,7 +213,11 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
 
   header: {
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20,
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
+  },
+  brandName: {
+    color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '800',
+    letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10,
   },
   headerTop: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

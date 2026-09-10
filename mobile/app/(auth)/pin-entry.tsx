@@ -1,18 +1,19 @@
 /**
- * PIN Entry — v58.13.132cj.
+ * PIN Entry — v58.13.132cl.
  *
- * Pure 4-digit PIN login screen. Hits POST /api/auth/mobile/pin-login.
- * Handles:
- *   200 → store session, navigate to role-based home
- *   401 → inline error (invalid_pin / account_disabled / pin_expired)
- *   429 → countdown timer with rate-limit tiers
+ * "Welcome back" flow:
+ *   1. On mount, fetch GET /api/auth/mobile/device-hint?device_id=<uuid>
+ *   2. If bound → "Welcome back {first_name}" with role/org subtitle
+ *   3. If unbound → generic "Enter your 4-digit PIN"
+ *   4. "Not you?" link clears device_id + session, reloads in first-time state
  *
- * No create/confirm mode — backend manages PIN creation during onboarding.
- * Role auto-detected from response; no division picker.
+ * PIN submission → POST /api/auth/mobile/pin-login.
+ * Handles 200/401/429. Rate-limit countdown timer.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, Animated, Easing,
+  TouchableOpacity, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,7 +21,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
 import PinPad from '../../src/components/PinPad';
 import Wordmark from '../../src/components/Wordmark';
-import { pinLogin, isPreviewSession, getDeviceId } from '../../src/services/auth';
+import {
+  pinLogin, isPreviewSession, getDeviceId,
+  fetchDeviceHint, fullWipe, clearDeviceHintCache,
+  type DeviceHintResponse,
+} from '../../src/services/auth';
 
 type State = 'ready' | 'submitting' | 'error' | 'rate_limited';
 
@@ -40,19 +45,29 @@ export default function PinEntryScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [countdown, setCountdown] = useState(0);
   const [deviceId, setDeviceIdState] = useState<string | null>(null);
+  const [hint, setHint] = useState<DeviceHintResponse | null>(null);
+  const [hintLoading, setHintLoading] = useState(true);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Preview bypass
+  // ── Init: load device ID + fetch hint ──
   useEffect(() => {
     if (isPreviewSession()) {
       router.replace('/(tabs)/home');
       return;
     }
-    getDeviceId().then(setDeviceIdState);
+    (async () => {
+      const id = await getDeviceId();
+      setDeviceIdState(id);
+      if (id) {
+        const h = await fetchDeviceHint(id);
+        setHint(h);
+      }
+      setHintLoading(false);
+    })();
   }, []);
 
-  // Countdown timer for rate limiting
+  // ── Countdown timer for rate limiting ──
   useEffect(() => {
     if (countdown <= 0) {
       if (state === 'rate_limited') setState('ready');
@@ -93,7 +108,6 @@ export default function PinEntryScreen() {
       const result = await pinLogin(val, deviceId || undefined);
 
       if (result.ok) {
-        // Success — navigate to home (role-based landing will read stored role)
         router.replace('/(tabs)/home');
       } else if (result.error === 'rate_limited') {
         setState('rate_limited');
@@ -107,11 +121,35 @@ export default function PinEntryScreen() {
         setErrorMsg(ERROR_MESSAGES[result.error] || 'Login failed. Please try again.');
         setPin('');
         shake();
-        // Auto-reset to ready after a brief pause
         setTimeout(() => setState('ready'), 200);
       }
     }
   }, [state, deviceId, router, shake]);
+
+  const handleNotYou = useCallback(() => {
+    Alert.alert(
+      'Switch User',
+      'This will unlink this device — you\u2019ll need to sign in fresh.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unlink & Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await fullWipe();
+            clearDeviceHintCache();
+            setHint(null);
+            setDeviceIdState(null);
+            setHintLoading(false);
+            setPin('');
+            setErrorMsg('');
+            // Navigate to welcome for re-provisioning
+            router.replace('/(auth)/welcome');
+          },
+        },
+      ],
+    );
+  }, [router]);
 
   const formatTime = (secs: number) => {
     if (secs >= 3600) {
@@ -127,6 +165,8 @@ export default function PinEntryScreen() {
     return `${secs}s`;
   };
 
+  const isBound = hint?.bound === true;
+
   // ── Rate limited state ──
   if (state === 'rate_limited') {
     return (
@@ -135,9 +175,7 @@ export default function PinEntryScreen() {
           <Ionicons name="time-outline" size={40} color={Colors.orange} />
         </View>
         <Text style={s.lockTitle}>Too Many Attempts</Text>
-        <Text style={s.lockSub}>
-          Please wait before trying again.
-        </Text>
+        <Text style={s.lockSub}>Please wait before trying again.</Text>
         <View style={s.countdownBox}>
           <Text testID="rate-limit-countdown" style={s.countdownText}>
             {formatTime(countdown)}
@@ -153,12 +191,35 @@ export default function PinEntryScreen() {
   return (
     <View
       testID="pin-entry-screen"
-      style={[s.container, { paddingTop: insets.top + 32 }]}
+      style={[s.container, { paddingTop: insets.top + 24 }]}
     >
-      <View style={s.header}>
+      {/* Brand wordmark */}
+      <View style={s.brandRow}>
         <Wordmark size="sm" />
-        <Text testID="pin-entry-title" style={s.title}>Enter your PIN</Text>
-        <Text style={s.sub}>4-digit passcode to sign in</Text>
+      </View>
+
+      {/* Greeting header — bound vs unbound */}
+      <View style={s.header}>
+        {hintLoading ? (
+          <ActivityIndicator size="small" color="rgba(255,255,255,0.3)" />
+        ) : isBound ? (
+          <>
+            <Text testID="pin-entry-title" style={s.welcomeTitle}>
+              Welcome back {hint.user_first_name}
+            </Text>
+            <Text testID="pin-hint-subtitle" style={s.hintSubtitle}>
+              {hint.role_label} · {hint.org_name}
+            </Text>
+            <Text style={s.sub}>Enter your 4-digit PIN to continue</Text>
+          </>
+        ) : (
+          <>
+            <Text testID="pin-entry-title" style={s.title}>Enter your 4-digit PIN</Text>
+            <Text style={s.sub}>
+              First-time setup — your device will be linked{'\n'}to your account after login
+            </Text>
+          </>
+        )}
       </View>
 
       {/* PIN dots with shake animation */}
@@ -197,12 +258,23 @@ export default function PinEntryScreen() {
         <ActivityIndicator
           size="small"
           color={Colors.orange}
-          style={{ marginTop: 24 }}
+          style={{ marginTop: 16 }}
         />
       )}
 
+      {/* "Not you?" link — only when device is bound */}
+      {isBound && (
+        <TouchableOpacity
+          testID="not-you-btn"
+          style={s.notYouBtn}
+          onPress={handleNotYou}
+        >
+          <Text style={s.notYouText}>Not you? Sign in as a different user</Text>
+        </TouchableOpacity>
+      )}
+
       <Text style={s.footer}>
-        {deviceId ? `Device: ${deviceId.slice(0, 12)}…` : 'No device ID'}
+        {deviceId ? `Device: ${deviceId.slice(0, 16)}…` : 'No device ID'}
       </Text>
     </View>
   );
@@ -213,13 +285,23 @@ const s = StyleSheet.create({
     flex: 1, backgroundColor: Colors.navy,
     alignItems: 'center', paddingHorizontal: 24,
   },
-  header: { alignItems: 'center', marginBottom: 32, gap: 10 },
+
+  brandRow: { marginBottom: 20 },
+
+  header: { alignItems: 'center', marginBottom: 28, gap: 6 },
   title: {
+    color: Colors.white, fontSize: 22, fontWeight: '800', textAlign: 'center',
+  },
+  welcomeTitle: {
     color: Colors.white, fontSize: 24, fontWeight: '800', textAlign: 'center',
-    marginTop: 20,
+  },
+  hintSubtitle: {
+    color: Colors.orange, fontSize: 13, fontWeight: '700',
+    textAlign: 'center', letterSpacing: 0.3,
   },
   sub: {
-    color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center',
+    color: 'rgba(255,255,255,0.45)', fontSize: 13, textAlign: 'center',
+    lineHeight: 19, marginTop: 2,
   },
 
   pinDots: { flexDirection: 'row', gap: 20, marginBottom: 12 },
@@ -234,9 +316,16 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 12,
     paddingHorizontal: 16, paddingVertical: 10,
-    marginBottom: 24, maxWidth: 320,
+    marginBottom: 20, maxWidth: 320,
   },
   errorText: { color: Colors.error, fontSize: 13, fontWeight: '600', flex: 1 },
+
+  // Not you link
+  notYouBtn: { marginTop: 20, paddingVertical: 8 },
+  notYouText: {
+    color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
 
   // Rate limited
   lockCircle: {
@@ -265,7 +354,7 @@ const s = StyleSheet.create({
   },
 
   footer: {
-    color: 'rgba(255,255,255,0.2)', fontSize: 10, marginTop: 'auto',
+    color: 'rgba(255,255,255,0.15)', fontSize: 10, marginTop: 'auto',
     paddingBottom: 24, fontFamily: 'monospace',
   },
 });

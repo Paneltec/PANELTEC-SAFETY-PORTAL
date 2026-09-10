@@ -82,7 +82,7 @@ export default function WelcomeScreen() {
           <View style={s.logoCircle}>
             <Ionicons name="qr-code" size={40} color={Colors.orange} />
           </View>
-          <Text style={s.title}>Device Setup</Text>
+          <Text style={s.title}>Paneltec Group</Text>
           <Text style={s.subtitle}>
             Scan the QR code from your admin install page to provision this device.
           </Text>

@@ -53,7 +53,6 @@ from auth import create_access_token, verify_password
 from db import db
 
 router = APIRouter(prefix="/auth/mobile", tags=["mobile-auth"])
-
 PIN_RE = re.compile(r"^\d{4}$")
 
 # Lockout policy. Stricter than the admin-console PIN because a mobile
@@ -298,3 +297,77 @@ async def pin_login(body: MobilePinLoginIn, request: Request) -> dict:
         "session_token_expires_at": expires_at,
         "permissions_snapshot":     perms,
     }
+
+
+# ─────────────── GET /auth/mobile/device-hint ───────────────
+#
+# v58.13.132ck — Pre-login "Welcome back <first-name>" hint.
+#
+# Strategy: the newest successful `pin-login` call claims the device,
+# so `users.last_mobile_device_id` is the current owner of the handset.
+# This endpoint is called by the mobile PIN screen on cold boot to
+# personalise the greeting BEFORE the user types their PIN. Nothing
+# sensitive is returned — first name, role label, org name only.
+# Enough to greet, not enough to phish.
+#
+# Auth: none required (this is a pre-login hint). Rate-limited to
+# 60 requests/minute per peer IP so an attacker can't enumerate device
+# IDs. The `@limiter.limit(...)` decorator is a no-op in tests where
+# `RATE_LIMIT_ENABLED=false` — see `rate_limit.py:10`.
+
+_limiter = __import__("rate_limit", fromlist=["limiter"]).limiter
+
+
+def _first_name(user: dict) -> str:
+    """Extract a safe first name from the user doc. Prefers an explicit
+    `first_name` field; falls back to the first whitespace-separated
+    token of `name`; falls back to the local part of the email; final
+    fallback is `"there"` so the greeting always has a subject."""
+    fn = (user.get("first_name") or "").strip()
+    if fn:
+        return fn
+    name = (user.get("name") or "").strip()
+    if name:
+        return name.split()[0]
+    email = (user.get("email") or "").strip()
+    if email and "@" in email:
+        return email.split("@", 1)[0].split(".")[0].capitalize()
+    return "there"
+
+
+@router.get("/device-hint")
+@_limiter.limit("60/minute")
+async def device_hint(request: Request, device_id: str = "") -> dict:
+    """Return the bound user's safe greeting fields for a given device_id.
+
+    · `bound=true`  + first_name + role_label + org_name if the device
+      is the most-recent successful PIN login for a user.
+    · `bound=false` otherwise (including when `device_id` is blank —
+      never leaks a "there's SOMEONE bound to something" oracle).
+    """
+    device_id = (device_id or "").strip()
+    if not device_id:
+        return {"bound": False}
+
+    user = await db.users.find_one(
+        {"last_mobile_device_id": device_id},
+        {"_id": 0, "id": 1, "name": 1, "first_name": 1, "email": 1,
+         "role_id": 1, "org_id": 1, "status": 1},
+    )
+    if not user:
+        return {"bound": False}
+    # Disabled accounts don't get a friendly greeting — behaves like
+    # unbound so the mobile client just shows the generic PIN pad.
+    if (user.get("status") or "").lower() == "disabled":
+        return {"bound": False}
+
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, "name": 1}) or {}
+    role_label = await _role_label(user.get("role_id"))
+    return {
+        "bound":            True,
+        "user_first_name":  _first_name(user),
+        "role_label":       role_label,
+        "org_name":         org.get("name"),
+    }
+

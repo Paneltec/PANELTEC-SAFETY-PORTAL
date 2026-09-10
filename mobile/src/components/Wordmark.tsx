@@ -1,6 +1,7 @@
 /**
- * Wordmark — Paneltec Civil brand mark.
- * Orange chevron accent + PANELTEC CIVIL text.
+ * Wordmark — Paneltec Group brand mark.
+ * Orange chevron accent + PANELTEC GROUP text.
+ * v58.13.132cl — renamed from "PANELTEC CIVIL" to "PANELTEC GROUP" (holding company).
  */
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
@@ -28,7 +29,7 @@ export default function Wordmark({ size = 'md', color = Colors.white, showSubtit
       </View>
       <View style={{ gap: 2 }}>
         <Text style={[styles.title, { fontSize: s.title, color }]}>
-          PANELTEC <Text style={{ color: Colors.orange }}>CIVIL</Text>
+          PANELTEC <Text style={{ color: Colors.orange }}>GROUP</Text>
         </Text>
         {showSubtitle && (
           <Text style={[styles.subtitle, { fontSize: s.subtitle, color: color === Colors.white ? 'rgba(255,255,255,0.6)' : Colors.textTertiary }]}>

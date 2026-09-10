@@ -1,7 +1,8 @@
 /**
- * Mobile auth service — v58.13.132cj rewrite.
+ * Mobile auth service — v58.13.132cl.
  *
  * PIN-login flow using POST /api/auth/mobile/pin-login.
+ * Device-hint flow using GET /api/auth/mobile/device-hint.
  * Role auto-detection from backend response.
  * Session token stored in expo-secure-store (native) / AsyncStorage (web).
  * Device ID persisted across sessions; session cleared on logout.
@@ -82,6 +83,13 @@ export interface PinLoginResponse {
   permissions_snapshot: Record<string, Record<string, boolean>>;
 }
 
+export interface DeviceHintResponse {
+  bound: boolean;
+  user_first_name?: string;
+  role_label?: string;
+  org_name?: string;
+}
+
 export interface PinLoginError {
   error: 'invalid_pin' | 'account_disabled' | 'pin_expired';
 }
@@ -103,6 +111,49 @@ export async function setDeviceId(id: string): Promise<void> {
 export async function isProvisioned(): Promise<boolean> {
   const id = await getDeviceId();
   return !!id;
+}
+
+// ── Device Hint (v58.13.132cl) ───────────────────────────────────
+// GET /api/auth/mobile/device-hint?device_id=<uuid>
+// No auth. Returns {bound, user_first_name?, role_label?, org_name?}.
+// In-memory cache for current session — doesn't re-fetch on every render.
+let _hintCache: { deviceId: string; result: DeviceHintResponse } | null = null;
+
+export async function fetchDeviceHint(deviceId?: string): Promise<DeviceHintResponse> {
+  const id = deviceId || (await getDeviceId());
+  if (!id) return { bound: false };
+
+  // Return cached if same device_id
+  if (_hintCache && _hintCache.deviceId === id) {
+    return _hintCache.result;
+  }
+
+  try {
+    const resp = await fetch(
+      `${API}/api/auth/mobile/device-hint?device_id=${encodeURIComponent(id)}`,
+      { method: 'GET' },
+    );
+
+    if (resp.status === 429) {
+      // Rate limited — skip greeting, fall back to generic
+      return { bound: false };
+    }
+    if (!resp.ok) {
+      return { bound: false };
+    }
+
+    const data: DeviceHintResponse = await resp.json();
+    _hintCache = { deviceId: id, result: data };
+    return data;
+  } catch {
+    // Network error — skip greeting silently
+    return { bound: false };
+  }
+}
+
+/** Invalidate the in-memory hint cache (e.g. after "Not you?" reset). */
+export function clearDeviceHintCache(): void {
+  _hintCache = null;
 }
 
 // ── PIN Login ────────────────────────────────────────────────────
@@ -170,6 +221,8 @@ export async function pinLogin(
     if (data.permissions_snapshot) {
       await Storage.setItem(KEYS.permissions, JSON.stringify(data.permissions_snapshot));
     }
+    // Invalidate hint cache so next login picks up the new binding
+    clearDeviceHintCache();
     return { ok: true, data };
   } catch {
     return { ok: false, error: 'network' as const };
@@ -245,12 +298,14 @@ export async function clearSession(): Promise<void> {
   await Storage.deleteItem(KEYS.orgName);
   await Storage.deleteItem(KEYS.permissions);
   await Storage.deleteItem(KEYS.employeeId);
+  clearDeviceHintCache();
 }
 
 // Full wipe — also removes device_id (re-provisioning required)
 export async function fullWipe(): Promise<void> {
   await clearSession();
   await Storage.deleteItem(KEYS.deviceId);
+  clearDeviceHintCache();
 }
 
 // ── Legacy shims (keep existing consumers working) ───────────────

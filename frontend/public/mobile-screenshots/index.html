@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Paneltec Civil — v58.13.132cj Mobile Screenshots</title>
+<title>Paneltec Group — v58.13.132cl Mobile Screenshots</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0F172A; color: #fff; }
@@ -11,7 +11,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .header h1 { font-size: 28px; font-weight: 800; }
 .header p { color: rgba(255,255,255,0.5); margin-top: 8px; font-size: 14px; }
 .badge { display: inline-block; background: #F97316; color: #fff; border-radius: 8px; padding: 4px 12px; font-size: 12px; font-weight: 700; margin-top: 8px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; padding: 24px; max-width: 1400px; margin: 0 auto; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; padding: 24px; max-width: 1100px; margin: 0 auto; }
 .card { background: #1E293B; border-radius: 16px; overflow: hidden; transition: transform 0.2s; }
 .card:hover { transform: scale(1.02); }
 .card img { width: 100%; display: block; }
@@ -22,42 +22,31 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 </head>
 <body>
 <div class="header">
-  <h1>Paneltec Civil Field</h1>
-  <p>Mobile App — v58.13.132cj — Onboarding Rewrite: QR Provisioning + PIN Login + Role Auto-Detect</p>
-  <span class="badge">5 Device-Framed Screenshots</span>
+  <h1>Paneltec Group Field</h1>
+  <p>Mobile App — v58.13.132cl — Paneltec Group header + "Welcome back" flow</p>
+  <span class="badge">3 Device-Framed Screenshots</span>
 </div>
 <div class="grid">
   <div class="card">
-    <img src="132cj_01_qr_setup_framed.png" alt="QR Device Setup" loading="lazy">
-    <div class="label">1. QR Device Setup</div>
-    <div class="desc">First-launch provisioning screen. Scan QR from admin install page or enter device ID manually. Quick-setup auto-generates an ID.</div>
+    <img src="132cl_01_pin_bound_framed.png" alt="PIN — Bound Device" loading="lazy">
+    <div class="label">1. PIN Screen — Bound Device</div>
+    <div class="desc">"Welcome back Stephen" greeting with role/org subtitle (Admin · Paneltec Pty Ltd). "Not you?" unlink link visible. PANELTEC GROUP wordmark at top.</div>
   </div>
   <div class="card">
-    <img src="132cj_02_pin_entry_framed.png" alt="PIN Entry" loading="lazy">
-    <div class="label">2. PIN Entry</div>
-    <div class="desc">4-digit numeric keypad with native-feeling large touch targets. Paneltec wordmark. Device ID shown at bottom. PIN dots fill as you type.</div>
+    <img src="132cl_02_pin_unbound_framed.png" alt="PIN — Unbound Device" loading="lazy">
+    <div class="label">2. PIN Screen — Unbound Device</div>
+    <div class="desc">Generic "Enter your 4-digit PIN" title. First-time setup hint. No "Not you?" link. PANELTEC GROUP wordmark. Device auto-links after login.</div>
   </div>
   <div class="card">
-    <img src="132cj_03_pin_error_framed.png" alt="PIN Error" loading="lazy">
-    <div class="label">3. PIN Error Handling</div>
-    <div class="desc">Inline error banner after wrong PIN. Dots shake and reset. Rate limiting shows countdown timer (5 fails → 60s, 10 → 15min, 20 → 24h).</div>
-  </div>
-  <div class="card">
-    <img src="132cj_04_admin_home_framed.png" alt="Admin Dashboard" loading="lazy">
-    <div class="label">4. Admin Dashboard (role: admin)</div>
-    <div class="desc">Full 8-module grid: Forms, Workers, Sites, SWMS, Fleet, Reports, Settings, Audit Log. "Full system access" subtitle. Avatar initials.</div>
-  </div>
-  <div class="card">
-    <img src="132cj_05_viatec_home_framed.png" alt="Viatec Traffic Home" loading="lazy">
-    <div class="label">5. Viatec Traffic Home (role: viatec_traffic)</div>
-    <div class="desc">Purple header with Viatec brand accent. 6 modules: Forms, Site Scan, Pre-Starts, Incident Report, SWMS, Timesheets. Traffic management focus.</div>
+    <img src="132cl_03_home_branded_framed.png" alt="Home — Paneltec Group" loading="lazy">
+    <div class="label">3. Home — Paneltec Group Header</div>
+    <div class="desc">"PANELTEC GROUP" brand text in header. Role chip still shows actual role (Admin). 8-module grid for admin. Greeting with user name.</div>
   </div>
 </div>
 <div class="note">
-  Division picker eliminated. Role auto-detected from POST /api/auth/mobile/pin-login response.<br>
-  4 role-based landings: admin (8 modules), paneltec_civil (6), viatec_traffic (6), external_contractor (2).<br>
-  Sentry native DISABLED. expo-notifications not auto-initialized. Crash-safe onboarding path.<br>
-  Session token in expo-secure-store (native) / AsyncStorage (web). Device ID preserved across logouts.
+  Device-hint: GET /api/auth/mobile/device-hint?device_id=&lt;uuid&gt; — no auth, cached in-memory.<br>
+  Bound device → personalized greeting. Unbound → generic prompt. 429/network → graceful fallback.<br>
+  "Not you?" → fullWipe() → re-provisioning. Device re-claims on next successful pin-login.
 </div>
 </body>
 </html>
