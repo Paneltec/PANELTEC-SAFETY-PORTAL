@@ -2,7 +2,7 @@
 
 Multi-user WHS / safety compliance platform for civil construction operations, with authentic role-based access, AI-assisted document generation, live compliance dashboard, and full offline-capable mobile workflow.
 
-- **Current version:** `paneltec-v160.0.1`
+- **Current version:** `paneltec-v160.3.9.58.13.132da`
 - **Stack:** FastAPI · React (CRA) · MongoDB · Expo React Native
 - **Status:** Active development · dev + preview environments only (not production-hardened)
 
@@ -199,6 +199,7 @@ python -m pytest backend/tests/test_worker_leaks.py -v
 
 Full changelog lives in [`memory/PRD.md`](memory/PRD.md).
 
+- **v160.3.9.58.13.132da** (2026-09-10) — Mobile takeover (post-.132cx): QR-card onboarding restored (`/onboard` route, token → confirm → PIN → sign-in), `@sentry/react-native` removed (Expo SDK 54 / RN 0.81 mismatch, suspected launch-crash cause), worker screens rebuilt to the approved Option B design (Home · QR Scan · My Work · Profile tabs, job accept/decline/navigate/sign-on flow, capture list/new/detail for all five record types), Android APK CI build published to the "latest" GitHub release on every push to `main` touching `mobile/`.
 - **v160.0.1** (2026-07-04) — Compliance Hub tile hidden for workers regardless of child modules; COMPLIANCE SNAPSHOT chip row also hidden. Visually confirmed on the Expo preview.
 - **v160.0** — Phone-app own-only sweep. WATCH card `attention_band='hidden'` for non-privileged. Email Outbox auto-scoped by `created_by == me OR to contains me.email`. Settings tab admin tiles hidden for workers. Inductions added to team-scoped resources.
 - **v159.4** — Frontend wire-up: per-user Permissions modal with override-count chip, `team_view` column, effective-value chip. Doc Library bulk-restrict modal. Preset-delete confirmation with assignees warning.

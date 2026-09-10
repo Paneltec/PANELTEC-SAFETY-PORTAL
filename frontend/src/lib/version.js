@@ -12980,7 +12980,29 @@
 //   · Session token stored via expo-secure-store (native) / AsyncStorage (web).
 //   · Logout clears session but preserves device_id.
 //   · RUNNING_VERSION + MOBILE_BUNDLE_VERSION + CACHE_VERSION + EXPECTED_CACHE_VERSION all bumped.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cx';
+// v58.13.132da — Mobile takeover (post-.132cx): QR-card onboarding restored,
+// Android APK CI build, worker screens rebuilt to the approved Option B
+// design (Home / QR Scan / My Work / Profile).
+//   · mobile/app/onboard.tsx restores the token → confirm → PIN → sign-in
+//     flow the .132n rewrite had dropped; welcome screen scans the
+//     onboarding QR or accepts a typed setup code (no device-id prompt).
+//   · @sentry/react-native 6.x removed (not built for Expo SDK 54 / RN
+//     0.81 — a prime suspect for the on-device launch crash); root layout's
+//     leftover `Sentry.wrap` also dropped (was undefined → crashed the
+//     provider tree).
+//   · New Home/QR-Scan/My-Work/Profile tab set; capture list/new/detail for
+//     pre-starts, hazards, incidents, site diary, inspections; job
+//     accept/decline + navigate + sign-on flow tied to daily job
+//     assignments.
+//   · Backend: capture record POSTs no longer require workspace_id from the
+//     phone (server fills it from the user); site sign-on stores job_id.
+//   · .github/workflows/android-apk.yml — builds + publishes the field APK
+//     to the "latest" GitHub release on every push to main touching mobile/.
+//   · RUNNING_VERSION + MOBILE_BUNDLE_VERSION + CACHE_VERSION +
+//     EXPECTED_CACHE_VERSION all bumped (mobile/backend ship, no frontend
+//     UI shell change — CACHE_VERSION bumped anyway per the version-file
+//     sanity guard, which requires all 3 canonical strings to agree).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132da';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13001,7 +13023,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cx';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132cx';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132da';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
