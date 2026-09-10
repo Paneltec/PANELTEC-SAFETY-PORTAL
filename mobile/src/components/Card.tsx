@@ -22,11 +22,11 @@ export default function Card({ children, style, testID }: Props) {
 
 const s = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: Spacing.base,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.cardBorder,
     boxShadow: '0px 1px 3px rgba(0,0,0,0.06)',
     elevation: 2,
   },

@@ -132,7 +132,7 @@ class PreStartSignOn(BaseModel):
 
 
 class PreStartIn(BaseModel):
-    workspace_id: str
+    workspace_id: str = ""  # optional from mobile — server fills from the user's default
     date: str  # YYYY-MM-DD
     crew_lead: str
     work_summary: str
@@ -159,7 +159,7 @@ class PreStartIn(BaseModel):
 
 
 class SiteDiaryIn(BaseModel):
-    workspace_id: str
+    workspace_id: str = ""  # optional from mobile — server fills from the user's default
     date: str
     raw_notes: str
     structured_log: Optional[dict] = None
@@ -168,7 +168,7 @@ class SiteDiaryIn(BaseModel):
 
 
 class HazardIn(BaseModel):
-    workspace_id: str
+    workspace_id: str = ""  # optional from mobile — server fills from the user's default
     title: str
     description: str = ""
     photo_url: Optional[str] = None
@@ -187,7 +187,7 @@ class HazardIn(BaseModel):
 
 
 class IncidentIn(BaseModel):
-    workspace_id: str
+    workspace_id: str = ""  # optional from mobile — server fills from the user's default
     title: str
     occurred_at: str  # ISO
     location: Optional[str] = None
@@ -214,7 +214,7 @@ class InspectionChecklistItem(BaseModel):
 
 
 class InspectionIn(BaseModel):
-    workspace_id: str
+    workspace_id: str = ""  # optional from mobile — server fills from the user's default
     template_name: str
     date: str
     checklist_items: List[InspectionChecklistItem] = Field(default_factory=list)

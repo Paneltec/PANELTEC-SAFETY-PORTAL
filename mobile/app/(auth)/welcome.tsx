@@ -14,52 +14,62 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
-import { isProvisioned, setDeviceId, isPreviewSession, hasValidSession } from '../../src/services/auth';
+import {
+  isProvisioned, isPreviewSession, hasValidSession, extractOnboardingToken,
+} from '../../src/services/auth';
+
+/**
+ * Welcome — first screen on a phone that has never been set up.
+ *
+ * The worker scans the QR code on their onboarding card (printed from the
+ * worker portal). Normally the phone camera opens the web page which hands
+ * off to `paneltec://onboard?token=…`; scanning from INSIDE the app here is
+ * the shortcut for a phone that already has the app installed. Both paths
+ * land on /onboard, which reads the token and sets up the worker's profile
+ * and PIN. There is no "device ID" for a worker to know or type.
+ */
+// expo-camera is loaded lazily so the web preview / static export never
+// touches native camera code.
+type CamModule = { CameraView: React.ComponentType<any>; useCameraPermissions: () => any };
+const Cam: CamModule | null = Platform.OS === 'web' ? null : (() => {
+  try { return require('expo-camera') as CamModule; } catch { return null; }
+})();
+const useCameraPermissionsSafe: () => any = Cam ? Cam.useCameraPermissions : () => [null, async () => {}];
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [checking, setChecking] = useState(true);
-  const [manualId, setManualId] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [scanned, setScanned] = useState(false);
+  const [showManual, setShowManual] = useState(Platform.OS === 'web');
+  const [permission, requestPermission] = useCameraPermissionsSafe();
 
   useEffect(() => {
     (async () => {
-      // Preview bypass
-      if (isPreviewSession()) {
-        router.replace('/(tabs)/home');
-        return;
-      }
-      // Already has a valid session? Go straight to home
-      if (await hasValidSession()) {
-        router.replace('/(tabs)/home');
-        return;
-      }
-      // Already provisioned? Go to PIN
-      if (await isProvisioned()) {
-        router.replace('/(auth)/pin-entry');
-        return;
-      }
+      if (isPreviewSession()) { router.replace('/(tabs)/home'); return; }
+      if (await hasValidSession()) { router.replace('/(tabs)/home'); return; }
+      if (await isProvisioned()) { router.replace('/(auth)/pin-entry'); return; }
       setChecking(false);
     })();
   }, []);
 
-  const handleProvision = async (deviceId: string) => {
-    const cleaned = deviceId.trim();
-    if (!cleaned) {
-      setError('Please enter or scan a valid device ID');
+  useEffect(() => {
+    if (!checking && Platform.OS !== 'web' && permission && !permission.granted && permission.canAskAgain) {
+      requestPermission();
+    }
+  }, [checking, permission]);
+
+  const go = (raw: string) => {
+    const token = extractOnboardingToken(raw);
+    if (!token) {
+      setError("That doesn't look like a Paneltec setup code. Scan the QR on your onboarding card, or type the code printed under it.");
+      setScanned(false);
       return;
     }
-    setSaving(true);
     setError('');
-    try {
-      await setDeviceId(cleaned);
-      router.replace('/(auth)/pin-entry');
-    } catch {
-      setError('Failed to save device ID');
-    }
-    setSaving(false);
+    router.replace({ pathname: '/onboard', params: { token } } as never);
   };
 
   if (checking) {
@@ -71,83 +81,86 @@ export default function WelcomeScreen() {
     );
   }
 
+  const cameraOk = !!Cam && !!permission?.granted;
+  const CameraView = Cam ? Cam.CameraView : null;
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
-    >
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View testID="welcome-screen" style={[s.container, { paddingTop: insets.top + 32 }]}>
-        {/* Header */}
         <View style={s.hero}>
           <View style={s.logoCircle}>
             <Ionicons name="qr-code" size={40} color={Colors.orange} />
           </View>
           <Text style={s.title}>Paneltec Group</Text>
           <Text style={s.subtitle}>
-            Scan the QR code from your admin install page to provision this device.
+            Scan the QR code on your onboarding card to set up this phone.
           </Text>
         </View>
 
-        {/* QR Scanner placeholder — on web we show manual input */}
         <View style={s.scanSection}>
-          <View style={s.scanFrame}>
-            <Ionicons name="scan-outline" size={80} color="rgba(255,255,255,0.2)" />
-            <Text style={s.scanHint}>
-              {Platform.OS === 'web'
-                ? 'Camera not available on web preview.\nEnter device ID manually below.'
-                : 'Point camera at the QR code'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Manual entry fallback */}
-        <View style={s.manualSection}>
-          <Text style={s.manualLabel}>Or enter device ID manually:</Text>
-          <View style={s.inputRow}>
-            <TextInput
-              testID="device-id-input"
-              style={s.input}
-              value={manualId}
-              onChangeText={(t) => { setManualId(t); setError(''); }}
-              placeholder="e.g. dev_abc123xyz"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              testID="provision-btn"
-              style={[s.goBtn, (!manualId.trim() || saving) && s.goBtnDisabled]}
-              onPress={() => handleProvision(manualId)}
-              disabled={!manualId.trim() || saving}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color={Colors.white} />
-              ) : (
-                <Ionicons name="arrow-forward" size={22} color={Colors.white} />
+          {cameraOk && CameraView ? (
+            <View style={s.cameraWrap}>
+              <CameraView
+                testID="welcome-camera"
+                style={s.camera}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={scanned ? undefined : ({ data }: { data: string }) => { setScanned(true); go(data); }}
+              />
+              <View pointerEvents="none" style={s.reticle} />
+            </View>
+          ) : (
+            <View style={s.scanFrame}>
+              <Ionicons name="scan-outline" size={80} color="rgba(255,255,255,0.2)" />
+              <Text style={s.scanHint}>
+                {Platform.OS === 'web'
+                  ? 'Camera is not available in the web preview.\nType the setup code below.'
+                  : 'Camera permission is needed to scan.\nOr type the setup code below.'}
+              </Text>
+              {Platform.OS !== 'web' && (
+                <TouchableOpacity testID="welcome-allow-camera" onPress={() => requestPermission()} style={s.smallBtn}>
+                  <Text style={s.smallBtnText}>Allow camera</Text>
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
-          </View>
-          {!!error && (
-            <Text testID="provision-error" style={s.error}>{error}</Text>
+            </View>
           )}
         </View>
 
-        {/* Dev shortcut: auto-provision with a generated ID */}
-        <TouchableOpacity
-          testID="auto-provision-btn"
-          style={s.devBtn}
-          onPress={() => {
-            const autoId = `dev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-            handleProvision(autoId);
-          }}
-        >
-          <Ionicons name="flash-outline" size={16} color={Colors.orange} />
-          <Text style={s.devBtnText}>Quick setup (generate device ID)</Text>
-        </TouchableOpacity>
+        {showManual ? (
+          <View style={s.manualSection}>
+            <Text style={s.manualLabel}>Setup code (printed under the QR)</Text>
+            <View style={s.inputRow}>
+              <TextInput
+                testID="setup-code-input"
+                style={s.input}
+                value={code}
+                onChangeText={(t) => { setCode(t); setError(''); }}
+                placeholder="Paste link or type code"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                testID="setup-code-go"
+                style={[s.goBtn, !code.trim() && s.goBtnDisabled]}
+                onPress={() => go(code)}
+                disabled={!code.trim()}
+              >
+                <Ionicons name="arrow-forward" size={22} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity testID="welcome-show-manual" style={s.devBtn} onPress={() => setShowManual(true)}>
+            <Ionicons name="keypad-outline" size={16} color={Colors.orange} />
+            <Text style={s.devBtnText}>Type the setup code instead</Text>
+          </TouchableOpacity>
+        )}
+        {!!error && <Text testID="welcome-error" style={s.error}>{error}</Text>}
 
         <Text style={s.footer}>
-          Your device ID links this phone to your worker account.{'\n'}
-          Contact your supervisor if you don&apos;t have a QR code.
+          Your onboarding card comes from the office.{'\n'}
+          No card yet? Ask your supervisor.
         </Text>
       </View>
     </KeyboardAvoidingView>
@@ -177,6 +190,11 @@ const s = StyleSheet.create({
   },
 
   scanSection: { alignItems: 'center', marginBottom: 24 },
+  cameraWrap: { width: 240, height: 240, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' },
+  camera: { width: '100%', height: '100%' },
+  reticle: { position: 'absolute', left: 30, top: 30, right: 30, bottom: 30, borderWidth: 2, borderColor: Colors.orange, borderRadius: 14 },
+  smallBtn: { marginTop: 4, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, backgroundColor: 'rgba(249,115,22,0.15)', minHeight: 44, justifyContent: 'center' },
+  smallBtnText: { color: Colors.orange, fontWeight: '700', fontSize: 13 },
   scanFrame: {
     width: 200, height: 200, borderRadius: 20,
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.12)', borderStyle: 'dashed',

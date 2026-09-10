@@ -329,6 +329,13 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
     @r.post("", status_code=201)
     async def create_item(body: model, user: dict = Depends(require_permission(resource, "edit"))):
         payload = body.model_dump()
+        # Mobile records may arrive without a workspace — fill from the user
+        # so a phone never has to know workspace ids.
+        if "workspace_id" in payload and not payload.get("workspace_id"):
+            payload["workspace_id"] = (
+                user.get("workspace_id") or user.get("default_workspace_id")
+                or ((user.get("workspace_ids") or [None])[0]) or "default"
+            )
         doc = {
             "id": new_id(),
             "org_id": user["org_id"],

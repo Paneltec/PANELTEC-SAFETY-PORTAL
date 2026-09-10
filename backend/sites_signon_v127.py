@@ -313,6 +313,7 @@ class SignOnIn(BaseModel):
     gps_long: float | None = None
     gps_accuracy_m: float | None = None
     answers: list[SignOnAnswerIn] = []
+    job_id: str | None = None   # daily-job assignment this sign-on belongs to (mobile)
 
 
 @router.post("/{site_id}/signon-v127")
@@ -341,6 +342,7 @@ async def signon_v127(site_id: str, body: SignOnIn,
         "id": new_id(),
         "org_id": site["org_id"],
         "site_id": site_id,
+        "job_id": body.job_id,
         "site_name": site.get("name"),
         "worker_id": user.get("worker_id") or user["id"],
         "signed_by_user_id": user["id"],

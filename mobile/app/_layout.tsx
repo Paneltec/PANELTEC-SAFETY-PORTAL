@@ -14,33 +14,15 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
-import * as Sentry from '@sentry/react-native';
+// Sentry removed in the takeover (post-.132cx): @sentry/react-native 6.x is not
+// built for Expo SDK 54 / RN 0.81 and was a likely cause of the launch crash.
+// Crash capture stays local via ErrorBoundary + CrashRecoveryGate below.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ErrorBoundary, CrashRecoveryGate,
   LAST_CRASH_KEY, LAST_REJECTION_KEY, BOOT_TRACE_KEY,
 } from '../src/components/ErrorBoundary';
 
-// v58.13.132cj — Sentry init: NATIVE DISABLED to avoid Android pre-JS crash.
-// JS-level capture still works for React errors + unhandled promises.
-const _SENTRY_DSN = (process.env.EXPO_PUBLIC_SENTRY_DSN || '').trim();
-if (_SENTRY_DSN.startsWith('https://')) {
-  try {
-    Sentry.init({
-      dsn: _SENTRY_DSN,
-      environment: 'preview',
-      tracesSampleRate: 0.1,
-      release: 'paneltec-field-app@1.0.7+138',
-      debug: false,
-      enableNative: false,           // ← DISABLED: suspected crash trigger
-      enableAutoSessionTracking: false, // ← DISABLED: native dependency
-    });
-  } catch (e) {
-    console.warn('[.132cj] Sentry.init failed', e);
-  }
-}
-
-// Keep splash on-screen until mount completes
 try { SplashScreen.preventAutoHideAsync().catch(() => {}); } catch {}
 
 // Global JS error + unhandled rejection handlers
@@ -137,7 +119,7 @@ function PreviewBanner() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+export default RootLayout;
 
 function RootLayout() {
   useEffect(() => {
@@ -159,10 +141,14 @@ function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
+            <Stack.Screen name="onboard" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="visitor" />
             <Stack.Screen name="forms" />
             <Stack.Screen name="profile" />
+            <Stack.Screen name="capture" />
+            <Stack.Screen name="job" />
+            <Stack.Screen name="site" />
           </Stack>
         </QueryClientProvider>
       </CrashRecoveryGate>

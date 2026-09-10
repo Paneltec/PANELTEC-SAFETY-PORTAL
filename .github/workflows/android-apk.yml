@@ -1,0 +1,134 @@
+# Builds the Paneltec field app APK on every push to main that touches
+# mobile/, and publishes it to the GitHub Release tagged "latest".
+#
+# Install on a phone: Releases page → "latest" → paneltec-field-app.apk.
+# No Expo/EAS account needed — this uses GitHub's Android build image.
+#
+# Signing: a debug-style keystore is generated on the runner unless the
+# repo has an ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD secret pair,
+# in which case that keystore is used so upgrades install over the top of
+# the previous version (Android refuses to upgrade across different keys).
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_PUBLIC_BACKEND_URL: ${{ vars.EXPO_PUBLIC_BACKEND_URL || 'https://whs-compliance.preview.emergentagent.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: mobile/yarn.lock
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install JS dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Generate the native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Prepare signing keystore
+        id: keystore
+        run: |
+          set -e
+          mkdir -p android/app/keys
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_B64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > android/app/keys/release.keystore
+            echo "STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS || 'paneltec' }}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "source=secret" >> "$GITHUB_OUTPUT"
+          else
+            keytool -genkeypair -v -storetype PKCS12 \
+              -keystore android/app/keys/release.keystore \
+              -alias paneltec -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass paneltec-dev -keypass paneltec-dev \
+              -dname "CN=Paneltec Field, O=Paneltec, C=AU"
+            echo "STORE_PASSWORD=paneltec-dev" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=paneltec" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=paneltec-dev" >> "$GITHUB_ENV"
+            echo "source=generated" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Point Gradle at the keystore
+        run: |
+          cat >> android/gradle.properties <<EOF
+          PANELTEC_STORE_FILE=keys/release.keystore
+          PANELTEC_STORE_PASSWORD=${STORE_PASSWORD}
+          PANELTEC_KEY_ALIAS=${KEY_ALIAS}
+          PANELTEC_KEY_PASSWORD=${KEY_PASSWORD}
+          EOF
+          # Swap the generated debug signing config for ours in release builds.
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("android/app/build.gradle")
+          s = p.read_text()
+          s = s.replace(
+              "signingConfigs {\n        debug {",
+              "signingConfigs {\n        paneltec {\n            storeFile file(PANELTEC_STORE_FILE)\n            storePassword PANELTEC_STORE_PASSWORD\n            keyAlias PANELTEC_KEY_ALIAS\n            keyPassword PANELTEC_KEY_PASSWORD\n        }\n        debug {", 1)
+          s = re.sub(r"(release \{[^}]*?)signingConfig signingConfigs\.debug", r"\1signingConfig signingConfigs.paneltec", s, count=1, flags=re.S)
+          p.write_text(s)
+          PY
+
+      - name: Build release APK
+        run: cd android && ./gradlew --no-daemon assembleRelease
+
+      - name: Name the APK
+        id: apk
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          SHA=$(git rev-parse --short HEAD)
+          OUT="paneltec-field-app-v${VERSION}-${SHA}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$OUT"
+          cp android/app/build/outputs/apk/release/app-release.apk paneltec-field-app.apk
+          echo "file=$OUT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.file }}
+          path: mobile/${{ steps.apk.outputs.file }}
+
+      - name: Publish to the "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Paneltec Field App — latest build
+          body: |
+            Version ${{ steps.apk.outputs.version }} · commit ${{ github.sha }}
+            Signing: ${{ steps.keystore.outputs.source }} keystore
+
+            Install on Android: download **paneltec-field-app.apk**, open it, allow install from this source.
+          files: |
+            mobile/paneltec-field-app.apk
+            mobile/${{ steps.apk.outputs.file }}
+          prerelease: true
