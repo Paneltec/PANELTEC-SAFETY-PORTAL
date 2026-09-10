@@ -189,23 +189,47 @@ async def pin_login(body: MobilePinLoginIn, request: Request) -> dict:
     bucket = _bucket_key(body.device_id, request)
     await _check_lockout(bucket)
 
-    # PIN space is 10 000 — iterate users that have a `pin_hash` set and
-    # bcrypt-compare. Paneltec has 6 users with PINs at ship time; even
-    # at 1 000 users this is well under 100 ms with default bcrypt cost.
+    # v58.13.132cp / .132cx — Mobile PIN field precedence:
+    #   1) Match against `users.mobile_pin_hash` FIRST (canonical
+    #      mobile-app field set by admin-console PIN provisioning).
+    #   2) Fall back to `users.pin_hash` (legacy invite-flow field)
+    #      when the mobile hash misses, honouring `pin_expires_at`.
+    # Rate-limit bucket is SHARED so cross-field brute force is
+    # capped uniformly. No `_debug_pin_field` leaks to the response.
     match: Optional[dict] = None
+    matched_field: Optional[str] = None
+
     async for u in db.users.find(
-        {"pin_hash": {"$exists": True, "$ne": None}},
+        {"mobile_pin_hash": {"$exists": True, "$ne": None}},
         {"_id": 0, "id": 1, "email": 1, "name": 1, "role": 1,
-         "role_id": 1, "org_id": 1, "pin_hash": 1, "pin_expires_at": 1,
+         "role_id": 1, "org_id": 1, "mobile_pin_hash": 1,
          "status": 1, "token_version": 1, "activation_status": 1},
     ):
         try:
             if bcrypt.checkpw(body.pin.encode("utf-8"),
-                              (u.get("pin_hash") or "").encode("utf-8")):
+                              (u.get("mobile_pin_hash") or "").encode("utf-8")):
                 match = u
+                matched_field = "mobile_pin_hash"
                 break
         except Exception:
             continue
+
+    if not match:
+        # Fallback — legacy `pin_hash` (invite-flow), with expiry.
+        async for u in db.users.find(
+            {"pin_hash": {"$exists": True, "$ne": None}},
+            {"_id": 0, "id": 1, "email": 1, "name": 1, "role": 1,
+             "role_id": 1, "org_id": 1, "pin_hash": 1, "pin_expires_at": 1,
+             "status": 1, "token_version": 1, "activation_status": 1},
+        ):
+            try:
+                if bcrypt.checkpw(body.pin.encode("utf-8"),
+                                  (u.get("pin_hash") or "").encode("utf-8")):
+                    match = u
+                    matched_field = "pin_hash"
+                    break
+            except Exception:
+                continue
 
     if not match:
         locked = await _record_failure(bucket)
@@ -219,24 +243,27 @@ async def pin_login(body: MobilePinLoginIn, request: Request) -> dict:
             )
         raise HTTPException(401, detail={"error": "invalid_pin"})
 
-    # Expiry check — the invite flow sets `pin_expires_at`; a null value
-    # means "never expires" (per Stephen's brief for permanent PIN
-    # onboarding after the mobile refresh).
-    exp_iso = match.get("pin_expires_at")
-    if exp_iso:
-        try:
-            exp = datetime.fromisoformat(exp_iso)
-            if exp.tzinfo is None:
-                exp = exp.replace(tzinfo=timezone.utc)
-            if exp < _now():
-                # Counted as a hit for lockout purposes so an attacker
-                # brute-forcing expired PINs doesn't get infinite tries.
-                await _record_failure(bucket)
-                raise HTTPException(401, detail={"error": "pin_expired"})
-        except HTTPException:
-            raise
-        except Exception:
-            pass  # unparseable expiry → treat as null
+    # Expiry check — the invite flow sets `pin_expires_at` on the
+    # legacy `pin_hash` field ONLY. `mobile_pin_hash` matches skip the
+    # check (canonical mobile PINs are permanent per Stephen's
+    # `.132cq` brief). A null value on the legacy field also means
+    # "never expires".
+    if matched_field == "pin_hash":
+        exp_iso = match.get("pin_expires_at")
+        if exp_iso:
+            try:
+                exp = datetime.fromisoformat(exp_iso)
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=timezone.utc)
+                if exp < _now():
+                    # Counted as a hit for lockout purposes so an attacker
+                    # brute-forcing expired PINs doesn't get infinite tries.
+                    await _record_failure(bucket)
+                    raise HTTPException(401, detail={"error": "pin_expired"})
+            except HTTPException:
+                raise
+            except Exception:
+                pass  # unparseable expiry → treat as null
 
     if (match.get("status") or "").lower() == "disabled":
         raise HTTPException(401, detail={"error": "account_disabled"})

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical, QrCode, Printer } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
 import {
@@ -14,6 +14,7 @@ import {
 } from '@fluentui/react-icons';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { stashInlinePdf } from '../lib/pdfStash';
 import DismissibleHint from '../components/DismissibleHint';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
@@ -2114,6 +2115,47 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 
         {tab === 'profile' && detail && (
           <div className="mt-5 space-y-4">
+            {/* v58.13.132cn / .132cx — Print onboarding card (QR) block.
+                Admin quick action. Disabled when the user has no
+                simpro_employee_id (no worker profile to bind to). */}
+            <div
+              className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-3 flex items-center gap-3"
+              data-testid="user-onboarding-card-block"
+            >
+              <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center ring-1 ring-violet-200">
+                <QrCode size={18} className="text-violet-700" strokeWidth={2.25} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-violet-900">Mobile onboarding card</div>
+                <div className="text-[11px] text-violet-800/70">Prints a QR that binds this user's phone on first launch.</div>
+              </div>
+              <button
+                type="button"
+                disabled={!userRow.simpro_employee_id}
+                title={userRow.simpro_employee_id
+                  ? "Print onboarding card (QR)"
+                  : "This user has no simpro_employee_id → no worker profile to bind."}
+                data-testid="user-print-onboarding-card-btn"
+                onClick={async () => {
+                  try {
+                    const r = await api.get(
+                      `/mobile/onboarding/cards.pdf?user_id=${encodeURIComponent(userRow.id)}`,
+                      { responseType: 'blob' },
+                    );
+                    const { src } = await stashInlinePdf(
+                      r.data, `onboarding_${userRow.id}.pdf`,
+                    );
+                    window.open(src, '_blank');
+                  } catch (e) {
+                    toast.error(e?.response?.data?.detail || 'Print failed');
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Printer size={14} strokeWidth={2.25} />
+                Print
+              </button>
+            </div>
             <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Name</div>
               <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" disabled={!canEdit} data-testid="user-name" /></label>
             <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Email</div>

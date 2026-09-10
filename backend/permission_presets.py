@@ -228,12 +228,65 @@ class ApplyPresetIn(BaseModel):
 
 @router.get("")
 async def list_presets(actor: dict = Depends(require_permission("users", "view"))):
+    """v58.13.132co / .132cx — Clean-slate preset list.
+
+    Return EXACTLY the 4 core-role presets derived from the live
+    `db.roles` collection (Admin / Paneltec Civil / Viatec Traffic
+    Solutions / External Contractor). All are `is_system=True`.
+    Legacy custom presets are surfaced only when they are still
+    active (`deleted_at:None`); the `.132co` migration soft-deleted
+    every pre-existing custom, so this list is normally empty.
+    """
+    # 4 core role labels — the canonical mobile app roles baked
+    # into `mobile/app/(tabs)/home.tsx` ROLE_CONFIG.
+    CORE_ROLE_LABELS = [
+        "Admin",
+        "Paneltec Civil",
+        "Viatec Traffic Solutions",
+        "External Contractor",
+    ]
+
+    # Preset icon per role.
+    CORE_ROLE_ICONS = {
+        "Admin":                    "Crown",
+        "Paneltec Civil":           "HardHat",
+        "Viatec Traffic Solutions": "TrafficCone",
+        "External Contractor":      "UserCheck",
+    }
+
+    system_presets: List[dict] = []
+    for label in CORE_ROLE_LABELS:
+        role_doc = await db.roles.find_one(
+            {"name": label, "deleted_at": None},
+            {"_id": 0, "id": 1, "name": 1},
+        )
+        # Fall back to a builtin skeleton if the role isn't yet
+        # materialised in db.roles for this org.
+        key = _slugify(label)
+        # Map role labels to their permission matrix.
+        if label == "Admin":
+            perms = _full_admin()
+        elif label == "External Contractor":
+            perms = _read_only_auditor()
+        else:
+            perms = _field_supervisor()
+        system_presets.append({
+            "id":          (role_doc or {}).get("id") or key,
+            "key":         key,
+            "label":       label,
+            "description": f"Core role preset for {label}. Managed by system.",
+            "icon":        CORE_ROLE_ICONS.get(label, "Users"),
+            "permissions": perms,
+            "is_system":   True,
+            "is_builtin":  True,
+        })
+
     custom_docs = await db.permission_presets.find(
-        {"org_id": actor["org_id"]}, {"_id": 0},
+        {"org_id": actor["org_id"], "deleted_at": None}, {"_id": 0},
     ).sort("created_at", 1).to_list(500)
     return {
-        "built_in": [_builtin_out(p) for p in BUILT_IN_PRESETS],
-        "custom": [_custom_out(d) for d in custom_docs],
+        "built_in": system_presets,
+        "custom":   [_custom_out(d) for d in custom_docs],
     }
 
 

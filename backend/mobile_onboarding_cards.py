@@ -265,6 +265,7 @@ async def _fetch_workers_async(org_id: str, worker_id: Optional[str],
 async def onboarding_cards_pdf(
     worker_id: Optional[str] = None,
     worker_ids: Optional[str] = None,
+    user_id: Optional[str] = None,
     all: bool = False,  # noqa: A002 — matches user-brief query param name
     expires_days: int = Query(7, ge=1, le=90),
     user: dict = Depends(get_current_user),
@@ -275,8 +276,28 @@ async def onboarding_cards_pdf(
     if worker_ids:
         ids_list = [s.strip() for s in worker_ids.split(",") if s.strip()]
 
+    # v58.13.132cn / .132cx — Admins clicking "Print onboarding card" from
+    # the Users & Permissions drawer pass a `user_id`. Resolve it to a
+    # worker row via the shared `simpro_employee_id` (users.simpro_employee_id
+    # ↔ workers.simpro_employee_id) so the caller doesn't have to know
+    # the worker id.
+    if user_id and not worker_id and not ids_list and not all:
+        u = await db.users.find_one(
+            {"id": user_id, "org_id": user["org_id"]},
+            {"_id": 0, "simpro_employee_id": 1},
+        )
+        if not u or not u.get("simpro_employee_id"):
+            raise HTTPException(404, "No worker profile for that user (missing simpro_employee_id)")
+        w = await db.workers.find_one(
+            {"org_id": user["org_id"], "simpro_employee_id": u["simpro_employee_id"], "deleted_at": None},
+            {"_id": 0, "id": 1},
+        )
+        if not w:
+            raise HTTPException(404, "No worker profile for that user")
+        worker_id = w["id"]
+
     if not worker_id and not ids_list and not all:
-        raise HTTPException(400, "Pass one of: worker_id, worker_ids, all=true")
+        raise HTTPException(400, "Pass one of: user_id, worker_id, worker_ids, all=true")
 
     workers = await _fetch_workers_async(
         user["org_id"], worker_id, ids_list, all_active=all,

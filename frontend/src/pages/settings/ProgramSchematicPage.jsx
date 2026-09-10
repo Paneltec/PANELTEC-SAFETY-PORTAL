@@ -57,6 +57,32 @@ const CLUSTER_ORDER = [
   'settings',
 ];
 
+// v58.13.132cx — Mobile App section. 20 sub-clusters rendered below
+// the top-level clusters under a section-header divider. See
+// `programSchematic.js` for the full node inventory.
+const MOBILE_SUB_CLUSTER_ORDER = [
+  'mobile_before_login',
+  'mobile_home_admin',
+  'mobile_home_paneltec',
+  'mobile_home_viatec',
+  'mobile_home_contractor',
+  'mobile_forms_general',
+  'mobile_forms_swms',
+  'mobile_forms_prestart',
+  'mobile_forms_inspection',
+  'mobile_forms_nearmiss',
+  'mobile_forms_incident',
+  'mobile_forms_toolbox',
+  'mobile_forms_admin',
+  'mobile_forms_hazard',
+  'mobile_forms_risk',
+  'mobile_forms_sitediary',
+  'mobile_profile',
+  'mobile_toolbox',
+  'mobile_modals',
+  'mobile_visitor',
+];
+
 // v58.13.132bj — Cluster → Tailwind accent hue (locked per Stephen's
 // palette). Class names are written out in full so the JIT scanner
 // picks them up (dynamic template strings would be stripped in
@@ -68,6 +94,27 @@ const CLUSTER_ACCENT = {
   compliance:   'amber',
   register:     'rose',
   settings:     'violet',
+  // v58.13.132cx — mobile sub-cluster accents.
+  mobile_before_login:    'teal',
+  mobile_home_admin:      'teal600',
+  mobile_home_paneltec:   'teal600',
+  mobile_home_viatec:     'teal600',
+  mobile_home_contractor: 'teal600',
+  mobile_forms_general:    'cyan',
+  mobile_forms_swms:       'sky600',
+  mobile_forms_prestart:   'cyan600',
+  mobile_forms_inspection: 'indigo',
+  mobile_forms_nearmiss:   'amber',
+  mobile_forms_incident:   'rose',
+  mobile_forms_toolbox:    'teal',
+  mobile_forms_admin:      'slate',
+  mobile_forms_hazard:     'amber',
+  mobile_forms_risk:       'violet',
+  mobile_forms_sitediary:  'indigo400',
+  mobile_profile:          'cyan600',
+  mobile_toolbox:          'sky600',
+  mobile_modals:           'slate',
+  mobile_visitor:          'indigo400',
 };
 
 const ACCENT_STYLES = {
@@ -131,6 +178,14 @@ const ACCENT_STYLES = {
     legendText: 'text-violet-700',
     legendDot:  'bg-violet-500',
   },
+  // v58.13.132cx — mobile sub-cluster accent variants.
+  teal:      { borderLeft: 'border-l-teal-500',   iconBg: 'bg-teal-100',   iconText: 'text-teal-600',   pillBg: 'bg-teal-100',   pillText: 'text-teal-700',   legendBg: 'bg-teal-100',   legendText: 'text-teal-700',   legendDot: 'bg-teal-500' },
+  teal600:   { borderLeft: 'border-l-teal-600',   iconBg: 'bg-teal-100',   iconText: 'text-teal-700',   pillBg: 'bg-teal-100',   pillText: 'text-teal-800',   legendBg: 'bg-teal-100',   legendText: 'text-teal-800',   legendDot: 'bg-teal-600' },
+  cyan:      { borderLeft: 'border-l-cyan-500',   iconBg: 'bg-cyan-100',   iconText: 'text-cyan-600',   pillBg: 'bg-cyan-100',   pillText: 'text-cyan-700',   legendBg: 'bg-cyan-100',   legendText: 'text-cyan-700',   legendDot: 'bg-cyan-500' },
+  cyan600:   { borderLeft: 'border-l-cyan-600',   iconBg: 'bg-cyan-100',   iconText: 'text-cyan-700',   pillBg: 'bg-cyan-100',   pillText: 'text-cyan-800',   legendBg: 'bg-cyan-100',   legendText: 'text-cyan-800',   legendDot: 'bg-cyan-600' },
+  sky600:    { borderLeft: 'border-l-sky-600',    iconBg: 'bg-sky-100',    iconText: 'text-sky-700',    pillBg: 'bg-sky-100',    pillText: 'text-sky-800',    legendBg: 'bg-sky-100',    legendText: 'text-sky-800',    legendDot: 'bg-sky-600' },
+  slate:     { borderLeft: 'border-l-slate-500',  iconBg: 'bg-slate-100',  iconText: 'text-slate-600',  pillBg: 'bg-slate-100',  pillText: 'text-slate-700',  legendBg: 'bg-slate-100',  legendText: 'text-slate-700',  legendDot: 'bg-slate-500' },
+  indigo400: { borderLeft: 'border-l-indigo-400', iconBg: 'bg-indigo-100', iconText: 'text-indigo-500', pillBg: 'bg-indigo-100', pillText: 'text-indigo-600', legendBg: 'bg-indigo-100', legendText: 'text-indigo-600', legendDot: 'bg-indigo-400' },
 };
 
 // v58.13.132bj — Per-cluster lucide icon for the header badge.
@@ -142,6 +197,27 @@ const CLUSTER_ICON = {
   compliance:   'ShieldCheck',
   register:     'Boxes',
   settings:     'Settings',
+  // v58.13.132cx — mobile sub-cluster icons.
+  mobile_before_login:     'LogIn',
+  mobile_home_admin:       'ShieldCheck',
+  mobile_home_paneltec:    'HardHat',
+  mobile_home_viatec:      'TrafficCone',
+  mobile_home_contractor:  'UserCheck',
+  mobile_forms_general:    'FileText',
+  mobile_forms_swms:       'ShieldCheck',
+  mobile_forms_prestart:   'CheckSquare',
+  mobile_forms_inspection: 'Search',
+  mobile_forms_nearmiss:   'AlertTriangle',
+  mobile_forms_incident:   'AlertCircle',
+  mobile_forms_toolbox:    'Users',
+  mobile_forms_admin:      'Lock',
+  mobile_forms_hazard:     'AlertTriangle',
+  mobile_forms_risk:       'Scale',
+  mobile_forms_sitediary:  'BookOpen',
+  mobile_profile:          'UserCircle',
+  mobile_toolbox:          'Users',
+  mobile_modals:           'PanelBottomOpen',
+  mobile_visitor:          'UserPlus',
 };
 
 function IconTile({ node, cluster, onClick }) {
@@ -360,11 +436,64 @@ export default function ProgramSchematicPage() {
               />
             );
           })}
+
+          {/* v58.13.132cx — Mobile App section header + 20 mobile
+              sub-cluster cards. Rendered as a group under a bold
+              divider so the mobile band reads as its own subsystem
+              rather than an extension of the top-level clusters. */}
+          <div
+            className="mt-10 mb-4 flex items-center gap-3"
+            data-testid="schematic-mobile-section"
+          >
+            {(() => {
+              const Smart = LucideIcons.Smartphone || LucideIcons.Circle;
+              return (
+                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center ring-1 ring-teal-200">
+                  <Smart size={20} className="text-teal-700" strokeWidth={2.25} />
+                </div>
+              );
+            })()}
+            <div>
+              <h2
+                className="text-xl font-bold text-slate-900"
+                data-testid="schematic-mobile-section-title"
+              >
+                Mobile App
+              </h2>
+              <p
+                className="text-xs text-slate-500 mt-0.5"
+                data-testid="schematic-mobile-section-subtitle"
+              >
+                {MOBILE_SUB_CLUSTER_ORDER.length} sub-clusters · every
+                mobile screen grouped by navigation tab.
+              </p>
+            </div>
+          </div>
+
+          {MOBILE_SUB_CLUSTER_ORDER.map((subKey) => {
+            const cluster = clusterByKey[subKey];
+            if (!cluster) return null;
+            const clusterNodes = SCHEMATIC_NODES.filter(
+              (n) => n.cluster === subKey,
+            );
+            if (!clusterNodes.length) return null;
+            const accent = CLUSTER_ACCENT[subKey] || 'teal';
+            return (
+              <ClusterCard
+                key={cluster.key}
+                cluster={cluster}
+                accent={accent}
+                nodes={clusterNodes}
+                onNavigate={onNavigate}
+              />
+            );
+          })}
         </div>
 
         <p className="text-xs text-slate-500 mt-8 mb-2">
-          {SCHEMATIC_NODES.length} modules across {SCHEMATIC_CLUSTERS.length}{' '}
-          clusters. Grid adapts 1→2→3→4 columns from mobile to desktop.
+          {SCHEMATIC_NODES.length} modules across {CLUSTER_ORDER.length}{' '}
+          top-level clusters + {MOBILE_SUB_CLUSTER_ORDER.length} Mobile
+          sub-clusters. Grid adapts 1→2→3→4 columns from mobile to desktop.
         </p>
       </div>
     </div>

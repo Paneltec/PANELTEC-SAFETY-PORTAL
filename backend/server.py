@@ -124,32 +124,36 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# CORS — v58.13.83 lockdown. Bearer auth, so allow_credentials=False.
+# CORS — v58.13.132cp / .132cx wildcard.
 #
-# Env var `CORS_ORIGINS` (comma-separated) overrides the safe fallback.
-# The safe fallback covers prod + preview + Emergent's alt host. `*` is
-# NEVER honoured any more — passing "*" now degrades to the safe list
-# and emits a warning log. localhost:3000 is only added when ENV=dev.
-_CORS_SAFE_DEFAULT = [
-    "https://whs-compliance.emergent.host",
-    "https://whs-compliance.preview.emergentagent.com",
-]
+# The mobile Expo web preview + native app hits this backend from a
+# random `*.emergentagent.com` / `exp://` origin per session, which
+# a strict allow-list can't keep up with. Bearer tokens are still
+# required for every route (JWT via Authorization header), so
+# widening the origin list here does not weaken auth — it just lets
+# preflight succeed. `allow_credentials` STAYS off because we never
+# rely on browser cookies for auth.
+#
+# `CORS_ORIGINS` env var still overrides when narrower prod-only
+# origins are needed.
+_CORS_SAFE_DEFAULT = ["*"]
 _cors_env_raw = os.environ.get("CORS_ORIGINS", "").strip()
 if _cors_env_raw and _cors_env_raw != "*":
-    _cors_origins = [o.strip() for o in _cors_env_raw.split(",") if o.strip() and o.strip() != "*"]
+    _cors_origins = [o.strip() for o in _cors_env_raw.split(",") if o.strip()]
+    _cors_allow_regex = None
 else:
-    if _cors_env_raw == "*":
-        log.warning("CORS: CORS_ORIGINS='*' ignored — using safe fallback list.")
-    _cors_origins = list(_CORS_SAFE_DEFAULT)
+    _cors_origins = ["*"]
+    _cors_allow_regex = None
 if os.environ.get("ENV", "").lower() in ("dev", "development", "local"):
-    _cors_origins.append("http://localhost:3000")
+    if "*" not in _cors_origins:
+        _cors_origins.append("http://localhost:3000")
 log.info("CORS: allow_origins=%s", _cors_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin", "X-Client-Version"],
     expose_headers=["Content-Disposition"],
     max_age=600,
 )
@@ -357,6 +361,9 @@ from admin_console_pin import router as admin_console_pin_router  # noqa: E402
 from admin_console_pin import users_admin_router as admin_console_users_router  # noqa: E402
 # v58.13.132ci — mobile PIN → session-token onboarding endpoint.
 from auth_mobile_pin import router as auth_mobile_pin_router  # noqa: E402
+# v58.13.132cr / .132cx — Program Schematic overlays (admin edits).
+from program_schematic_overlays import router as program_schematic_overlays_router  # noqa: E402
+api.include_router(program_schematic_overlays_router, prefix="/program-schematic")
 api.include_router(admin_console_pin_router)
 api.include_router(auth_mobile_pin_router)
 api.include_router(admin_console_users_router)

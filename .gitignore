@@ -285,3 +285,12 @@ frontend/node_modules/.cache/default-development/108.pack
 frontend/node_modules/.cache/default-development/110.pack
 frontend/node_modules/.cache/default-development/111.pack
 frontend/node_modules/.cache/default-development/113.pack
+
+# =====================================================================
+# v58.13.132cw / .132cx — Mobile APK artefacts. Not source; produced by
+# EAS Build. Delivered to phones via /api/mobile/downloads/android/
+# latest.apk from `backend/static/downloads/`. The directory itself is
+# preserved via a .gitkeep placeholder so the endpoint's file-lookup
+# path exists on a fresh clone; the actual .apk binaries stay out of git.
+# =====================================================================
+backend/static/downloads/*.apk
