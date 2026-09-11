@@ -13,6 +13,11 @@ import pytest
 import requests
 from pymongo import MongoClient
 
+# Shared session-scope event loop — prevents Motor "Event loop is
+# closed" flakes when the .132dj async tests run before later .132d*
+# suites in the same pytest session.
+from tests.conftest import run_async  # noqa: E402
+
 APP_ROOT = Path(__file__).resolve().parents[2]
 TAGS_MOD = APP_ROOT / "backend" / "fleet_navixy_tags.py"
 FLEET_MOD = APP_ROOT / "backend" / "fleet_fuel.py"
@@ -61,8 +66,7 @@ def test_missing_navixy_key_returns_200_empty():
     assert "distinct_tags" in body
 
 
-@pytest.mark.asyncio
-async def test_navixy_5xx_returns_graceful_empty():
+def test_navixy_5xx_returns_graceful_empty():
     """Simulate a 5xx from Navixy → graceful HTTP 200 with error msg."""
     import sys
     sys.path.insert(0, str(APP_ROOT / "backend"))
@@ -77,15 +81,14 @@ async def test_navixy_5xx_returns_graceful_empty():
         mock_client.return_value.__aenter__.return_value.post = AsyncMock(
             side_effect=httpx.HTTPError("boom")
         )
-        out = await get_navixy_tags(user=user)
+        out = run_async(get_navixy_tags(user=user))
     assert out["items"] == []
     assert out["connected"] is True
     assert out["error"] and "failed" in out["error"].lower()
 
 
 @pytest.mark.live_db_writes
-@pytest.mark.asyncio
-async def test_happy_path_maps_trackers_to_vehicles_and_first_tag_wins(caplog):
+def test_happy_path_maps_trackers_to_vehicles_and_first_tag_wins(caplog):
     """Happy path: Navixy returns 3 trackers (one w/ 2 tags → first wins,
     one w/ 1 tag, one w/ no tags → omitted). Only linked trackers surface."""
     import sys
@@ -134,7 +137,7 @@ async def test_happy_path_maps_trackers_to_vehicles_and_first_tag_wins(caplog):
              patch("fleet_navixy_tags.httpx.AsyncClient") as mc:
             mc.return_value.__aenter__.return_value.post = fake_post
             user = {"org_id": org_id, "id": "u", "role_id": "admin"}
-            out = await get_navixy_tags(user=user)
+            out = run_async(get_navixy_tags(user=user))
         items = {i["vehicle_id"]: i["tag_label"] for i in out["items"]}
         assert items == {
             f"asset-A-{org_id}": "SITE:CBD",   # first tag wins

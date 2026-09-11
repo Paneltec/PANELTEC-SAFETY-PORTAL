@@ -155,9 +155,15 @@ async def get_navixy_tags(user: dict = Depends(get_current_user)):
     trackers = [t for t in (trk_data.get("list") or []) if isinstance(t, dict)]
 
     # ── Cross-reference with our assets ────────────────────────────
+    # v58.13.132dn — Exclude soft-deleted AND retired assets so the
+    # sidebar counts match the DEFAULT `/fleet/register` view (which
+    # filters `status: {$ne: "retired"}, deleted_at: None`). Prior
+    # to this fix, a retired vehicle carrying a Navixy tag would
+    # bump the sidebar count without ever appearing in the register.
     assets = [
         a async for a in db.assets.find(
-            {"org_id": org_id, "navixy_device_id": {"$ne": None}},
+            {"org_id": org_id, "navixy_device_id": {"$ne": None},
+             "deleted_at": None, "status": {"$ne": "retired"}},
             {"_id": 0, "id": 1, "navixy_device_id": 1},
         )
     ]
@@ -205,19 +211,49 @@ async def get_navixy_tags(user: dict = Depends(get_current_user)):
         if not label:
             # Tag was deleted from Navixy but the binding lingered.
             continue
-        items.append({"vehicle_id": vehicle_id, "tag_label": label})
+        items.append({
+            "vehicle_id": vehicle_id,
+            "tag_label": label,
+            "source": "navixy",
+        })
 
-    # v58.13.132dm — `distinct_tags` shape upgraded to
-    # `[{label, count}]`. Union of (a) every tag defined in Navixy
-    # (from `/v2/tag/list`) with (b) every tag observed on a linked
-    # vehicle. `count` = number of linked vehicles carrying that
-    # label. Tags defined in Navixy but not attached to any linked
-    # vehicle surface with `count: 0` so admins can see the full
-    # universe.
+    # v58.13.132dn — Merge in LOCAL tags stored on `assets.tag_label`
+    # for non-Navixy assets (Plant, Tool, Container, Vehicle without a
+    # tracker). Navixy is authoritative for linked vehicles; local
+    # tags apply only where `navixy_device_id` is null.
+    local_labels_seen: set[str] = set()
+    async for a in db.assets.find(
+        {
+            "org_id": org_id,
+            "deleted_at": None,
+            "status": {"$ne": "retired"},
+            "navixy_device_id": None,
+            "tag_label": {"$nin": [None, ""]},
+        },
+        {"_id": 0, "id": 1, "tag_label": 1},
+    ):
+        label = (a.get("tag_label") or "").strip()
+        if not label:
+            continue
+        items.append({
+            "vehicle_id": a["id"],
+            "tag_label": label,
+            "source": "local",
+        })
+        local_labels_seen.add(label)
+
+    # v58.13.132dm/.132dn — `distinct_tags` shape is `[{label, count}]`.
+    # Union of (a) every tag defined in Navixy (from `/v2/tag/list`),
+    # (b) every tag observed on a linked (Navixy) vehicle, and
+    # (c) every tag stored locally on `assets.tag_label`. `count` is
+    # the total number of vehicles (navixy + local) carrying that
+    # label. Tags defined in Navixy but not attached to anything —
+    # neither a linked tracker nor a locally-tagged asset — surface
+    # with `count: 0` so admins can see the full universe.
     label_counts: dict[str, int] = {}
     for it in items:
         label_counts[it["tag_label"]] = label_counts.get(it["tag_label"], 0) + 1
-    all_labels: set[str] = set(label_counts.keys())
+    all_labels: set[str] = set(label_counts.keys()) | local_labels_seen
     if tag_list_ok:
         all_labels |= set(tag_by_id.values())
     distinct_tags = [

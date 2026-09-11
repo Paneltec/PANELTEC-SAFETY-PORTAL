@@ -635,7 +635,7 @@ function SortableTh({ label, sortKey, currentKey, currentDir, onSort, className 
   );
 }
 
-function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset, registerQ, onClearSearch, tagsByVehicle, tagsLoading, tagsError, distinctTags, tagFilter, setTagFilter, isAdmin }) {
+function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset, registerQ, onClearSearch, tagsByVehicle, tagSourceByVehicle, tagsLoading, tagsError, distinctTags, tagFilter, setTagFilter, isAdmin }) {
   const canDelete = useCan()('assets', 'delete');
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -826,7 +826,8 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
                     <span
                       className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-100 text-emerald-800 max-w-[200px] truncate"
                       data-testid={`fleet-tag-pill-${r.id}`}
-                      title={tagsByVehicle[r.id]}
+                      data-tag-source={tagSourceByVehicle?.[r.id] || 'navixy'}
+                      title={`${tagsByVehicle[r.id]} · ${(tagSourceByVehicle?.[r.id] === 'local') ? 'Local' : 'Navixy'}`}
                     >
                       {tagsByVehicle[r.id]}
                     </span>
@@ -927,7 +928,10 @@ export default function FleetRegister() {
   // v58.13.132dj — Live Navixy tag map (populated from
   // `GET /fleet/navixy/tags`). Read-time overlay onto register rows;
   // no local cache table, no write-back.
+  // v58.13.132dn — Also tracks per-vehicle source (navixy | local)
+  // via a parallel map so row pills can show provenance tooltips.
   const [tagsByVehicle, setTagsByVehicle] = useState(null);
+  const [tagSourceByVehicle, setTagSourceByVehicle] = useState(null);
   const [distinctTags, setDistinctTags] = useState([]);
   const [tagsLoading, setTagsLoading] = useState(true);
   const [tagsError, setTagsError] = useState(null);
@@ -941,10 +945,15 @@ export default function FleetRegister() {
       .then((r) => {
         if (cancelled) return;
         const map = {};
+        const srcMap = {};
         for (const it of (r.data?.items || [])) {
-          if (it && it.vehicle_id) map[it.vehicle_id] = it.tag_label;
+          if (it && it.vehicle_id) {
+            map[it.vehicle_id] = it.tag_label;
+            srcMap[it.vehicle_id] = it.source || 'navixy';
+          }
         }
         setTagsByVehicle(map);
+        setTagSourceByVehicle(srcMap);
         setDistinctTags(r.data?.distinct_tags || []);
         setTagsError(r.data?.error || null);
       })
@@ -1010,15 +1019,23 @@ export default function FleetRegister() {
     if (filter.retired_only) params.retired_only = true;
     // v58.13.132by — Register search bar → server-side text filter.
     if (registerQ && registerQ.trim()) params.q = registerQ.trim();
+    // v58.13.132dn — Tag filter moved server-side. Was client-side in
+    // .132dj which meant only tag matches on the current 50-row page
+    // were visible and the pagination footer counted the whole fleet
+    // regardless of the tag. Server-side filtering keeps sidebar
+    // count, footer total and page count in lockstep.
+    if (tagFilter) params.tag = tagFilter;
     api.get('/fleet/register', { params })
       .then((r) => { setRows(r.data.items); setTotal(r.data.total); })
       .catch((e) => toast.error(apiError(e) || 'Register load failed'))
       .finally(() => setRowsLoading(false));
-  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, filter.data_source, filter.retired_only, page, registerQ]);
+  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, filter.data_source, filter.retired_only, page, registerQ, tagFilter]);
 
   // v58.13.132by — Reset to page 1 when the search term changes so
   // the user sees hits from the first page, not the deep-linked one.
   useEffect(() => { setPage(1); }, [registerQ]);
+  // v58.13.132dn — Same for the tag filter (server-side).
+  useEffect(() => { setPage(1); }, [tagFilter]);
 
   useEffect(() => { reloadRows(); }, [reloadRows]);
 
@@ -1334,11 +1351,11 @@ export default function FleetRegister() {
               if (filter.service_due) {
                 r = r.filter((row) => ['amber', 'red'].includes(statuses?.[row.id]?.status));
               }
-              // v58.13.132dj — Client-side tag filter (top-of-table
-              // dropdown). Empty string = "All tags".
-              if (tagFilter && tagsByVehicle) {
-                r = r.filter((row) => tagsByVehicle[row.id] === tagFilter);
-              }
+              // v58.13.132dn — Tag filter moved server-side. The
+              // legacy client-side branch here made the pagination
+              // footer disagree with the sidebar count because it
+              // filtered AFTER the server's paginated slice arrived.
+              // Now the server does it; the FE just renders.
               // v58.13.132by — Multi-field client-side text filter.
               // AND-across-tokens, OR-across-fields, case-insensitive,
               // hyphen/space-tolerant on rego.
@@ -1381,6 +1398,7 @@ export default function FleetRegister() {
             registerQ={registerQ}
             onClearSearch={() => setRegisterQ('')}
             tagsByVehicle={tagsByVehicle}
+            tagSourceByVehicle={tagSourceByVehicle}
             tagsLoading={tagsLoading}
             tagsError={tagsError}
             distinctTags={distinctTags}

@@ -19,7 +19,7 @@ import AssetFuelTab from './AssetFuelTab';
 import FuelSmartFillPanel from './FuelSmartFillPanel';
 import { Link, useNavigate } from 'react-router-dom';
 import { getUser } from '../lib/auth';
-import { useCan, Can } from '../lib/permissions';
+import { useCan, usePermissions, Can } from '../lib/permissions';
 import { getToken } from '../lib/auth';
 
 // Phase 3.9b — Available forms (collapsible) inside the asset drawer.
@@ -145,6 +145,11 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
   useLockBodyScroll();
   const isEdit = !!asset?.id;
   const isNavixy = !!asset?.navixy_device_id;
+  // v58.13.132dn — Admin gating for local tag edits. Navixy-linked
+  // assets show a read-only pill regardless of role; non-Navixy
+  // assets get an editable dropdown only for admins.
+  const { role } = usePermissions();
+  const isAdmin = role === 'admin';
   // v58.13.27 — Accept optional `initialTab` prop for deep-link opens.
   // Validated against TABS; falls through to 'details' when unknown.
   const _validTab = (t) => TABS.some((x) => x.key === t) ? t : 'details';
@@ -156,6 +161,33 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
   const [manualNfc, setManualNfc] = useState(asset?.nfc_uid || '');
   const [manualUhf, setManualUhf] = useState(asset?.uhf_epc || '');
   const [current, setCurrent] = useState(asset);
+
+  // v58.13.132dn — Effective tag state. Pulls the Navixy tag universe
+  // for the dropdown options (non-Navixy assets) AND the current
+  // asset's Navixy-side tag label (Navixy-linked assets, read-only).
+  const [tagUniverse, setTagUniverse] = useState([]);
+  const [navixyTagLabel, setNavixyTagLabel] = useState(null);
+  const [pendingTagLabel, setPendingTagLabel] = useState(asset?.tag_label ?? null);
+  useEffect(() => { setPendingTagLabel(asset?.tag_label ?? null); }, [asset?.id, asset?.tag_label]);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/fleet/navixy/tags')
+      .then((r) => {
+        if (cancelled) return;
+        const labels = (r.data?.distinct_tags || [])
+          .map((t) => (typeof t === 'string' ? t : t.label))
+          .filter(Boolean);
+        setTagUniverse(labels);
+        if (asset?.id) {
+          const hit = (r.data?.items || []).find(
+            (it) => it.vehicle_id === asset.id && it.source === 'navixy',
+          );
+          if (hit) setNavixyTagLabel(hit.tag_label);
+        }
+      })
+      .catch(() => { /* graceful: sidebar has its own banner */ });
+    return () => { cancelled = true; };
+  }, [asset?.id]);
 
   useEffect(() => { setCurrent(asset); setForm(asset ? { ...emptyForm, ...asset, year: asset.year || '' } : { ...emptyForm }); }, [asset]);
 
@@ -192,9 +224,24 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
       const r = isEdit
         ? await api.put(`/assets/${asset.id}`, payload)
         : await api.post('/assets', payload);
+      // v58.13.132dn — Persist local tag change (non-Navixy assets
+      // only; Navixy-linked pill is read-only in the drawer). Runs
+      // AFTER the PUT so the parent's onSaved gets the freshest doc.
+      const savedId = r.data?.id || asset?.id;
+      let finalDoc = r.data;
+      if (savedId && !isNavixy && (pendingTagLabel ?? null) !== (asset?.tag_label ?? null)) {
+        try {
+          await api.patch(`/assets/${savedId}/tag`, {
+            tag_label: pendingTagLabel || null,
+          });
+          finalDoc = { ...finalDoc, tag_label: pendingTagLabel || null };
+        } catch (tagErr) {
+          toast.error(apiError(tagErr) || 'Tag update failed');
+        }
+      }
       toast.success(isEdit ? 'Asset updated' : 'Asset created');
-      setCurrent(r.data);
-      onSaved?.(r.data);
+      setCurrent(finalDoc);
+      onSaved?.(finalDoc);
     } catch (e) { toast.error(apiError(e)); }
     finally { setSaving(false); }
   };
@@ -367,6 +414,62 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
                     </button>
                   ))}
                 </div>
+              </div>
+              {/* v58.13.132dn — Local Tag row. Navixy-linked assets
+                  show a read-only pill with the Navixy tag (sourced
+                  from Navixy). Non-Navixy assets get an editable
+                  dropdown (admin-only) populated with the Navixy tag
+                  universe so we can group Plant / Tool / Container /
+                  non-tracked Vehicles under the same tag axis as the
+                  live fleet. Falls back to a read-only pill for
+                  non-admin users. */}
+              <div data-testid="asset-tag-row">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Tag</label>
+                {isNavixy ? (
+                  <div className="flex items-center gap-2" data-testid="asset-tag-navixy-readonly">
+                    {navixyTagLabel ? (
+                      <span
+                        data-testid="asset-tag-navixy-pill"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border border-emerald-200 bg-emerald-50 text-emerald-800"
+                      >
+                        {navixyTagLabel}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">— No Navixy tag —</span>
+                    )}
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                      sourced from Navixy · Edit in Navixy to change
+                    </span>
+                  </div>
+                ) : isAdmin ? (
+                  <select
+                    value={pendingTagLabel ?? ''}
+                    onChange={(e) => setPendingTagLabel(e.target.value || null)}
+                    data-testid="asset-tag-select"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                  >
+                    <option value="">— None / Untagged —</option>
+                    {tagUniverse.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div data-testid="asset-tag-local-readonly">
+                    {pendingTagLabel ? (
+                      <span
+                        data-testid="asset-tag-local-pill"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border border-emerald-200 bg-emerald-50 text-emerald-800"
+                      >
+                        {pendingTagLabel}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">— Untagged —</span>
+                    )}
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
+                      admin-only edit
+                    </span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">Name *</label>

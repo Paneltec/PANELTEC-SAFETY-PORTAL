@@ -589,6 +589,123 @@ async def archive_asset(asset_id: str, user: dict = Depends(require_permission("
     return Response(status_code=204)
 
 
+# ── v58.13.132dn — PATCH /assets/{id}/tag ──────────────────────────
+# Local tag for non-Navixy assets. Navixy-linked assets (Vehicle with
+# `navixy_device_id`) get their tag from Navixy's `/v2/tag/list` and
+# CANNOT set a local tag (guarded with 409). Non-Navixy assets (Plant,
+# Tool, Container, non-tracked Vehicles) can pick from the Navixy tag
+# UNIVERSE — validated at write time against `/v2/tag/list` — or clear
+# the tag with `null`. Admin-only.
+class AssetTagIn(BaseModel):
+    tag_label: Optional[str] = None
+
+
+async def _fetch_navixy_tag_universe(org_id: str) -> Optional[set[str]]:
+    """Return the set of tag labels currently defined in Navixy for
+    this org, or None if we couldn't reach `/v2/tag/list`. `None`
+    signals "unknown universe — reject the write" to callers so a
+    Navixy outage doesn't let admins scribble arbitrary strings into
+    `assets.tag_label`. Cached-ish via the same 60s `_CACHE` used by
+    `/api/fleet/navixy/tags` — reuses the module import."""
+    try:
+        from fleet_navixy_tags import _navixy_cfg, _cache_get  # noqa: WPS433
+    except Exception:  # pragma: no cover - import guard
+        return None
+    # Piggyback on the endpoint's cache: if it holds a fresh payload
+    # for this org, extract labels from `distinct_tags`.
+    cached = _cache_get(org_id)
+    if cached:
+        # tag_list_source == 'navixy_and_linked' means /tag/list was
+        # authoritative; only trust it if that's the case.
+        if cached.get("tag_list_source") == "navixy_and_linked":
+            labels = {t["label"] for t in cached.get("distinct_tags", [])
+                      if isinstance(t, dict) and t.get("label")}
+            return labels
+    # Fall through to a fresh /tag/list hit.
+    cfg = await _navixy_cfg(org_id)
+    if not cfg:
+        return None
+    base = (cfg.get("api_base_url") or "").rstrip("/")
+    h = cfg.get("session_hash")
+    if not base or not h:
+        return None
+    try:
+        import httpx  # noqa: WPS433
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.post(f"{base}/v2/tag/list", json={"hash": h})
+            data = resp.json() or {}
+    except Exception as exc:
+        log.warning("navixy /tag/list fetch for tag PATCH failed org=%s: %s",
+                    org_id, exc)
+        return None
+    rows = (
+        data.get("list") or data.get("tags")
+        or (data if isinstance(data, list) else [])
+    )
+    out: set[str] = set()
+    for row in rows or []:
+        if isinstance(row, dict):
+            name = row.get("name") or row.get("label")
+            if name:
+                out.add(str(name))
+    return out
+
+
+@router.patch("/{asset_id}/tag")
+async def patch_asset_tag(
+    asset_id: str,
+    body: AssetTagIn,
+    user: dict = Depends(get_current_user),
+):
+    # Admin-only. We check role directly (not `require_permission`) so
+    # the reject path returns 403 with a plain message — matches the
+    # `.132dm` spec explicitly.
+    if (user.get("role") or user.get("role_id")) != "admin":
+        raise HTTPException(403, "Admin only")
+
+    existing = await db.assets.find_one(
+        {"org_id": user["org_id"], "id": asset_id, "deleted_at": None},
+    )
+    if not existing:
+        raise HTTPException(404, "Asset not found")
+    if existing.get("navixy_device_id"):
+        raise HTTPException(
+            409,
+            "Cannot set a local tag on a Navixy-linked asset — edit the tag in "
+            "Navixy instead. Navixy is the source of truth for tracked vehicles.",
+        )
+
+    new_label = (body.tag_label or "").strip() if body.tag_label else None
+    if new_label:
+        universe = await _fetch_navixy_tag_universe(user["org_id"])
+        if universe is None:
+            raise HTTPException(
+                503,
+                "Navixy tag universe unavailable — try again in a minute. "
+                "We validate local tags against Navixy to prevent drift.",
+            )
+        if new_label not in universe:
+            raise HTTPException(
+                400,
+                f"Tag '{new_label}' is not in the Navixy tag list. "
+                f"Pick from: {sorted(universe)}",
+            )
+
+    await db.assets.update_one(
+        {"id": asset_id},
+        {"$set": {"tag_label": new_label, "updated_at": now_iso()}},
+    )
+    # v58.13.132dn — Invalidate the /fleet/navixy/tags 60s cache for
+    # this org so the sidebar picks up the write on next fetch.
+    try:
+        from fleet_navixy_tags import _CACHE  # noqa: WPS433
+        _CACHE.pop(user["org_id"], None)
+    except Exception:  # pragma: no cover
+        pass
+    doc = await db.assets.find_one({"id": asset_id}, {"_id": 0})
+    return {"id": doc["id"], "tag_label": doc.get("tag_label")}
+
+
 # ────────────────────── QR + label PDFs ──────────────────────
 
 def _make_qr_png(payload: str, box_size: int = 8) -> bytes:

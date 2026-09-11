@@ -194,13 +194,20 @@ async def get_register(
     # from the active list. Set retired_only=true to show ONLY the
     # retired assets (across all kinds).
     retired_only: bool = Query(False),
+    # v58.13.132dn — Server-side tag filter. Resolves the tag label to
+    # its set of vehicle IDs (via the shared `fleet_navixy_tags`
+    # helper, which unions Navixy bindings + local `assets.tag_label`)
+    # and applies `id: {$in: ids}` to the register query. Fixes the
+    # sidebar-vs-footer count mismatch that surfaced when the FE
+    # applied the tag filter AFTER server pagination.
+    tag: Optional[str] = Query(None, max_length=200),
     page: int = Query(1, ge=1, le=1000),
     limit: int = Query(50, ge=1, le=200),
 ):
     """Paginated cross-kind register. Server-side filter by kind /
-    status / sub_type / navixy_only / retired_only. Text search via
-    `q` applies a case-insensitive regex across rego_serial + name +
-    make + model + manufacturer + asset_type + description."""
+    status / sub_type / navixy_only / retired_only / tag. Text search
+    via `q` applies a case-insensitive regex across rego_serial + name
+    + make + model + manufacturer + asset_type + description."""
     org_id = user["org_id"]
     filt: dict = {"org_id": org_id, "deleted_at": None}
     if kind:
@@ -261,6 +268,30 @@ async def get_register(
                              {"$or": or_terms}]}
         else:
             filt["$or"] = or_terms
+
+    # v58.13.132dn — Tag filter (server-side). Resolves the tag label
+    # through `fleet_navixy_tags.get_navixy_tags` (which unions Navixy
+    # bindings + local `assets.tag_label` and already excludes
+    # retired / soft-deleted assets) then AND-merges the resulting
+    # vehicle-id set into the query. Empty tag string == no filter.
+    if tag and tag.strip():
+        from fleet_navixy_tags import get_navixy_tags  # noqa: WPS433
+        tag_payload = await get_navixy_tags(user=user)
+        target = tag.strip()
+        tag_vehicle_ids = [
+            it["vehicle_id"] for it in (tag_payload.get("items") or [])
+            if it.get("tag_label") == target
+        ]
+        # AND-merge: intersect with any existing $or clause.
+        id_filter = {"id": {"$in": tag_vehicle_ids or ["__none__"]}}
+        if "$and" in filt:
+            filt["$and"].append(id_filter)
+        elif "$or" in filt:
+            filt = {"$and": [{k: v for k, v in filt.items() if k != "$or"},
+                             {"$or": filt["$or"]},
+                             id_filter]}
+        else:
+            filt.update(id_filter)
 
     total = await db.assets.count_documents(filt)
     skip = (page - 1) * limit
