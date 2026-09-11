@@ -95,13 +95,15 @@ def test_frontend_org_page_new_shape():
     assert 'data-testid="org-logo-upload-btn"' in src
     # New fields present (defined as `f.key` values on the FIELDS
     # arrays; testid rendered via `org-field-${f.key}` template).
+    # `portal_url` was migrated to a dedicated inline block with a
+    # copy button in .132dq, so we assert on its testid directly.
     for key in ("trading_name",
                 "emergency_contact_phone",
                 "after_hours_contact_name",
                 "after_hours_contact_phone",
-                "website_url",
-                "portal_url"):
+                "website_url"):
         assert f"key: '{key}'" in src, f"Missing field key: {key}"
+    assert 'data-testid="org-field-portal_url"' in src
     assert "org-field-${f.key}" in src
 
 

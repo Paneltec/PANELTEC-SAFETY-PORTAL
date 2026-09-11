@@ -207,7 +207,26 @@ async def graph_send_mail(org_id: str, *, to: List[str], cc: List[str], subject:
 
     msg_attachments = []
     for a in attachments or []:
-        # Graph requires base64 contentBytes — only embed files we can read locally.
+        # v58.13.132dq — Attachments may arrive as either:
+        #   (a) `local_path` (legacy — read from disk),
+        #   (b) `file_url` starting with `/api/files/` (legacy uploads/ ),
+        #   (c) `content_bytes` (raw bytes from GridFS — org insurance
+        #       certificate dispatch path). Prefer (c) so we never
+        #       hit disk for GridFS-backed docs.
+        if a.get("content_bytes"):
+            raw = a["content_bytes"]
+            if not isinstance(raw, (bytes, bytearray)):
+                # Assume already-base64 string.
+                content = str(raw)
+            else:
+                content = base64.b64encode(bytes(raw)).decode("ascii")
+            msg_attachments.append({
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": a.get("filename") or a.get("label") or "attachment.bin",
+                "contentType": a.get("content_type") or "application/octet-stream",
+                "contentBytes": content,
+            })
+            continue
         path = a.get("local_path")
         if not path:
             fu = a.get("file_url") or ""

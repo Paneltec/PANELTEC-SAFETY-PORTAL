@@ -715,6 +715,39 @@ async def simpro_suppliers_sync(user: dict = Depends(require_permission("integra
     return {"ok": True, "count": len(suppliers), "synced_at": now_iso()}
 
 
+# ────────────────────── v58.13.132dq — Customers/`clients` search ──
+# Wraps the existing `/customers` endpoint (defined further down) so
+# the Insurance Certificates recipient picker can do a keystroke
+# search over the cached customer list without hitting Simpro on
+# every keypress. Delegates the fetch/refresh policy to the existing
+# handler and applies a `search` filter over the returned rows.
+
+@router.get("/customers/search")
+async def simpro_customers_search(
+    q: Optional[str] = None,
+    limit: int = 50,
+    user: dict = Depends(get_current_user),
+):
+    """v58.13.132dq — Filter cached Simpro customers by company /
+    contact / email. Serves the Insurance Certificates recipient
+    picker. Delegates to the existing `simpro_customers` handler so
+    cache invalidation stays in one place."""
+    resp = await simpro_customers(company="both", user=user)
+    rows = resp.get("customers") or []
+    term = (q or "").strip().lower()
+    if term:
+        def _match(r: dict) -> bool:
+            hay = " ".join(str(r.get(k) or "") for k in
+                           ("company_name", "contact_name", "email",
+                            "given_name", "family_name")).lower()
+            return term in hay
+        rows = [r for r in rows if _match(r)]
+    rows = rows[: max(1, min(int(limit or 50), 500))]
+    return {"items": rows, "total": len(rows),
+            "cached_at": resp.get("cached_at"),
+            "connected": resp.get("connected")}
+
+
 # ────────────────────── Sites sync ──────────────────────
 # Pulls per-customer site lists from Simpro and persists into `simpro_sites`.
 # Only iterates customers that already appear in our `simpro_jobs` cache

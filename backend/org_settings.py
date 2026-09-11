@@ -52,11 +52,16 @@ def insurance_status(org: dict) -> dict:
       * `critical` — within 7 days (or already expired)
       * `warning`  — within 30 days
       * `ok`       — more than 30 days out, or no policy on file
+
+    v58.13.132dq — Added `general_cover` slot alongside the two
+    Australian-mandatory policies.
     """
     out: dict = {"warnings": [], "criticals": []}
     for kind, label in (
-        ("public_liability", "Public liability insurance"),
-        ("workers_comp",     "Workers compensation insurance"),
+        ("public_liability",       "Public liability insurance"),
+        ("workers_comp",           "Workers compensation insurance"),
+        ("general_cover",          "General cover insurance"),
+        ("professional_indemnity", "Professional indemnity insurance"),
     ):
         block = (org.get(f"{kind}_insurance") or {})
         expiry = block.get("expiry_date")
@@ -120,6 +125,12 @@ class OrgPatch(BaseModel):
     # separately via /insurance/{kind}/upload).
     public_liability_insurance: Optional[InsurancePatch] = None
     workers_comp_insurance: Optional[InsurancePatch] = None
+    # v58.13.132dq — Third insurance slot + editable email preamble
+    # template used by the Insurance Certificates dispatch flow.
+    general_cover_insurance: Optional[InsurancePatch] = None
+    # v58.13.132dq (add-on) — Fourth insurance slot.
+    professional_indemnity_insurance: Optional[InsurancePatch] = None
+    insurance_email_preamble: Optional[str] = None
 
 
 def _strip_mongo(d: dict) -> dict:
@@ -194,7 +205,10 @@ async def patch_org(body: OrgPatch, user: dict = Depends(get_current_user)):
 
     # Insurance blocks: merge under `{kind}_insurance.*` so we don't
     # blow away the certificate_id that the upload endpoint sets.
-    for kind in ("public_liability_insurance", "workers_comp_insurance"):
+    for kind in ("public_liability_insurance",
+                 "workers_comp_insurance",
+                 "general_cover_insurance",
+                 "professional_indemnity_insurance"):
         if kind in patch and isinstance(patch[kind], dict):
             existing = (await db.orgs.find_one(
                 {"id": user["org_id"]}, {"_id": 0, kind: 1},
@@ -215,7 +229,8 @@ async def patch_org(body: OrgPatch, user: dict = Depends(get_current_user)):
 # Zero-disk uploads to keep the ephemeral-storage lint clean. Two
 # discrete endpoints (one per policy_type) so the FE forms stay
 # simple and audit logs unambiguous.
-_INSURANCE_KINDS = {"public_liability", "workers_comp"}
+_INSURANCE_KINDS = {"public_liability", "workers_comp", "general_cover",
+                    "professional_indemnity"}
 _LOGO_KIND = "logo"
 
 
@@ -268,11 +283,11 @@ async def upload_insurance_cert(
     if policy_type not in _INSURANCE_KINDS:
         raise HTTPException(400, f"Unknown policy_type: {policy_type}")
     field = f"{policy_type}_insurance"
-    # For cleanup we need to know the CURRENT certificate_id under this block.
+    # For archive we need to know the CURRENT certificate metadata
+    # under this block.
     existing = (await db.orgs.find_one(
         {"id": user["org_id"]}, {"_id": 0, field: 1},
     ) or {}).get(field) or {}
-    from bson import ObjectId  # noqa: WPS433
     bucket = _fs_bucket()
     payload = await file.read()
     if not payload:
@@ -288,22 +303,33 @@ async def upload_insurance_cert(
             "uploaded_at": now_iso(),
         },
     )
+    # v58.13.132dq — Archive the CURRENT cert into `previous_certificates[]`
+    # instead of deleting from GridFS. Audit compliance requires
+    # historical certs remain addressable forever.
+    prev_list = list(existing.get("previous_certificates") or [])
     if existing.get("certificate_id"):
-        try:
-            await bucket.delete(ObjectId(existing["certificate_id"]))
-        except Exception:  # pragma: no cover
-            pass
+        prev_list.append({
+            "certificate_id":       existing.get("certificate_id"),
+            "certificate_filename": existing.get("certificate_filename"),
+            "policy_number":        existing.get("policy_number"),
+            "expiry_date":          existing.get("expiry_date"),
+            "uploaded_at":          existing.get("certificate_uploaded_at"),
+            "archived_at":          now_iso(),
+            "archived_by":          user.get("id"),
+        })
     merged = {**existing,
               "certificate_id": str(upload_id),
               "certificate_filename": filename,
-              "certificate_uploaded_at": now_iso()}
+              "certificate_uploaded_at": now_iso(),
+              "previous_certificates": prev_list}
     await db.orgs.update_one(
         {"id": user["org_id"]},
         {"$set": {field: merged, "updated_at": now_iso()}},
     )
     return {"policy_type": policy_type,
             "certificate_id": str(upload_id),
-            "certificate_filename": filename}
+            "certificate_filename": filename,
+            "archived_count": len(prev_list)}
 
 
 @router.get("/insurance/{policy_type}/download")
@@ -327,6 +353,67 @@ async def download_insurance_cert(
     ctype = ((grid_out.metadata or {}).get("content_type")
              or "application/pdf")
     filename = block.get("certificate_filename") or f"{policy_type}.pdf"
+    return Response(
+        content=data,
+        media_type=ctype,
+        headers={"Content-Disposition":
+                 f'inline; filename="{filename}"'},
+    )
+
+
+# ── v58.13.132dq — Archived insurance certificates ────────────────
+# Upload replaces the "current" pointer but never deletes from
+# GridFS. Old certs live under `{kind}_insurance.previous_certificates[]`
+# and stay downloadable forever for audit compliance.
+
+@router.get("/insurance/{policy_type}/history")
+async def list_insurance_history(
+    policy_type: str,
+    user: dict = Depends(get_current_user),
+):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    if policy_type not in _INSURANCE_KINDS:
+        raise HTTPException(400, f"Unknown policy_type: {policy_type}")
+    field = f"{policy_type}_insurance"
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    rows = list(block.get("previous_certificates") or [])
+    # Reverse-chronological — newest archive at the top.
+    def _sort_key(r: dict) -> str:
+        return r.get("archived_at") or r.get("uploaded_at") or ""
+    rows.sort(key=_sort_key, reverse=True)
+    return {"policy_type": policy_type, "items": rows, "total": len(rows)}
+
+
+@router.get("/insurance/{policy_type}/history/{file_id}/download")
+async def download_insurance_history_cert(
+    policy_type: str,
+    file_id: str,
+    user: dict = Depends(get_current_user),
+):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    if policy_type not in _INSURANCE_KINDS:
+        raise HTTPException(400, f"Unknown policy_type: {policy_type}")
+    field = f"{policy_type}_insurance"
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    prev = block.get("previous_certificates") or []
+    hit = next((p for p in prev if p.get("certificate_id") == file_id), None)
+    if not hit:
+        raise HTTPException(404, "Archived certificate not found")
+    from bson import ObjectId  # noqa: WPS433
+    try:
+        grid_out = await _fs_bucket().open_download_stream(ObjectId(file_id))
+    except Exception:
+        raise HTTPException(404, "Archived certificate not found in GridFS")
+    data = await grid_out.read()
+    ctype = ((grid_out.metadata or {}).get("content_type")
+             or "application/pdf")
+    filename = hit.get("certificate_filename") or f"{policy_type}-archived.pdf"
     return Response(
         content=data,
         media_type=ctype,
@@ -369,6 +456,211 @@ async def get_logo(gridfs_id: str, user: dict = Depends(get_current_user)):
     ctype = ((grid_out.metadata or {}).get("content_type") or "image/png")
     return Response(content=data, media_type=ctype,
                     headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ── v58.13.132dq — Insurance certificate email dispatch (M365) ─────
+# Fetches selected certificates from GridFS in-process and attaches
+# them raw to the outbound Graph SendMail — zero disk writes. Non-
+# admins get 403. Empty recipient / cert lists get 400. Every
+# dispatch (even mocked) writes an `insurance_email_log` audit row.
+_DEFAULT_PREAMBLE = (
+    "Please find attached our current insurance certificates. "
+    "Please retain these for your records.\n\n"
+    "Kind regards,\n"
+)
+
+
+class InsuranceEmailIn(BaseModel):
+    recipients: list[str] = Field(default_factory=list)
+    certificate_types: list[str] = Field(default_factory=list)
+    # v58.13.132dq — Optional per-policy archived selections; each
+    # entry is a `certificate_id` string (must be present in that
+    # policy's `previous_certificates[]`). Sent in ADDITION to (or
+    # in place of) the current active certificate.
+    archived_certificate_ids: dict[str, list[str]] = Field(default_factory=dict)
+    subject: Optional[str] = None
+    preamble: Optional[str] = None
+    note: Optional[str] = None
+    cc: list[str] = Field(default_factory=list)
+
+
+async def _load_cert_bytes(org_id: str, kind: str,
+                           archive_file_id: Optional[str] = None) -> Optional[dict]:
+    """Return {content_bytes, filename, content_type} for a policy's
+    GridFS certificate, or None if not uploaded.
+
+    v58.13.132dq — When `archive_file_id` is provided, resolves that
+    specific archived certificate (must be present in
+    `{kind}_insurance.previous_certificates[]`) instead of the
+    current active cert. Prevents an admin from tricking the endpoint
+    into leaking arbitrary GridFS blobs by passing a foreign id."""
+    from bson import ObjectId  # noqa: WPS433
+    field = f"{kind}_insurance"
+    org = await db.orgs.find_one({"id": org_id}, {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    if archive_file_id:
+        prev = block.get("previous_certificates") or []
+        hit = next((p for p in prev
+                    if p.get("certificate_id") == archive_file_id), None)
+        if not hit:
+            return None
+        cid = archive_file_id
+        filename = hit.get("certificate_filename") or f"{kind}-archived.pdf"
+    else:
+        cid = block.get("certificate_id")
+        if not cid:
+            return None
+        filename = block.get("certificate_filename") or f"{kind}-certificate.pdf"
+    try:
+        grid_out = await _fs_bucket().open_download_stream(ObjectId(cid))
+    except Exception:
+        return None
+    data = await grid_out.read()
+    ctype = ((grid_out.metadata or {}).get("content_type") or "application/pdf")
+    return {
+        "content_bytes": data,
+        "filename": filename,
+        "content_type": ctype,
+        "kind": kind,
+        "archive_file_id": archive_file_id,
+    }
+
+
+@router.post("/insurance/email")
+async def dispatch_insurance_email(body: InsuranceEmailIn,
+                                   user: dict = Depends(get_current_user)):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    recipients = [r.strip() for r in (body.recipients or []) if r and r.strip()]
+    if not recipients:
+        raise HTTPException(400, "At least one recipient required.")
+    kinds = [k for k in (body.certificate_types or []) if k in _INSURANCE_KINDS]
+    arch_map = body.archived_certificate_ids or {}
+    has_arch = any((v or []) for k, v in arch_map.items() if k in _INSURANCE_KINDS)
+    if not kinds and not has_arch:
+        raise HTTPException(400, "At least one certificate type or archived id required.")
+
+    org = await db.orgs.find_one({"id": user["org_id"]}, {"_id": 0})
+    if not org:
+        raise HTTPException(404, "Org not found")
+
+    # Collect certificates from GridFS. Silently skip kinds that have
+    # no uploaded PDF (spec: send the ones that exist). Archived
+    # selections (v58.13.132dq) are appended in the order requested,
+    # after the current active cert for that kind.
+    attachments = []
+    included: list[str] = []
+    archived_included: list[dict] = []
+    for kind in kinds:
+        blob = await _load_cert_bytes(user["org_id"], kind)
+        if blob:
+            attachments.append({
+                "content_bytes": blob["content_bytes"],
+                "filename": blob["filename"],
+                "content_type": blob["content_type"],
+            })
+            included.append(kind)
+    for kind, fids in (body.archived_certificate_ids or {}).items():
+        if kind not in _INSURANCE_KINDS:
+            continue
+        for fid in (fids or []):
+            blob = await _load_cert_bytes(user["org_id"], kind,
+                                          archive_file_id=fid)
+            if blob:
+                attachments.append({
+                    "content_bytes": blob["content_bytes"],
+                    "filename": blob["filename"],
+                    "content_type": blob["content_type"],
+                })
+                archived_included.append({"kind": kind, "file_id": fid,
+                                          "filename": blob["filename"]})
+
+    org_name = org.get("name") or "Paneltec Civil"
+    subject = (body.subject or f"{org_name} — Insurance Certificates").strip()
+    preamble = (
+        body.preamble
+        or org.get("insurance_email_preamble")
+        or (_DEFAULT_PREAMBLE + org_name)
+    )
+    parts = [preamble]
+    if body.note:
+        parts.append("")
+        parts.append(body.note)
+    body_text = "\n".join(parts)
+    body_html = (
+        "<html><body style=\"font-family:Helvetica,Arial,sans-serif;"
+        "font-size:13px;color:#0f172a;line-height:1.55;\">"
+        + body_text.replace("\n", "<br>")
+        + "</body></html>"
+    )
+
+    # Dispatch via existing Graph helper. If M365 isn't configured,
+    # `graph_send_mail` returns `{ok: False, error: 'sender_email_missing'|'tenant …'}` — we
+    # surface a `mocked=True` flag so the FE toast can honour spec.
+    from integrations_m365 import graph_send_mail  # noqa: WPS433
+    result = {"ok": False, "error": "m365_not_configured"}
+    mocked = False
+    try:
+        result = await graph_send_mail(
+            user["org_id"], to=recipients, cc=body.cc or [],
+            subject=subject, body_html=body_html, attachments=attachments,
+        )
+    except HTTPException as e:  # pragma: no cover — token errors already handled internally
+        result = {"ok": False, "error": str(e.detail)}
+    except Exception as e:
+        result = {"ok": False, "error": f"dispatch: {e}"}
+    if not result.get("ok"):
+        # Spec: if credentials/wiring absent, dispatch is MOCKED —
+        # button works, payload logged, no real email. Flag it.
+        mocked = True
+
+    # Audit log — every send (real or mocked) writes a row.
+    log_row = {
+        "id": _new_id(),
+        "org_id": user["org_id"],
+        "sent_by_user_id": user.get("id"),
+        "sent_by_email": user.get("email"),
+        "timestamp": now_iso(),
+        "recipients": recipients,
+        "cc": body.cc or [],
+        "certificate_types": included,
+        "requested_types": kinds,
+        "skipped_types": [k for k in kinds if k not in included],
+        "archived_included": archived_included,
+        "subject": subject,
+        "note": body.note or None,
+        "ok": bool(result.get("ok")),
+        "mocked": mocked,
+        "error": result.get("error"),
+        "provider": "microsoft365_graph_send_mail",
+    }
+    await db.insurance_email_log.insert_one(log_row)
+    log_row.pop("_id", None)
+    return {"ok": bool(result.get("ok")),
+            "mocked": mocked,
+            "error": result.get("error"),
+            "sent_to": recipients,
+            "included_types": included,
+            "archived_included": archived_included,
+            "skipped_types": log_row["skipped_types"],
+            "audit_id": log_row["id"]}
+
+
+@router.get("/insurance/email/log")
+async def list_insurance_email_log(user: dict = Depends(get_current_user)):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    rows = [
+        r async for r in db.insurance_email_log
+        .find({"org_id": user["org_id"]}, {"_id": 0})
+        .sort("timestamp", -1).limit(10)
+    ]
+    return {"items": rows, "total": len(rows)}
+
+
+def _new_id() -> str:
+    import uuid  # noqa: WPS433
+    return str(uuid.uuid4())
 
 
 # ─── v160.0.12 — Companies (for form `company_selector` field type) ───

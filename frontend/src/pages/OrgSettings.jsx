@@ -1,11 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Save, Building2, MapPin, Phone, Shield, AlertTriangle, UploadCloud, Download, Trash2, Info, Globe } from 'lucide-react';
+import { Save, Building2, MapPin, Phone, Shield, ShieldCheck, AlertTriangle, UploadCloud, Download, Info, Globe, Mail, Copy, ChevronDown, ChevronRight, X, Send, Clock, Award } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { PageHeader, PrimaryButton, Field, inputClass } from '../components/capture/Ui';
 
 // v58.13.132dp — Organisation Settings expansion (5 items).
+// v58.13.132dq — Adds: (a) 3rd insurance slot "General Cover",
+//                (b) "Email Certificates" popup that attaches selected
+//                    (current + archived) certificates from GridFS and
+//                    dispatches via Microsoft 365 Graph SendMail,
+//                (c) Simpro customer picker for the recipient list,
+//                (d) Portal URL copy-to-clipboard button,
+//                (e) Past-certificates archive per policy type (never
+//                    delete from GridFS — audit compliance).
 //
 //   1. Editable slug + validation + confirm dialog + previous_slugs.
 //   2. Portal URL in PDF branding (rendered on the PDF footer).
@@ -45,8 +53,6 @@ const CONTACT = [
 ];
 
 const BRANDING = [
-  { key: 'portal_url', label: 'Portal URL', placeholder: 'https://portal.paneltec.com.au',
-    hint: 'Rendered on the footer of every PDF report so recipients can find the login.' },
   { key: 'website', label: 'Website (legacy)', placeholder: 'https://paneltec.com.au',
     hint: 'Legacy PDF header link. Prefer the fields above for new deploys.' },
 ];
@@ -96,6 +102,15 @@ export default function OrgSettings() {
           policy_number: data.workers_comp_insurance?.policy_number || '',
           expiry_date: data.workers_comp_insurance?.expiry_date || '',
         },
+        general_cover_insurance: {
+          policy_number: data.general_cover_insurance?.policy_number || '',
+          expiry_date: data.general_cover_insurance?.expiry_date || '',
+        },
+        professional_indemnity_insurance: {
+          policy_number: data.professional_indemnity_insurance?.policy_number || '',
+          expiry_date: data.professional_indemnity_insurance?.expiry_date || '',
+        },
+        insurance_email_preamble: data.insurance_email_preamble || '',
       });
     } catch (e) { toast.error(apiError(e)); }
   };
@@ -150,7 +165,7 @@ export default function OrgSettings() {
       }
       // Strip empty insurance blocks so we don't overwrite an
       // existing block with `{policy_number:'', expiry_date:''}`.
-      for (const k of ['public_liability_insurance', 'workers_comp_insurance']) {
+      for (const k of ['public_liability_insurance', 'workers_comp_insurance', 'general_cover_insurance', 'professional_indemnity_insurance']) {
         const b = payload[k] || {};
         if (!b.policy_number && !b.expiry_date) delete payload[k];
       }
@@ -177,6 +192,25 @@ export default function OrgSettings() {
     } catch (e) { toast.error(apiError(e)); }
     finally { setUploading((u) => ({ ...u, [key]: false })); }
   };
+
+  // v58.13.132dq — Portal URL copy-to-clipboard.
+  const copyPortalUrl = async () => {
+    const url = (form.portal_url || doc.portal_url || '').trim();
+    if (!url) { toast.error('No Portal URL to copy'); return; }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Copied!', { duration: 2000 });
+    } catch (_e) {
+      // Legacy fallback for browsers that don't expose the async API.
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); ta.remove();
+      toast.success('Copied!', { duration: 2000 });
+    }
+  };
+
+  // v58.13.132dq — Email Certificates popup state.
+  const [emailOpen, setEmailOpen] = useState(false);
 
   if (!doc) return <div className="text-sm text-slate-500">Loading…</div>;
 
@@ -347,6 +381,31 @@ export default function OrgSettings() {
         {/* PDF branding */}
         <Section icon={<Globe size={14} className="text-emerald-600" />} title="PDF report branding" elevated>
           <div className="grid sm:grid-cols-2 gap-3">
+            {/* v58.13.132dq — Portal URL rendered inline with a
+                copy-to-clipboard square button. Hover / press states
+                give the click a tactile feel. */}
+            <Field label="Portal URL"
+                   hint="Rendered on the footer of every PDF report so recipients can find the login.">
+              <div className="flex items-stretch gap-2">
+                <input
+                  className={inputClass + ' flex-1'}
+                  value={form.portal_url || ''}
+                  onChange={(e) => set('portal_url', e.target.value)}
+                  placeholder="https://portal.paneltec.com.au"
+                  disabled={!isAdmin}
+                  data-testid="org-field-portal_url"
+                />
+                <button
+                  type="button"
+                  onClick={copyPortalUrl}
+                  data-testid="org-portal-url-copy-btn"
+                  aria-label="Copy Portal URL"
+                  className="w-10 shrink-0 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 active:scale-95 active:bg-emerald-100 transition"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+            </Field>
             {BRANDING.map((f) => (
               <Field key={f.key} label={f.label} hint={f.hint}>
                 <input
@@ -379,33 +438,45 @@ export default function OrgSettings() {
         </Section>
 
         {/* Insurance */}
-        <Section icon={<Shield size={14} className="text-emerald-600" />} title="Insurance policies" elevated>
+        <Section
+          icon={<Shield size={14} className="text-emerald-600" />}
+          title="Insurance policies"
+          elevated
+          headerRight={isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setEmailOpen(true)}
+              data-testid="org-email-certs-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+            >
+              <Mail size={12} /> Email Certificates
+            </button>
+          ) : null}
+        >
           <p className="text-xs text-slate-500 mb-3">
-            Policy expiries drive the 30-day banner above and the 7-day critical alert. Both certificates
-            are stored in GridFS — never on disk.
+            Policy expiries drive the 30-day banner above and the 7-day critical alert. All three
+            certificate types are stored in GridFS — new uploads archive the previous version into
+            "Past certificates" (never deleted, for audit compliance).
           </p>
-          <InsuranceBlock
-            kind="public_liability"
-            label="Public liability insurance"
-            form={form}
-            doc={doc}
-            isAdmin={isAdmin}
-            setInsurance={setInsurance}
-            uploadFile={uploadFile}
-            uploading={uploading}
-          />
+          <InsuranceBlock kind="public_liability" label="Public liability insurance"
+            form={form} doc={doc} isAdmin={isAdmin} setInsurance={setInsurance}
+            uploadFile={uploadFile} uploading={uploading} />
           <div className="mt-4">
-            <InsuranceBlock
-              kind="workers_comp"
-              label="Workers compensation insurance"
-              form={form}
-              doc={doc}
-              isAdmin={isAdmin}
-              setInsurance={setInsurance}
-              uploadFile={uploadFile}
-              uploading={uploading}
-            />
+            <InsuranceBlock kind="workers_comp" label="Workers compensation insurance"
+              form={form} doc={doc} isAdmin={isAdmin} setInsurance={setInsurance}
+              uploadFile={uploadFile} uploading={uploading} />
           </div>
+          <div className="mt-4">
+            <InsuranceBlock kind="general_cover" label="General cover insurance"
+              form={form} doc={doc} isAdmin={isAdmin} setInsurance={setInsurance}
+              uploadFile={uploadFile} uploading={uploading} />
+          </div>
+          <div className="mt-4">
+            <InsuranceBlock kind="professional_indemnity" label="Professional indemnity insurance"
+              form={form} doc={doc} isAdmin={isAdmin} setInsurance={setInsurance}
+              uploadFile={uploadFile} uploading={uploading} />
+          </div>
+          {isAdmin && <EmailAuditLog />}
         </Section>
 
         {isAdmin && (
@@ -456,6 +527,16 @@ export default function OrgSettings() {
           </div>
         </div>
       )}
+      {/* v58.13.132dq — Insurance Certificates dispatch popup. */}
+      {emailOpen && (
+        <InsuranceEmailModal
+          doc={doc}
+          orgName={doc.name || 'Paneltec Civil'}
+          defaultPreamble={form.insurance_email_preamble || ''}
+          onClose={() => setEmailOpen(false)}
+          onSent={() => { setEmailOpen(false); load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -465,11 +546,23 @@ function InsuranceBlock({ kind, label, form, doc, isAdmin, setInsurance, uploadF
   const status = (doc.insurance_status || {})[kind] || {};
   const level = status.level;
   const days = status.days_until_expiry;
+  const archived = block.previous_certificates || [];
+  const [showArchive, setShowArchive] = useState(false);
+  // v58.13.132dq — Icon per policy kind. Distinct glyph + accent tone
+  // per slot so the four blocks read differently at a glance while
+  // staying on the emerald/violet family.
+  const kindStyle = {
+    public_liability:       { Icon: Shield,      cls: 'text-emerald-600' },
+    workers_comp:           { Icon: ShieldCheck, cls: 'text-sky-600' },
+    general_cover:          { Icon: Shield,      cls: 'text-violet-600' },
+    professional_indemnity: { Icon: Award,       cls: 'text-amber-600' },
+  }[kind] || { Icon: Shield, cls: 'text-emerald-600' };
+  const KindIcon = kindStyle.Icon;
   return (
     <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50" data-testid={`org-insurance-block-${kind}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="font-semibold text-sm text-slate-800 flex items-center gap-2">
-          <Shield size={14} className="text-emerald-600" /> {label}
+          <KindIcon size={14} className={kindStyle.cls} /> {label}
         </div>
         {level && level !== 'ok' && days != null && (
           <span
@@ -526,19 +619,402 @@ function InsuranceBlock({ kind, label, form, doc, isAdmin, setInsurance, uploadF
           </a>
         )}
       </div>
+      {/* v58.13.132dq — Past certificates archive. Collapsible so the
+          block stays compact when nothing has been archived. Uploads
+          always archive the previous cert (never delete from GridFS)
+          so this section grows over time for audit compliance. */}
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setShowArchive((v) => !v)}
+          data-testid={`org-insurance-history-toggle-${kind}`}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700"
+        >
+          {showArchive ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          Past certificates ({archived.length})
+        </button>
+        {showArchive && (
+          <div className="mt-2 rounded-lg border border-slate-200 bg-white" data-testid={`org-insurance-history-${kind}`}>
+            {archived.length === 0 ? (
+              <div className="text-[11px] text-slate-400 italic px-3 py-2">
+                No archived certificates yet. Uploading a replacement will move the current one here.
+              </div>
+            ) : (
+              <table className="w-full text-[11px]">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="text-left px-2 py-1.5 font-semibold">Uploaded</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">Policy #</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">Expiry</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">File</th>
+                    <th className="px-2 py-1.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...archived].reverse().map((row) => (
+                    <tr key={row.certificate_id} className="border-t border-slate-100" data-testid={`org-insurance-history-row-${row.certificate_id}`}>
+                      <td className="px-2 py-1.5 font-mono">
+                        {(row.uploaded_at || row.archived_at || '').slice(0, 10)}
+                      </td>
+                      <td className="px-2 py-1.5">{row.policy_number || '—'}</td>
+                      <td className="px-2 py-1.5">{row.expiry_date || '—'}</td>
+                      <td className="px-2 py-1.5 truncate max-w-[200px]">
+                        {row.certificate_filename || '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <a
+                          href={`${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}/api/org/insurance/${kind}/history/${row.certificate_id}/download`}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          data-testid={`org-insurance-history-download-${row.certificate_id}`}
+                          className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900"
+                        >
+                          <Download size={11} /> Download
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function Section({ icon, title, children, elevated }) {
+function Section({ icon, title, children, elevated, headerRight }) {
   return (
     <div className={`rounded-2xl border bg-white p-5 ${
       elevated
         ? 'border-slate-200 shadow-sm ring-1 ring-emerald-50/60'
         : 'border-slate-200'
     }`}>
-      <h3 className="font-display font-semibold flex items-center gap-2 mb-4">{icon} {title}</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-display font-semibold flex items-center gap-2">{icon} {title}</h3>
+        {headerRight}
+      </div>
       {children}
+    </div>
+  );
+}
+
+// ─── v58.13.132dq — Insurance Certificates dispatch modal ────────
+
+function InsuranceEmailModal({ doc, orgName, defaultPreamble, onClose, onSent }) {
+  const [recipients, setRecipients] = useState([]);
+  const [customRecipient, setCustomRecipient] = useState('');
+  const [certificateTypes, setCertificateTypes] = useState([]);
+  const [archivedSelections, setArchivedSelections] = useState({});
+  const [subject, setSubject] = useState(`${orgName} — Insurance Certificates`);
+  const [preamble, setPreamble] = useState(
+    defaultPreamble
+    || `Please find attached our current insurance certificates. Please retain these for your records.\n\nKind regards,\n${orgName}`,
+  );
+  const [note, setNote] = useState('');
+  const [sending, setSending] = useState(false);
+  // Simpro customer picker
+  const [search, setSearch] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [simproConnected, setSimproConnected] = useState(true);
+
+  useEffect(() => {
+    if (search.length < 2) { setSuggestions([]); return; }
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/integrations/simpro/customers/search',
+          { params: { q: search, limit: 15 } });
+        if (cancelled) return;
+        setSuggestions(data?.items || []);
+        setSimproConnected(data?.connected !== false);
+      } catch (_e) {
+        if (cancelled) return;
+        setSuggestions([]);
+        setSimproConnected(false);
+      } finally { if (!cancelled) setSearching(false); }
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search]);
+
+  const kinds = [
+    { kind: 'public_liability',       label: 'Public liability' },
+    { kind: 'workers_comp',           label: 'Workers compensation' },
+    { kind: 'general_cover',          label: 'General cover' },
+    { kind: 'professional_indemnity', label: 'Professional indemnity' },
+  ];
+
+  const addRecipient = (email, meta) => {
+    const clean = (email || '').trim();
+    if (!clean) return;
+    if (recipients.some((r) => r.email === clean)) return;
+    setRecipients((rs) => [...rs, { email: clean, ...(meta || {}) }]);
+    setCustomRecipient('');
+    setSearch('');
+    setSuggestions([]);
+  };
+  const removeRecipient = (email) =>
+    setRecipients((rs) => rs.filter((r) => r.email !== email));
+
+  const toggleKind = (kind) => setCertificateTypes((ks) =>
+    ks.includes(kind) ? ks.filter((k) => k !== kind) : [...ks, kind]);
+  const toggleArchived = (kind, fileId) => setArchivedSelections((a) => {
+    const cur = a[kind] || [];
+    return { ...a, [kind]: cur.includes(fileId) ? cur.filter((f) => f !== fileId) : [...cur, fileId] };
+  });
+
+  const send = async () => {
+    if (recipients.length === 0) { toast.error('Add at least one recipient'); return; }
+    const anyArchived = Object.values(archivedSelections).some((a) => (a || []).length > 0);
+    if (certificateTypes.length === 0 && !anyArchived) {
+      toast.error('Pick at least one certificate to attach');
+      return;
+    }
+    setSending(true);
+    try {
+      const { data } = await api.post('/org/insurance/email', {
+        recipients: recipients.map((r) => r.email),
+        certificate_types: certificateTypes,
+        archived_certificate_ids: archivedSelections,
+        subject,
+        preamble,
+        note: note || null,
+      });
+      if (data?.mocked) {
+        toast.warning('MOCKED — no email sent (Microsoft 365 not configured).', { duration: 4500 });
+      } else if (data?.ok) {
+        toast.success(`Sent to ${data.sent_to.length} recipient(s).`);
+      } else {
+        toast.error(data?.error || 'Send failed');
+      }
+      onSent?.();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center px-4"
+      data-testid="insurance-email-modal"
+    >
+      <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto ring-1 ring-emerald-100">
+        <div className="sticky top-0 bg-gradient-to-r from-emerald-50 to-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Mail size={16} className="text-emerald-600" />
+            <div>
+              <div className="font-display font-semibold text-sm">Insurance Certificates Distribution</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Admin only</div>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600" data-testid="insurance-email-close">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-5 space-y-5">
+          {/* Recipient picker */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Recipients</label>
+            {recipients.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2" data-testid="insurance-email-recipients">
+                {recipients.map((r) => (
+                  <span key={r.email} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-900 border border-emerald-200">
+                    {r.company_name ? `${r.company_name} · ` : ''}{r.email}
+                    <button type="button" onClick={() => removeRecipient(r.email)} className="ml-1 text-emerald-700 hover:text-emerald-900">
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="relative">
+              <input
+                className={inputClass}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search Simpro customers…"
+                data-testid="insurance-email-simpro-search"
+              />
+              {suggestions.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg" data-testid="insurance-email-simpro-suggestions">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.simpro_customer_id + s.email}
+                      type="button"
+                      onClick={() => addRecipient(s.email, { company_name: s.company_name })}
+                      disabled={!s.email}
+                      data-testid={`insurance-email-simpro-option-${s.simpro_customer_id}`}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-emerald-50 flex justify-between items-center ${
+                        s.email ? '' : 'opacity-40 cursor-not-allowed'
+                      }`}
+                    >
+                      <span className="font-semibold text-slate-800 truncate">{s.company_name || s.contact_name || '(unnamed)'}</span>
+                      <span className="text-slate-500 text-[11px] ml-2 shrink-0">{s.email || 'no email'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {searching && <div className="text-[10px] text-slate-400 mt-1">Searching…</div>}
+            {!simproConnected && (
+              <div className="text-[11px] text-amber-800 mt-1">
+                Simpro customer picker unavailable — use the custom recipient field below.
+              </div>
+            )}
+            <div className="mt-2 flex gap-2">
+              <input
+                className={inputClass + ' flex-1'}
+                value={customRecipient}
+                onChange={(e) => setCustomRecipient(e.target.value)}
+                placeholder="Or enter a custom email address"
+                type="email"
+                data-testid="insurance-email-custom-recipient"
+              />
+              <button type="button" onClick={() => addRecipient(customRecipient)}
+                      data-testid="insurance-email-custom-add"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700">
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Certificate picker (current + archived) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Certificates to attach</label>
+            <div className="space-y-3">
+              {kinds.map(({ kind, label }) => {
+                const block = doc[`${kind}_insurance`] || {};
+                const hasCurrent = !!block.certificate_id;
+                const archived = block.previous_certificates || [];
+                return (
+                  <div key={kind} className="rounded-lg border border-slate-200 p-3 bg-slate-50/50" data-testid={`insurance-email-cert-block-${kind}`}>
+                    <label className="flex items-center gap-2 text-sm font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={certificateTypes.includes(kind)}
+                        onChange={() => toggleKind(kind)}
+                        disabled={!hasCurrent}
+                        data-testid={`insurance-email-cert-${kind}`}
+                      />
+                      <span className={hasCurrent ? '' : 'text-slate-400'}>{label}</span>
+                      {!hasCurrent && <span className="text-[10px] uppercase tracking-wider text-slate-400 ml-1">No certificate uploaded</span>}
+                    </label>
+                    {archived.length > 0 && (
+                      <div className="mt-1.5 ml-5 space-y-1 text-[11px] text-slate-600">
+                        {archived.map((a) => (
+                          <label key={a.certificate_id} className="flex items-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              checked={(archivedSelections[kind] || []).includes(a.certificate_id)}
+                              onChange={() => toggleArchived(kind, a.certificate_id)}
+                              data-testid={`insurance-email-arch-${a.certificate_id}`}
+                            />
+                            <span>Archived {(a.uploaded_at || '').slice(0,10)} — {a.certificate_filename || '(no filename)'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Subject</label>
+            <input className={inputClass} value={subject} onChange={(e) => setSubject(e.target.value)}
+                   data-testid="insurance-email-subject" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Preamble template</label>
+            <textarea className={inputClass + ' min-h-[80px]'} value={preamble}
+                      onChange={(e) => setPreamble(e.target.value)}
+                      data-testid="insurance-email-preamble"/>
+            <div className="text-[10px] text-slate-400 mt-1">
+              This template is stored on the org so future sends default to it.
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Per-email note (optional)</label>
+            <textarea className={inputClass + ' min-h-[50px]'} value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      data-testid="insurance-email-note"/>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose}
+                    data-testid="insurance-email-cancel"
+                    className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700">
+              Cancel
+            </button>
+            <button type="button" onClick={send} disabled={sending}
+                    data-testid="insurance-email-send"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 shadow-sm">
+              <Send size={12} /> {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── v58.13.132dq — Insurance email audit log ────────────────────
+
+function EmailAuditLog() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    api.get('/org/insurance/email/log').then(({ data }) => setRows(data?.items || []))
+      .catch(() => setRows([]));
+  }, []);
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-5 rounded-lg border border-slate-200 bg-white" data-testid="insurance-email-audit-log">
+      <div className="px-3 py-2 border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+        <Clock size={12} /> Insurance email log (last 10)
+      </div>
+      <table className="w-full text-[11px]">
+        <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider">
+          <tr>
+            <th className="text-left px-2 py-1.5 font-semibold">Sent</th>
+            <th className="text-left px-2 py-1.5 font-semibold">By</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Recipients</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Certificates</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className="border-t border-slate-100" data-testid={`insurance-email-audit-row-${r.id}`}>
+              <td className="px-2 py-1.5 font-mono whitespace-nowrap">
+                {(r.timestamp || '').replace('T', ' ').slice(0, 16)}
+              </td>
+              <td className="px-2 py-1.5">{r.sent_by_email || r.sent_by_user_id || '—'}</td>
+              <td className="px-2 py-1.5 truncate max-w-[220px]" title={(r.recipients || []).join(', ')}>
+                {(r.recipients || []).join(', ')}
+              </td>
+              <td className="px-2 py-1.5">
+                {(r.certificate_types || []).length}
+                {(r.archived_included || []).length > 0 && ` +${r.archived_included.length} archived`}
+              </td>
+              <td className="px-2 py-1.5">
+                {r.mocked ? (
+                  <span className="text-[10px] uppercase font-semibold text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">MOCKED</span>
+                ) : r.ok ? (
+                  <span className="text-[10px] uppercase font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 rounded px-1.5 py-0.5">Sent</span>
+                ) : (
+                  <span className="text-[10px] uppercase font-semibold text-red-800 bg-red-100 border border-red-200 rounded px-1.5 py-0.5" title={r.error || ''}>Failed</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
