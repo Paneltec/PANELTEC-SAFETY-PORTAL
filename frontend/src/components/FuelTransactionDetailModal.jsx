@@ -285,16 +285,19 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
                 value={t.from_site || <span className="text-slate-300">—</span>}
                 testId="fuel-txn-detail-from-site"
               />
-              {/* v58.13.132dl — Portal unit price row respects the
-                  `.132dh` override policy. When the org has flipped
-                  `override_mode` to `provisional_all`, we surface the
-                  provisional price (e.g. $2.250) with an amber sub-
-                  label so admins never see stale SmartFill numbers
-                  masquerading as the authoritative unit price. When
-                  the toggle is `smartfill_with_fallback` (default),
-                  the raw portal value is shown as before. Read-time
-                  only — no DB mutation. */}
-              {(t.unit_price != null || (overrideActive && provPrice != null)) && (
+              {/* v58.13.132do — Portal Unit Price row surfaces the
+                  effective per-fill price under BOTH toggle modes
+                  with a "REFLECTS FUEL PRICE POLICY" caption, so
+                  admins never see developer jargon ("stale —
+                  ignored, we use total ÷ litres") from the .132dl
+                  wording. Under `smartfill_with_fallback` (default),
+                  the row shows the SmartFill-computed $/L (Total ÷
+                  Litres — mirrors the `$/L (Computed)` metric card)
+                  with a slate policy caption. Under `provisional_all`
+                  (from .132dh), it swaps to the Provisional price
+                  with the amber caption shipped in .132dl. Read-time
+                  only; no DB mutation. */}
+              {(dpl != null || (overrideActive && provPrice != null)) && (
                 <Row
                   icon={<CircleDollarSign size={12} />}
                   label="Portal unit price"
@@ -308,9 +311,9 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
                       </span>
                     ) : (
                       <span data-testid="fuel-txn-detail-portal-unit-price">
-                        <span className="font-mono">{fmtDollar(t.unit_price, 3)}</span>
-                        <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
-                          stale — ignored, we use total ÷ litres
+                        <span className="font-mono">{fmtDollar(dpl, 3)}</span>
+                        <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-500">
+                          SmartFill price — reflects fuel price policy
                         </span>
                       </span>
                     )
