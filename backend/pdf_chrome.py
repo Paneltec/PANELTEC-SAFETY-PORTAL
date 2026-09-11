@@ -165,6 +165,24 @@ class BrandedCanvas(Canvas):
         self.setFont("Helvetica", 6.5)
         self.drawRightString(w - MARGIN_MM * mm, FOOTER_MM * mm - 10 * mm,
                              datetime.now(timezone.utc).strftime("Generated %d %b %Y · %H:%M UTC"))
+        # v58.13.132dp — Portal URL on the footer (subtle, centre-below
+        # the confidentiality line). Prefer `org.portal_url` (set by
+        # admins via the Org settings page); fall back to the
+        # `PUBLIC_APP_URL` env or the preview-domain default so a PDF
+        # rendered by a code path that doesn't load the org doc still
+        # carries a valid link.
+        import os as _os  # noqa: WPS433
+        portal = (
+            (self._org or {}).get("portal_url")
+            or _os.environ.get("PUBLIC_APP_URL")
+            or "https://whs-compliance.preview.emergentagent.com"
+        )
+        portal = portal.rstrip("/")
+        if portal:
+            self.setFont("Helvetica", 6.5)
+            self.setFillColor(MUTED_INK)
+            self.drawCentredString(w / 2, FOOTER_MM * mm - 10 * mm,
+                                   f"Portal: {portal}")
 
 
 class BrandedDocTemplate(BaseDocTemplate):

@@ -117,15 +117,29 @@ def test_sidebar_count_equals_register_total_for_every_tag():
 
 def test_vac_truck_dumping_specific_case():
     """Regression pin for Stephen's screenshot: `Vac Truck Dumping`
-    must return exactly 12 items with total=12 (not 13, not 3, not 115)."""
+    tag filter must return the same number of rows as its sidebar
+    count (fixed the '3 rows visible of 115 total' bug), and the
+    known-retired asset `d076342d-...` must NEVER surface in the
+    result. Uses the sidebar count as ground truth so the check
+    stays valid as the fleet + local tags evolve."""
     hdr = _admin_headers()
+    tag_resp = requests.get(f"{API}/api/fleet/navixy/tags",
+                            headers=hdr, timeout=30)
+    assert tag_resp.status_code == 200
+    row = next((t for t in tag_resp.json().get("distinct_tags", [])
+                if isinstance(t, dict) and t["label"] == "Vac Truck Dumping"),
+               None)
+    assert row, "Vac Truck Dumping tag missing from sidebar universe"
+    expected = row["count"]
+    assert expected >= 12, f"sidebar count regressed below 12: {expected}"
     reg = requests.get(f"{API}/api/fleet/register",
                        params={"tag": "Vac Truck Dumping", "limit": 200},
                        headers=hdr, timeout=30)
     assert reg.status_code == 200, reg.text
     body = reg.json()
-    assert body["total"] == 12, f"expected 12, got {body['total']}"
-    assert len(body["items"]) == 12
+    assert body["total"] == expected, (
+        f"register total {body['total']} != sidebar count {expected}")
+    assert len(body["items"]) == expected
     # And confirm the retired D076342d-... is NOT in the result.
     ids = {i["id"] for i in body["items"]}
     assert "d076342d-1f79-4a06-9ac1-0d21affc98ab" not in ids, \

@@ -59,6 +59,7 @@ import PdfImportModal from '../imports/PdfImportModal';
 import { BulkImportPill } from '../../pages/prestarts/BulkImport/BulkImportPill';
 import useSessionTimeout from '../../hooks/useSessionTimeout';
 import SessionWarningModal from '../SessionWarningModal';
+import InsuranceCriticalModal from '../InsuranceCriticalModal';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,
@@ -766,6 +767,9 @@ export default function AppShell() {
           onStay={() => { warnInfo.stay?.(); setWarnInfo(null); }}
           onLogout={async () => { setWarnInfo(null); await signOut(); navigate('/?reason=idle'); }} />
       )}
+      {/* v58.13.132dp — 7-day insurance critical alert. Admin-only,
+          one-time-per-session dismissible. Silent for non-admins. */}
+      <InsuranceCriticalModal />
     </div>
     </PermissionsProvider>
   );
