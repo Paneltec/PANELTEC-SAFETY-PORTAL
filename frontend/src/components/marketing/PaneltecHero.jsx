@@ -32,8 +32,12 @@ export const PANELTEC_HERO_COPY = Object.freeze({
 
 const Headline = ({ className }) => (
   <h2 className={`font-display font-bold leading-tight tracking-tight ${className}`}>
-    <span className="block">{PANELTEC_HERO_COPY.headline[0]}</span>
-    <span className="block">{PANELTEC_HERO_COPY.headline[1]}</span>
+    {/* v58.13.132ek — Entire tagline recoloured to `--paneltec-gold`
+        so "Build Safer / Smarter / Together" reads as one unified
+        gold line, matching the yellow Real-time Compliance shield
+        icon on the right column. */}
+    <span className="block" style={{ color: 'var(--paneltec-gold)' }}>{PANELTEC_HERO_COPY.headline[0]}</span>
+    <span className="block" style={{ color: 'var(--paneltec-gold)' }}>{PANELTEC_HERO_COPY.headline[1]}</span>
     <span className="block" style={{ color: 'var(--paneltec-gold)' }}>{PANELTEC_HERO_COPY.headline[2]}</span>
   </h2>
 );

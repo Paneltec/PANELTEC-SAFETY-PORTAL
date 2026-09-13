@@ -9,6 +9,11 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
+import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
+import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
+import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ee
+import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
+import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ec
 import useCaptureDensity from '../lib/useCaptureDensity';
 import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import { getUser } from '../lib/auth';
@@ -23,13 +28,43 @@ const BACKEND = process.env.REACT_APP_BACKEND_URL;
 export default function HazardsList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
+  // v58.13.132eb — total from X-Total-Count header
+  const [totalCount, setTotalCount] = useState(null);
+  // v58.13.132ee — archived count from X-Archived-Count header.
+  const [archivedCount, setArchivedCount] = useState(null);
   const [loading, setLoading] = useState(true);
   const density = useCaptureDensity('hazards', filtered.length);
+  // v58.13.132ec — Archive lifecycle. Admin-only.
+  const isAdmin = (getUser()?.role || '').toLowerCase() === 'admin';
+  // v58.13.132ee — Bulk archive dialog + search-sees-archived.
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
   const { deepLinkId } = useDeepLinkOpen({
     items, loading, notFoundMessage: 'Linked hazard not found',
   });
-  useEffect(() => { api.get('/hazards').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
+  // v58.13.132eh — Load-more pagination.
+  const [pageSize, setPageSize] = usePersistedPageSize('hazards:pageSize', 5000);
+  // v58.13.132ee — Shared loader: refetches items + both count headers.
+  const load = React.useCallback(async (includeArchived, offset = 0, size = 5000, append = false) => {
+    setLoading(true);
+    try {
+      const r = await api.get('/hazards', {
+        params: { include_archived: includeArchived, limit: size, offset },
+      });
+      setItems((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      setFiltered((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      const t = r.headers?.['x-total-count'];
+      setTotalCount(t != null ? Number(t) : r.data?.length ?? 0);
+      const a = r.headers?.['x-archived-count'];
+      setArchivedCount(a != null ? Number(a) : null);
+    } finally { setLoading(false); }
+  }, []);
+  const { showArchived, setShowArchived, onArchive, onUnarchive } =
+    useArchiveActions('/hazards', setItems, () => load(showArchived, 0, pageSize, false));
+  useEffect(() => { load(showArchived, 0, pageSize, false); }, [showArchived, pageSize, load]);
+  const onLoadMore = React.useCallback(() => {
+    load(showArchived, items.length, pageSize, true);
+  }, [load, showArchived, items.length, pageSize]);
   const evict = (id) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
     setFiltered((prev) => prev.filter((x) => x.id !== id));
@@ -40,7 +75,43 @@ export default function HazardsList() {
       <CaptureSticky testid="hazards-sticky">
         <PageHeader crumb="Capture / Hazard Reports" title="Hazard Reports"
           subtitle="Snap a hazard — AI classifies severity and drafts the report."
-          action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-create-btn" />} />
+          action={
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <button type="button" onClick={() => setArchiveDialogOpen(true)}
+                        data-testid="hazards-archive-header-btn"
+                        className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+                  Archive…
+                </button>
+              )}
+              <NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-create-btn" />
+            </div>
+          } />
+        {/* v58.13.132ee — Bulk archive dialog. */}
+        {isAdmin && (
+          <ArchiveDialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}
+            apiPath="/hazards" moduleLabel="hazards"
+            knownStatuses={['open', 'in_progress', 'closed']}
+            knownCategories={['hazard', 'near_miss', 'risk_assessment']}
+            onArchived={() => load(showArchived)} />
+        )}
+        {/* v58.13.132eb — total-count chip (reads `.132ea` header). */}
+        {/* v58.13.132ec — Admin-only Show-archived toggle beside it. */}
+        <div className="mt-1 flex items-center gap-2">
+          <TotalCountChip
+            showing={filtered.length}
+            total={totalCount}
+            testid="hazards-total-count-chip"
+          />
+          {isAdmin && (
+            <ShowArchivedToggle
+              value={showArchived}
+              onChange={setShowArchived}
+              count={archivedCount}
+              testid="hazards-show-archived-toggle"
+            />
+          )}
+        </div>
         {items.length > 0 && (
           <CaptureListToolbar
             items={items} onFiltered={setFiltered} testidPrefix="hazards"
@@ -94,6 +165,8 @@ export default function HazardsList() {
                       minH={density.cardMinH}
                       badges={extraBadges}
                       onDeleted={evict}
+                      onArchive={isAdmin ? onArchive : undefined}
+                      onUnarchive={isAdmin ? onUnarchive : undefined}
                       openInitially={deepLinkId === h.id}
                     />
                   </div>
@@ -110,12 +183,27 @@ export default function HazardsList() {
                   minH={density.cardMinH}
                   badges={extraBadges}
                   onDeleted={evict}
+                  onArchive={isAdmin ? onArchive : undefined}
+                  onUnarchive={isAdmin ? onUnarchive : undefined}
                   openInitially={deepLinkId === h.id}
                 />
               );
             })}
           </CaptureCardGrid>
        </>)}
+       {/* v58.13.132eh — Load-more pager. */}
+       {!loading && items.length > 0 && (
+         <PaginationBar
+           showing={items.length}
+           total={totalCount ?? items.length}
+           pageSize={pageSize}
+           onPageSize={setPageSize}
+           onLoadMore={onLoadMore}
+           loading={loading}
+           testidPrefix="hazards"
+           storageKey="hazards:pageSize"
+         />
+       )}
         </TabsContent>
       </Tabs>
     </div>

@@ -382,6 +382,12 @@ api.include_router(files_router)
 # v58.13.106 — public visitor sign-in flow (public + admin routers).
 api.include_router(visitor_public_router)
 api.include_router(visitor_public_flat_router)
+# v58.13.132eg — Register category-count endpoints BEFORE the routers
+# whose `/{item_id}` catch-alls would otherwise swallow the sub-path
+# (`/admin/visitors/{id}` shadows `/admin/visitors/category-counts`,
+# `/pre-starts/{id}` shadows `/pre-starts/category-counts`, etc.).
+from category_counts import router as category_counts_router  # noqa: E402
+api.include_router(category_counts_router)
 api.include_router(visitor_admin_router)
 # v58.13.132d — mobile_sites_router REMOVED (reconciled to existing sites endpoints).
 # v58.13.132a — mobile onboarding + PIN auth.
@@ -444,6 +450,15 @@ from cs_incident import (  # noqa: E402
     ensure_indexes as cs_incident_ensure_indexes,
 )
 api.include_router(cs_incident_router)
+# v58.13.132ed — Auto-archive rules admin + APScheduler-fed job.
+from org_archive_rules import router as org_archive_rules_router  # noqa: E402
+api.include_router(org_archive_rules_router)
+# v58.13.132eo — Admin-managed URL tiles (Quick Links) on Org Settings.
+from org_url_tiles import router as org_url_tiles_router  # noqa: E402
+api.include_router(org_url_tiles_router)
+# v58.13.132ev — Per-admin tile credential vault.
+from tile_credentials import router as tile_credentials_router  # noqa: E402
+api.include_router(tile_credentials_router)
 # v160.3.9.17 — List Roles reference library.
 from list_roles import (  # noqa: E402
     router as list_roles_router,
@@ -721,10 +736,19 @@ async def on_startup():
     except Exception as e:
         log.warning("incident_root_causes index setup failed: %s", e)
     # v160.3.9.16 — CS Incident index setup.
+    # v58.13.132dz — Endpoints are 410-gated but the source collection
+    # stays read-only for one release cycle; keep indexes fresh so a
+    # rollback works cleanly.
     try:
         await cs_incident_ensure_indexes()
     except Exception as e:
         log.warning("cs_incident index setup failed: %s", e)
+    # v58.13.132dz — Form routing rules (SSRA → risk_assessment).
+    try:
+        from form_routing import ensure_form_routing_rules
+        await ensure_form_routing_rules()
+    except Exception as e:
+        log.warning("form_routing_rules index/seed failed: %s", e)
     # v160.3.9.17 — List Roles index setup.
     try:
         await list_roles_ensure_indexes()
@@ -1185,6 +1209,20 @@ async def on_startup():
                 log.info("APScheduler job registered — swms_purge_expired daily at 03:15 UTC")
             except Exception as e:
                 log.warning("swms_purge_expired scheduler hook failed: %s", e)
+            # v58.13.132ed — Nightly auto-archive across the 7 CAPTURE
+            # modules. 03:30 UTC — 15 min after SWMS purge so the two
+            # don't contend on the same tenant. Idempotent — a re-run
+            # finds already-archived rows and no-ops.
+            try:
+                from org_archive_rules import apply_org_archive_rules
+                scheduler.add_job(apply_org_archive_rules, "cron",
+                                  hour=3, minute=30,
+                                  id="org_archive_rules_daily",
+                                  max_instances=1, coalesce=True,
+                                  replace_existing=True)
+                log.info("APScheduler job registered — org_archive_rules_daily at 03:30 UTC")
+            except Exception as e:
+                log.warning("org_archive_rules scheduler hook failed: %s", e)
             # Phase 4.8 — daily snapshot of engine_hours_total + odometer_km_total
             # for every Navixy-synced asset. 01:00 UTC keeps it ahead of the
             # working-day boundary in AU.

@@ -120,6 +120,7 @@ async def admin_list_workers(
 async def admin_list_assignments(
     user: dict = Depends(get_current_user),
     date: Optional[str] = None,
+    include_deleted: bool = False,
 ) -> dict:
     """Admin view of ad-hoc assignments for a given date (default: today
     in Australia/Sydney, matching the create path).
@@ -127,7 +128,13 @@ async def admin_list_assignments(
     v58.13.132cf — reads snapshot fields (`worker_name`,
     `worker_phone`, `worker_role_id`, `assigned_by_name`) directly
     from the assignment doc — no live JOIN needed. Falls back to a
-    users→workers lookup only for pre-.132cf rows (currently 0)."""
+    users→workers lookup only for pre-.132cf rows (currently 0).
+
+    v58.13.132ds — Attached PDFs can now be soft-deleted per row.
+    Default view masks the PDF fields (`pdf_id`, `pdf_url`,
+    `pdf_filename`) to None when `pdf_deleted_at` is set; the FE
+    Show-deleted toggle passes `include_deleted=true` to bring the
+    PDF back into view for undelete."""
     _require_admin(user)
 
     from datetime import datetime
@@ -141,6 +148,14 @@ async def admin_list_assignments(
 
     docs = []
     async for d in cursor:
+        # v58.13.132ds — Mask soft-deleted PDF attachments unless the
+        # caller explicitly asks to include them. GridFS file is
+        # preserved; we just hide the pointer so the row's `pdf_id`
+        # link renders as absent.
+        if d.get("pdf_deleted_at") and not include_deleted:
+            d["pdf_id"] = None
+            d["pdf_url"] = None
+            d["pdf_filename"] = None
         docs.append(d)
 
     # Legacy row enrichment (pre-.132cf rows with no snapshot fields).
@@ -170,6 +185,63 @@ async def admin_list_assignments(
             d["worker_role_id"] = u.get("role_id")
 
     return {"rows": docs, "date": the_date, "total": len(docs)}
+
+
+# ─────────────── v58.13.132ds — Soft-delete ad-hoc job PDFs ─────────
+# Admin-only. Soft-delete a PDF attachment on an assignment: stamps
+# `pdf_deleted_at`/`pdf_deleted_by` on the assignment doc. The GridFS
+# blob under bucket `job_pdfs` is NEVER touched — the download
+# endpoint `/mobile/daily-jobs/pdf/{pdf_id}` still resolves for
+# audit. Undelete flips it back on. 404 for unknown assignment, 400
+# if the row has no PDF to delete.
+
+
+@router.delete("/mobile/daily-jobs/admin/{assignment_id}/pdf")
+async def admin_soft_delete_assignment_pdf(
+    assignment_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    _require_admin(user)
+    from models import now_iso  # noqa: WPS433
+    doc = await db.daily_job_assignments.find_one(
+        {"id": assignment_id, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "pdf_id": 1, "pdf_deleted_at": 1},
+    )
+    if not doc:
+        raise HTTPException(404, "Assignment not found")
+    if not doc.get("pdf_id"):
+        raise HTTPException(400, "Assignment has no PDF attached")
+    if doc.get("pdf_deleted_at"):
+        return {"ok": True, "already_deleted": True}
+    now = now_iso()
+    await db.daily_job_assignments.update_one(
+        {"id": assignment_id, "org_id": user["org_id"]},
+        {"$set": {"pdf_deleted_at": now,
+                  "pdf_deleted_by": user.get("id"),
+                  "updated_at": now}},
+    )
+    return {"ok": True, "assignment_id": assignment_id, "deleted_at": now}
+
+
+@router.post("/mobile/daily-jobs/admin/{assignment_id}/pdf/undelete")
+async def admin_undelete_assignment_pdf(
+    assignment_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    _require_admin(user)
+    from models import now_iso  # noqa: WPS433
+    doc = await db.daily_job_assignments.find_one(
+        {"id": assignment_id, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1},
+    )
+    if not doc:
+        raise HTTPException(404, "Assignment not found")
+    await db.daily_job_assignments.update_one(
+        {"id": assignment_id, "org_id": user["org_id"]},
+        {"$unset": {"pdf_deleted_at": "", "pdf_deleted_by": ""},
+         "$set": {"updated_at": now_iso()}},
+    )
+    return {"ok": True, "assignment_id": assignment_id}
 
 
 # ─────────────── GET /mobile/daily-jobs/admin/sites ───────────────

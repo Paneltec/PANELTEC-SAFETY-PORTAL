@@ -1,11 +1,21 @@
 """v58.13.132dj — Navixy Tag column + version pill lift + Fuel
-Transaction Detail modal reprice.
+Transaction Detail modal.
+
+v58.13.132dy — INVERTED for the frozen-price architecture. The
+detail endpoint now prefers the frozen snapshot fields
+(`frozen_total_price`, `frozen_price_per_litre`,
+`frozen_price_source`) when a row carries `frozen_at`. The legacy
+`raw_total_price` / `raw_computed_price_per_litre` audit refs still
+surface, but the FE modal now leads with the frozen chip
+(`fuel-txn-detail-frozen-source-chip`); the legacy override pill
+is a BC fallback for rows without a snapshot.
 """
 from __future__ import annotations
 
 import os
 import re
 import uuid
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
@@ -190,48 +200,78 @@ def test_version_pill_raised_by_20px():
     assert "132dj" in src and "Lifted" in src
 
 
-# ─── Part 4: Fuel Transaction Detail modal reprice ──────────────
+# ─── Part 4: Fuel Transaction Detail modal (frozen model) ───────
 
-def test_detail_endpoint_surfaces_price_state_and_raw():
+def test_detail_endpoint_prefers_frozen_snapshot():
+    """v58.13.132dy — `get_transaction` prefers the frozen snapshot
+    fields when the row carries `frozen_at`. Raw refs remain for
+    audit. Legacy `effective_total_price` fallback is retained
+    for pre-migration rows only."""
     src = FLEET_MOD.read_text(encoding="utf-8")
-    # Detail endpoint now runs effective_total_price + returns raw refs.
+    # Frozen prefer path — same shape as the list endpoint.
+    assert 'doc.get("frozen_at")' in src
+    assert 'doc.get("frozen_total_price")' in src
+    assert 'doc.get("frozen_price_per_litre")' in src
+    # Legacy audit refs still populated so the FE can render the
+    # "SmartFill raw (reference)" row under provisional_override.
     assert 'raw_total_price' in src
     assert 'raw_computed_price_per_litre' in src
-    # And exposes the effective toggle state for the FE.
+    # Effective toggle state still exposed for the segmented control.
     assert '"price_state":' in src
-    # Reuses the same helpers as the list endpoint.
+    # Legacy fallback for rows without a snapshot (defensive).
     assert "effective_total_price(doc, provisional_price, override_smartfill)" in src
 
 
-def test_modal_frontend_reflects_override():
+def test_modal_frontend_surfaces_frozen_source():
+    """v58.13.132dy — Modal leads with the frozen source chip
+    (`fuel-txn-detail-frozen-source-chip`). Legacy override pill is
+    retained as a BC fallback for rows without a snapshot."""
     src = MODAL_JSX.read_text(encoding="utf-8")
-    assert 'fuel-txn-detail-override-pill' in src
-    assert 'Provisional override' in src
-    assert 'raw_total_price' in src
-    assert 'raw_computed_price_per_litre' in src
+    # New frozen-source chip at the top of the modal.
+    assert 'fuel-txn-detail-frozen-source-chip' in src
+    assert 'price_source_snapshot' in src
+    assert 'frozen_price_source' in src
+    # All three canonical snapshot labels present.
+    assert 'Provisional override (at import)' in src
+    assert 'SmartFill real (at import)' in src
+    assert 'Provisional fallback (at import)' in src
+    # SmartFill raw reference row is now gated on the frozen source
+    # tag (was `overrideActive` in .132dj).
     assert 'fuel-txn-detail-smartfill-raw' in src
-    assert 'overrideActive' in src
+    assert "price_source_snapshot === 'provisional_override'" in src
+    # Legacy BC pill retained for pre-migration rows only.
+    assert 'fuel-txn-detail-override-pill' in src
 
 
 @pytest.mark.live_db_writes
-def test_detail_endpoint_reprices_under_override():
+def test_detail_endpoint_leaves_frozen_rows_unchanged():
+    """v58.13.132dy — Once a row is stamped with `frozen_at`, flipping
+    the org-wide toggle does NOT reprice it. The detail endpoint
+    surfaces the frozen values verbatim."""
     hdr = _pin_login()
     db = _mongo()
     u = db.users.find_one({"email": "stephen@paneltec.com.au"})
     if not u:
         pytest.skip("Stephen user not seeded")
     org_id = u["org_id"]
-    # Seed a synthetic tx with a real SmartFill price.
-    tag = f"pytest-132dj-{uuid.uuid4().hex[:6]}"
-    doc = {"id": f"{tag}-tx", "org_id": org_id, "asset_id": tag,
-           "registration": tag, "deleted_at": None,
-           "date_iso": "2025-01-01", "timestamp": "2025-01-01T00:00:00+00:00",
-           "litres": 100.0, "total_price": 180.0,
-           "computed_price_per_litre": 1.80,
-           "price_source": "smartfill_actual"}
+    # Seed a synthetic tx frozen under SmartFill (real) at import.
+    tag = f"pytest-132dy-{uuid.uuid4().hex[:6]}"
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": f"{tag}-tx", "org_id": org_id, "asset_id": tag,
+        "registration": tag, "deleted_at": None,
+        "date_iso": "2025-01-01", "timestamp": "2025-01-01T00:00:00+00:00",
+        "litres": 100.0, "total_price": 180.0,
+        "computed_price_per_litre": 1.80,
+        "price_source": "smartfill_actual",
+        "frozen_at": now.isoformat(),
+        "frozen_total_price": 180.0,
+        "frozen_price_per_litre": 1.80,
+        "frozen_price_source": "smartfill_real",
+    }
     db.fuel_transactions.insert_one(doc)
     try:
-        # OFF (smartfill_with_fallback) — real price flows through.
+        # OFF (smartfill_with_fallback) — snapshot flows through.
         requests.put(f"{API}/api/fleet/fuel/price-settings", headers=hdr,
                      json={"provisional_price_per_litre": 2.25,
                            "override_mode": "smartfill_with_fallback"})
@@ -240,21 +280,27 @@ def test_detail_endpoint_reprices_under_override():
         assert abs(r["total_price"] - 180.0) < 0.01
         assert abs(r["computed_price_per_litre"] - 1.80) < 0.001
         assert r["price_state"]["override_mode"] == "smartfill_with_fallback"
+        # Raw refs still surfaced from the stored fields.
         assert abs(r["raw_total_price"] - 180.0) < 0.01
-        # ON (provisional_all) — reprices to 100 × 2.25 = 225.
+        # ON (provisional_all) — frozen row STAYS at 180.0 @ 1.80.
+        # (Pre-.132dy this would have repriced to 100 × 2.25 = 225.)
         requests.put(f"{API}/api/fleet/fuel/price-settings", headers=hdr,
                      json={"override_mode": "provisional_all"})
         r2 = requests.get(f"{API}/api/fleet/fuel/transactions/{tag}-tx",
                           headers=hdr).json()
-        assert abs(r2["total_price"] - 225.0) < 0.01
-        assert abs(r2["computed_price_per_litre"] - 2.25) < 0.001
+        assert abs(r2["total_price"] - 180.0) < 0.01, (
+            f"frozen row was repriced under provisional_all: "
+            f"got total {r2['total_price']}, expected 180.0"
+        )
+        assert abs(r2["computed_price_per_litre"] - 1.80) < 0.001
         assert r2["price_state"]["override_mode"] == "provisional_all"
-        # Raw refs still the SmartFill originals.
+        # Raw refs untouched.
         assert abs(r2["raw_total_price"] - 180.0) < 0.01
         assert abs(r2["raw_computed_price_per_litre"] - 1.80) < 0.001
-        # DB itself unchanged.
+        # DB itself unchanged — nothing writes on read.
         stored = db.fuel_transactions.find_one({"id": f"{tag}-tx"})
         assert abs(stored["total_price"] - 180.0) < 1e-6
+        assert abs(stored["frozen_total_price"] - 180.0) < 1e-6
         # Restore.
         requests.put(f"{API}/api/fleet/fuel/price-settings", headers=hdr,
                      json={"override_mode": "smartfill_with_fallback"})
@@ -264,7 +310,7 @@ def test_detail_endpoint_reprices_under_override():
 
 # ─── Version sync ─────────────────────────────────────────────
 
-def test_three_way_sync_at_132dj_or_later():
+def test_three_way_sync_at_132dy_or_later():
     running = re.search(r"^export const RUNNING_VERSION = '([^']+)'",
                         VERSION_JS.read_text(), re.MULTILINE).group(1)
     expected = re.search(r"^export const EXPECTED_CACHE_VERSION = '([^']+)'",
@@ -273,4 +319,4 @@ def test_three_way_sync_at_132dj_or_later():
                       SW.read_text(), re.MULTILINE).group(1)
     assert running == expected == cache
     tail = re.search(r"132([a-z]+)", running).group(1)
-    assert tail >= "dj"
+    assert tail >= "dy"

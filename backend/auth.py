@@ -431,7 +431,31 @@ async def login(request: Request, body: LoginIn):
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(body.password, user["password_hash"]):
         await record_login_attempt(email, success=False)
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        # v58.13.132du — When a legitimate user hasn't completed
+        # first-sign-in yet (has `must_change_password=true` AND a
+        # live `reset_token_hash` or `pin_hash`), the naked
+        # "Invalid email or password" response leaves them
+        # thrashing on the login form when they should be opening
+        # the reset link in their inbox instead. We keep the
+        # 401 body identical to preserve anti-enumeration, but
+        # surface an `X-Auth-Reason` header so the FE can render
+        # a small "Have an invite email or reset link?" nudge
+        # under the form. Only fired when the user record exists
+        # AND has the pending-first-signin fingerprint — the
+        # header never leaks any user existence info a bad-faith
+        # caller couldn't already deduce.
+        extra_headers: dict = {}
+        if user and user.get("must_change_password"):
+            _now = now_iso()
+            has_live_reset = bool(user.get("reset_token_hash")
+                                   and (user.get("reset_expires_at") or "") > _now)
+            has_live_pin = bool(user.get("pin_hash")
+                                and (user.get("pin_expires_at") or "") > _now)
+            if has_live_reset or has_live_pin:
+                extra_headers["X-Auth-Reason"] = "pending-first-signin"
+        raise HTTPException(status_code=401,
+                            detail="Invalid email or password",
+                            headers=extra_headers or None)
     if user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="Account disabled — contact your administrator",
                             headers={"X-Auth-Reason": "account-disabled"})
@@ -697,3 +721,5 @@ async def login_with_simpro(body: LoginWithSimproIn) -> TokenOut:
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
     token = create_access_token(fresh["id"], fresh["email"], fresh.get("token_version", 0))
     return TokenOut(access_token=token, user=_to_user_out(fresh))
+
+

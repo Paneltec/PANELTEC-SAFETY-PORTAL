@@ -44,7 +44,10 @@ import InspectionsList, { InspectionNew } from '@/pages/Inspections';
 // migration.
 // import SiteSigninList from '@/pages/SiteSigninList';
 import RiskAssessments from '@/pages/RiskAssessments';
-import CsIncidentsList from '@/pages/CsIncidentsList';
+// v58.13.132dz — `CsIncidentsList` import retired. The `/app/submissions/*`
+// routes now redirect to `/app/incidents` (data merged into Incident
+// Reports in v58.13.132dz; see the ship memo).
+// import CsIncidentsList from '@/pages/CsIncidentsList';
 import ContractorsList, { ContractorNew, ContractorDetail } from '@/pages/Contractors';
 import Renewals from '@/pages/Renewals';
 import AuditExports from '@/pages/AuditExports';
@@ -131,6 +134,11 @@ function UsersAndRolesShell() {
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
 import OrgSettings from '@/pages/OrgSettings';
+// v58.13.132eq — Read-only Quick Links page (sidebar entry, admin-manages
+// via Org Settings).
+import QuickLinks from '@/pages/QuickLinks';
+// v58.13.132es — Standalone Apps Directory hub (opens in new window).
+import AppsDirectory from '@/pages/AppsDirectory';
 // v58.13.132cb — `Workspaces` page retired (Phase A of workspaces/sites
 // merge). Route redirects to `/app/settings/sites`. The `.jsx` file has
 // been deleted; import removed to prevent a build-time resolve error.
@@ -228,10 +236,25 @@ function App() {
                 the popup window that Workers.jsx opens via window.open(). */}
             <Route path="/print/worker-id-card/:workerId" element={<WorkerIdCardPrint />} />
 
+            {/* v58.13.132es — Standalone Apps Directory hub route,
+                intended to be popped in a fresh browser window by
+                the sidebar entry via `window.open`. Rendered OUTSIDE
+                AppShell so the popup carries no sidebar / top-nav
+                chrome. Still hits `GET /org/url-tiles` through the
+                authenticated axios instance (localStorage token from
+                the main window is available on the same origin). */}
+            <Route path="/apps-directory" element={<AppsDirectory />} />
+
             <Route path="/app" element={<MustChangePasswordGuard><AppShell /></MustChangePasswordGuard>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="ask" element={<Ask />} />
+              {/* v58.13.132eq — Read-only shared bookmark tiles.
+                  v58.13.132et — Sidebar Quick Links entry removed;
+                  this legacy route now 302-redirects to the dashboard
+                  with `?open=apps-directory` so old bookmarks
+                  auto-open the modal on landing. */}
+              <Route path="quick-links" element={<Navigate to="/app/dashboard?open=apps-directory" replace />} />
 
               <Route path="swms" element={<SwmsList />} />
               <Route path="swms/new" element={<SwmsNew />} />
@@ -266,12 +289,14 @@ function App() {
               <Route path="admin/visitors" element={<AdminVisitors />} />
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />
-              {/* v58.13.12 — Submissions bucket. CS Incidents migrated
-                  out of the "Risk Assessments" tab into its own tiled
-                  list. Old bookmarks with `?tab=cs_incident` get a
-                  soft redirect from RiskAssessments.jsx. */}
-              <Route path="submissions" element={<Navigate to="/app/submissions/cs-incidents" replace />} />
-              <Route path="submissions/cs-incidents" element={<CsIncidentsList />} />
+              {/* v58.13.12 — Submissions bucket. */}
+              {/* v58.13.132dz — CS Incidents merged into Incident
+                  Reports. Both `submissions` and
+                  `submissions/cs-incidents` now redirect to
+                  `/app/incidents` for one release cycle so old
+                  bookmarks / stale tabs land somewhere sane. */}
+              <Route path="submissions" element={<Navigate to="/app/incidents" replace />} />
+              <Route path="submissions/cs-incidents" element={<Navigate to="/app/incidents" replace />} />
               <Route path="inspections/new" element={<InspectionNew />} />
 
               <Route path="contractors" element={<ContractorsList />} />

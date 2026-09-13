@@ -777,3 +777,18 @@ ol.zebra-list > li:hover {
     }
 }
 
+
+/* v58.13.132dw — Hide native spinner buttons on the Provisional Fuel
+   Price edit input so keyboard typing (up to 4 decimals) is the
+   obvious primary interaction. Applied via a class so we don't
+   affect other numeric inputs across the app. */
+.fuel-price-input::-webkit-outer-spin-button,
+.fuel-price-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.fuel-price-input {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+

@@ -716,6 +716,18 @@ async def _import_csv(
     fieldnames = reader.fieldnames or []
     mapping, ignored = _map_headers(fieldnames)
 
+    # v58.13.132dx — Load the org's price setting ONCE per import
+    # batch so every row imported in the same batch stamps with the
+    # same price + toggle snapshot. Later admin changes never touch
+    # these rows again.
+    from fuel_price_settings import freeze_price_snapshot as _freeze
+    _batch_provisional, _batch_override = await get_org_price_state(org_id)
+    _batch_price_setting = await db.fuel_price_settings.find_one(
+        {"org_id": org_id}, {"_id": 1},
+    )
+    _batch_price_setting_id = (str(_batch_price_setting["_id"])
+                                if _batch_price_setting else None)
+
     header_warnings: list[str] = []
     if ignored:
         header_warnings.append(f"Ignored columns: {ignored}")
@@ -1223,6 +1235,11 @@ async def _import_csv(
                 "created_at": now_iso(),
                 "updated_at": now_iso(),
             }
+            # v58.13.132dx — Stamp frozen snapshot ONE-WAY at write time.
+            # Later admin toggle/price changes never touch these fields.
+            doc.update(_freeze(doc, _batch_provisional,
+                               _batch_override,
+                               _batch_price_setting_id))
             await db.fuel_transactions.insert_one(doc)
             inserted += 1
         except Exception as e:  # pylint: disable=broad-except
@@ -1679,14 +1696,24 @@ async def list_transactions(
     # aggregations in `_aggregate` + `asset_fuel_summary`).
     provisional_price, override_smartfill = await get_org_price_state(user["org_id"])
     for it in items:
-        new_total = effective_total_price(it, provisional_price, override_smartfill)
-        it["total_price"] = new_total
-        try:
-            litres = float(it.get("litres") or 0)
-        except (TypeError, ValueError):
-            litres = 0.0
-        if litres > 0:
-            it["computed_price_per_litre"] = round(new_total / litres, 4)
+        # v58.13.132dx — Prefer frozen fields (stamped at import).
+        # Fall back to on-the-fly `effective_total_price` for legacy
+        # rows that migration hasn't yet touched (defensive; the
+        # migration script covers all real rows).
+        if it.get("frozen_at"):
+            new_total = it.get("frozen_total_price") or 0
+            it["total_price"] = new_total
+            it["computed_price_per_litre"] = it.get("frozen_price_per_litre")
+            it["price_source_snapshot"] = it.get("frozen_price_source")
+        else:
+            new_total = effective_total_price(it, provisional_price, override_smartfill)
+            it["total_price"] = new_total
+            try:
+                litres = float(it.get("litres") or 0)
+            except (TypeError, ValueError):
+                litres = 0.0
+            if litres > 0:
+                it["computed_price_per_litre"] = round(new_total / litres, 4)
     return {"items": items, "total": total, "page": page, "size": size,
             # v58.13.132dh — Surface the effective settings so the FE
             # can render the "Provisional override active" badge
@@ -1704,6 +1731,7 @@ async def list_anomalies(
     rule: Optional[str] = Query(None),
     resolved: Optional[bool] = Query(None),
     count_only: bool = Query(False),
+    include_deleted: bool = Query(False),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     _flag: None = Depends(require_fleet_register_enabled),
@@ -1711,16 +1739,29 @@ async def list_anomalies(
 ):
     q: dict = {"org_id": user["org_id"], "deleted_at": None,
                "anomaly_flags": {"$ne": []}}
+    # v58.13.132ds — Individual anomaly_flag entries carry per-flag
+    # `deleted_at`/`deleted_by` for admin-driven soft-delete of
+    # dismissals. Default view hides deleted flags; the FE Show-
+    # deleted toggle passes `include_deleted=true` to bring them back.
+    flag_match: dict = {}
+    if not include_deleted:
+        flag_match["deleted_at"] = None
     if resolved is True:
-        q["anomaly_flags"] = {"$elemMatch": {
-            "resolved_at": {"$ne": None}, **({"rule": rule} if rule else {})
-        }}
+        flag_match["resolved_at"] = {"$ne": None}
+        if rule:
+            flag_match["rule"] = rule
+        q["anomaly_flags"] = {"$elemMatch": flag_match}
     elif resolved is False:
-        q["anomaly_flags"] = {"$elemMatch": {
-            "resolved_at": None, **({"rule": rule} if rule else {})
-        }}
+        flag_match["resolved_at"] = None
+        if rule:
+            flag_match["rule"] = rule
+        q["anomaly_flags"] = {"$elemMatch": flag_match}
     elif rule:
-        q["anomaly_flags.rule"] = rule
+        flag_match["rule"] = rule
+        q["anomaly_flags"] = {"$elemMatch": flag_match}
+    elif not include_deleted:
+        # No rule/status filter, but still hide fully-deleted-flag txns
+        q["anomaly_flags"] = {"$elemMatch": {"deleted_at": None}}
     total = await db.fuel_transactions.count_documents(q)
     # v58.13.131c — `count_only=true` short-circuits the full page fetch.
     # Powers the FleetRegister anomaly banner without paying for the
@@ -1874,6 +1915,85 @@ async def reopen_anomaly(
         {"$set": {"anomaly_flags": flags, "updated_at": now_iso()}},
     )
     return {"txn_id": txn_id, "rule": payload.rule, "reopened": reopened}
+
+
+# ── v58.13.132ds — Soft-delete on anomaly-flag dismissals ─────────
+# A "dismissal" is an `anomaly_flags[]` entry with `resolved_action
+# == "dismissed"` (or `dismissed_at != None`). Admins can soft-delete
+# these dismissal records from the Fuel Anomaly Inbox Resolved tab
+# so they no longer clutter the default view. Stamps
+# `deleted_at`/`deleted_by` on the flag; the txn row + GridFS blobs
+# are untouched. Undelete flips the flag back on. Admin-only.
+class AnomalyDeleteIn(BaseModel):
+    rule: str
+
+
+def _require_admin_role(user: dict) -> None:
+    role = (user.get("role") or user.get("role_id") or "").lower()
+    if role != "admin":
+        raise HTTPException(403, "Admin role required")
+
+
+@router.post("/anomalies/{txn_id}/delete-dismissal")
+async def delete_anomaly_dismissal(
+    txn_id: str, payload: AnomalyDeleteIn,
+    _flag: None = Depends(require_fleet_register_enabled),
+    user: dict = Depends(require_permission("assets", "edit")),
+):
+    """v58.13.132ds — Soft-delete a dismissed anomaly flag. Admin-only.
+    Stamps `deleted_at`/`deleted_by` on the matching flag; leaves
+    `resolved_at`/`dismissed_at` intact for audit reconstruction.
+    404 for unknown txn; 400 if the rule isn't found or isn't in a
+    dismissed state."""
+    _require_admin_role(user)
+    tx = await db.fuel_transactions.find_one(
+        {"id": txn_id, "org_id": user["org_id"]}, {"anomaly_flags": 1},
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="tx not found")
+    flags = tx.get("anomaly_flags") or []
+    hit = next((f for f in flags if f.get("rule") == payload.rule), None)
+    if not hit:
+        raise HTTPException(400, "rule not present on this transaction")
+    if not (hit.get("resolved_action") == "dismissed" or hit.get("dismissed_at")):
+        raise HTTPException(400, "rule is not in a dismissed state")
+    if hit.get("deleted_at"):
+        return {"ok": True, "already_deleted": True}
+    hit["deleted_at"] = now_iso()
+    hit["deleted_by"] = user.get("id")
+    await db.fuel_transactions.update_one(
+        {"id": txn_id, "org_id": user["org_id"]},
+        {"$set": {"anomaly_flags": flags, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "txn_id": txn_id, "rule": payload.rule,
+            "deleted_at": hit["deleted_at"]}
+
+
+@router.post("/anomalies/{txn_id}/undelete-dismissal")
+async def undelete_anomaly_dismissal(
+    txn_id: str, payload: AnomalyDeleteIn,
+    _flag: None = Depends(require_fleet_register_enabled),
+    user: dict = Depends(require_permission("assets", "edit")),
+):
+    """v58.13.132ds — Restore a soft-deleted dismissal so it re-appears
+    in the default Resolved-tab view. Admin-only."""
+    _require_admin_role(user)
+    tx = await db.fuel_transactions.find_one(
+        {"id": txn_id, "org_id": user["org_id"]}, {"anomaly_flags": 1},
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="tx not found")
+    flags = tx.get("anomaly_flags") or []
+    hit = next((f for f in flags if f.get("rule") == payload.rule), None)
+    if not hit:
+        raise HTTPException(400, "rule not present on this transaction")
+    hit.pop("deleted_at", None)
+    hit.pop("deleted_by", None)
+    await db.fuel_transactions.update_one(
+        {"id": txn_id, "org_id": user["org_id"]},
+        {"$set": {"anomaly_flags": flags, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "txn_id": txn_id, "rule": payload.rule}
 
 
 # ── v58.13.132bs — bulk anomaly actions ────────────────────────
@@ -2106,14 +2226,21 @@ async def get_transaction(
     raw_total = doc.get("total_price")
     raw_dpl   = doc.get("computed_price_per_litre")
     provisional_price, override_smartfill = await get_org_price_state(user["org_id"])
-    new_total = effective_total_price(doc, provisional_price, override_smartfill)
-    doc["total_price"] = new_total
-    try:
-        litres = float(doc.get("litres") or 0)
-    except (TypeError, ValueError):
-        litres = 0.0
-    if litres > 0:
-        doc["computed_price_per_litre"] = round(new_total / litres, 4)
+    # v58.13.132dx — Prefer frozen snapshot when present. Fall back to
+    # `effective_total_price` for legacy rows (defensive).
+    if doc.get("frozen_at"):
+        new_total = doc.get("frozen_total_price") or 0
+        doc["total_price"] = new_total
+        doc["computed_price_per_litre"] = doc.get("frozen_price_per_litre")
+    else:
+        new_total = effective_total_price(doc, provisional_price, override_smartfill)
+        doc["total_price"] = new_total
+        try:
+            litres = float(doc.get("litres") or 0)
+        except (TypeError, ValueError):
+            litres = 0.0
+        if litres > 0:
+            doc["computed_price_per_litre"] = round(new_total / litres, 4)
     # Audit references — always populated so the FE can display
     # the raw SmartFill numbers alongside the effective ones when
     # override is active.

@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, UserCog, Download, Share, Plus, X } from 'lucide-react';
 import { login, safeNext } from '../lib/auth';
 import { classifyAuthError } from '../lib/api';
+import { RUNNING_VERSION } from '../lib/version';   // v58.13.132ek — live version in copyright
 import { usePwaInstall } from '../lib/pwa';
 import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 import PaneltecHero from '../components/marketing/PaneltecHero';
@@ -22,6 +23,13 @@ export default function Cover() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
+  // v58.13.132du — Distinct helper-card state for the pending-first-
+  // signin path. The regular `error` string still fires for
+  // enumeration-safe 401 messaging; this extra flag lets us render
+  // an emphasised card ("open your invite/reset email link") only
+  // when the backend has told us the user has a live reset/pin
+  // token via `X-Auth-Reason: pending-first-signin`.
+  const [pendingFirstSignin, setPendingFirstSignin] = useState(false);
   const [busy, setBusy] = useState(false);
   const { canInstall, isIOS, prompt: triggerInstall, dismiss: dismissInstall } = usePwaInstall();
   const [iosOpen, setIosOpen] = useState(false);
@@ -40,6 +48,7 @@ export default function Cover() {
 
   const doLogin = async (em, pw) => {
     setError('');
+    setPendingFirstSignin(false);
     if (!EMAIL_RE.test(em.trim())) { setError('Please enter a valid email address.'); return; }
     if (!pw) { setError('Enter your password to continue.'); return; }
     setBusy(true);
@@ -63,8 +72,11 @@ export default function Cover() {
       // 5xx / 520 / network-down responses render as "server is down"
       // instead of a misleading "Invalid password" that has users
       // hammering the form during a prod outage. See lib/api.js.
-      const { message } = classifyAuthError(err);
+      const { kind, message } = classifyAuthError(err);
       setError(message);
+      // v58.13.132du — pending-first-signin gets the emphasised
+      // helper card in addition to the compact error line.
+      setPendingFirstSignin(kind === 'pending_first_signin');
     } finally { setBusy(false); }
   };
 
@@ -144,8 +156,24 @@ export default function Cover() {
                   so this surface and Login.jsx stay in lock-step. */}
               <PaneltecHero variant="cover" />
             </div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-white/60 font-semibold" data-testid="cover-trust">
-              AS/NZS 4801 · ISO 45001 · Comcare ready
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.22em] text-white/60 font-semibold" data-testid="cover-trust">
+                AS/NZS 4801 · ISO 45001 · Comcare ready
+              </div>
+              {/* v58.13.132ej — Copyright sits directly under the trust
+                  line on the LEFT, tinted with the same `--paneltec-gold`
+                  token that highlights the "Build Together." headline.
+                  v58.13.132ek — Replaced "Paneltec Civil" with the live
+                  RUNNING_VERSION import so every ship auto-refreshes
+                  the visible version tag. */}
+              <div className="mt-2 text-[11px] uppercase tracking-[0.22em] font-semibold"
+                   style={{ color: 'var(--paneltec-gold)' }}
+                   data-testid="cover-copyright">
+                © 2026 Stephen Guy · {RUNNING_VERSION}
+                <span className="ml-2 text-[10px] tracking-[0.14em] opacity-80">
+                  · All rights reserved
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -223,6 +251,33 @@ export default function Cover() {
                     <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[12px] text-rose-800" data-testid="cover-error">
                       <AlertCircle size={14} className="mt-0.5 shrink-0" />
                       <span>{error}</span>
+                    </div>
+                  )}
+
+                  {/* v58.13.132du — Pending-first-signin helper card.
+                      Fires only when the backend surfaces the
+                      `X-Auth-Reason: pending-first-signin` header, i.e.
+                      the user has a live reset_token_hash or pin_hash
+                      but hasn't completed a first sign-in yet. Guides
+                      them to the invite/reset email or their 4-digit
+                      PIN instead of hammering the login form. */}
+                  {pendingFirstSignin && (
+                    <div
+                      className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-3 text-[12px] text-amber-900 shadow-sm"
+                      data-testid="cover-pending-first-signin"
+                    >
+                      <div className="font-bold uppercase tracking-wider text-[10px] text-amber-700 mb-1">
+                        Have an invite email or reset link?
+                      </div>
+                      <p className="leading-snug">
+                        You haven't set your password yet. <strong>Open the link inside
+                        the email your admin sent you</strong> — the link itself is your
+                        sign-in. Nothing from that URL should be typed into this form.
+                      </p>
+                      <p className="mt-2 leading-snug text-[11px] text-amber-800">
+                        No email? Ask your admin to click <em>Users &amp; Permissions →
+                        Send reset link</em> again, or to generate a 4-digit PIN for you.
+                      </p>
                     </div>
                   )}
 

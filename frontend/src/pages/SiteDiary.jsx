@@ -10,6 +10,11 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
+import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
+import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
+import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ee
+import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
+import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ec
 import useCaptureDensity from '../lib/useCaptureDensity';
 import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import { getUser } from '../lib/auth';
@@ -27,17 +32,42 @@ export default function SiteDiaryList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
+  // v58.13.132eb — total server count from X-Total-Count header.
+  const [totalCount, setTotalCount] = useState(null);
+  // v58.13.132ee — archived count from X-Archived-Count header.
+  const [archivedCount, setArchivedCount] = useState(null);
+  // v58.13.132ee — Archive lifecycle. Admin-only.
+  const isAdmin = (getUser()?.role || '').toLowerCase() === 'admin';
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const density = useCaptureDensity('site-diary', filtered.length);
   // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
   const { deepLinkId } = useDeepLinkOpen({
     items, loading, notFoundMessage: 'Linked diary entry not found',
   });
 
-  useEffect(() => {
-    api.get('/site-diary')
-      .then((r) => { setItems(r.data); setFiltered(r.data); })
-      .finally(() => setLoading(false));
+  // v58.13.132eh — Load-more pagination.
+  const [pageSize, setPageSize] = usePersistedPageSize('site-diary:pageSize', 5000);
+  // v58.13.132ee — Shared loader.
+  const load = React.useCallback(async (includeArchived, offset = 0, size = 5000, append = false) => {
+    setLoading(true);
+    try {
+      const r = await api.get('/site-diary', {
+        params: { include_archived: includeArchived, limit: size, offset },
+      });
+      setItems((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      setFiltered((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      const t = r.headers?.['x-total-count'];
+      setTotalCount(t != null ? Number(t) : r.data?.length ?? 0);
+      const a = r.headers?.['x-archived-count'];
+      setArchivedCount(a != null ? Number(a) : null);
+    } finally { setLoading(false); }
   }, []);
+  const { showArchived, setShowArchived, onArchive, onUnarchive } =
+    useArchiveActions('/site-diary', setItems, () => load(showArchived, 0, pageSize, false));
+  useEffect(() => { load(showArchived, 0, pageSize, false); }, [showArchived, pageSize, load]);
+  const onLoadMore = React.useCallback(() => {
+    load(showArchived, items.length, pageSize, true);
+  }, [load, showArchived, items.length, pageSize]);
 
   const evict = (id) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
@@ -49,7 +79,42 @@ export default function SiteDiaryList() {
       <CaptureSticky testid="site-diary-sticky">
         <PageHeader crumb="Capture / Site Diary" title="Site Diary"
           subtitle="Daily site diaries — imported audits from mobile Forms and free-form notes structured by AI."
-          action={<NewButton to="/app/site-diary/new" label="New diary entry" testid="diary-create-btn" />} />
+          action={
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <button type="button" onClick={() => setArchiveDialogOpen(true)}
+                        data-testid="site-diary-archive-header-btn"
+                        className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+                  Archive…
+                </button>
+              )}
+              <NewButton to="/app/site-diary/new" label="New diary entry" testid="diary-create-btn" />
+            </div>
+          } />
+        {/* v58.13.132ee — Bulk archive dialog. */}
+        {isAdmin && (
+          <ArchiveDialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}
+            apiPath="/site-diary" moduleLabel="site diary entries"
+            knownStatuses={[]}
+            knownCategories={[]}
+            onArchived={() => load(showArchived)} />
+        )}
+        {/* v58.13.132eb — total-count chip + Admin-only show-archived toggle. */}
+        <div className="mt-1 flex items-center gap-2">
+          <TotalCountChip
+            showing={filtered.length}
+            total={totalCount}
+            testid="site-diary-total-count-chip"
+          />
+          {isAdmin && (
+            <ShowArchivedToggle
+              value={showArchived}
+              onChange={setShowArchived}
+              count={archivedCount}
+              testid="site-diary-show-archived-toggle"
+            />
+          )}
+        </div>
         {items.length > 0 && (
           <CaptureListToolbar
             items={items} onFiltered={setFiltered} testidPrefix="site-diary"
@@ -77,6 +142,8 @@ export default function SiteDiaryList() {
                   subtitleLines={density.subtitleLines}
                   minH={density.cardMinH}
                   onDeleted={evict}
+                  onArchive={isAdmin ? onArchive : undefined}
+                  onUnarchive={isAdmin ? onUnarchive : undefined}
                   openInitially={deepLinkId === d.id}
                 />
               );
@@ -116,6 +183,19 @@ export default function SiteDiaryList() {
           })}
         </CaptureCardGrid>
        )}
+      {/* v58.13.132eh — Load-more pager. */}
+      {!loading && items.length > 0 && (
+        <PaginationBar
+          showing={items.length}
+          total={totalCount ?? items.length}
+          pageSize={pageSize}
+          onPageSize={setPageSize}
+          onLoadMore={onLoadMore}
+          loading={loading}
+          testidPrefix="site-diary"
+          storageKey="site-diary:pageSize"
+        />
+      )}
       </div>
     </div>
   );

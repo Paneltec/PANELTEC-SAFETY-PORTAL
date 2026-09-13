@@ -5,6 +5,11 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import CaptureDensityControl from '../components/CaptureDensityControl';
+import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
+import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
+import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ee
+import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
+import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ec
 import useCaptureDensity from '../lib/useCaptureDensity';
 import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import { getUser } from '../lib/auth';
@@ -79,6 +84,17 @@ export default function PreStartsList() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  // v58.13.132eb — total server count from X-Total-Count header.
+  const [serverTotal, setServerTotal] = useState(null);
+  // v58.13.132ee — archived count from X-Archived-Count header.
+  const [archivedCount, setArchivedCount] = useState(null);
+  // v58.13.132ee — Archive lifecycle. Admin-only.
+  const isAdmin = (getUser()?.role || '').toLowerCase() === 'admin';
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  // v58.13.132eh — Load-more pagination. Page size persists per module
+  // via localStorage. `offset` counts rows appended so far; a page-size
+  // change resets both.
+  const [pageSize, setPageSize] = usePersistedPageSize('pre-starts:pageSize', 5000);
   const [q, setQ] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -110,11 +126,23 @@ export default function PreStartsList() {
   //   · 5xx / network errors keep the original retry behaviour.
   // Real follow-up: server-side pagination for orgs with >5k
   // pre-starts (preview has ~16.6k). Tracked in the .89 ship report.
-  const fetchItems = useCallback(async (attempt = 0) => {
+  const fetchItems = useCallback(async (attempt = 0, includeArchived = false,
+                                         offset = 0, size = 5000, append = false) => {
     setLoading(true);
     try {
-      const r = await api.get('/pre-starts', { params: { limit: 5000 } });
-      setItems(Array.isArray(r.data) ? r.data : []);
+      const r = await api.get('/pre-starts', {
+        params: { limit: size, offset, include_archived: includeArchived },
+      });
+      const rows = Array.isArray(r.data) ? r.data : [];
+      // v58.13.132eh — Append when Load-More triggered the fetch;
+      // replace on the initial + toggle-driven refresh.
+      setItems((prev) => (append ? [...prev, ...rows] : rows));
+      // v58.13.132eb — X-Total-Count header from crud.py.
+      const t = r.headers?.['x-total-count'];
+      setServerTotal(t != null ? Number(t) : rows.length);
+      // v58.13.132ee — X-Archived-Count header.
+      const a = r.headers?.['x-archived-count'];
+      setArchivedCount(a != null ? Number(a) : null);
       setLoadError(null);
       setLoading(false);
       return true;
@@ -130,18 +158,57 @@ export default function PreStartsList() {
       setLoading(false);
       if (!isClientError) {
         if (attempt === 0) {
-          setTimeout(() => { fetchItems(1); }, 3000);
+          setTimeout(() => { fetchItems(1, includeArchived, offset, size, append); }, 3000);
         } else if (attempt === 1) {
-          setTimeout(() => { fetchItems(2); }, 10000);
+          setTimeout(() => { fetchItems(2, includeArchived, offset, size, append); }, 10000);
         }
       }
       return false;
     }
   }, []);
 
+  // v58.13.132ee — Archive hook needs a stable refetch; wire it AFTER
+  // fetchItems is defined so its useCallback sees the ref.
+  const { showArchived, setShowArchived, onArchive, onUnarchive } =
+    useArchiveActions('/pre-starts', setItems, () => {
+      // Refetch from offset 0 — cleanest way to re-sync counts.
+      fetchItems(0, showArchived, 0, pageSize, false);
+      fetchCategoryCounts(showArchived);
+    });
+
   useEffect(() => {
-    fetchItems(0);
-  }, [fetchItems]);
+    // Initial + toggle-driven refresh always starts at offset 0.
+    fetchItems(0, showArchived, 0, pageSize, false);
+  }, [fetchItems, showArchived, pageSize]);
+
+  // v58.13.132eh — Load-more handler. Appends the next page.
+  const onLoadMore = useCallback(() => {
+    fetchItems(0, showArchived, items.length, pageSize, true);
+  }, [fetchItems, showArchived, items.length, pageSize]);
+
+  // v58.13.132eg — Server-side category counts.
+  // The client-side `typeIndex` derived from `decorated` only ever
+  // saw the pagination-capped page (5,000 rows) so the pill counts
+  // summed to 5,000 instead of the true DB total (~16k). This
+  // endpoint runs the aggregation server-side; we merge its palette
+  // via the existing `paletteForType` helper on render so colours
+  // stay consistent with the FE inference.
+  const [categoryCounts, setCategoryCounts] = useState(null);
+  const fetchCategoryCounts = useCallback(async (includeArchived) => {
+    try {
+      const r = await api.get('/pre-starts/category-counts',
+                              { params: { include_archived: includeArchived } });
+      setCategoryCounts(r.data);
+    } catch (e) {
+      // v58.13.132eg — Fall back silently to client-side derivation
+      // so a preview blip doesn't blank the chip row. The
+      // FE typeIndex will still render (capped at 5,000 as before).
+      setCategoryCounts(null);
+    }
+  }, []);
+  useEffect(() => {
+    fetchCategoryCounts(showArchived);
+  }, [fetchCategoryCounts, showArchived]);
 
   // Persist type filter across sessions.
   useEffect(() => {
@@ -164,7 +231,17 @@ export default function PreStartsList() {
   }, [items]);
 
   // Build the type index — every distinct type + its unfiltered count.
+  // v58.13.132eg — Prefer the server-side category-counts response
+  // (true DB aggregate) when it's loaded; fall back to the client-side
+  // `decorated` bucket sums when the endpoint hasn't answered yet.
   const typeIndex = useMemo(() => {
+    if (categoryCounts?.categories?.length) {
+      return categoryCounts.categories.map((c) => ({
+        type: c.label,
+        palette: paletteForType(c.label),
+        count: c.count,
+      }));
+    }
     const buckets = new Map();
     for (const d of decorated) {
       const key = d.type;
@@ -172,7 +249,7 @@ export default function PreStartsList() {
       buckets.get(key).count += 1;
     }
     return Array.from(buckets.values()).sort((a, b) => b.count - a.count);
-  }, [decorated]);
+  }, [decorated, categoryCounts]);
 
   // Apply filters (type + date range + name tokens).
   const tokens = useMemo(() => tokenize(q), [q]);
@@ -214,7 +291,10 @@ export default function PreStartsList() {
       .sort((a, b) => (orderMap.get(a.type) ?? 999) - (orderMap.get(b.type) ?? 999));
   }, [filtered, typeIndex]);
 
-  const totalCount = decorated.length;
+  // v58.13.132eg — Prefer server-total for the "All" chip; client
+  // decorated-length is capped by the pagination limit so it under-
+  // counts on any org with >5k pre-starts (prod has ~16k).
+  const totalCount = categoryCounts?.all_count ?? decorated.length;
   const filteredCount = filtered.length;
 
   // v58.13.41 — density hook. Drives the per-group grid class + card
@@ -238,8 +318,43 @@ export default function PreStartsList() {
           crumb="Capture / Daily Pre-Starts"
           title="Daily Pre-Starts"
           subtitle="Grouped by template type. Search by date, name, or type."
-          action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-create-btn" />}
+          action={
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <button type="button" onClick={() => setArchiveDialogOpen(true)}
+                        data-testid="prestarts-archive-header-btn"
+                        className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+                  Archive…
+                </button>
+              )}
+              <NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-create-btn" />
+            </div>
+          }
         />
+        {/* v58.13.132ee — Bulk archive dialog. */}
+        {isAdmin && (
+          <ArchiveDialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}
+            apiPath="/pre-starts" moduleLabel="pre-starts"
+            knownStatuses={[]}
+            knownCategories={[]}
+            onArchived={() => fetchItems(0, showArchived)} />
+        )}
+        {/* v58.13.132eb — total-count chip + Admin-only show-archived toggle. */}
+        <div className="mt-1 mb-2 flex items-center gap-2">
+          <TotalCountChip
+            showing={items.length}
+            total={serverTotal}
+            testid="prestarts-total-count-chip"
+          />
+          {isAdmin && (
+            <ShowArchivedToggle
+              value={showArchived}
+              onChange={setShowArchived}
+              count={archivedCount}
+              testid="prestarts-show-archived-toggle"
+            />
+          )}
+        </div>
         {items.length > 0 && (
           <div className="mb-3" data-testid="prestarts-toolbar">
             {/* Row 1 — search inputs */}
@@ -452,6 +567,8 @@ export default function PreStartsList() {
                         hideOperator
                         stripeStyle={{ backgroundColor: g.palette.hex }}
                         onDeleted={evict}
+                        onArchive={isAdmin ? onArchive : undefined}
+                        onUnarchive={isAdmin ? onUnarchive : undefined}
                         openInitially={deepLinkId === p.id}
                       />
                     );
@@ -460,6 +577,20 @@ export default function PreStartsList() {
               </section>
             ))}
           </div>
+        )}
+        {/* v58.13.132eh — Load-more pager. Appears after the last
+            group so it sits at the natural bottom of the scroll. */}
+        {!loading && items.length > 0 && (
+          <PaginationBar
+            showing={items.length}
+            total={serverTotal ?? items.length}
+            pageSize={pageSize}
+            onPageSize={setPageSize}
+            onLoadMore={onLoadMore}
+            loading={loading}
+            testidPrefix="pre-starts"
+            storageKey="pre-starts:pageSize"
+          />
         )}
       </div>
     </div>

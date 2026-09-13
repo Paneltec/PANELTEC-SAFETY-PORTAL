@@ -45,7 +45,7 @@ from typing import Literal, Optional
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from auth import get_current_user
 from db import db
@@ -78,13 +78,73 @@ def _bool_from_mode(mode: OverrideMode) -> bool:
 # v58.13.132df — Canonical set of `price_source` markers written by
 # provisional backfill paths (write-time model, pre-.132df). Any row
 # carrying one of these tags is re-priced at READ TIME by
-# `effective_total_price()` below so that changing the admin setting
-# retroactively updates every existing report.
+# `effective_total_price()` below.
+#
+# v58.13.132dy — The retroactive-reprice behaviour this constant
+# originally documented is DEAD for any row with `frozen_at` set.
+# The .132dx migration + import-time freeze mean every current +
+# future row is stamped once at import and NEVER repriced. The
+# helpers below (`effective_total_price` + `_is_provisional`) are
+# retained purely as the legacy fallback for rows the migration
+# hasn't yet touched (defensive).
 PROVISIONAL_PRICE_SOURCES: frozenset[str] = frozenset({
     "provisional_static_2.25",
     "provisional_static_3.00",
     "provisional",
 })
+
+
+def freeze_price_snapshot(
+    tx: dict,
+    provisional_price: float,
+    override_smartfill_real: bool,
+    price_setting_id: Optional[str] = None,
+) -> dict:
+    """v58.13.132dx — Compute the frozen-at-import snapshot for a
+    single transaction. Returns a dict of the fields to persist on
+    the txn:
+
+        frozen_price_per_litre   — float, litres → price/L
+        frozen_total_price       — float, litres × frozen_price/L
+        frozen_price_source      — one of:
+            "provisional_override" | "smartfill_real" | "provisional_fallback"
+        frozen_at                — ISO string, when the snapshot was stamped
+        frozen_by_price_setting_id — the settings-doc id active at freeze
+
+    Semantics mirror `effective_total_price()` — the migration
+    snapshots current-effective; the import path snapshots at write
+    time. Once stamped, downstream reads use `frozen_*` verbatim and
+    NEVER re-price."""
+    try:
+        litres = float(tx.get("litres") or 0)
+    except (TypeError, ValueError):
+        litres = 0.0
+    try:
+        stored = float(tx.get("total_price") or 0)
+    except (TypeError, ValueError):
+        stored = 0.0
+    src = tx.get("price_source") or ""
+    if override_smartfill_real:
+        source = "provisional_override"
+        total = round(litres * provisional_price, 2) if litres > 0 else 0.0
+    elif src in PROVISIONAL_PRICE_SOURCES:
+        source = "provisional_fallback"
+        total = round(litres * provisional_price, 2) if litres > 0 else 0.0
+    elif stored <= 0 and litres > 0:
+        source = "provisional_fallback"
+        total = round(litres * provisional_price, 2)
+    else:
+        source = "smartfill_real"
+        total = stored
+    ppl = round(total / litres, 4) if litres > 0 else 0.0
+    from datetime import datetime, timezone as _tz
+    return {
+        "frozen_price_per_litre": ppl,
+        "frozen_total_price": total,
+        "frozen_price_source": source,
+        "frozen_at": datetime.now(_tz.utc).isoformat(),
+        "frozen_by_price_setting_id": price_setting_id,
+    }
 
 
 def effective_total_price(
@@ -219,6 +279,9 @@ class PriceIn(BaseModel):
     # a PATCH-style payload can flip the override toggle alone
     # without re-sending the price. The PUT handler falls back to the
     # stored value when the client omits it.
+    # v58.13.132dw — Accepts up to 4 decimal places (matches Australian
+    # retail fuel pricing convention, e.g. $2.5342/L). 5+ decimals are
+    # rejected with a 422 via the field-level validator below.
     provisional_price_per_litre: Optional[float] = Field(None, gt=0, le=10.0)
     # v58.13.132dg — Optional boolean override toggle (legacy).
     # v58.13.132dh — Optional named enum. Either is accepted; the
@@ -228,6 +291,27 @@ class PriceIn(BaseModel):
     # accidentally clearing the toggle.
     override_smartfill_real: Optional[bool] = None
     override_mode:           Optional[OverrideMode] = None
+
+    @field_validator("provisional_price_per_litre")
+    @classmethod
+    def _cap_decimals(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        # 4-decimal cap. Convert via string round-trip to avoid the
+        # usual float-representation false-positives (e.g. `2.5342`
+        # already stores as `2.5342000000000001` on the wire).
+        # Uses Decimal to count the significant fractional digits
+        # after Python's shortest round-trip repr, so `2.5342` passes
+        # and `2.53421` fails.
+        from decimal import Decimal
+        d = Decimal(repr(v)).normalize()
+        # Fractional exponent — negative means "how many decimal places".
+        exp = d.as_tuple().exponent
+        if isinstance(exp, int) and exp < -4:
+            raise ValueError(
+                "provisional_price_per_litre supports at most 4 decimal places"
+            )
+        return v
 
 
 def _out(doc: Optional[dict], org_id: str) -> dict:

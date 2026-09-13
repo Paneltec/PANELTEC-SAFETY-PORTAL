@@ -66,6 +66,7 @@ from pymongo import ReturnDocument
 
 from auth import get_current_user
 from db import db
+from form_routing import resolve_template_category  # v58.13.132dz
 from models import new_id, now_iso
 
 from permissions import require_permission, require_module
@@ -1056,7 +1057,11 @@ async def create_submission(template_id: str, body: SubmissionIn,
         "id": new_id(), "org_id": user["org_id"],
         "template_id": template_id,
         "template_name_snapshot": template["name"],
-        "template_category_snapshot": template.get("category") or "general",
+        # v58.13.132dz — Route category via `form_routing_rules` first,
+        # then fall back to the template's declared `category`. This
+        # lets admins re-target a template (e.g. SSRA → Risk
+        # Assessments) without editing the template row itself.
+        "template_category_snapshot": await resolve_template_category(template),
         "fields": cleaned,
         "submitted_by": user["id"],
         "submitted_by_name": user.get("name") or user.get("email"),

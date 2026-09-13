@@ -28,6 +28,22 @@ def _default_portal_url() -> str:
     ).rstrip("/")
 
 
+def _default_staff_login_url() -> str:
+    """v58.13.132ds — Server-computed Staff Login URL. This is the live
+    Emergent preview URL where office staff sign in. It is DISTINCT
+    from `portal_url` (which is rendered on public PDF report footers
+    and can be a customer-facing production domain once live).
+
+    Read-only in the UI — Emergent controls this URL. Sourced from
+    the same `PUBLIC_APP_URL` env as the portal default, with the
+    preview-domain fallback so a fresh install still surfaces a
+    working link on the settings page."""
+    return (
+        os.environ.get("PUBLIC_APP_URL")
+        or "https://whs-compliance.preview.emergentagent.com"
+    ).rstrip("/")
+
+
 def _is_admin(user: dict) -> bool:
     return (user.get("role") or user.get("role_id")) == "admin"
 
@@ -99,6 +115,10 @@ class OrgPatch(BaseModel):
     abn: Optional[str] = None
     # v58.13.132dp
     trading_name: Optional[str] = None
+    # v58.13.132dr — Brand display name drives the sidebar wordmark
+    # via `Logo(displayName=…)`. Lookup order on the FE:
+    # display_name → trading_name → name → 'Paneltec Civil' fallback.
+    display_name: Optional[str] = None
     # Address
     address_line1: Optional[str] = None
     address_line2: Optional[str] = None
@@ -144,6 +164,10 @@ def _decorate_get(doc: dict) -> dict:
     have to duplicate the fallback logic."""
     if "portal_url" not in doc or not doc.get("portal_url"):
         doc["portal_url"] = _default_portal_url()
+    # v58.13.132ds — Staff Login URL is ALWAYS server-computed and
+    # overwrites any stashed value. Emergent controls this URL;
+    # admins can't override it from the UI.
+    doc["staff_login_url"] = _default_staff_login_url()
     doc.setdefault("previous_slugs", [])
     doc["insurance_status"] = insurance_status(doc)
     return doc
@@ -369,6 +393,7 @@ async def download_insurance_cert(
 @router.get("/insurance/{policy_type}/history")
 async def list_insurance_history(
     policy_type: str,
+    include_deleted: bool = False,
     user: dict = Depends(get_current_user),
 ):
     if not _is_admin(user):
@@ -380,11 +405,223 @@ async def list_insurance_history(
                                  {"_id": 0, field: 1})
     block = (org or {}).get(field) or {}
     rows = list(block.get("previous_certificates") or [])
+    # v58.13.132ds — Default view filters out soft-deleted archive
+    # entries. `include_deleted=true` returns everything (soft-
+    # deleted rows carry `deleted_at`/`deleted_by`, GridFS file is
+    # preserved so audit downloads still resolve).
+    if not include_deleted:
+        rows = [r for r in rows if not r.get("deleted_at")]
     # Reverse-chronological — newest archive at the top.
     def _sort_key(r: dict) -> str:
         return r.get("archived_at") or r.get("uploaded_at") or ""
     rows.sort(key=_sort_key, reverse=True)
     return {"policy_type": policy_type, "items": rows, "total": len(rows)}
+
+
+# ── v58.13.132ds — Soft-delete archived insurance certificates ─────
+# GridFS file is NEVER physically deleted — the download endpoint
+# above still resolves the file so an admin can always retrieve it
+# for audit. The soft-delete flag hides the row from the default
+# `history` list; `?include_deleted=true` surfaces it with the
+# Undelete affordance.
+
+@router.delete("/insurance/{policy_type}/history/{file_id}")
+async def soft_delete_insurance_history(
+    policy_type: str,
+    file_id: str,
+    user: dict = Depends(get_current_user),
+):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    if policy_type not in _INSURANCE_KINDS:
+        raise HTTPException(400, f"Unknown policy_type: {policy_type}")
+    field = f"{policy_type}_insurance"
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    prev = list(block.get("previous_certificates") or [])
+    hit = next((p for p in prev if p.get("certificate_id") == file_id), None)
+    if not hit:
+        raise HTTPException(404, "Archived certificate not found")
+    if hit.get("deleted_at"):
+        return {"ok": True, "already_deleted": True}
+    hit["deleted_at"] = now_iso()
+    hit["deleted_by"] = user.get("id")
+    await db.orgs.update_one(
+        {"id": user["org_id"]},
+        {"$set": {f"{field}.previous_certificates": prev,
+                  "updated_at": now_iso()}},
+    )
+    return {"ok": True, "deleted_at": hit["deleted_at"]}
+
+
+@router.post("/insurance/{policy_type}/history/{file_id}/undelete")
+async def undelete_insurance_history(
+    policy_type: str,
+    file_id: str,
+    user: dict = Depends(get_current_user),
+):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    if policy_type not in _INSURANCE_KINDS:
+        raise HTTPException(400, f"Unknown policy_type: {policy_type}")
+    field = f"{policy_type}_insurance"
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    prev = list(block.get("previous_certificates") or [])
+    hit = next((p for p in prev if p.get("certificate_id") == file_id), None)
+    if not hit:
+        raise HTTPException(404, "Archived certificate not found")
+    hit.pop("deleted_at", None)
+    hit.pop("deleted_by", None)
+    await db.orgs.update_one(
+        {"id": user["org_id"]},
+        {"$set": {f"{field}.previous_certificates": prev,
+                  "updated_at": now_iso()}},
+    )
+    return {"ok": True}
+
+
+# v58.13.132dv — Bulk soft-delete on archived certificates. Soft-
+# deletes every non-deleted row in `previous_certificates[]` for a
+# given policy type. Preserves GridFS blobs. Idempotent (already-
+# deleted rows are skipped) and admin-only. Powers the "Clear all
+# archived (N)" button surface on the Email Certificates popup.
+@router.post("/insurance/{policy_type}/history/clear-all")
+async def clear_all_insurance_history(
+    policy_type: str,
+    user: dict = Depends(get_current_user),
+):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    if policy_type not in _INSURANCE_KINDS:
+        raise HTTPException(400, f"Unknown policy_type: {policy_type}")
+    field = f"{policy_type}_insurance"
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    prev = list(block.get("previous_certificates") or [])
+    now = now_iso()
+    uid = user.get("id")
+    cleared = 0
+    for p in prev:
+        if not p.get("deleted_at"):
+            p["deleted_at"] = now
+            p["deleted_by"] = uid
+            cleared += 1
+    if cleared:
+        await db.orgs.update_one(
+            {"id": user["org_id"]},
+            {"$set": {f"{field}.previous_certificates": prev,
+                      "updated_at": now}},
+        )
+    return {"ok": True, "cleared": cleared, "policy_type": policy_type}
+
+
+# ── v58.13.132dw — Purge (row-level Mongo removal) ─────────────────
+# Removes an archived certificate entry from `previous_certificates[]`
+# entirely. The GridFS blob (fs.files + fs.chunks under the ObjectId
+# `file_id`) is NEVER touched — compliance-driven audit downloads
+# stay resolvable via a direct Mongo query even though the UI no
+# longer references it. Purge is only allowed once a row is already
+# soft-deleted (409 otherwise) — this guarantees the two-step
+# operator UX: soft-delete first, then explicitly purge with the
+# typed-confirm second.
+
+async def _write_purge_audit(user: dict, policy_type: str,
+                              row: dict) -> None:
+    """v58.13.132dw — append one audit_logs row per purge. Ledger
+    is the same collection existing invite / reset actions write to,
+    so the org's compliance audit view surfaces this without any
+    downstream schema tweaks."""
+    await db.audit_logs.insert_one({
+        "org_id": user["org_id"],
+        "actor_id": user.get("id"),
+        "actor_name": user.get("name"),
+        "action": "insurance_cert_purged",
+        "at": now_iso(),
+        "policy_type": policy_type,
+        "file_id": row.get("certificate_id"),
+        "certificate_filename": row.get("certificate_filename"),
+        "original_uploaded_at": row.get("uploaded_at"),
+        "original_archived_at": row.get("archived_at"),
+        "soft_deleted_at": row.get("deleted_at"),
+        "soft_deleted_by": row.get("deleted_by"),
+    })
+
+
+@router.post("/insurance/{policy_type}/history/{file_id}/purge")
+async def purge_insurance_history(
+    policy_type: str,
+    file_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """v58.13.132dw — Purge a single soft-deleted archived cert row.
+    409 if the row hasn't been soft-deleted first; forces the two-
+    step operator UX (Soft-delete → explicit typed-confirm Purge)."""
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    if policy_type not in _INSURANCE_KINDS:
+        raise HTTPException(400, f"Unknown policy_type: {policy_type}")
+    field = f"{policy_type}_insurance"
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    prev = list(block.get("previous_certificates") or [])
+    hit = next((p for p in prev if p.get("certificate_id") == file_id), None)
+    if not hit:
+        raise HTTPException(404, "Archived certificate not found")
+    if not hit.get("deleted_at"):
+        raise HTTPException(
+            409,
+            "Row must be soft-deleted before purge. "
+            "Soft-delete the certificate first, then re-run purge.",
+        )
+    # Remove the entry from the array (Mongo row only — GridFS blob
+    # under ObjectId(file_id) is left untouched for audit).
+    new_prev = [p for p in prev if p.get("certificate_id") != file_id]
+    await db.orgs.update_one(
+        {"id": user["org_id"]},
+        {"$set": {f"{field}.previous_certificates": new_prev,
+                  "updated_at": now_iso()}},
+    )
+    await _write_purge_audit(user, policy_type, hit)
+    return {"ok": True, "purged": 1, "policy_type": policy_type,
+            "file_id": file_id}
+
+
+@router.post("/insurance/{policy_type}/history/purge-all-deleted")
+async def purge_all_deleted_insurance_history(
+    policy_type: str,
+    user: dict = Depends(get_current_user),
+):
+    """v58.13.132dw — Bulk-purge every soft-deleted row for the
+    given policy type. Rows that DON'T carry `deleted_at` are
+    preserved. Idempotent when there's nothing to purge (200,
+    `purged: 0`). Audit log gets one entry per row purged."""
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    if policy_type not in _INSURANCE_KINDS:
+        raise HTTPException(400, f"Unknown policy_type: {policy_type}")
+    field = f"{policy_type}_insurance"
+    org = await db.orgs.find_one({"id": user["org_id"]},
+                                 {"_id": 0, field: 1})
+    block = (org or {}).get(field) or {}
+    prev = list(block.get("previous_certificates") or [])
+    to_purge = [p for p in prev if p.get("deleted_at")]
+    if not to_purge:
+        return {"ok": True, "purged": 0, "policy_type": policy_type}
+    new_prev = [p for p in prev if not p.get("deleted_at")]
+    await db.orgs.update_one(
+        {"id": user["org_id"]},
+        {"$set": {f"{field}.previous_certificates": new_prev,
+                  "updated_at": now_iso()}},
+    )
+    for row in to_purge:
+        await _write_purge_audit(user, policy_type, row)
+    return {"ok": True, "purged": len(to_purge),
+            "policy_type": policy_type}
 
 
 @router.get("/insurance/{policy_type}/history/{file_id}/download")
@@ -647,15 +884,81 @@ async def dispatch_insurance_email(body: InsuranceEmailIn,
 
 
 @router.get("/insurance/email/log")
-async def list_insurance_email_log(user: dict = Depends(get_current_user)):
+async def list_insurance_email_log(
+    include_deleted: bool = False,
+    user: dict = Depends(get_current_user),
+):
     if not _is_admin(user):
         raise HTTPException(403, "Admin role required")
+    # v58.13.132ds — Default view filters out soft-deleted log rows.
+    # `include_deleted=true` returns everything (soft-deleted rows
+    # carry `deleted_at`/`deleted_by`). Log row is preserved forever
+    # so the org's compliance audit trail is never lost.
+    q: dict = {"org_id": user["org_id"]}
+    if not include_deleted:
+        q["deleted_at"] = None
     rows = [
         r async for r in db.insurance_email_log
-        .find({"org_id": user["org_id"]}, {"_id": 0})
+        .find(q, {"_id": 0})
         .sort("timestamp", -1).limit(10)
     ]
     return {"items": rows, "total": len(rows)}
+
+
+# ── v58.13.132ds — Soft-delete + Clear-all on insurance email log ──
+
+@router.delete("/insurance/email/log/{log_id}")
+async def soft_delete_email_log(log_id: str,
+                                user: dict = Depends(get_current_user)):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    row = await db.insurance_email_log.find_one(
+        {"id": log_id, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "deleted_at": 1},
+    )
+    if not row:
+        raise HTTPException(404, "Audit log row not found")
+    if row.get("deleted_at"):
+        return {"ok": True, "already_deleted": True}
+    await db.insurance_email_log.update_one(
+        {"id": log_id, "org_id": user["org_id"]},
+        {"$set": {"deleted_at": now_iso(),
+                  "deleted_by": user.get("id")}},
+    )
+    return {"ok": True}
+
+
+@router.post("/insurance/email/log/{log_id}/undelete")
+async def undelete_email_log(log_id: str,
+                             user: dict = Depends(get_current_user)):
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    row = await db.insurance_email_log.find_one(
+        {"id": log_id, "org_id": user["org_id"]}, {"_id": 0, "id": 1},
+    )
+    if not row:
+        raise HTTPException(404, "Audit log row not found")
+    await db.insurance_email_log.update_one(
+        {"id": log_id, "org_id": user["org_id"]},
+        {"$unset": {"deleted_at": "", "deleted_by": ""}},
+    )
+    return {"ok": True}
+
+
+@router.post("/insurance/email/log/clear-all")
+async def clear_all_email_log(user: dict = Depends(get_current_user)):
+    """v58.13.132ds — Soft-delete every currently visible (i.e.
+    non-deleted) audit log row for this org. Preserves data — just
+    hides. Returns the count actually flipped so the FE can toast
+    "Cleared N log entries"."""
+    if not _is_admin(user):
+        raise HTTPException(403, "Admin role required")
+    result = await db.insurance_email_log.update_many(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"$set": {"deleted_at": now_iso(),
+                  "deleted_by": user.get("id")}},
+    )
+    return {"ok": True, "cleared": result.modified_count}
 
 
 def _new_id() -> str:

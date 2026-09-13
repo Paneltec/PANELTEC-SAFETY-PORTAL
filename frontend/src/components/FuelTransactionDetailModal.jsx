@@ -151,8 +151,10 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
             </div>
           </div>
           {/* v58.13.132dj — Provisional override pill (mirrors the
-              header segmented control on Fuel Reporting). */}
-          {overrideActive && !loading && (
+              header segmented control on Fuel Reporting).
+              v58.13.132dy — Superseded by the frozen_price_source
+              chip below. Kept for BC on rows without a snapshot. */}
+          {overrideActive && !loading && !t.price_source_snapshot && !t.frozen_price_source && (
             <span
               data-testid="fuel-txn-detail-override-pill"
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-amber-400 bg-amber-100 text-amber-900"
@@ -160,6 +162,41 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
               ⚠ Provisional override active
             </span>
           )}
+          {/* v58.13.132dy — Frozen price source chip. Historicised —
+              reflects the mode active AT IMPORT TIME, not the live
+              toggle. Rendered as soon as the row carries either the
+              `price_source_snapshot` field (from list_transactions)
+              or `frozen_price_source` (from the raw doc). */}
+          {(() => {
+            const src = t.price_source_snapshot || t.frozen_price_source;
+            if (!src || loading) return null;
+            const cfg = {
+              provisional_override: {
+                label: 'Provisional override (at import)',
+                cls: 'border-amber-400 bg-amber-100 text-amber-900',
+              },
+              smartfill_real: {
+                label: 'SmartFill real (at import)',
+                cls: 'border-slate-300 bg-slate-100 text-slate-700',
+              },
+              provisional_fallback: {
+                label: 'Provisional fallback (at import)',
+                cls: 'border-amber-200 bg-amber-50 text-amber-800',
+              },
+            }[src] || {
+              label: src,
+              cls: 'border-slate-200 bg-slate-50 text-slate-600',
+            };
+            return (
+              <span
+                data-testid="fuel-txn-detail-frozen-source-chip"
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${cfg.cls}`}
+                title="This transaction was frozen at import time. Changing the org-wide toggle no longer alters this row."
+              >
+                {cfg.label}
+              </span>
+            );
+          })()}
           <button
             type="button"
             onClick={onClose}
@@ -219,7 +256,7 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
               />
               <Metric
                 label="$/L (computed)"
-                value={dpl != null ? fmtDollar(dpl, 3) : '—'}
+                value={dpl != null ? fmtDollar(dpl, 4) : '—'}
                 hint={dplHint}
                 tone={priceTone}
                 testId="fuel-txn-detail-dpl"
@@ -286,47 +323,35 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
                 testId="fuel-txn-detail-from-site"
               />
               {/* v58.13.132do — Portal Unit Price row surfaces the
-                  effective per-fill price under BOTH toggle modes
-                  with a "REFLECTS FUEL PRICE POLICY" caption, so
-                  admins never see developer jargon ("stale —
-                  ignored, we use total ÷ litres") from the .132dl
-                  wording. Under `smartfill_with_fallback` (default),
-                  the row shows the SmartFill-computed $/L (Total ÷
-                  Litres — mirrors the `$/L (Computed)` metric card)
-                  with a slate policy caption. Under `provisional_all`
-                  (from .132dh), it swaps to the Provisional price
-                  with the amber caption shipped in .132dl. Read-time
-                  only; no DB mutation. */}
-              {(dpl != null || (overrideActive && provPrice != null)) && (
+                  effective per-fill price under BOTH toggle modes.
+                  v58.13.132dy — Rewired: no more toggle-aware swap.
+                  Always shows the frozen $/L (`dpl`). The chip at the
+                  top of the modal (`fuel-txn-detail-frozen-source-chip`)
+                  already tells the reader whether that $/L was frozen
+                  from a real SmartFill price or a provisional override. */}
+              {dpl != null && (
                 <Row
                   icon={<CircleDollarSign size={12} />}
                   label="Portal unit price"
                   value={
-                    overrideActive && provPrice != null ? (
-                      <span data-testid="fuel-txn-detail-portal-unit-price-override">
-                        <span className="font-mono">{fmtDollar(provPrice, 3)}</span>
-                        <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-800">
-                          Provisional override active — reflects fuel price policy
-                        </span>
+                    <span data-testid="fuel-txn-detail-portal-unit-price">
+                      <span className="font-mono">{fmtDollar(dpl, 4)}</span>
+                      <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-500">
+                        Frozen at import
                       </span>
-                    ) : (
-                      <span data-testid="fuel-txn-detail-portal-unit-price">
-                        <span className="font-mono">{fmtDollar(dpl, 3)}</span>
-                        <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-500">
-                          SmartFill price — reflects fuel price policy
-                        </span>
-                      </span>
-                    )
+                    </span>
                   }
                 />
               )}
               {/* v58.13.132dj — Raw SmartFill audit reference row.
-                  Only rendered when the .132dh toggle is
-                  `provisional_all` AND the raw values are actually
-                  distinguishable from the displayed ones. Preserves
-                  the SmartFill numbers as evidence of what was
-                  imported, without mutating the DB. */}
-              {overrideActive && rawTotal != null && (
+                  v58.13.132dy — Now gated on the frozen source tag.
+                  Only rendered when the row was frozen under
+                  `provisional_override` AND the raw SmartFill values
+                  are actually distinguishable — otherwise it just
+                  duplicates the $/L row. */}
+              {(t.price_source_snapshot === 'provisional_override'
+                  || t.frozen_price_source === 'provisional_override')
+                  && rawTotal != null && (
                 <Row
                   icon={<CircleDollarSign size={12} />}
                   label="SmartFill raw (reference)"
@@ -336,11 +361,11 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
                       {rawDpl != null && (
                         <>
                           <span className="mx-1 text-slate-400">@</span>
-                          <span className="font-mono">{fmtDollar(rawDpl, 3)}/L</span>
+                          <span className="font-mono">{fmtDollar(rawDpl, 4)}/L</span>
                         </>
                       )}
                       <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-800">
-                        Displayed values reflect provisional override (${fmtNum(provPrice, 3)}/L)
+                        Displayed values reflect provisional override (${fmtNum(provPrice, 4)}/L)
                       </span>
                     </span>
                   }

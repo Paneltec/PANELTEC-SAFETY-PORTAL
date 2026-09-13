@@ -119,35 +119,104 @@ async def _audit(actor: dict, action: str, **extra):
 
 
 # ───── Channels: email + SMS ─────────────────────────────────────────
+async def _org_display_name(org_id: str, fallback: str = "Paneltec Civil") -> str:
+    """v58.13.132du — Resolve the org's rendered brand name using the
+    same `display_name → trading_name → name → fallback` precedence
+    as the sidebar (`.132dr`). Reset / invite emails and SMS messages
+    all sign off with this so recipients see the operator's chosen
+    trading identity, not a stale registered entity name."""
+    if not org_id:
+        return fallback
+    org = await db.orgs.find_one({"id": org_id},
+                                  {"_id": 0, "display_name": 1,
+                                   "trading_name": 1, "name": 1}) or {}
+    for k in ("display_name", "trading_name", "name"):
+        v = (org.get(k) or "").strip()
+        if v:
+            return v
+    return fallback
+
+
 async def _send_invite_email(user: dict, link: str, org_name: str, kind: str, sender: dict):
+    """v58.13.132du — Rewritten to prevent the .132dt confusion where
+    the URL rendered inside `<code>` looked like a plaintext password.
+
+    New template rules (email + SMS both):
+      • Prominent CTA button labelled with the action ("Reset your
+        password" / "Set up your account") — the recipient's primary
+        pathway.
+      • Fallback copy explicitly says "copy and paste this LINK"
+        (not "code"), followed by the full URL rendered as a plain
+        anchor. No `<code>` tag anywhere in the email — that was
+        the specific visual cue that made Amanda mistake the URL for
+        a password.
+      • No orphan token fragment on its own line — the URL is
+        always presented in full.
+      • Sub-copy explains the TTL and the safe-to-ignore path.
+      • Signed off with the org's display_name (falls back to
+        trading_name → name → 'Paneltec Civil')."""
     from email_outbox import queue_email_doc
-    pretty = "reset your Paneltec password" if kind == "reset" else "join Paneltec Civil"
-    subject = ("Reset your Paneltec password" if kind == "reset"
-               else f"You're invited to {org_name} on Paneltec Civil")
-    html = (
-        f"<p>Hi {user.get('name') or user.get('email')},</p>"
-        f"<p>You've been invited to {pretty}. Click the secure link below to set your password:</p>"
-        f"<p><a href='{link}' style='background:#F97316;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600'>"
-        f"Set my password</a></p>"
-        f"<p>If the button doesn't work, paste this link into your browser:<br/><code>{link}</code></p>"
-        f"<p style='color:#64748b;font-size:12px'>This link expires in "
-        f"{INVITE_TTL_DAYS} days." if kind != "reset" else
-        f"<p style='color:#64748b;font-size:12px'>This link expires in {RESET_TTL_HOURS} hours."
-    )
-    html += " If you weren't expecting this, you can ignore the email.</p>"
+    brand = await _org_display_name(user.get("org_id"),
+                                    fallback=org_name or "Paneltec Civil")
+    is_reset = (kind == "reset")
+    subject = (f"Reset your password — {brand}" if is_reset
+               else f"You're invited to {brand} on Paneltec Civil")
+    cta_label = "Reset your password" if is_reset else "Set up your account"
+    ttl_line = ("This link is valid for 24 hours. If you didn't request "
+                "this, ignore this email.") if is_reset else (
+                "This link is valid for 7 days. Ignore this email if you "
+                "weren't expecting an invite.")
+    greeting = user.get("name") or user.get("email") or "there"
+    intro = ("A password reset was requested for your account. Click the "
+             "button below to choose a new password."
+             if is_reset else
+             f"You've been added to {brand}. Click the button below to set "
+             "your own password and finish setting up your account.")
+    html = f"""
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#0f172a;max-width:520px;margin:0 auto;padding:24px 8px;line-height:1.5">
+  <p style="font-size:16px;margin:0 0 12px">Hi {greeting},</p>
+  <p style="font-size:14px;margin:0 0 20px">{intro}</p>
+  <p style="text-align:center;margin:24px 0 20px">
+    <a href="{link}"
+       style="display:inline-block;background:#F97316;color:#ffffff;
+              padding:14px 28px;border-radius:10px;text-decoration:none;
+              font-weight:700;font-size:15px;letter-spacing:0.2px">
+      {cta_label}
+    </a>
+  </p>
+  <p style="font-size:12px;color:#64748b;margin:0 0 20px;text-align:center">
+    {ttl_line}
+  </p>
+  <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0">
+  <p style="font-size:12px;color:#64748b;margin:0 0 8px">
+    If the button doesn't work, copy and paste this link into your browser:
+  </p>
+  <p style="font-size:12px;margin:0 0 24px;word-break:break-all">
+    <a href="{link}" style="color:#F97316;text-decoration:underline">{link}</a>
+  </p>
+  <p style="font-size:12px;color:#94a3b8;margin:0">— {brand}</p>
+</div>
+""".strip()
+    # Plaintext-equivalent readable copy of the URL is inside the
+    # `<a>` fallback line inside the HTML — no separate body_text
+    # channel exists on queue_email_doc, so we ship a single sanitised
+    # HTML block which the outbox still renders in plaintext-only
+    # clients thanks to the anchor's visible URL text.
     await queue_email_doc(
         org_id=user["org_id"], to=[user["email"]],
         subject=subject, body_html=html,
         related_record_type="user", related_record_id=user["id"],
         created_by=sender.get("id") or "system",
         resource_kind="auth_invite",
-                               # OR user clicked "Forgot Password" on login.
     )
 
 
 async def _send_invite_sms(user: dict, link: str, kind: str) -> bool:
     """Best-effort SMS via existing TextMagic integration; returns False if
-    integration isn't connected or the phone is missing."""
+    integration isn't connected or the phone is missing.
+
+    v58.13.132du — Link-first SMS copy so recipients don't mistake
+    the URL tail for a code/password."""
     phone = user.get("phone") or user.get("mobile")
     if not phone:
         return False
@@ -155,7 +224,11 @@ async def _send_invite_sms(user: dict, link: str, kind: str) -> bool:
     # (was silently returning False since a rename — `integrations.send_sms`
     # didn't exist). Now honours Safe Mode + contextvar gate.
     from integrations_textmagic import safe_send_sms
-    body = ("Paneltec password reset: " if kind == "reset" else "Paneltec invite: ") + link
+    brand = await _org_display_name(user.get("org_id"))
+    action = ("Reset your %s password — open this link:"
+              if kind == "reset" else
+              "You're invited to %s — open this link to set up your account:") % brand
+    body = f"{action} {link}"
     try:
         res = await safe_send_sms(
             user["org_id"], mobiles=[phone], text=body,

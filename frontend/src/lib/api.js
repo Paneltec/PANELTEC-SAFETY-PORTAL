@@ -166,6 +166,16 @@ export function classifyAuthError(err) {
   ) {
     return { kind: 'disabled', message: detailStr || 'This account has been disabled. Contact your administrator.' };
   }
+  // v58.13.132du — When backend flags the 401 with
+  // `X-Auth-Reason: pending-first-signin`, surface a distinct kind
+  // so the FE can render a helper card ("open the invite/reset
+  // link in your email" instead of hammering the login form).
+  if (reason === 'pending-first-signin') {
+    return {
+      kind: 'pending_first_signin',
+      message: "You haven't set your password yet. Open the invite or reset link in your email — the link is the sign-in, not a password to type.",
+    };
+  }
   if (status === 401 || status === 403) {
     return { kind: 'credentials', message: 'Invalid email or password. Please try again.' };
   }

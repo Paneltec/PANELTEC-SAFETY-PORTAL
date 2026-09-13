@@ -112,14 +112,28 @@ export default function FuelReporting() {
   // (backend cache is already flushed by the PUT handler).
   const [priceRefreshTick, setPriceRefreshTick] = useState(0);
   const loadPriceSettings = useCallback(async () => {
+    // v58.13.132er — Fuel price toggle stick fix.
+    //
+    // Previously `Promise.all([settings, history])` — if `/price-history`
+    // rejected (transient network / role-scoped permission miss),
+    // BOTH resolutions were dropped and `priceSettings` never
+    // hydrated → the segmented control silently defaulted to
+    // SmartFill after page revisits, giving Stephen the "toggle
+    // reverts when I leave this area, doesn't stick" symptom.
+    //
+    // Fix: hydrate `priceSettings` independently of `priceHistory`
+    // so a history-side failure never masks the persisted
+    // `override_mode`. Errors on either endpoint remain silent —
+    // the banner still works because the render is guarded on
+    // `priceSettings && (…)`.
     try {
-      const [s, h] = await Promise.all([
-        api.get('/fleet/fuel/price-settings'),
-        api.get('/fleet/fuel/price-history'),
-      ]);
+      const s = await api.get('/fleet/fuel/price-settings');
       setPriceSettings(s.data);
-      setPriceHistory(h.data?.history || []);
     } catch (e) { /* silent — banner still works */ }
+    try {
+      const h = await api.get('/fleet/fuel/price-history');
+      setPriceHistory(h.data?.history || []);
+    } catch (e) { /* silent */ }
   }, []);
   useEffect(() => { loadPriceSettings(); }, [loadPriceSettings]);
   const savePriceSettings = useCallback(async () => {
@@ -128,12 +142,20 @@ export default function FuelReporting() {
       toast.error('Enter a price between 0 and 10 AUD/L');
       return;
     }
+    // v58.13.132dw — Cap at 4 decimals — matches Australian retail
+    // fuel pricing convention (e.g. $2.5342/L). Rejects entries
+    // like `2.53421` (5 decimals) before hitting the backend.
+    const decimals = (priceDraft.split('.')[1] || '').length;
+    if (decimals > 4) {
+      toast.error('Up to 4 decimal places (e.g. 2.5342)');
+      return;
+    }
     setPriceSaving(true);
     try {
       const r = await api.put('/fleet/fuel/price-settings',
                               { provisional_price_per_litre: v });
       setPriceSettings(r.data);
-      toast.success(`Fuel price updated to $${v.toFixed(2)}/L — reports refreshed.`);
+      toast.success(`Fuel price updated to $${v.toFixed(4)}/L — reports refreshed.`);
       setPriceEditOpen(false);
       loadPriceSettings();
       // v58.13.132df — Trigger a downstream reports refetch so the
@@ -392,8 +414,8 @@ export default function FuelReporting() {
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Fuel price source</div>
             <div className="text-xs text-slate-600 mt-0.5">
               {priceSettings.override_mode === 'provisional_all'
-                ? <>Every fill (including SmartFill real) is being displayed at <b>${Number(priceSettings.provisional_price_per_litre).toFixed(3)}/L</b> — read-time override.</>
-                : <>SmartFill real prices are shown per fill. Provisional (<b>${Number(priceSettings.provisional_price_per_litre).toFixed(3)}/L</b>) is used only when a fill has no real price.</>}
+                ? <>Every fill (including SmartFill real) is being displayed at <b>${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L</b> — read-time override.</>
+                : <>SmartFill real prices are shown per fill. Provisional (<b>${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L</b>) is used only when a fill has no real price.</>}
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
@@ -414,16 +436,17 @@ export default function FuelReporting() {
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={priceSettings.override_mode !== 'provisional_all'}
+                  aria-selected={priceSettings.override_mode === 'smartfill_with_fallback'}
                   data-testid="fuel-price-source-smartfill"
                   onClick={() => setOverrideMode('smartfill_with_fallback')}
+                  title="SmartFill real prices apply to imports going forward. Historical rows stay frozen."
                   className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                    priceSettings.override_mode !== 'provisional_all'
+                    priceSettings.override_mode === 'smartfill_with_fallback'
                       ? 'bg-white shadow text-blue-700 ring-1 ring-blue-100'
                       : 'text-slate-600 hover:text-slate-800'
                   }`}
                 >
-                  SmartFill (real)
+                  SmartFill real · future
                 </button>
                 <button
                   type="button"
@@ -431,13 +454,14 @@ export default function FuelReporting() {
                   aria-selected={priceSettings.override_mode === 'provisional_all'}
                   data-testid="fuel-price-source-provisional"
                   onClick={() => setOverrideMode('provisional_all')}
+                  title="Provisional override applies to imports going forward. Historical rows stay frozen."
                   className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
                     priceSettings.override_mode === 'provisional_all'
                       ? 'bg-amber-500 shadow text-white'
                       : 'text-slate-600 hover:text-slate-800'
                   }`}
                 >
-                  Provisional (override all)
+                  Provisional · future
                 </button>
               </div>
             ) : (
@@ -445,9 +469,18 @@ export default function FuelReporting() {
                 data-testid="fuel-price-source-readonly"
                 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500"
               >
-                {priceSettings.override_mode === 'provisional_all' ? 'Provisional (override all)' : 'SmartFill (real)'}
+                {priceSettings.override_mode === 'provisional_all' ? 'Provisional · future' : 'SmartFill real · future'}
               </span>
             )}
+          </div>
+          {/* v58.13.132dy — Frozen-history disclaimer under the segmented
+              control. Resets the expectation that flipping the toggle
+              back-fills historical rows — it doesn't. */}
+          <div
+            data-testid="fuel-price-source-frozen-hint"
+            className="mt-2 text-[10px] text-slate-500 italic leading-snug"
+          >
+            Applies to imports going forward. Historical transactions are frozen at the price active at their import time.
           </div>
         </div>
       )}
@@ -491,7 +524,7 @@ export default function FuelReporting() {
             <div className={`text-lg font-semibold leading-tight ${
               priceSettings.override_smartfill_real ? 'text-amber-900' : 'text-emerald-900'
             }`} data-testid="fuel-price-value">
-              ${Number(priceSettings.provisional_price_per_litre).toFixed(2)} <span className={`text-xs font-normal ${
+              ${Number(priceSettings.provisional_price_per_litre).toFixed(4)} <span className={`text-xs font-normal ${
                 priceSettings.override_smartfill_real ? 'text-amber-700' : 'text-emerald-700'
               }`}>AUD / L</span>
             </div>
@@ -499,7 +532,7 @@ export default function FuelReporting() {
               priceSettings.override_smartfill_real ? 'text-amber-800/90' : 'text-emerald-700/80'
             }`} data-testid="fuel-price-info-line">
               {priceSettings.override_smartfill_real ? (
-                <>⚠ OVERRIDE ACTIVE — ALL fills (including SmartFill real prices) are being displayed at ${Number(priceSettings.provisional_price_per_litre).toFixed(2)}/L. Real prices in the DB are preserved.</>
+                <>⚠ OVERRIDE ACTIVE — ALL fills (including SmartFill real prices) are being displayed at ${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L. Real prices in the DB are preserved.</>
               ) : (
                 <>Only applies to fills without a SmartFill-tagged real price. Applies to past and future fills — real prices are never overwritten.</>
               )}
@@ -548,9 +581,9 @@ export default function FuelReporting() {
                 <span className="text-slate-400">{(h.changed_at || '').slice(0, 10)}</span>
                 <span className="font-medium">{h.changed_by_name || '—'}</span>
                 <span className="text-slate-500">changed</span>
-                <code className="px-1 rounded bg-rose-50 text-rose-700 text-[10px]">${Number(h.old_price).toFixed(2)}</code>
+                <code className="px-1 rounded bg-rose-50 text-rose-700 text-[10px]">${Number(h.old_price).toFixed(4)}</code>
                 <span className="text-slate-400">→</span>
-                <code className="px-1 rounded bg-emerald-50 text-emerald-700 text-[10px]">${Number(h.new_price).toFixed(2)}</code>
+                <code className="px-1 rounded bg-emerald-50 text-emerald-700 text-[10px]">${Number(h.new_price).toFixed(4)}</code>
               </li>
             ))}
           </ul>
@@ -576,17 +609,27 @@ export default function FuelReporting() {
               <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Price (AUD / L)</div>
               <input
                 type="number"
-                step="0.01"
+                step="0.0001"
                 min="0"
                 max="10"
+                inputMode="decimal"
                 value={priceDraft}
                 onChange={(e) => setPriceDraft(e.target.value)}
                 data-testid="fuel-price-edit-input"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200 outline-none text-lg font-semibold"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200 outline-none text-lg font-semibold fuel-price-input"
                 autoFocus
               />
               <div className="text-[11px] text-slate-500 mt-1">
-                Only applies to fills without a SmartFill-tagged real price. Range 0-10.
+                Only applies to fills without a SmartFill-tagged real price. Range 0-10, up to 4 decimal places.
+              </div>
+              {/* v58.13.132dy — Frozen-history disclaimer on the Edit
+                  modal so admins never expect a price change to
+                  back-fill historical rows. */}
+              <div
+                data-testid="fuel-price-edit-frozen-hint"
+                className="mt-2 text-[10px] text-slate-500 italic leading-snug"
+              >
+                New price applies to imports from now on. Historical transactions are frozen.
               </div>
             </label>
             {/* v58.13.132dh — Override toggle relocated to the
@@ -945,7 +988,7 @@ export default function FuelReporting() {
               data-testid="fuel-reporting-provisional-banner"
             >
               <div className="font-bold mb-1">
-                ⚠ Fuel costs shown are <span className="italic">provisional at ${Number(priceSettings?.provisional_price_per_litre ?? 2.25).toFixed(2)}/L</span> pending supplier confirmation.
+                ⚠ Fuel costs shown are <span className="italic">provisional at ${Number(priceSettings?.provisional_price_per_litre ?? 2.25).toFixed(4)}/L</span> pending supplier confirmation.
               </div>
               <div className="text-amber-800 text-xs">
                 Applied to fills without a SmartFill-tagged real price — past and future. Real prices are never overwritten.
@@ -1056,9 +1099,9 @@ export default function FuelReporting() {
                               <span
                                 className="italic text-amber-700 font-mono"
                                 title="Provisional — awaiting real price"
-                              >${f.dpl.toFixed(3)}*</span>
+                              >${f.dpl.toFixed(4)}*</span>
                             ) : (
-                              <span className="font-mono">${f.dpl.toFixed(3)}</span>
+                              <span className="font-mono">${f.dpl.toFixed(4)}</span>
                             )
                           ) : '—'}
                         </td>
@@ -1114,7 +1157,7 @@ export default function FuelReporting() {
                         title={o.id ? 'Click to view full transaction detail' : undefined}
                       >
                         <td className="px-2 py-1 font-mono font-bold text-amber-900">
-                          ${o.dpl?.toFixed(3)}
+                          ${o.dpl?.toFixed(4)}
                         </td>
                         <td className="px-2 py-1 text-slate-800 truncate max-w-[200px]">
                           {o.label}
@@ -1306,7 +1349,7 @@ export default function FuelReporting() {
                         {r.avg_lp100 != null ? r.avg_lp100.toFixed(2) : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums font-mono">
-                        {r.dpl != null ? `$${r.dpl.toFixed(3)}` : '—'}
+                        {r.dpl != null ? `$${r.dpl.toFixed(4)}` : '—'}
                       </td>
                       <td className="px-3 py-1.5 text-right"><DeltaChip d={r.delta_dpl} /></td>
                     </tr>
@@ -1335,7 +1378,7 @@ export default function FuelReporting() {
                 title="Top 10 · Highest $/L"
                 rows={leaderboards.top_by_dpl || []}
                 metricKey="dpl"
-                metricFmt={(v) => v != null ? `$${v.toFixed(3)}` : '—'}
+                metricFmt={(v) => v != null ? `$${v.toFixed(4)}` : '—'}
                 testidRoot="fuel-reporting-lb-dpl"
                 onRowClick={handleLeaderboardClick}
               />
@@ -1444,13 +1487,13 @@ function DeltaChip({ d }) {
   if (d > 0) {
     return (
       <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-        <TrendingUp size={9} /> +${abs.toFixed(3)}
+        <TrendingUp size={9} /> +${abs.toFixed(4)}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-      <TrendingDown size={9} /> −${abs.toFixed(3)}
+      <TrendingDown size={9} /> −${abs.toFixed(4)}
     </span>
   );
 }
@@ -2010,10 +2053,10 @@ function FuelTransactionsList({ open, onToggle, loading, list, size, onShowAll, 
                           isProv ? (
                             <span className="italic text-amber-700 font-mono"
                                   title="Provisional — awaiting real price">
-                              ${Number(dpl).toFixed(3)}*
+                              ${Number(dpl).toFixed(4)}*
                             </span>
                           ) : (
-                            <span className="font-mono">${Number(dpl).toFixed(3)}</span>
+                            <span className="font-mono">${Number(dpl).toFixed(4)}</span>
                           )
                         ) : '—'}
                       </td>

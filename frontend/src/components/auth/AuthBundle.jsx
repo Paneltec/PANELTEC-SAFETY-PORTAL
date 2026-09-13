@@ -290,9 +290,14 @@ export function PinRevealModal({ pin, inviteUrl, userEmail, open, onClose }) {
 // but shows just the reset URL — no PIN. Used after `send_reset`
 // succeeds so the admin can copy or email the link manually while
 // comms_safe_mode is on.
+// v58.13.132du — Copy tightened after Amanda-invite confusion:
+//   • Header + label say "reset link" (never "password").
+//   • Warning helper text pins that the FULL URL must go, not just
+//     the tail fragment.
+//   • Copy button label is "Copy full URL" (was "Copy reset link").
 export function ResetLinkRevealModal({ link, userEmail, open, onClose }) {
   const copyLink = () => {
-    copyToClipboard(link || '', { successMsg: 'Reset link copied to clipboard' });
+    copyToClipboard(link || '', { successMsg: 'Full reset URL copied to clipboard' });
   };
   const emailMe = () => {
     const subject = encodeURIComponent('Reset your Paneltec Civil password');
@@ -308,23 +313,36 @@ export function ResetLinkRevealModal({ link, userEmail, open, onClose }) {
         <DialogHeader>
           <DialogTitle className="font-display">Reset link ready</DialogTitle>
           <DialogDescription>
-            Comms Safe Mode is on — the automatic email may not have been delivered. Copy this
-            link and hand it to the worker, or open your mailer to forward it. Valid for 24 hours.
+            Comms Safe Mode is on — the automatic email may not have been delivered.
+            Copy the full URL below and send it to the user. Valid for 24 hours.
           </DialogDescription>
         </DialogHeader>
         <div className="my-3">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-            Password reset URL
+            Reset link — send this full URL to the user
           </div>
-          <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 font-mono text-[11px] text-slate-700 break-all select-all"
-               data-testid="reset-link-value">
-            {link}
+          <input
+            readOnly
+            value={link || ''}
+            data-testid="reset-link-value"
+            onFocus={(e) => e.currentTarget.select()}
+            className="w-full p-2 rounded-lg bg-slate-50 border border-slate-200 font-mono text-[11px] text-slate-700 break-all select-all focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          />
+          <div
+            data-testid="reset-link-warning"
+            className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800"
+          >
+            <span aria-hidden="true" className="mt-0.5">⚠️</span>
+            <span>
+              <strong>Do NOT send just the token</strong> — the user must open the full URL to reset their password.
+              The URL is not a password; typing anything from it into the login form will not sign them in.
+            </span>
           </div>
         </div>
         <DialogFooter className="sm:justify-center gap-2 flex-wrap">
           <button type="button" onClick={copyLink} data-testid="reset-link-copy"
             className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50">
-            Copy reset link
+            Copy full URL
           </button>
           <button type="button" onClick={emailMe} data-testid="reset-link-email-me"
             className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50">

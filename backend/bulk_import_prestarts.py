@@ -75,6 +75,7 @@ from pydantic import BaseModel
 
 from db import db
 from auth import get_current_user
+from form_routing import resolve_template_category  # v58.13.132dz
 
 log = logging.getLogger("paneltec.bulk_import_prestarts")
 router = APIRouter(prefix="/pre-starts/bulk-import", tags=["bulk-import"])
@@ -2517,8 +2518,13 @@ async def _run_job(job_id: str, mode: str):
                             # the rich `fields[]` never surfaced on the
                             # Daily Pre-Starts list.
                             _tpl_row = templates_by_id.get(_doc.get("template_id")) or {}
-                            _tpl_cat = _tpl_row.get("category")
-                            if _tpl_cat:
+                            # v58.13.132dz — Consult `form_routing_rules`
+                            # first, then fall back to the template's
+                            # declared `category`. Same helper as
+                            # `forms.py` / `imports.py`.
+                            _tpl_cat = await resolve_template_category(_tpl_row) \
+                                if _tpl_row else None
+                            if _tpl_cat and _tpl_cat != "general":
                                 _doc["template_category_snapshot"] = _tpl_cat
                             _hash = (_doc.get("metadata") or {}).get("pdf_hash")
                             if _hash:

@@ -1,21 +1,25 @@
-"""v58.13.132do — Fuel Transaction Detail: Portal Unit Price row
-reflects fuel policy under BOTH modes.
+"""v58.13.132do — Fuel Transaction Detail: Portal Unit Price row policy.
 
-Prior state:
-  * `smartfill_with_fallback` → row showed `t.unit_price` + the
-    developer-jargon caption "stale — ignored, we use total ÷ litres".
-  * `provisional_all` → row correctly showed provisional + amber
-    "reflects fuel price policy" caption.
+v58.13.132dy — INVERTED for the frozen-price architecture. The row
+no longer swaps caption / value based on the live toggle:
 
-`.132do` normalises the row so both modes show the effective per-fill
-price with a "reflects fuel price policy" caption. The
-`smartfill_with_fallback` branch now sources the value from `dpl`
-(the `computed_price_per_litre`) so it exactly matches the `$/L
-(Computed)` metric card above. The stale/ignored copy is deleted.
+  * Under the pre-.132dy model, the row would render either
+    `SmartFill price — reflects fuel price policy` (slate) or
+    `Provisional override active — reflects fuel price policy`
+    (amber) depending on the org-wide toggle. Both captions were
+    tied to a live read-time reprice.
 
-The SmartFill raw (reference) row keeps its existing gate
-(`overrideActive && rawTotal != null`) — only renders under
-`provisional_all` when a real SmartFill portal price was overridden.
+  * Under `.132dy`, the row ALWAYS renders the frozen `$/L` (`dpl`)
+    with a single neutral `Frozen at import` caption. Which policy
+    was active at IMPORT TIME is signalled instead by the chip at
+    the top of the modal (`fuel-txn-detail-frozen-source-chip`),
+    which carries the historicised `frozen_price_source` value.
+
+  * The SmartFill raw (reference) row is now gated on the frozen
+    source tag (`price_source_snapshot === 'provisional_override' ||
+    frozen_price_source === 'provisional_override'`), NOT the live
+    `overrideActive` boolean — because the historicised source is
+    what actually applies to the row.
 """
 from __future__ import annotations
 
@@ -48,90 +52,84 @@ def test_stale_dev_jargon_removed():
     assert "stale -- ignored" not in stripped.lower()
 
 
-def test_smartfill_branch_uses_computed_dpl():
-    """Under `smartfill_with_fallback`, the Portal Unit Price row
-    must render `dpl` (computed_price_per_litre) — same source as
-    the `$/L (Computed)` metric card — not `t.unit_price`."""
+def test_live_policy_captions_removed():
+    """v58.13.132dy — The two live-policy captions
+    (`SmartFill price — reflects fuel price policy` /
+    `Provisional override active — reflects fuel price policy`)
+    are DEAD. Neither one may appear as user-visible copy in the
+    modal — the frozen-source chip carries that signal now."""
     src = _src()
-    # Structural: the non-override branch of the Portal Unit Price
-    # row now formats `dpl`, not `t.unit_price`.
-    # We anchor on the testid to make sure we're checking the
-    # correct branch.
-    smartfill_branch = re.search(
+    stripped = re.sub(r"//[^\n]*", "", src)
+    stripped = re.sub(r"/\*.*?\*/", "", stripped, flags=re.DOTALL)
+    assert "reflects fuel price policy" not in stripped
+    assert "SmartFill price — reflects" not in stripped
+    assert "Provisional override active — reflects" not in stripped
+
+
+def test_portal_unit_price_row_always_shows_frozen_dpl():
+    """v58.13.132dy — The Portal Unit Price row is now toggle-agnostic:
+    it always renders the frozen `$/L` (`dpl`) with the neutral
+    "Frozen at import" caption. No more branching on `overrideActive`."""
+    src = _src()
+    # Row uses `dpl` (computed_price_per_litre) rendered at 4-decimal
+    # precision (matches the `$/L (computed)` metric card).
+    m = re.search(
         r'data-testid="fuel-txn-detail-portal-unit-price">\s*'
-        r'<span className="font-mono">\{fmtDollar\((\w+),\s*3\)',
-        src,
-    )
-    assert smartfill_branch is not None, \
-        "SmartFill branch of Portal Unit Price row missing or malformed"
-    assert smartfill_branch.group(1) == "dpl", (
-        f"SmartFill branch must render `dpl` (matches $/L Computed card), "
-        f"got `{smartfill_branch.group(1)}`"
-    )
-
-
-def test_smartfill_branch_new_policy_caption():
-    """New neutral / slate caption under SmartFill mode:
-    `SmartFill price — reflects fuel price policy`."""
-    src = _src()
-    assert "SmartFill price — reflects fuel price policy" in src
-    # Slate tone, not amber.
-    # The caption span sits inside the non-override branch. Snap
-    # a stronger structural check: the `SmartFill price` copy is
-    # inside a `text-slate-500` span (not amber).
-    m = re.search(
-        r'text-slate-500">\s*SmartFill price — reflects fuel price policy',
-        src,
-    )
-    assert m is not None, \
-        "SmartFill price caption must render in slate tone (text-slate-500)"
-
-
-def test_provisional_branch_unchanged():
-    """`.132dl` provisional branch is preserved: value = provPrice,
-    caption = amber 'Provisional override active — reflects fuel price policy'."""
-    src = _src()
-    assert "Provisional override active — reflects fuel price policy" in src
-    m = re.search(
-        r'data-testid="fuel-txn-detail-portal-unit-price-override">\s*'
-        r'<span className="font-mono">\{fmtDollar\(provPrice,\s*3\)\}',
-        src,
-    )
-    assert m is not None, "Provisional override branch missing or altered"
-    # Amber tone preserved.
-    assert re.search(
-        r'text-amber-800">\s*Provisional override active — reflects fuel price policy',
-        src,
-    ) is not None
-
-
-def test_raw_reference_row_gated_on_override_only():
-    """SmartFill raw (reference) row must only render under
-    `provisional_all` (i.e. `overrideActive`). Never under
-    `smartfill_with_fallback`."""
-    src = _src()
-    # The gate expression is `overrideActive && rawTotal != null`.
-    m = re.search(
-        r'\{overrideActive && rawTotal != null && \(\s*<Row',
+        r'<span className="font-mono">\{fmtDollar\(dpl,\s*4\)\}',
         src,
     )
     assert m is not None, (
-        "SmartFill raw reference row must be gated on "
-        "`overrideActive && rawTotal != null`"
+        "Portal Unit Price row must render `fmtDollar(dpl, 4)` "
+        "(same source as $/L Computed card)."
+    )
+    # Neutral "Frozen at import" caption in slate tone (no amber swap).
+    m2 = re.search(
+        r'text-slate-500">\s*Frozen at import',
+        src,
+    )
+    assert m2 is not None, (
+        "Portal Unit Price row must carry the neutral "
+        "`Frozen at import` caption in slate tone."
     )
 
 
-def test_visibility_guard_widened_to_dpl():
-    """The row's outer guard must include `dpl != null` so a fill
-    without a portal `unit_price` still renders the SmartFill row
-    when the computed price is available."""
+def test_no_live_toggle_branching_on_portal_unit_price():
+    """v58.13.132dy — The row must NOT branch on `overrideActive` for
+    its rendering. There should be no separate
+    `fuel-txn-detail-portal-unit-price-override` testid — one row
+    handles both historicised sources."""
     src = _src()
-    assert "(dpl != null || (overrideActive && provPrice != null))" in src
+    assert 'fuel-txn-detail-portal-unit-price-override' not in src
+
+
+def test_raw_reference_row_gated_on_frozen_source():
+    """v58.13.132dy — SmartFill raw (reference) row must render only
+    when the row was frozen under `provisional_override`. Gate reads
+    both `price_source_snapshot` (from list_transactions) and
+    `frozen_price_source` (from the raw doc)."""
+    src = _src()
+    assert "price_source_snapshot === 'provisional_override'" in src
+    assert "frozen_price_source === 'provisional_override'" in src
+    # Row still exposes the audit testid.
+    assert 'fuel-txn-detail-smartfill-raw' in src
+
+
+def test_frozen_source_chip_wired_at_top_of_modal():
+    """v58.13.132dy — The chip at the top of the modal is the primary
+    signal of which pricing policy was frozen for the row. Must
+    render one of three labels based on `frozen_price_source`:
+    `Provisional override (at import)`, `SmartFill real (at import)`,
+    or `Provisional fallback (at import)`."""
+    src = _src()
+    assert 'fuel-txn-detail-frozen-source-chip' in src
+    assert 'Provisional override (at import)' in src
+    assert 'SmartFill real (at import)' in src
+    assert 'Provisional fallback (at import)' in src
 
 
 # ─── Version sync ────────────────────────────────────────────────
 
-def test_three_way_sync_at_132do_or_later():
+def test_three_way_sync_at_132dy_or_later():
     running = re.search(r"^export const RUNNING_VERSION = '([^']+)'",
                         VERSION_JS.read_text(), re.MULTILINE).group(1)
     expected = re.search(r"^export const EXPECTED_CACHE_VERSION = '([^']+)'",
@@ -140,4 +138,4 @@ def test_three_way_sync_at_132do_or_later():
                       SW.read_text(), re.MULTILINE).group(1)
     assert running == expected == cache
     tail = re.search(r"132([a-z]+)", running).group(1)
-    assert tail >= "do"
+    assert tail >= "dy"

@@ -10,7 +10,7 @@ Each entity exposes:
 import logging
 from typing import Any, Dict, List, Optional, Type
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
@@ -114,13 +114,37 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
 
     @r.get("")
     async def list_items(
+        response: Response,   # v58.13.132ea — for X-Total-Count header
         workspace_id: Optional[str] = Query(None),
         status: Optional[str] = Query(None),
         include_superseded: bool = Query(False),
+        # v58.13.132ec — Archive visibility toggle. Default hides
+        # archived rows so a fresh page load never surfaces stale
+        # end-of-year cleanup records. Admins flip the FE toggle to
+        # inspect / restore them.
+        include_archived: bool = Query(False),
         date_from: Optional[str] = Query(None),
         date_to: Optional[str] = Query(None),
         scope: Optional[str] = Query(None, description="`me` = own records only, `team` = org-wide (needs team_view)"),
-        limit: int = Query(100, ge=1, le=5000),  # v58.13.84 — A3: 50k → 5k
+        # v58.13.132ea — Default lifted from 100 → 5000 (the previous
+        # `le=` cap) after the `.132dz` migration made the pagination
+        # cap actively harmful: Stephen's Risk Assessments bucket went
+        # from 1 row (pre-migration) to 3 561 rows, and the old
+        # default silently truncated to the first 100. FE list pages
+        # today consume the response as a bare array and have no
+        # "load more" affordance, so a hidden truncation reads as
+        # "the migration is broken". Adding a proper FE pager is
+        # flagged as follow-up UX work — bumping the default fixes
+        # the visibility bug immediately without a BC-breaking
+        # response-shape change.
+        limit: int = Query(5000, ge=1, le=5000),
+        # v58.13.132eh — Pagination offset. When >0, skip the first N
+        # rows in the sort order. Combined with `limit` this gives
+        # the FE a Load-More affordance without breaking the legacy
+        # bare-array response shape. `X-Total-Count` continues to
+        # report the TRUE DB total so the FE knows when it has
+        # exhausted the pool.
+        offset: int = Query(0, ge=0),
         # v160.3.9.58.1 — filters used by the Bulk-Import wizard's
         # deep-links. `bulk_import_id` narrows the list to records
         # committed by one import job; `needs_review` shows only rows
@@ -140,9 +164,31 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         # sent. By catching + logging + returning a clean JSON error we
         # ensure the origin ALWAYS emits a well-formed HTTP response.
         try:
-            return await _list_impl(user, workspace_id, status, include_superseded,
+            docs = await _list_impl(user, workspace_id, status, include_superseded,
                                      date_from, date_to, scope, limit,
-                                     bulk_import_id, needs_review)
+                                     bulk_import_id, needs_review, include_archived,
+                                     offset)
+            # v58.13.132ea — X-Total-Count header exposes the total
+            # rows the caller has access to WITHIN THE CURRENT
+            # FILTERS, before the pagination slice. Legacy consumers
+            # (which read `r.data` as a bare array) are unaffected;
+            # future FE pager work can consume `X-Total-Count` for
+            # "N of M shown" UX without a response-shape change.
+            # v58.13.132ee — Also emit X-Archived-Count so the FE
+            # ShowArchivedToggle can badge itself with the archived
+            # count without a second round-trip.
+            docs, arch_count, total_count = docs
+            try:
+                # v58.13.132ef — X-Total-Count is the TRUE DB total,
+                # not `len(docs)` (which was capped by the pagination
+                # limit and made the FE chip freeze at 5,000 total).
+                response.headers["X-Total-Count"] = str(total_count)
+                response.headers["X-Archived-Count"] = str(arch_count)
+                response.headers["Access-Control-Expose-Headers"] = (
+                    "X-Total-Count, X-Archived-Count")
+            except Exception:  # pragma: no cover — defensive
+                pass
+            return docs
         except HTTPException:
             raise
         except Exception as e:  # noqa: BLE001
@@ -165,7 +211,8 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
     async def _list_impl(
         user, workspace_id, status, include_superseded,
         date_from, date_to, scope, limit,
-        bulk_import_id, needs_review,
+        bulk_import_id, needs_review, include_archived,
+        offset: int = 0,
     ):
         q = _scoped(user, workspace_id)
         # v159.2 — team-scoping. If the caller lacks `team_view` on this
@@ -174,6 +221,12 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         own_only = await resolve_team_scope(user, resource, scope)
         if own_only is not None:
             q["created_by"] = own_only
+        # v58.13.132ec — Hide archived rows unless caller asked. Mongo's
+        # `{field: null}` semantics matches both `null` and missing, so
+        # legacy docs without the field surface correctly on the default
+        # path.
+        if not include_archived:
+            q["archived_at"] = None
         if status:
             q["status"] = status
         elif collection == "swms" and not include_superseded:
@@ -193,7 +246,8 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         if bulk_import_id or needs_review:
             docs = []
         else:
-            docs = await db[collection].find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+            docs = await db[collection].find(q, {"_id": 0}).sort(
+                "created_at", -1).skip(offset).limit(limit).to_list(limit)
 
         # v160.2.5a — union in matching `form_submissions` (phone-filled
         # forms). Non-destructive — legacy rows keep priority; merged
@@ -202,11 +256,21 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         # isn't set on this router, or when the caller narrowed with
         # `status=` (we can't safely map arbitrary status strings across
         # heterogeneous schemas).
-        if mirror_categories and not status:
+        # v58.13.132eh — When paginating past the first page, skip the
+        # mirror union entirely. The union order isn't deterministic
+        # across the two collections and pulling both fully into memory
+        # to interleave would defeat the point of pagination. Mirror
+        # content is a small fraction of the base collection anyway;
+        # if a user paginates deeply, they're browsing legacy shim
+        # rows, not phone submissions.
+        if mirror_categories and not status and offset == 0:
             mq: Dict[str, Any] = {
                 "org_id": user["org_id"], "deleted_at": None,
                 "template_category_snapshot": {"$in": mirror_categories},
             }
+            # v58.13.132ec — Mirror the archive filter onto mirrored rows.
+            if not include_archived:
+                mq["archived_at"] = None
             if workspace_id:
                 mq["workspace_id"] = workspace_id
             if own_only is not None:
@@ -308,7 +372,76 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         # v58.13.78 — Defensive encode. Prevents a single unserialisable
         # doc (naive datetime, Decimal, bytes) from crashing the whole
         # response mid-stream and giving the user a Cloudflare 520.
-        return _safe_encode_list(docs, route_hint=f"/{prefix}")
+        encoded = _safe_encode_list(docs, route_hint=f"/{prefix}")
+
+        # v58.13.132ee — Cheap archived-row count for the same query
+        # scope, so the FE ShowArchivedToggle can badge itself with
+        # the archived count. `own_only` and workspace/team scoping
+        # already resolved above → reuse the same `q` shape and just
+        # flip archived_at.
+        arch_q = {**q}
+        arch_q.pop("archived_at", None)
+        arch_q.pop("status", None)  # count irrespective of status filter
+        arch_q["archived_at"] = {"$ne": None}
+        arch_count = 0
+        try:
+            arch_count = await db[collection].count_documents(arch_q)
+            if mirror_categories:
+                mq_a: Dict[str, Any] = {
+                    "org_id": user["org_id"], "deleted_at": None,
+                    "template_category_snapshot": {"$in": mirror_categories},
+                    "archived_at": {"$ne": None},
+                }
+                if workspace_id:
+                    mq_a["workspace_id"] = workspace_id
+                if own_only is not None:
+                    mq_a["$or"] = [{"created_by": own_only},
+                                   {"submitted_by": own_only}]
+                arch_count += await db.form_submissions.count_documents(mq_a)
+        except Exception:  # pragma: no cover — defensive
+            arch_count = 0
+
+        # v58.13.132ef — True total (before the pagination `limit`
+        # slice) so the FE `TotalCountChip` displays the actual DB
+        # count instead of `len(docs)` (which was capped at 5000
+        # since .132ea and made the chip freeze at "5,000 total"
+        # for orgs with >5k rows). Same query scope as the `.find()`
+        # above, minus the wizard filters that already returned an
+        # empty `docs`.
+        total_count = 0
+        try:
+            if not (bulk_import_id or needs_review):
+                total_count = await db[collection].count_documents(q)
+            if mirror_categories and not status:
+                mq_t: Dict[str, Any] = {
+                    "org_id": user["org_id"], "deleted_at": None,
+                    "template_category_snapshot": {"$in": mirror_categories},
+                }
+                if not include_archived:
+                    mq_t["archived_at"] = None
+                if workspace_id:
+                    mq_t["workspace_id"] = workspace_id
+                if own_only is not None:
+                    mq_t["$or"] = [{"created_by": own_only},
+                                   {"submitted_by": own_only}]
+                if date_from or date_to:
+                    mq_t["submitted_at"] = {
+                        **({"$gte": date_from} if date_from else {}),
+                        **({"$lte": date_to} if date_to else {}),
+                    }
+                if bulk_import_id:
+                    mq_t["metadata.job_id"] = bulk_import_id
+                if needs_review:
+                    mq_t["$and"] = mq_t.get("$and", []) + [{
+                        "$or": [
+                            {"metadata.worker_match.needs_review": True},
+                            {"metadata.worker_match.id": None},
+                        ],
+                    }]
+                total_count += await db.form_submissions.count_documents(mq_t)
+        except Exception:  # pragma: no cover — defensive
+            total_count = len(encoded)
+        return encoded, arch_count, total_count
 
     @r.get("/{item_id}")
     async def get_item(item_id: str, user: dict = Depends(require_permission(resource, "view"))):
@@ -403,6 +536,235 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Not found")
         return {"ok": True}
+
+    # ─── v58.13.132ec — Archive lifecycle ─────────────────────────
+    # Archive is a non-destructive state that hides the row from
+    # default list views. Records are recoverable via `unarchive`.
+    # Admin-only (bulk operation with data-integrity implications).
+    #
+    # Handles BOTH the native collection and the mirrored
+    # `form_submissions` slice — a caller can point either endpoint
+    # at any id and the correct collection gets the write. Same
+    # audit row goes to `archive_audit` regardless.
+
+    async def _find_row(item_id: str, org_id: str):
+        """Return (collection_name, doc) for either the native or
+        mirrored row, or (None, None) if neither carries the id."""
+        native = await db[collection].find_one(
+            {"id": item_id, "org_id": org_id},
+            {"_id": 0, "id": 1, "archived_at": 1, "archive_batch_id": 1},
+        )
+        if native is not None:
+            return collection, native
+        if mirror_categories:
+            mirror = await db.form_submissions.find_one(
+                {"id": item_id, "org_id": org_id,
+                 "template_category_snapshot": {"$in": mirror_categories}},
+                {"_id": 0, "id": 1, "archived_at": 1, "archive_batch_id": 1},
+            )
+            if mirror is not None:
+                return "form_submissions", mirror
+        return None, None
+
+    async def _write_audit(actor_id: str, action: str, batch_id: str,
+                            affected: int, criteria: Dict[str, Any] | None,
+                            reason: str | None) -> None:
+        await db.archive_audit.insert_one({
+            "id": new_id(),
+            "module": prefix,
+            "actor_user_id": actor_id,
+            "action": action,
+            "batch_id": batch_id,
+            "criteria": criteria or {},
+            "affected_count": affected,
+            "reason": reason,
+            "timestamp": now_iso(),
+        })
+
+    @r.post("/archive")
+    async def bulk_archive(
+        body: Optional[dict] = None,
+        user: dict = Depends(require_permission(resource, "edit")),
+    ):
+        """v58.13.132ed — Bulk archive with criteria + dry-run preview.
+        Admin-only. `dry_run=true` returns match count + first 100 ids
+        without persisting."""
+        if user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin only")
+        body = body or {}
+        criteria = body.get("criteria") or {}
+        reason = body.get("reason")
+        dry_run = bool(body.get("dry_run"))
+
+        # Build the base match: org + not-already-archived. `deleted_at`
+        # is deliberately not filtered here — a soft-deleted row can
+        # still be archived (they are orthogonal states).
+        q: dict[str, Any] = {"org_id": user["org_id"], "archived_at": None}
+        # Date filters — cascade through the shape variants we see across
+        # the 7 modules (`date`, `created_at`, `submitted_at`,
+        # `occurred_at`).
+        date_before = criteria.get("date_before")
+        date_between = criteria.get("date_between")
+        if date_before or date_between:
+            date_field = "created_at"
+            rng: dict[str, str] = {}
+            if date_before:
+                rng["$lt"] = date_before
+            elif date_between and len(date_between) == 2:
+                rng["$gte"] = date_between[0]
+                rng["$lte"] = date_between[1]
+            q[date_field] = rng
+        # Status / site / category — pass-throughs.
+        if criteria.get("status_in"):
+            q["status"] = {"$in": criteria["status_in"]}
+        if criteria.get("site_id"):
+            q["site_id"] = criteria["site_id"]
+        if criteria.get("category_in"):
+            q["category"] = {"$in": criteria["category_in"]}
+        if criteria.get("template_id_in"):
+            q["template_id"] = {"$in": criteria["template_id_in"]}
+
+        # `oldest_n` — post-filter slice by created_at asc. Runs BEFORE
+        # any commit so dry-run + commit see the same set.
+        oldest_n = criteria.get("oldest_n")
+        limit_native = 0
+        candidates: list[dict] = []
+        if oldest_n:
+            candidates = await db[collection].find(
+                q, {"_id": 0, "id": 1}
+            ).sort("created_at", 1).limit(int(oldest_n)).to_list(int(oldest_n))
+            matched_ids = [c["id"] for c in candidates]
+        else:
+            matched_ids_cursor = db[collection].find(q, {"_id": 0, "id": 1})
+            matched_ids = [c["id"] async for c in matched_ids_cursor]
+
+        # Mirror slice.
+        mirror_matched_ids: list[str] = []
+        if mirror_categories:
+            mq = dict(q)
+            mq["template_category_snapshot"] = {"$in": mirror_categories}
+            # Rewrite `created_at` filter → `submitted_at` on mirrored rows.
+            if date_before or date_between:
+                mq.pop("created_at", None)
+                rng2: dict[str, str] = {}
+                if date_before:
+                    rng2["$lt"] = date_before
+                elif date_between and len(date_between) == 2:
+                    rng2["$gte"] = date_between[0]
+                    rng2["$lte"] = date_between[1]
+                mq["submitted_at"] = rng2
+            if oldest_n:
+                mcands = await db.form_submissions.find(
+                    mq, {"_id": 0, "id": 1}
+                ).sort("submitted_at", 1).limit(int(oldest_n)).to_list(int(oldest_n))
+                mirror_matched_ids = [c["id"] for c in mcands]
+            else:
+                mirror_matched_ids = [c["id"] async for c in
+                                       db.form_submissions.find(mq, {"_id": 0, "id": 1})]
+
+        total_matched = len(matched_ids) + len(mirror_matched_ids)
+        sample = (matched_ids + mirror_matched_ids)[:100]
+
+        if dry_run:
+            return {"ok": True, "dry_run": True, "matched_count": total_matched,
+                    "matched_ids_sample": sample, "batch_id": None}
+
+        batch_id = new_id()
+        stamp = {"archived_at": now_iso(), "archived_by": user["id"],
+                 "archived_reason": reason, "archive_batch_id": batch_id}
+        n1 = 0
+        if matched_ids:
+            r1 = await db[collection].update_many(
+                {"id": {"$in": matched_ids}, "org_id": user["org_id"],
+                 "archived_at": None},
+                {"$set": stamp})
+            n1 = r1.modified_count
+        n2 = 0
+        if mirror_matched_ids:
+            r2 = await db.form_submissions.update_many(
+                {"id": {"$in": mirror_matched_ids}, "org_id": user["org_id"],
+                 "archived_at": None},
+                {"$set": stamp})
+            n2 = r2.modified_count
+        affected = n1 + n2
+        await _write_audit(user["id"], "bulk_archive", batch_id, affected,
+                            criteria, reason)
+        return {"ok": True, "dry_run": False, "batch_id": batch_id,
+                "archived_count": affected, "matched_ids_sample": sample}
+
+    @r.post("/{item_id}/archive")
+    async def archive_item(
+        item_id: str,
+        body: Optional[dict] = None,
+        user: dict = Depends(require_permission(resource, "edit")),
+    ):
+        if user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin only")
+        coll, doc = await _find_row(item_id, user["org_id"])
+        if not doc:
+            raise HTTPException(status_code=404, detail="Not found")
+        if doc.get("archived_at"):
+            return {"ok": True, "id": item_id,
+                    "batch_id": doc.get("archive_batch_id"),
+                    "already_archived": True}
+        batch_id = new_id()
+        reason = (body or {}).get("reason")
+        await db[coll].update_one(
+            {"id": item_id, "org_id": user["org_id"]},
+            {"$set": {"archived_at": now_iso(),
+                      "archived_by": user["id"],
+                      "archived_reason": reason,
+                      "archive_batch_id": batch_id}},
+        )
+        await _write_audit(user["id"], "archive", batch_id, 1,
+                            {"item_id": item_id, "collection": coll}, reason)
+        return {"ok": True, "id": item_id, "batch_id": batch_id,
+                "already_archived": False}
+
+    @r.post("/{item_id}/unarchive")
+    async def unarchive_item(
+        item_id: str,
+        user: dict = Depends(require_permission(resource, "edit")),
+    ):
+        if user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin only")
+        coll, doc = await _find_row(item_id, user["org_id"])
+        if not doc:
+            raise HTTPException(status_code=404, detail="Not found")
+        prior_batch = doc.get("archive_batch_id")
+        if not doc.get("archived_at"):
+            return {"ok": True, "id": item_id, "already_active": True}
+        await db[coll].update_one(
+            {"id": item_id, "org_id": user["org_id"]},
+            {"$set": {"archived_at": None,
+                      "archived_by": None,
+                      "archived_reason": None,
+                      "archive_batch_id": None}},
+        )
+        await _write_audit(user["id"], "unarchive", prior_batch or "",
+                            1, {"item_id": item_id, "collection": coll},
+                            None)
+        return {"ok": True, "id": item_id, "restored_from_batch": prior_batch}
+
+    @r.post("/unarchive-batch/{batch_id}")
+    async def unarchive_batch(
+        batch_id: str,
+        user: dict = Depends(require_permission(resource, "edit")),
+    ):
+        if user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin only")
+        q = {"org_id": user["org_id"], "archive_batch_id": batch_id}
+        total = 0
+        for c in [collection] + (["form_submissions"] if mirror_categories else []):
+            res = await db[c].update_many(
+                q, {"$set": {"archived_at": None, "archived_by": None,
+                             "archived_reason": None,
+                             "archive_batch_id": None}},
+            )
+            total += res.modified_count
+        await _write_audit(user["id"], "bulk_unarchive", batch_id, total,
+                            {"batch_id": batch_id}, None)
+        return {"ok": True, "batch_id": batch_id, "restored_count": total}
 
     return r
 

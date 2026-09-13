@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from auth import get_current_user
 from db import db
+from form_routing import resolve_template_category  # v58.13.132dz
 
 # Import parser from the scripts package.
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
@@ -158,7 +159,10 @@ async def import_pdf(
             "org_id": org_id,
             "template_id": matched["id"],
             "template_name_snapshot": matched.get("name"),
-            "template_category_snapshot": matched.get("category"),
+            # v58.13.132dz — Route category via `form_routing_rules`
+            # first, then fall back to the template's declared
+            # `category`. Same choke-point as `forms.py`.
+            "template_category_snapshot": await resolve_template_category(matched),
             "fields": fields_out,
             "submitted_by_name": parsed["meta"].get("respondent") or "",
             "submitted_at": now,

@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowLeft, Loader2, ChevronLeft, ChevronRight,
-  CheckCircle2, X as XIcon, Search, Link2,
+  CheckCircle2, X as XIcon, Search, Link2, Trash2, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -46,6 +46,9 @@ export default function FuelAnomalyInbox() {
   const [rule, setRule] = useState('');
   const [status, setStatus] = useState('open'); // open | resolved | all
   const [q, setQ] = useState('');
+  // v58.13.132ds — Show soft-deleted dismissals in the Resolved tab.
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(null); // {row, rule} pending confirm
   const [matchingTx, setMatchingTx] = useState(null); // txn row for manual-match dialog
   // v58.13.132ax — full-detail modal state.
   const [detailTxn, setDetailTxn] = useState(null);
@@ -65,6 +68,7 @@ export default function FuelAnomalyInbox() {
       if (rule) params.rule = rule;
       if (status === 'open') params.resolved = false;
       if (status === 'resolved') params.resolved = true;
+      if (showDeleted) params.include_deleted = true;
       const r = await api.get('/fleet/fuel/anomalies', { params });
       setItems(r.data?.items || []);
       setTotal(r.data?.total || 0);
@@ -73,7 +77,7 @@ export default function FuelAnomalyInbox() {
     } finally {
       setLoading(false);
     }
-  }, [page, rule, status]);
+  }, [page, rule, status, showDeleted]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -133,6 +137,39 @@ export default function FuelAnomalyInbox() {
       reload();
     } catch (e) {
       toast.error(apiError(e) || `${action} failed`);
+    }
+  };
+
+  // v58.13.132ds — Soft-delete + undelete on a dismissed anomaly flag.
+  // Admin-only. Preserves the txn + audit metadata; just flips the
+  // per-flag visibility.
+  const deleteDismissal = async (row, ruleKey) => {
+    if (!canEdit) return;
+    try {
+      await api.post(
+        `/fleet/fuel/anomalies/${row.id}/delete-dismissal`,
+        { rule: ruleKey },
+      );
+      const ruleLabel = RULE_META[ruleKey]?.label || ruleKey;
+      toast.success(`Hidden · ${ruleLabel}`, { duration: 3000 });
+      setConfirmDel(null);
+      reload();
+    } catch (e) {
+      toast.error(apiError(e) || 'Delete failed');
+    }
+  };
+  const undeleteDismissal = async (row, ruleKey) => {
+    if (!canEdit) return;
+    try {
+      await api.post(
+        `/fleet/fuel/anomalies/${row.id}/undelete-dismissal`,
+        { rule: ruleKey },
+      );
+      const ruleLabel = RULE_META[ruleKey]?.label || ruleKey;
+      toast.success(`Restored · ${ruleLabel}`, { duration: 3000 });
+      reload();
+    } catch (e) {
+      toast.error(apiError(e) || 'Undelete failed');
     }
   };
 
@@ -347,6 +384,21 @@ export default function FuelAnomalyInbox() {
                 {opt.label}
               </button>
             ))}
+            {(status === 'resolved' || status === 'all') && canEdit && (
+              <label
+                className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none pb-2"
+                data-testid="fuel-anomaly-show-deleted"
+                title="Include soft-deleted dismissals"
+              >
+                <input
+                  type="checkbox"
+                  checked={showDeleted}
+                  onChange={(e) => { setShowDeleted(e.target.checked); setPage(1); }}
+                  className="h-3 w-3"
+                />
+                Show deleted
+              </label>
+            )}
           </div>
         </div>
 
@@ -538,6 +590,8 @@ export default function FuelAnomalyInbox() {
                   onFlip={flip}
                   onMatch={() => setMatchingTx(r)}
                   onOpenDetail={(row) => setDetailTxn(row)}
+                  onDeleteDismissal={(row, ruleKey) => setConfirmDel({ row, rule: ruleKey })}
+                  onUndeleteDismissal={undeleteDismissal}
                 />
               ))}
             </tbody>
@@ -600,14 +654,51 @@ export default function FuelAnomalyInbox() {
           onClose={() => setDetailTxn(null)}
         />
       )}
+
+      {/* v58.13.132ds — Soft-delete dismissal confirm. */}
+      {confirmDel && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" data-testid="fuel-anomaly-delete-dismissal-confirm">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-500" /> Delete this dismissal?
+            </h3>
+            <p className="text-sm text-slate-700 mb-4">
+              Are you sure you want to delete this dismissal? It will be hidden from view but preserved in the audit trail. Continue?
+            </p>
+            <div className="text-[11px] text-slate-500 mb-4 font-mono">
+              {(RULE_META[confirmDel.rule]?.label) || confirmDel.rule} · {confirmDel.row.registration || confirmDel.row.transaction_id || confirmDel.row.id}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDel(null)}
+                data-testid="fuel-anomaly-delete-dismissal-confirm-cancel"
+                className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700"
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={() => deleteDismissal(confirmDel.row, confirmDel.rule)}
+                data-testid="fuel-anomaly-delete-dismissal-confirm-ok"
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700"
+              >Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────
-function AnomalyRow({ row, canEdit, selected, onToggle, onFlip, onMatch, onOpenDetail }) {
+function AnomalyRow({ row, canEdit, selected, onToggle, onFlip, onMatch, onOpenDetail, onDeleteDismissal, onUndeleteDismissal }) {
   const flags = (row.anomaly_flags || []).filter((f) => f?.rule);
   const openFlags = flags.filter((f) => !f.resolved_at);
+  // v58.13.132ds — Dismissed flag rows may carry `deleted_at` when
+  // an admin has soft-deleted the dismissal. Rendered greyed with a
+  // strikethrough + an Undelete affordance.
+  const dismissedFlags = flags.filter(
+    (f) => f.resolved_at && (f.resolved_action === 'dismissed' || f.dismissed_at),
+  );
   const unmatched = row.match_status === 'unmatched';
   return (
     <tr data-testid={`fuel-anomaly-row-${row.id}`} className="hover:bg-slate-50">
@@ -666,12 +757,15 @@ function AnomalyRow({ row, canEdit, selected, onToggle, onFlip, onMatch, onOpenD
           {flags.map((f, i) => {
             const meta = RULE_META[f.rule] || { label: f.rule, severity: f.severity };
             const resolved = !!f.resolved_at;
+            const deleted = !!f.deleted_at;
             return (
               <span
                 key={`${f.rule}-${i}`}
-                title={f.detail || meta.label}
+                title={deleted ? `${f.detail || meta.label} (hidden)` : (f.detail || meta.label)}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                  resolved
+                  deleted
+                    ? 'bg-slate-50 text-slate-300 border-slate-100 line-through italic'
+                    : resolved
                     ? 'bg-slate-100 text-slate-500 border-slate-200 line-through'
                     : SEVERITY_TONE[meta.severity] || SEVERITY_TONE.low
                 }`}
@@ -710,6 +804,35 @@ function AnomalyRow({ row, canEdit, selected, onToggle, onFlip, onMatch, onOpenD
                   <XIcon size={12} /> Dismiss
                 </button>
               </React.Fragment>
+            ))}
+            {/* v58.13.132ds — Per-dismissal soft-delete affordance.
+                Only surfaces on flags in a dismissed state; when the
+                flag is already soft-deleted, show Undelete instead. */}
+            {dismissedFlags.map((f) => (
+              f.deleted_at ? (
+                <button
+                  key={`undel-${f.rule}`}
+                  type="button"
+                  onClick={() => onUndeleteDismissal?.(row, f.rule)}
+                  data-testid={`fuel-anomaly-undelete-dismissal-${row.id}-${f.rule}`}
+                  title="Restore this dismissal to the visible list"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                >
+                  <RotateCcw size={10} /> Undelete
+                </button>
+              ) : (
+                <button
+                  key={`del-${f.rule}`}
+                  type="button"
+                  onClick={() => onDeleteDismissal?.(row, f.rule)}
+                  data-testid={`fuel-anomaly-delete-dismissal-${row.id}-${f.rule}`}
+                  title="Hide this dismissal from view (soft-delete, preserves audit)"
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"
+                  aria-label="Delete dismissal"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )
             ))}
             {unmatched && (
               <button

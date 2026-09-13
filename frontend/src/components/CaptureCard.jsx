@@ -23,7 +23,7 @@
 //   onDeleted       — id => void; parent evicts the row from state
 
 import React, { useEffect, useState } from 'react';
-import { Eye } from 'lucide-react';
+import { Eye, Archive, ArchiveRestore } from 'lucide-react';
 import PdfActions from './PdfActions';
 import DeleteRecordButton from './DeleteRecordButton';
 import EmailButton from './EmailButton';
@@ -84,8 +84,21 @@ export default function CaptureCard({
   // a one-shot: after the initial open the card behaves normally
   // (subsequent renders don't re-trigger even if the prop stays true).
   openInitially = false,
+  // v58.13.132ec — Archive lifecycle hooks. When `onArchive`/`onUnarchive`
+  // are provided, the card renders an inline icon button next to Delete
+  // (admin-only, decided by the parent). Card is greyed out when the
+  // record carries `archived_at`. Both callbacks receive the record id.
+  onArchive,
+  onUnarchive,
+  // v58.13.132ek — Zebra-row shading opt-in. When true, the card
+  // paints its background from `bg-slate-50` instead of `bg-white`.
+  // Archived styling still wins visually (opacity + saturation
+  // override the underlying tint). Only used by pages that opt in
+  // via GroupedTilesView's new `zebra` prop.
+  zebraTint = false,
 }) {
   const r = record || {};
+  const isArchived = Boolean(r.archived_at);
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
   const operator = r.submitted_by_name || r.operator || r.created_by_name || '';
   const dateStr = r.date || (r.submitted_at || '').substring(0, 10) || '';
@@ -109,9 +122,26 @@ export default function CaptureCard({
 
   return (
     <div
-      className="group relative rounded-lg bg-white border border-slate-200 overflow-hidden hover:shadow-md hover:border-slate-300 transition-shadow"
+      className={
+        'group relative rounded-lg border overflow-hidden ' +
+        'hover:shadow-md hover:border-slate-300 transition-shadow ' +
+        // v58.13.132ek — Zebra shading applies before the archived
+        // override so archived rows still read as "greyed disabled".
+        // v58.13.132el — Bumped tint from `bg-slate-50` → `bg-slate-100`.
+        // v58.13.132em — Bumped again to `bg-slate-200` — the two
+        // earlier tints were still too subtle to read at desktop
+        // sizes. `slate-200` = #E2E8F0, ~11% luminance drop from white
+        // (roughly double the .132el contrast). Archived override
+        // still owns `bg-slate-50` + opacity/saturate so it reads as
+        // visibly different (disabled) from a zebra row.
+        (zebraTint ? 'bg-slate-200 border-slate-200 ' : 'bg-white border-slate-200 ') +
+        // v58.13.132ec — greyed presentation for archived rows
+        (isArchived ? 'opacity-60 saturate-50 bg-slate-50 border-slate-100' : '')
+      }
       style={minH ? { minHeight: minH } : undefined}
       data-testid={`capture-card-${r.id}`}
+      data-archived={isArchived ? 'true' : 'false'}
+      data-zebra={zebraTint ? 'true' : 'false'}
     >
       <div
         className={stripeStyle ? 'absolute left-0 top-0 bottom-0 w-1' : `absolute left-0 top-0 bottom-0 w-1 ${colour.stripe}`}
@@ -137,6 +167,38 @@ export default function CaptureCard({
                 data-testid={`capture-legacy-${r.id}`}
               >
                 Legacy
+              </span>
+            )}
+            {/* v58.13.132eb — Origin badge for the 254 CS-Incident docs
+                merged into `incidents` during `.132dz`. Signals to
+                Stephen that fields like `business_unit`,
+                `issue_number`, and `injury_severity` come from the CS
+                schema (preserved as `_cs_*` on the harmonised doc).
+                Renders only when the doc carries the migration
+                audit tag. */}
+            {r.migrated_from === 'cs_incidents' && (
+              <span
+                className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-[1px] rounded bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                title={`Migrated from CS Incidents · issue #${r._cs_issue_number || r.issue_number || '—'}`}
+                data-testid={`capture-cs-migrated-${r.id}`}
+              >
+                CS-migrated
+              </span>
+            )}
+            {/* v58.13.132ec — Archived badge. Renders when the row
+                carries `archived_at`. Combined with the greyed card
+                wrapper above, gives admins an unambiguous signal of
+                which rows survived the last archive sweep. */}
+            {isArchived && (
+              <span
+                className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-[1px] rounded bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                title={
+                  `Archived on ${(r.archived_at || '').slice(0, 10) || '—'}` +
+                  (r.archived_reason ? ` · ${r.archived_reason}` : '')
+                }
+                data-testid={`capture-archived-${r.id}`}
+              >
+                Archived
               </span>
             )}
             {Array.isArray(badges) && badges.map((b, i) => (
@@ -175,6 +237,35 @@ export default function CaptureCard({
               onDeleted={onDeleted}
               iconOnly
             />
+            {/* v58.13.132ec — Archive / Unarchive action. Rendered
+                only when the parent provided a callback (admin-only
+                surface). Uses `Archive` and `ArchiveRestore` icons
+                from lucide so it visually distinguishes from Delete
+                (trash) and Legacy (grey pill). */}
+            {onArchive && !isArchived && (
+              <button
+                type="button"
+                onClick={() => onArchive(r)}
+                title="Archive record"
+                aria-label="Archive record"
+                data-testid={`capture-archive-${r.id}`}
+                className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-amber-700 hover:bg-amber-50"
+              >
+                <Archive size={13} />
+              </button>
+            )}
+            {onUnarchive && isArchived && (
+              <button
+                type="button"
+                onClick={() => onUnarchive(r)}
+                title="Restore from archive"
+                aria-label="Restore from archive"
+                data-testid={`capture-unarchive-${r.id}`}
+                className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-emerald-700 hover:bg-emerald-50"
+              >
+                <ArchiveRestore size={13} />
+              </button>
+            )}
             {false && (
               <EmailButton
                 resourceKind={resourceKind}

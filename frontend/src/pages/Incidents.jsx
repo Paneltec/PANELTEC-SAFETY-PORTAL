@@ -7,6 +7,12 @@ import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard from '../components/CaptureCard';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
+import IncidentsTable, { usePersistedViewMode } from '../components/IncidentsTable';  // v58.13.132en
+import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
+import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
+import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ed
+import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
+import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ec
 import useCaptureDensity from '../lib/useCaptureDensity';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
@@ -33,7 +39,21 @@ const INCIDENT_CATEGORY_PALETTE = {
 
 export default function IncidentsList() {
   const [items, setItems] = useState([]);
+  // v58.13.132eb — total server count from `X-Total-Count` header
+  // (crud.py list_items has emitted it since .132ea). Used by the
+  // TotalCountChip to show "showing · total" when a client-side
+  // filter narrows the view.
+  const [totalCount, setTotalCount] = useState(null);
+  // v58.13.132ee — archived count from `X-Archived-Count` header.
+  const [archivedCount, setArchivedCount] = useState(null);
   const [loading, setLoading] = useState(true);
+  // v58.13.132ec — Archive lifecycle. Admin-only surface.
+  const isAdmin = (getUser()?.role || '').toLowerCase() === 'admin';
+  // v58.13.132ed — Search should see archived. When the toolbar
+  // reports a non-empty query, refetch with include_archived=true so
+  // archived rows enter the client-side search pool.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [filter, setFilter] = useState({ status: '', category: '' });
   // v160.3.0-adjust-16g — Client-side search from shared toolbar layers
   // on top of the existing status/category selects. The pre-filtered
@@ -45,11 +65,32 @@ export default function IncidentsList() {
   const { deepLinkId } = useDeepLinkOpen({
     items, loading, notFoundMessage: 'Linked incident not found',
   });
-  useEffect(() => {
-    api.get('/incidents')
-      .then((r) => setItems(r.data))
-      .finally(() => setLoading(false));
+  // v58.13.132eh — Load-more pagination. Page size persists per module.
+  const [pageSize, setPageSize] = usePersistedPageSize('incidents:pageSize', 5000);
+  // v58.13.132en — Cards | Table view-mode toggle (Incident Reports ONLY).
+  const [viewMode, setViewMode] = usePersistedViewMode('incidents.viewMode', 'cards');
+  // v58.13.132ee — Shared loader so archive/unarchive flows can refetch
+  // and re-hydrate BOTH counts (X-Total-Count + X-Archived-Count).
+  const load = React.useCallback(async (includeArchived, offset = 0, size = 5000, append = false) => {
+    setLoading(true);
+    try {
+      const r = await api.get('/incidents', {
+        params: { include_archived: includeArchived, limit: size, offset },
+      });
+      setItems((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      const t = r.headers?.['x-total-count'];
+      setTotalCount(t != null ? Number(t) : r.data?.length ?? 0);
+      const a = r.headers?.['x-archived-count'];
+      setArchivedCount(a != null ? Number(a) : null);
+    } finally { setLoading(false); }
   }, []);
+  const { showArchived, setShowArchived, onArchive, onUnarchive } =
+    useArchiveActions('/incidents', setItems, () => load(showArchived || Boolean(searchQuery), 0, pageSize, false));
+  const includeArchivedInFetch = showArchived || Boolean(searchQuery);
+  useEffect(() => { load(includeArchivedInFetch, 0, pageSize, false); }, [includeArchivedInFetch, pageSize, load]);
+  const onLoadMore = React.useCallback(() => {
+    load(includeArchivedInFetch, items.length, pageSize, true);
+  }, [load, includeArchivedInFetch, items.length, pageSize]);
 
   const evict = (id) => setItems((prev) => prev.filter((x) => x.id !== id));
 
@@ -64,7 +105,56 @@ export default function IncidentsList() {
     <div className="max-w-6xl mx-auto" data-testid="incidents-list">
       <PageHeader crumb="Capture / Incident Reports" title="Incident Reports"
         subtitle="Structured incident capture with witness statements and evidence."
-        action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-create-btn" />} />
+        action={
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setArchiveDialogOpen(true)}
+                data-testid="incidents-archive-header-btn"
+                className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Archive…
+              </button>
+            )}
+            <NewButton to="/app/incidents/new" label="New incident" testid="incident-create-btn" />
+          </div>
+        } />
+
+      {/* v58.13.132ed — Bulk archive dialog (Admin-only). */}
+      {isAdmin && (
+        <ArchiveDialog
+          open={archiveDialogOpen}
+          onClose={() => setArchiveDialogOpen(false)}
+          apiPath="/incidents"
+          moduleLabel="incidents"
+          knownStatuses={['open', 'in_progress', 'closed']}
+          knownCategories={['near_miss', 'first_aid', 'medical', 'ltc', 'env', 'property']}
+          sites={[]}
+          onArchived={() => load(includeArchivedInFetch)}
+        />
+      )}
+
+      {/* v58.13.132eb — surfaces the true DB total so that migrated
+          CS-Incident docs aren't invisible when a client-side filter
+          narrows the view. Reads the `X-Total-Count` header emitted
+          by crud.py since .132ea. */}
+      <div className="mt-2 mb-1 flex items-center gap-2">
+        <TotalCountChip
+          showing={preFiltered.length}
+          total={totalCount}
+          testid="incidents-total-count-chip"
+        />
+        {/* v58.13.132ec — Admin-only archive visibility toggle. */}
+        {isAdmin && (
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={setShowArchived}
+            count={archivedCount}
+            testid="incidents-show-archived-toggle"
+          />
+        )}
+      </div>
 
       <Tabs defaultValue="list" className="mt-2" data-testid="incidents-tabs">
         <TabsList variant="pill-pair">
@@ -97,18 +187,44 @@ export default function IncidentsList() {
         <CaptureListToolbar
           items={preFiltered}
           onFiltered={setSearchFiltered}
+          onQueryChange={setSearchQuery}
           testidPrefix="incidents"
           densityMode={incidentsDensity.mode}
           onDensityChange={incidentsDensity.setMode}
         />
-        {/* v58.12.7 — Tile format via shared GroupedTilesView. Groups by
-            `category` in the fixed CATS escalation order (near_miss →
-            property). The status/category selects above still layer into
-            `preFiltered`, and CaptureListToolbar adds search on top.
-            v58.12.9 — Tile bodies inherit the new CaptureCard-parity
-            visual language (rounded-lg, tight padding). The CATS
-            escalation banner palette stays via `groupPaletteOverrides`
-            — semantically stronger than a `preStartsPalette` map. */}
+        {/* v58.13.132en — [Cards | Table] segmented toggle. Sits between the
+            toolbar and the list surface. Persists to `incidents.viewMode`
+            via `usePersistedViewMode`. Table view supplied by
+            `IncidentsTable.jsx`; Cards branch preserves the existing
+            GroupedTilesView chrome untouched. */}
+        <div className="mb-3 inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs"
+             role="tablist" aria-label="Incident list view mode"
+             data-testid="incidents-view-mode-toggle">
+          <button type="button"
+            role="tab" aria-selected={viewMode === 'cards'}
+            onClick={() => setViewMode('cards')}
+            data-testid="incidents-view-mode-cards"
+            className={
+              'px-3 py-1.5 font-semibold ' +
+              (viewMode === 'cards' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')
+            }>Cards</button>
+          <button type="button"
+            role="tab" aria-selected={viewMode === 'table'}
+            onClick={() => setViewMode('table')}
+            data-testid="incidents-view-mode-table"
+            className={
+              'px-3 py-1.5 font-semibold border-l border-slate-200 ' +
+              (viewMode === 'table' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')
+            }>Table</button>
+        </div>
+        {viewMode === 'table' ? (
+          <IncidentsTable
+            items={searchFiltered}
+            isAdmin={isAdmin}
+            onArchive={isAdmin ? onArchive : undefined}
+            onUnarchive={isAdmin ? onUnarchive : undefined}
+          />
+        ) : (
         <GroupedTilesView
           items={searchFiltered}
           density={incidentsDensity}
@@ -134,14 +250,31 @@ export default function IncidentsList() {
               subtitleLines={ctx.subtitleLines}
               minH={ctx.minH}
               stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
+              zebraTint={ctx.zebraTint}
               badges={i.follow_up_status
                 ? [<StatusBadge key="fus" value={i.follow_up_status} />]
                 : []}
               onDeleted={evict}
+              onArchive={isAdmin ? onArchive : undefined}
+              onUnarchive={isAdmin ? onUnarchive : undefined}
               openInitially={deepLinkId === i.id}
             />
           )}
         />
+        )}
+       {/* v58.13.132eh — Load-more pager. */}
+       {!loading && items.length > 0 && (
+         <PaginationBar
+           showing={items.length}
+           total={totalCount ?? items.length}
+           pageSize={pageSize}
+           onPageSize={setPageSize}
+           onLoadMore={onLoadMore}
+           loading={loading}
+           testidPrefix="incidents"
+           storageKey="incidents:pageSize"
+         />
+       )}
        </>)
       }
         </TabsContent>

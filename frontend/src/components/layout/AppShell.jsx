@@ -7,6 +7,7 @@ import RebrandNudge from '@/components/RebrandNudge';
 import { PwaInstallButton, PwaInstallBanner } from '@/components/PwaInstallControls';
 // v160.3.8.1 — Draggable Settings sub-nav replaces the flat Settings section.
 import SettingsNav from '@/components/settings/SettingsNav';
+import AppsDirectoryModal from '@/components/AppsDirectoryModal';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
@@ -45,6 +46,10 @@ import {
   BookOpen24Regular, BookOpen24Filled,
   // v160.3.7q — Program Schematic nav item.
   Diagram24Regular, Diagram24Filled,
+  // v58.13.132eq — Quick Links sidebar entry (read-only shared bookmarks).
+  Bookmark24Regular, Bookmark24Filled,
+  // v58.13.132es — Apps Directory sidebar entry (rocket, opens new window).
+  Rocket24Regular, Rocket24Filled,
 } from '@fluentui/react-icons';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
@@ -74,6 +79,20 @@ const NAV = [
   { section: 'Overview', items: [
     { to: '/app/dashboard', label: 'Dashboard', icon: Board24Regular, iconActive: Board24Filled, testid: 'nav-dashboard', pastel: 'coral' },
     { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkle24Regular, iconActive: Sparkle24Filled, testid: 'nav-ask', pastel: 'lilac' },
+    // v58.13.132et — "Quick Links" sidebar entry removed to eliminate
+    // Stephen's discoverability confusion ("i don't know where the
+    // quick links is"). The Apps Directory modal is now the single
+    // access point for staff; the legacy `/app/quick-links` route
+    // 302-redirects to the dashboard with `?open=apps-directory`
+    // so old bookmarks auto-open the modal.
+    // v58.13.132es — Apps Directory sidebar entry. Admin-only for
+    // this ship; opens an IN-APP modal (dispatched via the existing
+    // `action` NAV pattern → global CustomEvent `paneltec:open-apps-directory`).
+    // Modal is caught by AppShell and overlays the current tab.
+    // Tiles inside the modal use `target="_blank"` so individual
+    // launches still pop new browser tabs — but the hub itself no
+    // longer requires a separate browser window.
+    { action: 'open-apps-directory', label: 'Apps Directory', icon: Rocket24Regular, iconActive: Rocket24Filled, testid: 'nav-apps-directory', requiresCan: ['users', 'edit'], pastel: 'peach' },
   ]},
   { section: 'Capture', items: [
     { to: '/app/swms', label: 'AI SWMS', icon: DocumentText24Regular, iconActive: DocumentText24Filled, testid: 'nav-swms', resource: 'swms', pastel: 'mint' },
@@ -97,12 +116,12 @@ const NAV = [
     // v160.3.0-adjust-13 — new Capture bucket. Slots after Inspection
     // Reports because risk assessments feed inspection / audit workflows.
     { to: '/app/risk-assessments', label: 'Risk Assessments', icon: ShieldTask24Regular, iconActive: ShieldTask24Filled, testid: 'nav-risk-assessments', resource: 'risk_assessments', pastel: 'lilac' },
-    // v58.13.12 — New "Submissions" bucket. Consolidates
-    // reference-library issue lists that share the tile UX. First
-    // occupant is CS Incidents (migrated out of the Risk Assessments
-    // tab bar). Reuses `reference_library` gate — same permission the
-    // old tab used, no permission migration required.
-    { to: '/app/submissions/cs-incidents', label: 'CS Incidents', icon: Alert24Regular, iconActive: Alert24Filled, testid: 'nav-submissions-cs-incidents', resource: 'reference_library', pastel: 'coral' },
+    // v58.13.12 — New "Submissions" bucket.
+    // v58.13.132dz — CS Incidents sidebar entry retired. Data merged
+    // into Incident Reports (see `/api/cs-incident` 410 gate + the
+    // `.132dz` migration script). Old `/app/submissions/cs-incidents`
+    // route now redirects to `/app/incidents` (see App.js) for
+    // one release cycle so bookmarks / stale tabs land somewhere sane.
     { to: '/app/forms', label: 'Forms', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-forms', pastel: 'sky' },
     // v160.3.0-adjust-20b — Drag-drop import entry point. Opens the
     // shared <PdfImportModal>. Admin/HSEQ-lead only. Renders as a
@@ -166,6 +185,10 @@ const SECTION_TINTS = {
   Compliance: { idle: 'text-emerald-600', hover: 'group-hover:text-emerald-700' },
   Settings:   { idle: 'text-slate-500',   hover: 'group-hover:text-slate-700' },
 };
+
+// v58.13.132es — Apps Directory in-app modal state lives at the
+// AppShell level so any sidebar item can dispatch the open event
+// (`paneltec:open-apps-directory`) and have it caught here.
 
 const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
   const can = useCan();
@@ -540,8 +563,16 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
             <span className="grid place-items-center w-8 h-8 rounded-full bg-orange-500 text-white text-xs font-bold shadow-sm">
               {initials(user)}
             </span>
-            <span className="hidden sm:inline text-xs font-semibold tracking-wider uppercase text-slate-700">
-              {(user?.name || user?.email || 'YOU').split(' ')[0]}
+            {/* v58.13.132ew — Full name + role for security awareness so
+                users can never mistake which account they are acting on.
+                Was previously just the first-name in uppercase. */}
+            <span className="hidden sm:flex flex-col items-start leading-tight" data-testid="user-chip-identity">
+              <span className="text-xs font-semibold text-slate-800 truncate max-w-[160px]">
+                {user?.name || user?.email || 'You'}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                {(user?.role_id || user?.role || 'user').replace(/_/g, ' ')}
+              </span>
             </span>
             <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
           </button>
@@ -563,15 +594,28 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   );
 }
 
-const SidebarShell = ({ collapsed, canAdminNav, badges }) => (
+const SidebarShell = ({ collapsed, canAdminNav, badges, brandName, user }) => (
   <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 sticky top-0 h-screen z-20 ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
     <div className={`h-16 flex items-center border-b border-slate-200 bg-white ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
       <Link to="/app/dashboard" className="block">
         {collapsed
           ? <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#2C6BFF" /></svg>
-          : <Logo size="sm" />}
+          : <Logo size="sm" displayName={brandName} />}
       </Link>
     </div>
+    {/* v58.13.132ew — Belt-and-braces "Logged in as" line under the
+        wordmark. Visible from every page so users can't confuse which
+        account they are acting on. Collapsed sidebar hides it. */}
+    {!collapsed && user && (
+      <div className="px-5 py-2 border-b border-slate-100 bg-slate-50/60"
+           data-testid="sidebar-logged-in-as">
+        <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Logged in as</div>
+        <div className="text-xs font-semibold text-slate-800 truncate">{user?.name || user?.email || 'You'}</div>
+        <div className="text-[10px] uppercase tracking-wider text-slate-500">
+          {(user?.role_id || user?.role || 'user').replace(/_/g, ' ')}
+        </div>
+      </div>
+    )}
     <SidebarNav collapsed={collapsed} canAdminNav={canAdminNav} badges={badges} />
     {/* v58.13.132cd — Version pill raised ABOVE the PWA install
         button (previously at the very bottom of the sidebar, hard
@@ -631,9 +675,51 @@ export default function AppShell() {
   // guarded by `@safe_admin_endpoint` so a Mongo hiccup renders the
   // pill as absent instead of exploding the shell.
   const [certBadge, setCertBadge] = useState({ expired: 0, expiring_soon: 0, total: 0 });
+  // v58.13.132dr — Sidebar wordmark now reads the org's chosen brand
+  // name (`display_name → trading_name → name → 'Paneltec Civil'`)
+  // instead of the historical hard-coded literal. Fetched once on
+  // shell mount; refreshed on the `paneltec_org_updated` custom
+  // event so Org Settings saves reflect in the sidebar without a
+  // page reload.
+  const [brandName, setBrandName] = useState('Paneltec Civil');
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await import('../../lib/api');
+        const { data } = await r.default.get('/org');
+        if (!alive) return;
+        setBrandName(
+          (data?.display_name || data?.trading_name || data?.name
+           || 'Paneltec Civil').trim(),
+        );
+      } catch (_e) { /* keep default */ }
+    };
+    load();
+    const bump = () => load();
+    window.addEventListener('paneltec_org_updated', bump);
+    return () => { alive = false; window.removeEventListener('paneltec_org_updated', bump); };
+  }, []);
   // Phase 3.16 — idle-watch + warning modal driver. Lives here (not in
   // TopBar) so the modal can be rendered as a sibling of <main> below.
   const [warnInfo, setWarnInfo] = useState(null);
+  // v58.13.132es — Apps Directory in-app modal. Toggled by the
+  // sidebar entry via the `paneltec:open-apps-directory` CustomEvent.
+  const [appsDirectoryOpen, setAppsDirectoryOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setAppsDirectoryOpen(true);
+    window.addEventListener('paneltec:open-apps-directory', open);
+    return () => window.removeEventListener('paneltec:open-apps-directory', open);
+  }, []);
+  // v58.13.132et — Auto-open the modal when landing with
+  // `?open=apps-directory` (fed by the legacy /quick-links redirect
+  // so old bookmarks still work).
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('open') === 'apps-directory') {
+      setAppsDirectoryOpen(true);
+    }
+  }, [location.search]);
   useSessionTimeout({
     onWarn: (info) => setWarnInfo(info),
     onLogout: async () => {
@@ -696,12 +782,12 @@ export default function AppShell() {
   return (
     <PermissionsProvider value={permsValue}>
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
-      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} />
+      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} brandName={brandName} user={user} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-72 civil-chrome max-md:border-r-black">
           <SheetTitle className="sr-only">Navigation menu</SheetTitle>
           <div className="h-16 flex items-center justify-between px-5 border-b border-black/40">
-            <Logo size="sm" />
+            <Logo size="sm" displayName={brandName} />
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 min-w-[48px] min-h-[48px] text-civil-off-white"><X size={20} /></button>
           </div>
           <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} />
@@ -770,6 +856,9 @@ export default function AppShell() {
       {/* v58.13.132dp — 7-day insurance critical alert. Admin-only,
           one-time-per-session dismissible. Silent for non-admins. */}
       <InsuranceCriticalModal />
+      {/* v58.13.132es — Apps Directory in-app modal (sidebar entry
+          fires `paneltec:open-apps-directory`). */}
+      <AppsDirectoryModal open={appsDirectoryOpen} onClose={() => setAppsDirectoryOpen(false)} />
     </div>
     </PermissionsProvider>
   );

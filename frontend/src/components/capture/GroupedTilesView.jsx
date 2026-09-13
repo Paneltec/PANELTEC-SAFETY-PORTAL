@@ -75,6 +75,11 @@ export default function GroupedTilesView({
   // (palette source-of-truth key) and `pageKey` (density localStorage
   // scope). Undefined preserves the pre-v58.13.40 behaviour.
   page, pageKey,
+  // v58.13.132ek — Zebra-row shading opt-in. When true, every other
+  // tile in each group gets a slate-50 background via the ctx passed
+  // to renderTile. Row parity is computed from the currently-rendered
+  // index within the group (respects search/filter narrowing).
+  zebra = false,
   // v58.13.41 — optional external density instance. When supplied,
   // GroupedTilesView reuses the parent's hook instead of creating
   // its own — required so a toolbar segmented control at page level
@@ -121,6 +126,36 @@ export default function GroupedTilesView({
       .forEach((k) => { if (!ordered.includes(k)) ordered.push(k); });
     return ordered.map((k) => ({ key: k, rows: m.get(k) }));
   }, [items, groupBy, groupOrder, dateFn]);
+
+  // v58.13.132em — Live grid-columns tracking per group. `zebra` needs
+  // to know how many tiles fit per horizontal row so parity paints
+  // clean stripes across the grid, not a scattered checker. We read
+  // `gridTemplateColumns` off each grid element and re-read on
+  // resize (responsive breakpoints change the column count).
+  const gridRefs = useRef({});
+  const [colsByGroup, setColsByGroup] = useState({});
+  useEffect(() => {
+    if (!zebra) return;
+    const recompute = () => {
+      const next = {};
+      for (const [key, el] of Object.entries(gridRefs.current)) {
+        if (!el) continue;
+        const tpl = getComputedStyle(el).gridTemplateColumns || '';
+        const n = tpl.trim() ? tpl.split(/\s+/).length : 1;
+        next[key] = Math.max(1, n);
+      }
+      setColsByGroup((prev) => {
+        // Skip state update when nothing changed (avoids resize loops).
+        const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+        for (const k of keys) if (prev[k] !== next[k]) return next;
+        return prev;
+      });
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    Object.values(gridRefs.current).forEach((el) => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [zebra, groups]);
 
   if (loading) {
     return <div className="text-sm text-slate-500" data-testid={`${testidPrefix}-loading`}>Loading…</div>;
@@ -200,8 +235,10 @@ export default function GroupedTilesView({
                 {rows.length}
               </span>
             </header>
-            <div className={`p-3 ${density.gridClass} bg-white`} data-testid={`${testidPrefix}-tile-grid-${density.effectiveMode}`}>
-              {rows.map((rec) => {
+            <div ref={(el) => { if (el) gridRefs.current[key] = el; }}
+                 className={`p-3 ${density.gridClass} bg-white`}
+                 data-testid={`${testidPrefix}-tile-grid-${density.effectiveMode}`}>
+              {rows.map((rec, rowIdx) => {
                 // v58.13.45 — Double-stripe bugfix.
                 //
                 // Before: this wrapper rendered its own card chrome
@@ -223,6 +260,15 @@ export default function GroupedTilesView({
                 const rowStripe = rowStripeHex
                   ? { hex: rowStripeHex }
                   : (getStripeType ? paletteForType(getStripeType(rec)) : null);
+                // v58.13.132em — Zebra parity is now HORIZONTAL-ROW
+                // based, not per-tile. Every OTHER row of tiles gets
+                // the tint so the pattern reads as clean stripes
+                // across the grid instead of a scattered checker.
+                // `cols` is the live count of grid columns from the
+                // resize-observed grid element (updated on layout
+                // changes so responsive breakpoints stay honest).
+                const cols = colsByGroup[key] || 1;
+                const visualRow = Math.floor(rowIdx / cols);
                 return (
                   <div key={rec.id} data-testid={`${testidPrefix}-tile-${rec.id}`}>
                     {renderTile(rec, {
@@ -234,6 +280,11 @@ export default function GroupedTilesView({
                       // now the ONLY stripe source (the outer
                       // wrapper no longer draws one).
                       stripeHex: rowStripe ? rowStripe.hex : null,
+                      // v58.13.132ek — Zebra-shading parity flag.
+                      // v58.13.132em — parity comes from `visualRow`
+                      // (horizontal row within the grid), not from
+                      // the flat tile index.
+                      zebraTint: zebra && (visualRow % 2 === 1),
                     })}
                   </div>
                 );

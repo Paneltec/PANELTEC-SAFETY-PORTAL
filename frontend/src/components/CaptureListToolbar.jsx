@@ -23,11 +23,18 @@ export function CaptureListToolbar({
   items, onFiltered, testidPrefix = 'capture',
   // v58.13.40 — opt-in density segmented control.
   densityMode, onDensityChange,
+  // v58.13.132ed — Reports the current search string so the parent
+  // list page can fetch archived rows when a query is active
+  // (search should see archived matches). Called with '' when empty.
+  onQueryChange,
 }) {
   const [q, setQ] = useState('');
   const [tpl, setTpl] = useState('All');
   const [sort, setSort] = useState('date_desc');
   const debouncedQ = useDebounced(q, 200);
+  // v58.13.132ed — Emit search text (debounced) upward for
+  // include-archived-in-search behaviour on the list-page fetch.
+  useEffect(() => { onQueryChange?.(debouncedQ); }, [debouncedQ, onQueryChange]);
 
   // Derive template chips from data
   const templates = useMemo(() => {

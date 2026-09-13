@@ -24,7 +24,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Depends, Query, Body
+from fastapi import APIRouter, HTTPException, Request, Response, Depends, Query, Body
 from pydantic import BaseModel, Field
 
 from db import db
@@ -181,12 +181,15 @@ async def public_visitor_signout(request: Request, visitor_id: str, token: str):
 @safe_admin_endpoint
 async def admin_list_visitors(
     request: Request,
+    response: Response,   # v58.13.132ee — for X-Total/Archived-Count headers
     site_id: Optional[str] = None,
     active_only: bool = False,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     include_deleted: bool = False,  # v58.13.110 — auditor toggle
+    include_archived: bool = False,  # v58.13.132ec — archive toggle
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),  # v58.13.132eh — Load-more pagination
     user: dict = Depends(require_permission("sites_visitors", "view")),
 ):
     """List visitor sign-ins. Scoped by org. Capped at 500 rows to
@@ -204,13 +207,18 @@ async def admin_list_visitors(
         q["signed_out_at"] = None
     if not include_deleted:
         q["$or"] = [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]
+    # v58.13.132ec — Hide archived rows unless caller asked. Uses
+    # Mongo's `{field: null}` semantics which match both null AND
+    # missing.
+    if not include_archived:
+        q["archived_at"] = None
     if date_from or date_to:
         q["signed_in_at"] = {}
         if date_from:
             q["signed_in_at"]["$gte"] = date_from
         if date_to:
             q["signed_in_at"]["$lte"] = date_to
-    cursor = db.site_visitors.find(q, {"_id": 0}).sort("signed_in_at", -1).limit(limit)
+    cursor = db.site_visitors.find(q, {"_id": 0}).sort("signed_in_at", -1).skip(offset).limit(limit)
     rows = [r async for r in cursor]
     # v58.13.110 — Enrich with site name/address for the decluttered
     # main table + detail drawer header. One cheap join per distinct
@@ -232,6 +240,35 @@ async def admin_list_visitors(
         if site_meta:
             r["site_name"] = site_meta["name"]
             r["site_address"] = site_meta["address"]
+    # v58.13.132ee — Emit X-Total-Count + X-Archived-Count so the FE
+    # `.132eb` TotalCountChip + `.132ee` ShowArchivedToggle count-badge
+    # can hydrate. Base scope mirrors the query above (org + optional
+    # site/date filters) so both counts are consistent with what the
+    # user sees.
+    try:
+        base_q: dict = {"org_id": user["org_id"]}
+        if site_id:
+            base_q["site_id"] = site_id
+        if not include_deleted:
+            base_q["$or"] = [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]
+        if date_from or date_to:
+            base_q["signed_in_at"] = {}
+            if date_from:
+                base_q["signed_in_at"]["$gte"] = date_from
+            if date_to:
+                base_q["signed_in_at"]["$lte"] = date_to
+        total_q = {**base_q}
+        if not include_archived:
+            total_q["archived_at"] = None
+        total_count = await db.site_visitors.count_documents(total_q)
+        arch_q = {**base_q, "archived_at": {"$ne": None}}
+        arch_count = await db.site_visitors.count_documents(arch_q)
+        response.headers["X-Total-Count"] = str(total_count)
+        response.headers["X-Archived-Count"] = str(arch_count)
+        response.headers["Access-Control-Expose-Headers"] = (
+            "X-Total-Count, X-Archived-Count")
+    except Exception:  # pragma: no cover — defensive
+        pass
     return {"items": rows, "count": len(rows), "capped": len(rows) >= limit,
             "include_deleted": include_deleted}
 
@@ -267,6 +304,176 @@ async def admin_get_visitor(
 # v58.13.110 — Delete + bulk-delete + list-includes-deleted toggle.
 class BulkDeleteIn(BaseModel):
     ids: list[str] = Field(..., min_length=1, max_length=500)
+
+
+@admin_router.post("/archive")
+@safe_admin_endpoint
+async def admin_bulk_archive_visitors(
+    request: Request,
+    body: Optional[dict] = None,
+    user: dict = Depends(require_permission("sites_visitors", "delete")),
+):
+    """v58.13.132ee — Bulk archive visitors with criteria + dry_run.
+    Admin-only. Mirrors crud.py::bulk_archive on the site_visitors
+    collection. Criteria supports: date_before, date_between,
+    site_id, oldest_n. status/category not applicable."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    body = body or {}
+    criteria = body.get("criteria") or {}
+    reason = body.get("reason")
+    dry_run = bool(body.get("dry_run"))
+
+    q: dict = {"org_id": user["org_id"], "archived_at": None}
+    date_before = criteria.get("date_before")
+    date_between = criteria.get("date_between")
+    if date_before or date_between:
+        rng: dict = {}
+        if date_before:
+            rng["$lt"] = date_before
+        elif date_between and len(date_between) == 2:
+            rng["$gte"] = date_between[0]
+            rng["$lte"] = date_between[1]
+        q["signed_in_at"] = rng
+    if criteria.get("site_id"):
+        q["site_id"] = criteria["site_id"]
+
+    oldest_n = criteria.get("oldest_n")
+    if oldest_n:
+        cands = await db.site_visitors.find(
+            q, {"_id": 0, "id": 1}
+        ).sort("signed_in_at", 1).limit(int(oldest_n)).to_list(int(oldest_n))
+        matched_ids = [c["id"] for c in cands]
+    else:
+        matched_ids = [c["id"] async for c in
+                       db.site_visitors.find(q, {"_id": 0, "id": 1})]
+
+    total_matched = len(matched_ids)
+    sample = matched_ids[:100]
+
+    if dry_run:
+        return {"ok": True, "dry_run": True, "matched_count": total_matched,
+                "matched_ids_sample": sample, "batch_id": None}
+
+    import uuid as _uuid
+    batch_id = str(_uuid.uuid4())
+    now = _now_iso()
+    affected = 0
+    if matched_ids:
+        r = await db.site_visitors.update_many(
+            {"id": {"$in": matched_ids}, "org_id": user["org_id"],
+             "archived_at": None},
+            {"$set": {"archived_at": now, "archived_by": user["id"],
+                      "archived_reason": reason,
+                      "archive_batch_id": batch_id,
+                      "updated_at": now}},
+        )
+        affected = r.modified_count
+    await db.archive_audit.insert_one({
+        "id": str(_uuid.uuid4()),
+        "module": "site-visitors",
+        "actor_user_id": user["id"],
+        "action": "bulk_archive",
+        "batch_id": batch_id,
+        "criteria": criteria,
+        "affected_count": affected,
+        "reason": reason,
+        "timestamp": now,
+    })
+    logger.info("visitor_bulk_archive count=%s actor=%s org=%s batch=%s",
+                affected, user["id"], user["org_id"], batch_id)
+    return {"ok": True, "dry_run": False, "batch_id": batch_id,
+            "archived_count": affected, "matched_ids_sample": sample}
+
+
+@admin_router.post("/{visitor_id}/archive")
+@safe_admin_endpoint
+async def admin_archive_visitor(
+    visitor_id: str,
+    request: Request,
+    body: Optional[dict] = None,
+    user: dict = Depends(require_permission("sites_visitors", "delete")),
+):
+    """v58.13.132ec — Archive a single visitor. Non-destructive; row is
+    still readable via `?include_archived=true`. Admin-only. Idempotent."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    v = await db.site_visitors.find_one(
+        {"id": visitor_id, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "archived_at": 1, "archive_batch_id": 1},
+    )
+    if not v:
+        raise HTTPException(404, "Visitor not found")
+    if v.get("archived_at"):
+        return {"visitor_id": visitor_id,
+                "batch_id": v.get("archive_batch_id"),
+                "already_archived": True}
+    import uuid as _uuid
+    batch_id = str(_uuid.uuid4())
+    now = _now_iso()
+    reason = (body or {}).get("reason")
+    await db.site_visitors.update_one(
+        {"id": visitor_id, "org_id": user["org_id"]},
+        {"$set": {"archived_at": now, "archived_by": user["id"],
+                  "archived_reason": reason,
+                  "archive_batch_id": batch_id,
+                  "updated_at": now}},
+    )
+    await db.archive_audit.insert_one({
+        "id": str(_uuid.uuid4()),
+        "module": "site-visitors",
+        "actor_user_id": user["id"],
+        "action": "archive",
+        "batch_id": batch_id,
+        "criteria": {"item_id": visitor_id, "collection": "site_visitors"},
+        "affected_count": 1,
+        "reason": reason,
+        "timestamp": now,
+    })
+    logger.info("visitor_archive id=%s actor=%s org=%s batch=%s",
+                visitor_id, user["id"], user["org_id"], batch_id)
+    return {"visitor_id": visitor_id, "batch_id": batch_id,
+            "already_archived": False}
+
+
+@admin_router.post("/{visitor_id}/unarchive")
+@safe_admin_endpoint
+async def admin_unarchive_visitor(
+    visitor_id: str,
+    request: Request,
+    user: dict = Depends(require_permission("sites_visitors", "delete")),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    v = await db.site_visitors.find_one(
+        {"id": visitor_id, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "archived_at": 1, "archive_batch_id": 1},
+    )
+    if not v:
+        raise HTTPException(404, "Visitor not found")
+    prior = v.get("archive_batch_id")
+    if not v.get("archived_at"):
+        return {"visitor_id": visitor_id, "already_active": True}
+    now = _now_iso()
+    await db.site_visitors.update_one(
+        {"id": visitor_id, "org_id": user["org_id"]},
+        {"$set": {"archived_at": None, "archived_by": None,
+                  "archived_reason": None,
+                  "archive_batch_id": None, "updated_at": now}},
+    )
+    import uuid as _uuid
+    await db.archive_audit.insert_one({
+        "id": str(_uuid.uuid4()),
+        "module": "site-visitors",
+        "actor_user_id": user["id"],
+        "action": "unarchive",
+        "batch_id": prior or "",
+        "criteria": {"item_id": visitor_id, "collection": "site_visitors"},
+        "affected_count": 1,
+        "reason": None,
+        "timestamp": now,
+    })
+    return {"visitor_id": visitor_id, "restored_from_batch": prior}
 
 
 @admin_router.delete("/{visitor_id}")

@@ -27,7 +27,7 @@ import { getUser } from '@/lib/auth';
 import {
   Loader2, Search, MapPin, User, Calendar as CalendarIcon,
   CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight,
-  Upload, Sparkles, FileText, X as XIcon,
+  Upload, Sparkles, FileText, X as XIcon, Trash2, RotateCcw,
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -103,6 +103,12 @@ export default function AdminAssignDailyJobs() {
   const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOverride, setConfirmOverride] = useState(false);
+  // v58.13.132ds — Show soft-deleted PDF attachments + confirm modal
+  // for per-row PDF delete. Local reload counter fires the fetch
+  // effect after a mutation without needing to touch `date`.
+  const [showDeletedPdfs, setShowDeletedPdfs] = useState(false);
+  const [confirmDelPdf, setConfirmDelPdf] = useState(null); // assignment row
+  const [pdfReloadTick, setPdfReloadTick] = useState(0);
 
   // Load workers (filtered by target role_ids server-side).
   useEffect(() => {
@@ -131,8 +137,10 @@ export default function AdminAssignDailyJobs() {
     async function run() {
       setLoadingAssignments(true);
       try {
+        const params = { date };
+        if (showDeletedPdfs) params.include_deleted = true;
         const r = await api.get('/mobile/daily-jobs/admin/assignments', {
-          params: { date },
+          params,
         });
         if (!cancelled) setAssignments(r.data.rows || []);
       } catch (_e) {
@@ -143,7 +151,30 @@ export default function AdminAssignDailyJobs() {
     }
     run();
     return () => { cancelled = true; };
-  }, [date, submitting]);
+  }, [date, submitting, showDeletedPdfs, pdfReloadTick]);
+
+  // v58.13.132ds — soft-delete + undelete of the PDF attachment on an
+  // assignment. Admin-only server-side; the FE mirror is implicit
+  // (the whole page is admin-gated).
+  const doDeleteAssignmentPdf = async (assignment) => {
+    try {
+      await api.delete(`/mobile/daily-jobs/admin/${assignment.id}/pdf`);
+      toast.success('PDF hidden from view');
+      setConfirmDelPdf(null);
+      setPdfReloadTick((t) => t + 1);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Delete failed');
+    }
+  };
+  const doUndeleteAssignmentPdf = async (assignment) => {
+    try {
+      await api.post(`/mobile/daily-jobs/admin/${assignment.id}/pdf/undelete`);
+      toast.success('PDF restored');
+      setPdfReloadTick((t) => t + 1);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Undelete failed');
+    }
+  };
 
   // Load sites once + on query change.
   useEffect(() => {
@@ -473,17 +504,35 @@ export default function AdminAssignDailyJobs() {
                 </button>
               </div>
             </div>
-            <div className="text-xs text-slate-500 mt-2">
-              {loadingAssignments
-                ? 'Loading assignments…'
-                : `${assignments.length} assignment${assignments.length === 1 ? '' : 's'} on this date (Australia/Sydney)`}
+            <div className="text-xs text-slate-500 mt-2 flex items-center gap-3 flex-wrap">
+              <span data-testid="assignment-count">
+                {loadingAssignments
+                  ? 'Loading assignments…'
+                  : `${assignments.length} assignment${assignments.length === 1 ? '' : 's'} on this date (Australia/Sydney)`}
+              </span>
+              {/* v58.13.132ds — Show soft-deleted PDF attachments. */}
+              <label
+                className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none"
+                data-testid="assignments-show-deleted-pdfs"
+                title="Include soft-deleted PDF attachments"
+              >
+                <input
+                  type="checkbox"
+                  checked={showDeletedPdfs}
+                  onChange={(e) => setShowDeletedPdfs(e.target.checked)}
+                  className="h-3 w-3"
+                />
+                Show deleted
+              </label>
             </div>
             {assignments.length > 0 && (
-              <div className="mt-2 divide-y divide-slate-100 max-h-40 overflow-y-auto">
-                {assignments.map(a => (
+              <div className="mt-2 divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                {assignments.map(a => {
+                  const pdfDeleted = !!a.pdf_deleted_at;
+                  return (
                   <div
                     key={a.id}
-                    className="py-2 flex items-center gap-2 text-sm"
+                    className="py-2 flex items-center gap-2 text-sm flex-wrap"
                     data-testid={`assignment-row-${a.id}`}
                   >
                     <CheckCircle2
@@ -510,11 +559,82 @@ export default function AdminAssignDailyJobs() {
                     {a.assigned_by_name && (
                       <span className="text-xs text-slate-400 italic">by {a.assigned_by_name}</span>
                     )}
+                    {/* v58.13.132ds — Attached PDF affordance. Trash
+                        soft-deletes, undelete restores. Only surfaces
+                        on rows that actually have a pdf_id (post-mask). */}
+                    {a.pdf_id && !pdfDeleted && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500" data-testid={`assignment-pdf-${a.id}`}>
+                        <FileText size={11} className="text-emerald-600" />
+                        <a
+                          href={`${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}${a.pdf_url}`}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          data-testid={`assignment-pdf-link-${a.id}`}
+                          className="hover:text-emerald-800 underline"
+                        >
+                          PDF
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelPdf(a)}
+                          data-testid={`assignment-pdf-delete-${a.id}`}
+                          aria-label="Delete PDF"
+                          title="Hide PDF from view (soft-delete, preserves audit)"
+                          className="inline-flex items-center justify-center w-5 h-5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </span>
+                    )}
+                    {pdfDeleted && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 line-through italic" data-testid={`assignment-pdf-deleted-${a.id}`}>
+                        <FileText size={10} /> PDF hidden
+                        <button
+                          type="button"
+                          onClick={() => doUndeleteAssignmentPdf(a)}
+                          data-testid={`assignment-pdf-undelete-${a.id}`}
+                          className="ml-1 no-underline not-italic inline-flex items-center gap-0.5 text-emerald-700 hover:text-emerald-900 px-1.5 py-0.5 rounded hover:bg-emerald-50 font-semibold"
+                          title="Restore PDF to the visible list"
+                        >
+                          <RotateCcw size={10} /> Undelete
+                        </button>
+                      </span>
+                    )}
                     <span className="ml-auto text-xs text-slate-400 uppercase">
                       {a.status}
                     </span>
                   </div>
-                ))}
+                  );
+                })}
+              </div>
+            )}
+            {confirmDelPdf && (
+              <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" data-testid="assignment-pdf-delete-confirm">
+                <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                  <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-500" /> Delete this attached PDF?
+                  </h3>
+                  <p className="text-sm text-slate-700 mb-4">
+                    Are you sure you want to delete this attached PDF? It will be hidden from view but preserved in the audit trail. Continue?
+                  </p>
+                  <div className="text-[11px] text-slate-500 mb-4 font-mono truncate">
+                    {confirmDelPdf.worker_name || '(worker)'} · {confirmDelPdf.site_name || confirmDelPdf.site_id || '(no site)'}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelPdf(null)}
+                      data-testid="assignment-pdf-delete-confirm-cancel"
+                      className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700"
+                    >Cancel</button>
+                    <button
+                      type="button"
+                      onClick={() => doDeleteAssignmentPdf(confirmDelPdf)}
+                      data-testid="assignment-pdf-delete-confirm-ok"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700"
+                    >Delete</button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

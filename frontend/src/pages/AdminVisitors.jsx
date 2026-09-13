@@ -10,6 +10,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api, { apiError } from '../lib/api';
 import { toast } from 'sonner';
+import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
+import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
+import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ee
+import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
+import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ee
+import { getUser } from '../lib/auth';
 
 // ── Helpers ───────────────────────────────────────────────
 function relTime(iso) {
@@ -286,6 +292,15 @@ export default function AdminVisitors() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // v58.13.132eb — total server count from X-Total-Count header.
+  const [totalCount, setTotalCount] = useState(null);
+  // v58.13.132ee — archived count from X-Archived-Count header.
+  const [archivedCount, setArchivedCount] = useState(null);
+  // v58.13.132ee — Archive lifecycle. Admin-only. The visitor list is
+  // a custom table (not CaptureCard), so archive/unarchive fire from
+  // the row Actions column.
+  const isAdmin = (getUser()?.role || '').toLowerCase() === 'admin';
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [siteId, setSiteId] = useState('');
   const [activeOnly, setActiveOnly] = useState(false);
   const [includeDeleted, setIncludeDeleted] = useState(false);
@@ -295,22 +310,34 @@ export default function AdminVisitors() {
   const [drawerId, setDrawerId] = useState(null);
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // v58.13.132eh — Load-more pagination (page size min 200 to match
+  // the visitor list endpoint's `le=500` cap).
+  const [pageSize, setPageSize] = usePersistedPageSize('admin-visitors:pageSize', 5000);
 
-  const load = async () => {
+  const load = async (offset = 0, append = false) => {
     setLoading(true); setError('');
     try {
-      const params = { limit: 200 };
+      const params = { limit: Math.min(pageSize, 500), offset };
       if (siteId) params.site_id = siteId;
       if (activeOnly) params.active_only = true;
       if (includeDeleted) params.include_deleted = true;
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
-      const { data } = await api.get('/admin/visitors', { params });
-      setRows(data.items || []);
-      setSelected(new Set());  // clear selection whenever the list refreshes
+      if (showArchived) params.include_archived = true;
+      const r = await api.get('/admin/visitors', { params });
+      setRows((prev) => (append ? [...prev, ...(r.data.items || [])] : (r.data.items || [])));
+      const t = r.headers?.['x-total-count'];
+      setTotalCount(t != null ? Number(t) : (r.data.items?.length ?? 0));
+      const a = r.headers?.['x-archived-count'];
+      setArchivedCount(a != null ? Number(a) : null);
+      if (!append) setSelected(new Set());
     } catch (e) { setError(apiError(e)); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [activeOnly, includeDeleted]);
+  // v58.13.132ee — hook needs a stable refetch; defined AFTER load().
+  const { showArchived, setShowArchived, onArchive, onUnarchive } =
+    useArchiveActions('/admin/visitors', setRows, () => load(0, false));
+  useEffect(() => { load(0, false); /* eslint-disable-next-line */ }, [activeOnly, includeDeleted, showArchived, pageSize]);
+  const onLoadMore = () => load(rows.length, true);
 
   // v58.13.115 — Deep-link auto-open. When Ask Intelligence (or any
   // caller) navigates to `/app/admin/visitors?open=<id>` we open the
@@ -374,10 +401,45 @@ export default function AdminVisitors() {
 
   return (
     <div className="p-6 space-y-6" data-testid="admin-visitors-page">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Site Visitors</h1>
-        <p className="text-sm text-slate-500">Public sign-in register from site QR codes.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Site Visitors</h1>
+          <p className="text-sm text-slate-500">Public sign-in register from site QR codes.</p>
+        </div>
+        {isAdmin && (
+          <button type="button" onClick={() => setArchiveDialogOpen(true)}
+                  data-testid="admin-visitors-archive-header-btn"
+                  className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+            Archive…
+          </button>
+        )}
       </div>
+
+      {/* v58.13.132eb — total-count chip + Admin-only show-archived toggle. */}
+      <div className="flex items-center gap-2">
+        <TotalCountChip
+          showing={rows.length}
+          total={totalCount}
+          testid="admin-visitors-total-count-chip"
+        />
+        {isAdmin && (
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={setShowArchived}
+            count={archivedCount}
+            testid="admin-visitors-show-archived-toggle"
+          />
+        )}
+      </div>
+
+      {/* v58.13.132ee — Bulk archive dialog. */}
+      {isAdmin && (
+        <ArchiveDialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}
+          apiPath="/admin/visitors" moduleLabel="visitors"
+          knownStatuses={[]}
+          knownCategories={[]}
+          onArchived={load} />
+      )}
 
       <div className="flex flex-wrap items-end gap-3 bg-white p-4 rounded-2xl border border-slate-200">
         <label className="block">
@@ -458,10 +520,12 @@ export default function AdminVisitors() {
             {rows.map((r) => {
               const isSel = selected.has(r.id);
               const isDel = !!r.deleted_at;
+              const isArchived = !!r.archived_at;
               return (
                 <tr key={r.id}
-                  className={`border-t border-slate-100 hover:bg-slate-50 ${isSel ? 'bg-blue-50' : ''} ${isDel ? 'opacity-60' : ''}`}
-                  data-testid={`admin-visitors-row-${r.id}`}>
+                  className={`border-t border-slate-100 hover:bg-slate-50 ${isSel ? 'bg-blue-50' : ''} ${isDel || isArchived ? 'opacity-60' : ''}`}
+                  data-testid={`admin-visitors-row-${r.id}`}
+                  data-archived={isArchived ? 'true' : 'false'}>
                   <td className="px-3 py-2">
                     <input type="checkbox" checked={isSel} disabled={isDel}
                       onChange={() => toggleOne(r.id)}
@@ -473,6 +537,10 @@ export default function AdminVisitors() {
                   <td className="px-4 py-2 font-medium cursor-pointer" onClick={() => setDrawerId(r.id)}
                     data-testid={`admin-visitors-open-${r.id}`}>
                     {r.name}
+                    {isArchived && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200"
+                            data-testid={`admin-visitors-archived-chip-${r.id}`}>Archived</span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-slate-600">{r.company || '—'}</td>
                   <td className="px-4 py-2 text-slate-600">{r.site_name || r.site_id || '—'}</td>
@@ -481,11 +549,27 @@ export default function AdminVisitors() {
                   </td>
                   <td className="px-4 py-2"><StatusPill row={r} /></td>
                   <td className="px-4 py-2 text-right">
-                    <button onClick={() => setDrawerId(r.id)}
-                      className="text-xs px-3 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
-                      data-testid={`admin-visitors-view-${r.id}`}>
-                      View
-                    </button>
+                    <div className="inline-flex items-center gap-1">
+                      <button onClick={() => setDrawerId(r.id)}
+                        className="text-xs px-3 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        data-testid={`admin-visitors-view-${r.id}`}>
+                        View
+                      </button>
+                      {isAdmin && !isArchived && (
+                        <button onClick={() => onArchive(r)}
+                          className="text-xs px-3 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+                          data-testid={`admin-visitors-archive-${r.id}`}>
+                          Archive
+                        </button>
+                      )}
+                      {isAdmin && isArchived && (
+                        <button onClick={() => onUnarchive(r)}
+                          className="text-xs px-3 py-1 rounded-lg border border-amber-300 text-amber-800 hover:bg-amber-50"
+                          data-testid={`admin-visitors-unarchive-${r.id}`}>
+                          Restore
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -496,10 +580,23 @@ export default function AdminVisitors() {
           </tbody>
         </table>
       </div>
+      {/* v58.13.132eh — Load-more pager. */}
+      {!loading && rows.length > 0 && (
+        <PaginationBar
+          showing={rows.length}
+          total={totalCount ?? rows.length}
+          pageSize={pageSize}
+          onPageSize={setPageSize}
+          onLoadMore={onLoadMore}
+          loading={loading}
+          testidPrefix="admin-visitors"
+          storageKey="admin-visitors:pageSize"
+        />
+      )}
 
       {drawerId && (
         <DetailDrawer visitorId={drawerId} onClose={() => setDrawerId(null)}
-          onDeleted={load} onSignedOut={load} />
+          onDeleted={() => load(0, false)} onSignedOut={() => load(0, false)} />
       )}
       {showBulkConfirm && (
         <BulkDeleteModal rows={selectedRows}

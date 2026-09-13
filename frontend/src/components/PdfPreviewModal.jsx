@@ -152,7 +152,21 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
     (async () => {
       try {
         const resp = await fetch(src);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          // v58.13.132ei — Show a clean, actionable error state when the
+          // backend rejects the preview (typically 415 for a corrupt or
+          // stubbed file). Previously we silently fell back to the
+          // iframe, which then also 415'd and left the user with a
+          // Chrome error page inside the modal that looked like a
+          // random "sad-file" icon.
+          let detail = `HTTP ${resp.status}`;
+          try {
+            const j = await resp.json();
+            if (j?.detail) detail = j.detail;
+          } catch (_) { /* not JSON — keep the HTTP status */ }
+          if (alive) setErr(detail);
+          return;
+        }
         const hdrPipeline = resp.headers.get('x-pipeline');
         if (hdrPipeline && alive) setPipeline(hdrPipeline);
         const buf = await resp.arrayBuffer();
@@ -195,6 +209,23 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
       a.href = blobUrl;
       a.download = (file.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
       document.body.appendChild(a); a.click(); a.remove();
+      return;
+    }
+    // v58.13.132ei — When the PDF preview endpoint 415s (typically a
+    // stubbed / truncated upload), fall back to the raw original-file
+    // download so Stephen at least gets the bytes off the server.
+    if (err) {
+      try {
+        const r = await api.get(`/document-library/files/${file.id}/download`, {
+          params: { download: 1 }, responseType: 'blob',
+        });
+        const filename = file.filename || 'document';
+        const { src: stashSrc } = await stashInlinePdf(r.data, filename);
+        const a = document.createElement('a');
+        a.href = stashSrc;
+        a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) { toast.error(apiError(e)); }
       return;
     }
     try {
@@ -263,10 +294,22 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
         <div className="flex-1 bg-slate-100 relative">
           {err ? (
             <div className="absolute inset-0 grid place-items-center" data-testid="pdf-modal-error">
-              <div className="text-center max-w-sm px-6">
+              <div className="text-center max-w-md px-6">
                 <FileWarning size={28} className="text-amber-600 mx-auto mb-3" />
                 <div className="font-semibold text-slate-900">PDF preview failed</div>
                 <p className="text-[12px] text-slate-600 mt-1.5">{err}</p>
+                {/* v58.13.132ei — Always surface a Download button on the
+                    error path so a corrupt inline blob doesn't leave the
+                    user stuck. The download URL still hits the same
+                    backend endpoint but the browser saves the raw bytes
+                    even when preview conversion 415s. */}
+                <div className="mt-4 inline-flex gap-2">
+                  <button onClick={downloadPdf}
+                    data-testid="pdf-modal-error-download"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
+                    <Download size={12} /> Download original file
+                  </button>
+                </div>
               </div>
             </div>
           ) : iframeBlocked ? (

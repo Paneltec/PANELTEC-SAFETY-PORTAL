@@ -1290,7 +1290,7 @@
 // v58.13.132bo — CACHE bumped so the Fuel Reporting page reloads
 // with the new leaderboard row click-through + SmartFill card
 // drill-down drawer wiring.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.132dq';
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ex';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

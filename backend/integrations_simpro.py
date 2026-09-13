@@ -721,28 +721,135 @@ async def simpro_suppliers_sync(user: dict = Depends(require_permission("integra
 # search over the cached customer list without hitting Simpro on
 # every keypress. Delegates the fetch/refresh policy to the existing
 # handler and applies a `search` filter over the returned rows.
+#
+# v58.13.132dt — Bug fix: the `.132dq` `_match` filtered over keys
+# (`company_name`, `contact_name`, `email`, `given_name`, `family_name`)
+# that were never populated on cached rows (`_normalise_customer` only
+# stashed a single collapsed `name` string), so every substring query
+# returned 0 items. The fix has three parts:
+#   1. `_normalise_customer` now carries `company_name`, `contact_name`,
+#      `given_name`, `family_name`, `_href` from the raw list payload.
+#   2. `_match` filters over the ACTUAL keys (list-response fields are
+#      the ones on cache rows; `email` is left in the haystack for
+#      once-enriched rows).
+#   3. `email` isn't present in the Simpro list response — it lives
+#      only on the per-customer detail endpoint (via `_href`). After
+#      narrowing to the top-N matches, we fetch each match's detail
+#      in parallel (bounded) and inject `email` on the response.
+#      Enrichment results are cached in-process for 30 minutes so
+#      subsequent typing across common prefixes stays snappy.
+
+# {(org_id, simpro_customer_id): (expires_at_epoch, email_str_or_none)}
+_CUSTOMER_EMAIL_CACHE: dict[tuple, tuple[float, Optional[str]]] = {}
+_CUSTOMER_EMAIL_TTL_S = 30 * 60
+
+
+async def _fetch_customer_email(
+    cfg: dict, token: str, row: dict,
+) -> Optional[str]:
+    """Fetch a single customer's email from Simpro via the detail
+    endpoint (`_href` from the list response). Returns None on any
+    failure — the picker will render the row disabled instead of
+    exploding the whole search."""
+    href = row.get("_href")
+    if not href:
+        # Fall back to composing the URL when `_href` is missing on
+        # legacy cache rows (pre-.132dt). We can't discriminate
+        # Company vs Individual without _href, so try Company first.
+        cid = row.get("simpro_customer_id")
+        cmp_id = row.get("simpro_company_id") or "2"
+        if not cid:
+            return None
+        href = f"/api/v1.0/companies/{cmp_id}/customers/companies/{cid}"
+    base = cfg["api_base_url"].rstrip("/")
+    url = base + href
+    try:
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.get(url, headers=_auth_headers(token))
+            if r.status_code != 200:
+                return None
+            d = r.json()
+            if not isinstance(d, dict):
+                return None
+            # Primary customer email lives on `Email`. Fall back to
+            # the first Contact's Email when the top-level is blank.
+            email = (d.get("Email") or "").strip()
+            if not email:
+                for con in (d.get("Contacts") or []):
+                    if isinstance(con, dict) and con.get("Email"):
+                        email = str(con["Email"]).strip()
+                        break
+            return email or None
+    except Exception as e:
+        log.debug("simpro email enrich failed cust=%s err=%s",
+                  row.get("simpro_customer_id"), e)
+        return None
+
+
+async def _enrich_emails(user: dict, rows: list[dict]) -> list[dict]:
+    """Populate `email` on each row via the Simpro detail endpoint.
+    Uses a bounded semaphore + a 30-minute in-process cache to keep
+    keystroke latency < 1s for a typical 15-row limit. Rows that
+    already have a truthy `email` (e.g. from a future enriched cache)
+    are skipped."""
+    if not rows:
+        return rows
+    doc = await db.integration_configs.find_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+    )
+    if not doc or doc.get("status") != "connected":
+        return rows
+    cfg = hydrate_integration_config(doc)
+    try:
+        _require(cfg, "api_base_url", "api_token")
+    except HTTPException:
+        return rows
+    token = cfg["api_token"]
+    import time as _t
+    now = _t.time()
+    sem = asyncio.Semaphore(6)  # cap concurrent detail fetches
+
+    async def _fill(row: dict) -> None:
+        if row.get("email"):
+            return
+        key = (user["org_id"], row.get("simpro_customer_id"))
+        hit = _CUSTOMER_EMAIL_CACHE.get(key)
+        if hit and hit[0] > now:
+            row["email"] = hit[1]
+            return
+        async with sem:
+            email = await _fetch_customer_email(cfg, token, row)
+        _CUSTOMER_EMAIL_CACHE[key] = (now + _CUSTOMER_EMAIL_TTL_S, email)
+        row["email"] = email
+
+    await asyncio.gather(*(_fill(r) for r in rows))
+    return rows
+
 
 @router.get("/customers/search")
 async def simpro_customers_search(
     q: Optional[str] = None,
-    limit: int = 50,
+    limit: int = 15,
     user: dict = Depends(get_current_user),
 ):
-    """v58.13.132dq — Filter cached Simpro customers by company /
-    contact / email. Serves the Insurance Certificates recipient
-    picker. Delegates to the existing `simpro_customers` handler so
-    cache invalidation stays in one place."""
+    """v58.13.132dq / .132dt — Filter cached Simpro customers by
+    company / contact / email, then enrich the top-N matches with
+    the Simpro-side email address for the recipient picker."""
     resp = await simpro_customers(company="both", user=user)
     rows = resp.get("customers") or []
     term = (q or "").strip().lower()
     if term:
         def _match(r: dict) -> bool:
             hay = " ".join(str(r.get(k) or "") for k in
-                           ("company_name", "contact_name", "email",
-                            "given_name", "family_name")).lower()
+                           ("name", "company_name", "contact_name",
+                            "given_name", "family_name", "email",
+                            "type", "company_label")).lower()
             return term in hay
         rows = [r for r in rows if _match(r)]
-    rows = rows[: max(1, min(int(limit or 50), 500))]
+    # Cap BEFORE enriching so we don't fire 2064 detail calls when
+    # the query is empty.
+    rows = rows[: max(1, min(int(limit or 15), 100))]
+    rows = await _enrich_emails(user, rows)
     return {"items": rows, "total": len(rows),
             "cached_at": resp.get("cached_at"),
             "connected": resp.get("connected")}
@@ -947,20 +1054,36 @@ def _normalise_customer(raw: dict, company_id: str) -> dict:
     if not isinstance(raw, dict):
         raw = {}
     cid = str(raw.get("ID") or raw.get("id") or "")
-    name = (raw.get("CompanyName") or raw.get("Name") or raw.get("TradingName")
-            or raw.get("DisplayName") or "(unnamed)")
-    # Some Simpro tenants return customers as `Type: "Company"` vs people; we
-    # keep everything but tag the type for the picker.
+    company_name = (raw.get("CompanyName") or raw.get("TradingName")
+                    or raw.get("DisplayName") or "").strip()
+    given_name = (raw.get("GivenName") or "").strip()
+    family_name = (raw.get("FamilyName") or "").strip()
+    contact_name = (f"{given_name} {family_name}".strip()
+                    or raw.get("Name") or "").strip()
+    # Aggregate display name — company for Companies, contact for Individuals.
+    display = company_name or contact_name or "(unnamed)"
     ctype = raw.get("Type") or raw.get("CustomerType") or "Company"
     if isinstance(ctype, dict):
         ctype = ctype.get("Name") or "Company"
+    # v58.13.132dt — Preserve the split fields on cache rows so the
+    # `/customers/search` substring filter can actually match against
+    # them and so the Insurance Certificates recipient picker has real
+    # data to render. Also carry `_href` so the on-demand email
+    # lookup can hit the right detail path (Simpro uses
+    # `/customers/companies/{id}` vs `/customers/individuals/{id}`
+    # discriminated by Type — the `_href` string already encodes it).
     return {
         "simpro_customer_id": cid,
         "simpro_company_id": str(company_id),
         "company_label": COMPANY_LABEL.get(str(company_id), "Simpro"),
-        "name": str(name).strip(),
+        "name": display,
+        "company_name": company_name or None,
+        "contact_name": contact_name or None,
+        "given_name": given_name or None,
+        "family_name": family_name or None,
         "type": str(ctype).strip(),
         "active": bool(raw.get("Active", True)),
+        "_href": raw.get("_href") or None,
     }
 
 

@@ -6,6 +6,11 @@ import api, { apiError } from '../lib/api';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
 import CaptureCard, { CaptureSticky } from '../components/CaptureCard';
+import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
+import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
+import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ee
+import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
+import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ec
 // v58.13.45 — `paletteForType` no longer imported here. Group palette
 // (via ctx.stripeHex from GroupedTilesView) is the single stripe
 // source; the legacy per-template fallback was removed together with
@@ -40,23 +45,85 @@ const TEMPLATES = {
 export default function InspectionsList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
+  // v58.13.132eb — total server count from X-Total-Count header
+  const [totalCount, setTotalCount] = useState(null);
+  // v58.13.132ee — archived count from X-Archived-Count header.
+  const [archivedCount, setArchivedCount] = useState(null);
   const [loading, setLoading] = useState(true);
   const inspectionsDensity = useCaptureDensity('inspections', filtered.length);
+  // v58.13.132ec — Archive lifecycle. Admin-only.
+  const isAdmin = (getUser()?.role || '').toLowerCase() === 'admin';
+  // v58.13.132ee — Bulk archive dialog state (Admin only).
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
   const { deepLinkId } = useDeepLinkOpen({
     items, loading, notFoundMessage: 'Linked inspection not found',
   });
-  useEffect(() => {
-    api.get('/inspections')
-      .then((r) => { setItems(r.data); setFiltered(r.data); })
-      .finally(() => setLoading(false));
+  // v58.13.132eh — Load-more pagination.
+  const [pageSize, setPageSize] = usePersistedPageSize('inspections:pageSize', 5000);
+  // v58.13.132ee — Shared loader.
+  const load = React.useCallback(async (includeArchived, offset = 0, size = 5000, append = false) => {
+    setLoading(true);
+    try {
+      const r = await api.get('/inspections', {
+        params: { include_archived: includeArchived, limit: size, offset },
+      });
+      setItems((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      setFiltered((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      const t = r.headers?.['x-total-count'];
+      setTotalCount(t != null ? Number(t) : r.data?.length ?? 0);
+      const a = r.headers?.['x-archived-count'];
+      setArchivedCount(a != null ? Number(a) : null);
+    } finally { setLoading(false); }
   }, []);
+  const { showArchived, setShowArchived, onArchive, onUnarchive } =
+    useArchiveActions('/inspections', setItems, () => load(showArchived, 0, pageSize, false));
+  useEffect(() => { load(showArchived, 0, pageSize, false); }, [showArchived, pageSize, load]);
+  const onLoadMore = React.useCallback(() => {
+    load(showArchived, items.length, pageSize, true);
+  }, [load, showArchived, items.length, pageSize]);
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="inspections-list">
       <PageHeader crumb="Capture / Inspection Reports" title="Inspection Reports"
         subtitle="Scheduled inspections — site walk, plant, working at height."
-        action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-create-btn" />} />
+        action={
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button type="button" onClick={() => setArchiveDialogOpen(true)}
+                      data-testid="inspections-archive-header-btn"
+                      className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+                Archive…
+              </button>
+            )}
+            <NewButton to="/app/inspections/new" label="New inspection" testid="inspection-create-btn" />
+          </div>
+        } />
+      {/* v58.13.132ee — Bulk archive dialog. */}
+      {isAdmin && (
+        <ArchiveDialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}
+          apiPath="/inspections" moduleLabel="inspections"
+          knownStatuses={[]}
+          knownCategories={['Site walk', 'Plant inspection', 'Working at height']}
+          onArchived={() => load(showArchived)} />
+      )}
+      {/* v58.13.132eb — total-count chip. */}
+      {/* v58.13.132ec — Admin-only Show-archived toggle. */}
+      <div className="mt-2 mb-1 flex items-center gap-2">
+        <TotalCountChip
+          showing={filtered.length}
+          total={totalCount}
+          testid="inspections-total-count-chip"
+        />
+        {isAdmin && (
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={setShowArchived}
+            count={archivedCount}
+            testid="inspections-show-archived-toggle"
+          />
+        )}
+      </div>
       <Tabs defaultValue="list" className="mt-2" data-testid="inspections-tabs">
         <TabsList variant="pill-pair">
           <TabsTrigger variant="pill-pair" emphasis="secondary" value="dashboard" data-testid="inspections-tab-dashboard">Dashboard</TabsTrigger>
@@ -126,11 +193,26 @@ export default function InspectionsList() {
                 minH={ctx.minH}
                 stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
                 onDeleted={evict}
+                onArchive={isAdmin ? onArchive : undefined}
+                onUnarchive={isAdmin ? onUnarchive : undefined}
                 openInitially={deepLinkId === it.id}
               />
             );
           }}
         />
+       {/* v58.13.132eh — Load-more pager. */}
+       {!loading && items.length > 0 && (
+         <PaginationBar
+           showing={items.length}
+           total={totalCount ?? items.length}
+           pageSize={pageSize}
+           onPageSize={setPageSize}
+           onLoadMore={onLoadMore}
+           loading={loading}
+           testidPrefix="inspections"
+           storageKey="inspections:pageSize"
+         />
+       )}
        </>)
       }
         </TabsContent>

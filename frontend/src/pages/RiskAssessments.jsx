@@ -11,6 +11,12 @@ import api from '../lib/api';
 import { TOKEN_KEY, USER_KEY } from '../lib/api';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
+import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
+import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
+import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ee
+import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
+import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ec
+import { getUser } from '@/lib/auth';
 import useCaptureDensity from '../lib/useCaptureDensity';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import MasterRisksTab from './MasterRisksTab';
@@ -39,11 +45,42 @@ export default function RiskAssessments() {
   const [tab, setTab] = useState('submissions');
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
+  // v58.13.132eb — total server count from X-Total-Count header
+  const [totalCount, setTotalCount] = useState(null);
+  // v58.13.132ee — archived count from X-Archived-Count header.
+  const [archivedCount, setArchivedCount] = useState(null);
   const [loading, setLoading] = useState(true);
+  // v58.13.132ec — Archive lifecycle. Admin-only.
+  const isAdmin = (getUser()?.role || '').toLowerCase() === 'admin';
+  // v58.13.132ee — Bulk archive dialog state (Admin only).
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  // v58.13.132eh — Load-more pagination.
+  const [pageSize, setPageSize] = usePersistedPageSize('risk-assessments:pageSize', 5000);
   const [user] = useState(loadUser);
   const density = useCaptureDensity('risk-assessments', filtered.length);
   // Reference to TOKEN_KEY to keep tree-shaking honest on the named import.
   void TOKEN_KEY;
+
+  // v58.13.132ee — Shared loader.
+  const load = React.useCallback(async (includeArchived, offset = 0, size = 5000, append = false) => {
+    setLoading(true);
+    try {
+      const r = await api.get('/risk-assessments', {
+        params: { include_archived: includeArchived, limit: size, offset },
+      });
+      setItems((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      setFiltered((prev) => (append ? [...prev, ...(r.data || [])] : r.data || []));
+      const t = r.headers?.['x-total-count'];
+      setTotalCount(t != null ? Number(t) : r.data?.length ?? 0);
+      const a = r.headers?.['x-archived-count'];
+      setArchivedCount(a != null ? Number(a) : null);
+    } finally { setLoading(false); }
+  }, []);
+  const { showArchived, setShowArchived, onArchive, onUnarchive } =
+    useArchiveActions('/risk-assessments', setItems, () => load(showArchived, 0, pageSize, false));
+  const onLoadMore = React.useCallback(() => {
+    load(showArchived, items.length, pageSize, true);
+  }, [load, showArchived, items.length, pageSize]);
 
   // v58.13.12 — Soft-redirect old CS Incident bookmarks that hit this
   // page with `?tab=cs_incident` to the new dedicated route. Effect
@@ -60,11 +97,8 @@ export default function RiskAssessments() {
 
   useEffect(() => {
     if (tab !== 'submissions') return;
-    setLoading(true);
-    api.get('/risk-assessments')
-      .then((r) => { setItems(r.data); setFiltered(r.data); })
-      .finally(() => setLoading(false));
-  }, [tab]);
+    load(showArchived, 0, pageSize, false);
+  }, [tab, showArchived, pageSize, load]);
 
   const evict = (id) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
@@ -78,7 +112,46 @@ export default function RiskAssessments() {
           crumb="Capture / Risk Assessments"
           title="Risk Assessments"
           subtitle="Field-captured SSRAs and the Paneltec master risks reference library."
+          action={
+            isAdmin && tab === 'submissions' ? (
+              <button type="button" onClick={() => setArchiveDialogOpen(true)}
+                      data-testid="risk-assessments-archive-header-btn"
+                      className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+                Archive…
+              </button>
+            ) : null
+          }
         />
+        {/* v58.13.132ee — Bulk archive dialog (Admin only, Submissions tab). */}
+        {isAdmin && tab === 'submissions' && (
+          <ArchiveDialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}
+            apiPath="/risk-assessments" moduleLabel="risk assessments"
+            knownStatuses={[]}
+            knownCategories={[]}
+            onArchived={() => load(showArchived)} />
+        )}
+
+        {/* v58.13.132eb — total-count chip. Only shown on the
+            Submissions tab (the other tabs are reference libraries
+            with their own count semantics). */}
+        {tab === 'submissions' && (
+          <div className="mt-1 flex items-center gap-2">
+            <TotalCountChip
+              showing={filtered.length}
+              total={totalCount}
+              testid="risk-assessments-total-count-chip"
+            />
+            {/* v58.13.132ec — Admin-only archive visibility toggle. */}
+            {isAdmin && (
+              <ShowArchivedToggle
+                value={showArchived}
+                onChange={setShowArchived}
+                count={archivedCount}
+                testid="risk-assessments-show-archived-toggle"
+              />
+            )}
+          </div>
+        )}
 
         {/* Tab bar */}
         <div className="flex gap-1 border-b border-slate-200 mt-2" data-testid="risk-assessments-tabs">
@@ -130,9 +203,24 @@ export default function RiskAssessments() {
                     subtitleLines={density.subtitleLines}
                     minH={density.cardMinH}
                     onDeleted={evict}
+                    onArchive={isAdmin ? onArchive : undefined}
+                    onUnarchive={isAdmin ? onUnarchive : undefined}
                   />
                 ))}
               </CaptureCardGrid>
+            )}
+            {/* v58.13.132eh — Load-more pager. */}
+            {tab === 'submissions' && !loading && items.length > 0 && (
+              <PaginationBar
+                showing={items.length}
+                total={totalCount ?? items.length}
+                pageSize={pageSize}
+                onPageSize={setPageSize}
+                onLoadMore={onLoadMore}
+                loading={loading}
+                testidPrefix="risk-assessments"
+                storageKey="risk-assessments:pageSize"
+              />
             )}
           </>
         )}

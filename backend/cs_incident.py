@@ -1,4 +1,16 @@
-"""v160.3.9.16 — CS Incident (Issue List) reference-library router."""
+"""v160.3.9.16 — CS Incident (Issue List) reference-library router.
+
+v58.13.132dz — DEPRECATED. All rows in `cs_incident_issues` have been
+migrated into the `incidents` collection (see
+`scripts/migrate_sidebar_merge_v58_13_132dz.py`). Every endpoint on
+this router now returns `410 Gone` with a message pointing callers
+to `/api/incidents`. The source collection is left in place
+read-only for one release cycle in case rollback is needed.
+
+The endpoint bodies below are retained verbatim so a future
+rollback ship can lift the deprecation without a rewrite. The
+`_deprecated_gate` dependency short-circuits before any body runs.
+"""
 from __future__ import annotations
 import logging, uuid
 from datetime import datetime, timezone
@@ -11,7 +23,28 @@ from auth import get_current_user
 from permissions import require_permission  # v160.3.9.27 — guard migration
 
 log = logging.getLogger("paneltec.cs_incident")
-router = APIRouter(prefix="/cs-incident", tags=["cs-incident"])
+
+
+def _deprecated_gate() -> None:
+    """v58.13.132dz — 410 Gone gate applied to every route on this
+    router. Data was migrated into `incidents`; callers should hit
+    `/api/incidents` instead."""
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "CS Incidents were merged into Incident Reports in "
+            "v58.13.132dz. Use /api/incidents. Source data in "
+            "`cs_incident_issues` is preserved read-only for one "
+            "release cycle."
+        ),
+    )
+
+
+router = APIRouter(
+    prefix="/cs-incident",
+    tags=["cs-incident"],
+    dependencies=[Depends(_deprecated_gate)],
+)
 
 _ADMIN = {"admin"}
 BOOKKEEPING = {"_id", "id", "created_at", "updated_at", "imported_at",

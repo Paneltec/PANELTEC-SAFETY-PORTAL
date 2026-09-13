@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Save, Building2, MapPin, Phone, Shield, ShieldCheck, AlertTriangle, UploadCloud, Download, Info, Globe, Mail, Copy, ChevronDown, ChevronRight, X, Send, Clock, Award } from 'lucide-react';
+import { Save, Building2, MapPin, Phone, Shield, ShieldCheck, AlertTriangle, UploadCloud, Download, Info, Globe, Mail, Copy, ChevronDown, ChevronRight, X, Send, Clock, Award, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { PageHeader, PrimaryButton, Field, inputClass } from '../components/capture/Ui';
+import ArchiveRulesSection from '../components/ArchiveRulesSection';  // v58.13.132ed
+import QuickLinksSection from '../components/QuickLinksSection';  // v58.13.132eo
 
 // v58.13.132dp — Organisation Settings expansion (5 items).
 // v58.13.132dq — Adds: (a) 3rd insurance slot "General Cover",
@@ -29,6 +31,9 @@ import { PageHeader, PrimaryButton, Field, inputClass } from '../components/capt
 
 const IDENTITY = [
   { key: 'name', label: 'Organisation name', required: true },
+  { key: 'display_name', label: 'Display / Branding name',
+    placeholder: 'What appears in the sidebar wordmark',
+    hint: 'Sidebar wordmark + PDF header. Falls back to Trading name, then Organisation name. Leave blank to use the fallback.' },
   { key: 'trading_name', label: 'Trading name', placeholder: 'If different from legal name' },
   { key: 'abn', label: 'ABN' },
 ];
@@ -75,6 +80,7 @@ export default function OrgSettings() {
       setForm({
         name: data.name || '',
         slug: data.slug || '',
+        display_name: data.display_name || '',
         trading_name: data.trading_name || '',
         abn: data.abn || '',
         address_line1: data.address_line1 || '',
@@ -171,6 +177,10 @@ export default function OrgSettings() {
       }
       const { data } = await api.patch('/org', payload);
       setDoc(data);
+      // v58.13.132dr — Nudge the AppShell to refresh the sidebar
+      // wordmark so display_name / trading_name / name edits reflect
+      // without a page reload.
+      window.dispatchEvent(new CustomEvent('paneltec_org_updated'));
       toast.success('Organisation updated');
       setConfirmSlug(null);
     } catch (e) { toast.error(apiError(e)); }
@@ -209,6 +219,24 @@ export default function OrgSettings() {
     }
   };
 
+  // v58.13.132ds — Staff Login URL copy-to-clipboard. Same pattern as
+  // Portal URL. The URL itself is READ-ONLY (server-computed from
+  // PUBLIC_APP_URL); Emergent controls the value so admins can only
+  // copy it, never edit.
+  const copyStaffLoginUrl = async () => {
+    const url = (doc.staff_login_url || '').trim();
+    if (!url) { toast.error('No Staff Login URL to copy'); return; }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Copied!', { duration: 2000 });
+    } catch (_e) {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); ta.remove();
+      toast.success('Copied!', { duration: 2000 });
+    }
+  };
+
   // v58.13.132dq — Email Certificates popup state.
   const [emailOpen, setEmailOpen] = useState(false);
 
@@ -236,6 +264,11 @@ export default function OrgSettings() {
           Read-only — contact your administrator to edit organisation details.
         </div>
       )}
+
+      {/* v58.13.132ep — Quick Links repositioned to ABOVE the
+          Organisation section per user request. Was previously at the
+          bottom of the page (below Archive rules). Admin-gated. */}
+      {isAdmin && <QuickLinksSection />}
 
       {/* v58.13.132dp — 30-day insurance expiry warnings + 7-day
           criticals surfaced above the form. AppShell mounts a
@@ -274,19 +307,19 @@ export default function OrgSettings() {
           contact data. */}
       <div
         data-testid="org-importance-banner"
-        className="mb-4 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 flex items-start gap-3"
+        className="mb-4 relative rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-white px-5 py-4 flex items-start gap-3 shadow-md ring-1 ring-emerald-100"
       >
         <span
           data-testid="org-importance-chip"
-          className="mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-emerald-600 text-white"
+          className="absolute -top-2.5 right-4 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-emerald-600 text-white shadow-md ring-2 ring-white"
         >
           <Info size={11} /> Important
         </span>
-        <div className="text-xs text-slate-700 leading-relaxed">
-          This information appears on <span className="font-semibold">PDF reports</span>,{' '}
-          <span className="font-semibold">audit exports</span>,{' '}
-          <span className="font-semibold">renewal emails</span> and the{' '}
-          <span className="font-semibold">public portal footer</span>.
+        <div className="text-sm text-slate-700 leading-relaxed pt-1">
+          This information appears on <span className="font-semibold text-emerald-800">PDF reports</span>,{' '}
+          <span className="font-semibold text-emerald-800">audit exports</span>,{' '}
+          <span className="font-semibold text-emerald-800">renewal emails</span> and the{' '}
+          <span className="font-semibold text-emerald-800">public portal footer</span>.
           Keep insurance policy numbers and expiry dates up to date to avoid site access issues.
         </div>
       </div>
@@ -400,6 +433,32 @@ export default function OrgSettings() {
                   onClick={copyPortalUrl}
                   data-testid="org-portal-url-copy-btn"
                   aria-label="Copy Portal URL"
+                  className="w-10 shrink-0 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 active:scale-95 active:bg-emerald-100 transition"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+            </Field>
+            {/* v58.13.132ds — Staff Login URL. Read-only, server-
+                computed from PUBLIC_APP_URL. Distinct from Portal URL
+                (which lands on public PDF footers); Staff Login is
+                the internal sign-in URL shared with office staff. */}
+            <Field label="Staff Login URL"
+                   hint="This is your active login portal — share this URL with office staff so they can access the app. Once your production domain is live, use Portal URL for public-facing PDF reports.">
+              <div className="flex items-stretch gap-2">
+                <input
+                  className={inputClass + ' flex-1 bg-slate-50 text-slate-700 cursor-not-allowed'}
+                  value={doc.staff_login_url || ''}
+                  readOnly
+                  disabled
+                  data-testid="org-field-staff_login_url"
+                  title="Emergent-managed — read-only"
+                />
+                <button
+                  type="button"
+                  onClick={copyStaffLoginUrl}
+                  data-testid="org-staff-login-url-copy-btn"
+                  aria-label="Copy Staff Login URL"
                   className="w-10 shrink-0 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 active:scale-95 active:bg-emerald-100 transition"
                 >
                   <Copy size={14} />
@@ -537,17 +596,132 @@ export default function OrgSettings() {
           onSent={() => { setEmailOpen(false); load(); }}
         />
       )}
+      {/* v58.13.132ed — Admin-only auto-archive rules surface. Renders
+          the 7-row table (one per CAPTURE module) with enable/days
+          controls that feed the nightly APScheduler job. */}
+      {isAdmin && <ArchiveRulesSection />}
     </div>
   );
 }
+
+// v58.13.132dw — Typed-confirm dialog for the Purge action. Submit
+// is disabled until the input reads exactly "PURGE". Handles both
+// per-row and bulk-purge callers by inspecting `target.bulk`.
+function PurgeConfirmDialog({ kind, target, onCancel, onConfirm }) {
+  const [typed, setTyped] = useState('');
+  const armed = typed === 'PURGE';
+  const bulk = !!target?.bulk;
+  return (
+    <div
+      className="fixed inset-0 z-[60] bg-slate-900/50 flex items-center justify-center p-4"
+      data-testid={`org-insurance-history-purge-confirm-${kind}`}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 ring-4 ring-red-200 border-2 border-red-300">
+        <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2 text-red-800">
+          <AlertTriangle size={18} className="text-red-600" />
+          Permanently purge {bulk ? `${target.count} certificate${target.count === 1 ? '' : 's'}` : 'certificate'}?
+        </h3>
+        <p className="text-sm text-slate-700 mb-3">
+          This will remove {bulk ? 'these rows' : 'the row'} from Mongo. The underlying file
+          {bulk ? 's are' : ' is'} preserved in GridFS for audit compliance but will no longer
+          be accessible via the UI. This action cannot be undone from the UI.
+        </p>
+        {!bulk && (
+          <div className="text-[11px] text-slate-500 mb-3 font-mono truncate">
+            {target.row.certificate_filename || target.row.certificate_id}
+          </div>
+        )}
+        <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">
+          Type PURGE to confirm
+        </label>
+        <input
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          data-testid={`org-insurance-history-purge-typed-${kind}`}
+          autoFocus
+          className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-red-400"
+          placeholder="PURGE"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onCancel}
+                  data-testid={`org-insurance-history-purge-cancel-${kind}`}
+                  className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} disabled={!armed}
+                  data-testid={`org-insurance-history-purge-submit-${kind}`}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            Purge
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 function InsuranceBlock({ kind, label, form, doc, isAdmin, setInsurance, uploadFile, uploading }) {
   const block = doc[`${kind}_insurance`] || {};
   const status = (doc.insurance_status || {})[kind] || {};
   const level = status.level;
   const days = status.days_until_expiry;
-  const archived = block.previous_certificates || [];
+  // v58.13.132ds — Past-certs list now sourced from the API so the
+  // Show-deleted toggle can flip include_deleted for soft-deleted
+  // archive entries. Cached in local state; refetched when the
+  // toggle flips or after a delete/undelete round-trip.
   const [showArchive, setShowArchive] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [archived, setArchived] = useState(block.previous_certificates || []);
+  const [confirmDel, setConfirmDel] = useState(null); // certificate row pending confirm
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const params = showDeleted ? { include_deleted: true } : {};
+      const { data } = await api.get(`/org/insurance/${kind}/history`, { params });
+      setArchived(data?.items || []);
+    } catch (_e) {
+      setArchived(block.previous_certificates || []);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, showDeleted]);
+  React.useEffect(() => { loadHistory(); }, [loadHistory]);
+  const doDelete = async (row) => {
+    try {
+      await api.delete(`/org/insurance/${kind}/history/${row.certificate_id}`);
+      toast.success('Certificate hidden from view');
+      setConfirmDel(null);
+      loadHistory();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  const doUndelete = async (row) => {
+    try {
+      await api.post(`/org/insurance/${kind}/history/${row.certificate_id}/undelete`);
+      toast.success('Certificate restored');
+      loadHistory();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  // v58.13.132dw — Purge (permanent Mongo-row removal). Requires the
+  // row to be soft-deleted first (409 otherwise) and a typed
+  // confirm of "PURGE" — enforced by <PurgeConfirmDialog>. GridFS
+  // blob is preserved regardless.
+  const [confirmPurge, setConfirmPurge] = useState(null); // { row } | { bulk: true, count }
+  const doPurge = async (row) => {
+    try {
+      await api.post(`/org/insurance/${kind}/history/${row.certificate_id}/purge`);
+      toast.success('Certificate row purged (GridFS blob preserved)');
+      setConfirmPurge(null);
+      loadHistory();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  const doPurgeAll = async () => {
+    try {
+      const { data } = await api.post(`/org/insurance/${kind}/history/purge-all-deleted`);
+      const n = data?.purged || 0;
+      toast.success(`Purged ${n} soft-deleted row${n === 1 ? '' : 's'} (GridFS blobs preserved)`);
+      setConfirmPurge(null);
+      loadHistory();
+    } catch (e) { toast.error(apiError(e)); }
+  };
   // v58.13.132dq — Icon per policy kind. Distinct glyph + accent tone
   // per slot so the four blocks read differently at a glance while
   // staying on the emerald/violet family.
@@ -622,17 +796,53 @@ function InsuranceBlock({ kind, label, form, doc, isAdmin, setInsurance, uploadF
       {/* v58.13.132dq — Past certificates archive. Collapsible so the
           block stays compact when nothing has been archived. Uploads
           always archive the previous cert (never delete from GridFS)
-          so this section grows over time for audit compliance. */}
+          so this section grows over time for audit compliance.
+          v58.13.132ds — Adds per-row soft-delete + Show-deleted
+          toggle. GridFS files never physically deleted. */}
       <div className="mt-3">
-        <button
-          type="button"
-          onClick={() => setShowArchive((v) => !v)}
-          data-testid={`org-insurance-history-toggle-${kind}`}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700"
-        >
-          {showArchive ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          Past certificates ({archived.length})
-        </button>
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setShowArchive((v) => !v)}
+            data-testid={`org-insurance-history-toggle-${kind}`}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700"
+          >
+            {showArchive ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            Past certificates ({archived.filter((r) => !r.deleted_at).length})
+          </button>
+          {showArchive && isAdmin && (
+            <label
+              className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none"
+              data-testid={`org-insurance-history-show-deleted-${kind}`}
+            >
+              <input
+                type="checkbox"
+                checked={showDeleted}
+                onChange={(e) => setShowDeleted(e.target.checked)}
+                className="h-3 w-3"
+              />
+              Show deleted
+            </label>
+          )}
+          {/* v58.13.132dw — Bulk-purge pill. Only surfaces when
+              Show deleted is ON AND at least one soft-deleted row
+              exists. Guarded by typed-confirm modal. */}
+          {showArchive && isAdmin && showDeleted && (() => {
+            const nDeleted = archived.filter((r) => r.deleted_at).length;
+            if (nDeleted === 0) return null;
+            return (
+              <button
+                type="button"
+                onClick={() => setConfirmPurge({ bulk: true, count: nDeleted })}
+                data-testid={`org-insurance-history-purge-all-${kind}`}
+                title="Permanently remove all soft-deleted rows from Mongo (GridFS blobs preserved)"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border border-red-300 bg-white text-red-700 hover:bg-red-600 hover:text-white hover:border-red-600"
+              >
+                <Trash2 size={10} /> Purge all {nDeleted} soft-deleted
+              </button>
+            );
+          })()}
+        </div>
         {showArchive && (
           <div className="mt-2 rounded-lg border border-slate-200 bg-white" data-testid={`org-insurance-history-${kind}`}>
             {archived.length === 0 ? (
@@ -651,45 +861,133 @@ function InsuranceBlock({ kind, label, form, doc, isAdmin, setInsurance, uploadF
                   </tr>
                 </thead>
                 <tbody>
-                  {[...archived].reverse().map((row) => (
-                    <tr key={row.certificate_id} className="border-t border-slate-100" data-testid={`org-insurance-history-row-${row.certificate_id}`}>
-                      <td className="px-2 py-1.5 font-mono">
+                  {archived.map((row) => {
+                    const deleted = !!row.deleted_at;
+                    return (
+                    <tr
+                      key={row.certificate_id}
+                      className={`border-t border-slate-100 ${deleted ? 'text-slate-400' : ''}`}
+                      data-testid={`org-insurance-history-row-${row.certificate_id}`}
+                    >
+                      <td className={`px-2 py-1.5 font-mono ${deleted ? 'line-through' : ''}`}>
                         {(row.uploaded_at || row.archived_at || '').slice(0, 10)}
                       </td>
-                      <td className="px-2 py-1.5">{row.policy_number || '—'}</td>
-                      <td className="px-2 py-1.5">{row.expiry_date || '—'}</td>
-                      <td className="px-2 py-1.5 truncate max-w-[200px]">
+                      <td className={`px-2 py-1.5 ${deleted ? 'line-through' : ''}`}>{row.policy_number || '—'}</td>
+                      <td className={`px-2 py-1.5 ${deleted ? 'line-through' : ''}`}>{row.expiry_date || '—'}</td>
+                      <td className={`px-2 py-1.5 truncate max-w-[200px] ${deleted ? 'line-through' : ''}`}>
                         {row.certificate_filename || '—'}
                       </td>
                       <td className="px-2 py-1.5 text-right">
-                        <a
-                          href={`${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}/api/org/insurance/${kind}/history/${row.certificate_id}/download`}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          data-testid={`org-insurance-history-download-${row.certificate_id}`}
-                          className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900"
-                        >
-                          <Download size={11} /> Download
-                        </a>
+                        <div className="inline-flex items-center gap-2">
+                          <a
+                            href={`${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}/api/org/insurance/${kind}/history/${row.certificate_id}/download`}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            data-testid={`org-insurance-history-download-${row.certificate_id}`}
+                            className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900"
+                          >
+                            <Download size={11} /> Download
+                          </a>
+                          {isAdmin && !deleted && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDel(row)}
+                              data-testid={`org-insurance-history-delete-${row.certificate_id}`}
+                              aria-label="Delete certificate"
+                              className="inline-flex items-center justify-center w-6 h-6 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50"
+                              title="Hide from view (soft-delete)"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                          {isAdmin && deleted && (
+                            <button
+                              type="button"
+                              onClick={() => doUndelete(row)}
+                              data-testid={`org-insurance-history-undelete-${row.certificate_id}`}
+                              aria-label="Undelete certificate"
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 hover:text-emerald-900 px-1.5 py-0.5 rounded hover:bg-emerald-50"
+                              title="Restore this certificate to the visible list"
+                            >
+                              <RotateCcw size={11} /> Undelete
+                            </button>
+                          )}
+                          {isAdmin && deleted && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmPurge({ row })}
+                              data-testid={`org-insurance-history-purge-${row.certificate_id}`}
+                              aria-label="Purge certificate"
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-700 hover:text-white hover:bg-red-600 border border-red-300 px-1.5 py-0.5 rounded"
+                              title="Permanently remove this row from Mongo (GridFS blob preserved)"
+                            >
+                              <Trash2 size={11} /> Purge
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}
           </div>
         )}
       </div>
+      {confirmDel && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" data-testid={`org-insurance-history-confirm-${kind}`}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-500" /> Delete this certificate?
+            </h3>
+            <p className="text-sm text-slate-700 mb-4">
+              Are you sure you want to delete this past certificate? It will be hidden from view but preserved in the audit trail. Continue?
+            </p>
+            <div className="text-[11px] text-slate-500 mb-4 font-mono truncate">
+              {confirmDel.certificate_filename || confirmDel.certificate_id}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDel(null)}
+                data-testid={`org-insurance-history-confirm-cancel-${kind}`}
+                className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700"
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={() => doDelete(confirmDel)}
+                data-testid={`org-insurance-history-confirm-delete-${kind}`}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700"
+              >Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* v58.13.132dw — Typed-confirm purge dialog. Fires for both
+          per-row Purge and Purge-all-soft-deleted. Submit disabled
+          until the user types exactly "PURGE". */}
+      {confirmPurge && (
+        <PurgeConfirmDialog
+          kind={kind}
+          target={confirmPurge}
+          onCancel={() => setConfirmPurge(null)}
+          onConfirm={() => {
+            if (confirmPurge.bulk) doPurgeAll();
+            else doPurge(confirmPurge.row);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function Section({ icon, title, children, elevated, headerRight }) {
   return (
-    <div className={`rounded-2xl border bg-white p-5 ${
+    <div className={`rounded-2xl border p-5 ${
       elevated
-        ? 'border-slate-200 shadow-sm ring-1 ring-emerald-50/60'
-        : 'border-slate-200'
+        ? 'border-emerald-200 shadow-md ring-2 ring-emerald-100 bg-gradient-to-br from-emerald-50/40 via-white to-white'
+        : 'border-slate-200 bg-white'
     }`}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-display font-semibold flex items-center gap-2">{icon} {title}</h3>
@@ -719,6 +1017,15 @@ function InsuranceEmailModal({ doc, orgName, defaultPreamble, onClose, onSent })
   const [suggestions, setSuggestions] = useState([]);
   const [searching, setSearching] = useState(false);
   const [simproConnected, setSimproConnected] = useState(true);
+  // v58.13.132dv — Inline delete state. `hiddenCerts[kind]` tracks
+  // certificate_ids that were soft-deleted from within this popup,
+  // so the row disappears immediately without needing a full doc
+  // refetch (parent `doc` prop is refreshed only on modal close). A
+  // confirm modal fires before every delete; a "Clear all archived"
+  // confirm fires before the bulk endpoint.
+  const [hiddenCerts, setHiddenCerts] = useState({});
+  const [confirmDelCert, setConfirmDelCert] = useState(null); // {kind, row}
+  const [confirmClearKind, setConfirmClearKind] = useState(null); // kind
 
   useEffect(() => {
     if (search.length < 2) { setSuggestions([]); return; }
@@ -766,6 +1073,39 @@ function InsuranceEmailModal({ doc, orgName, defaultPreamble, onClose, onSent })
     return { ...a, [kind]: cur.includes(fileId) ? cur.filter((f) => f !== fileId) : [...cur, fileId] };
   });
 
+  // v58.13.132dv — Inline soft-delete of an archived certificate row.
+  // Wired to the .132ds DELETE endpoint. On success, hide the row
+  // locally so the popup reflects the change immediately + drop the
+  // certificate_id from any selection state that referenced it.
+  const doDeleteArchived = async (kind, row) => {
+    try {
+      await api.delete(`/org/insurance/${kind}/history/${row.certificate_id}`);
+      setHiddenCerts((h) => ({
+        ...h,
+        [kind]: [...(h[kind] || []), row.certificate_id],
+      }));
+      setArchivedSelections((a) => ({
+        ...a,
+        [kind]: (a[kind] || []).filter((f) => f !== row.certificate_id),
+      }));
+      toast.success('Certificate hidden from view');
+      setConfirmDelCert(null);
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  const doClearAllArchived = async (kind) => {
+    try {
+      const { data } = await api.post(`/org/insurance/${kind}/history/clear-all`);
+      const n = data?.cleared || 0;
+      // Snap ALL archived rows for this kind into the hidden set.
+      const allIds = ((doc[`${kind}_insurance`] || {}).previous_certificates || [])
+        .map((r) => r.certificate_id);
+      setHiddenCerts((h) => ({ ...h, [kind]: [...(h[kind] || []), ...allIds] }));
+      setArchivedSelections((a) => ({ ...a, [kind]: [] }));
+      toast.success(`Cleared ${n} archived certificate${n === 1 ? '' : 's'}`);
+      setConfirmClearKind(null);
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
   const send = async () => {
     if (recipients.length === 0) { toast.error('Add at least one recipient'); return; }
     const anyArchived = Object.values(archivedSelections).some((a) => (a || []).length > 0);
@@ -801,8 +1141,8 @@ function InsuranceEmailModal({ doc, orgName, defaultPreamble, onClose, onSent })
       className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center px-4"
       data-testid="insurance-email-modal"
     >
-      <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto ring-1 ring-emerald-100">
-        <div className="sticky top-0 bg-gradient-to-r from-emerald-50 to-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto ring-4 ring-emerald-200 border-2 border-emerald-300">
+        <div className="sticky top-0 bg-gradient-to-r from-emerald-100 via-emerald-50 to-white border-b-2 border-emerald-200 px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Mail size={16} className="text-emerald-600" />
             <div>
@@ -881,39 +1221,71 @@ function InsuranceEmailModal({ doc, orgName, defaultPreamble, onClose, onSent })
             </div>
           </div>
 
-          {/* Certificate picker (current + archived) */}
+          {/* Certificate picker (current + archived)
+              v58.13.132dv — Archived rows now filter out soft-deleted
+              entries (both from prior `deleted_at` stamps and from
+              this session's `hiddenCerts` state). Each archived row
+              gets an inline trash button; the section header shows
+              a "Clear all archived (N)" pill when N > 0. */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Certificates to attach</label>
             <div className="space-y-3">
               {kinds.map(({ kind, label }) => {
                 const block = doc[`${kind}_insurance`] || {};
                 const hasCurrent = !!block.certificate_id;
-                const archived = block.previous_certificates || [];
+                const rawArchived = block.previous_certificates || [];
+                const hiddenSet = new Set(hiddenCerts[kind] || []);
+                const archived = rawArchived.filter(
+                  (a) => !a.deleted_at && !hiddenSet.has(a.certificate_id),
+                );
                 return (
                   <div key={kind} className="rounded-lg border border-slate-200 p-3 bg-slate-50/50" data-testid={`insurance-email-cert-block-${kind}`}>
-                    <label className="flex items-center gap-2 text-sm font-semibold">
-                      <input
-                        type="checkbox"
-                        checked={certificateTypes.includes(kind)}
-                        onChange={() => toggleKind(kind)}
-                        disabled={!hasCurrent}
-                        data-testid={`insurance-email-cert-${kind}`}
-                      />
-                      <span className={hasCurrent ? '' : 'text-slate-400'}>{label}</span>
-                      {!hasCurrent && <span className="text-[10px] uppercase tracking-wider text-slate-400 ml-1">No certificate uploaded</span>}
-                    </label>
+                    <div className="flex items-start justify-between gap-2">
+                      <label className="flex items-center gap-2 text-sm font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={certificateTypes.includes(kind)}
+                          onChange={() => toggleKind(kind)}
+                          disabled={!hasCurrent}
+                          data-testid={`insurance-email-cert-${kind}`}
+                        />
+                        <span className={hasCurrent ? '' : 'text-slate-400'}>{label}</span>
+                        {!hasCurrent && <span className="text-[10px] uppercase tracking-wider text-slate-400 ml-1">No certificate uploaded</span>}
+                      </label>
+                      {archived.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmClearKind(kind)}
+                          data-testid={`insurance-email-clear-archived-${kind}`}
+                          title={`Soft-delete all ${archived.length} archived certificate(s) for ${label}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border border-red-200 bg-white text-red-700 hover:bg-red-50 hover:border-red-300"
+                        >
+                          <Trash2 size={10} /> Clear all archived ({archived.length})
+                        </button>
+                      )}
+                    </div>
                     {archived.length > 0 && (
                       <div className="mt-1.5 ml-5 space-y-1 text-[11px] text-slate-600">
                         {archived.map((a) => (
-                          <label key={a.certificate_id} className="flex items-center gap-1.5">
+                          <div key={a.certificate_id} className="flex items-center gap-1.5" data-testid={`insurance-email-arch-row-${a.certificate_id}`}>
                             <input
                               type="checkbox"
                               checked={(archivedSelections[kind] || []).includes(a.certificate_id)}
                               onChange={() => toggleArchived(kind, a.certificate_id)}
                               data-testid={`insurance-email-arch-${a.certificate_id}`}
                             />
-                            <span>Archived {(a.uploaded_at || '').slice(0,10)} — {a.certificate_filename || '(no filename)'}</span>
-                          </label>
+                            <span className="flex-1 truncate">Archived {(a.uploaded_at || '').slice(0,10)} — {a.certificate_filename || '(no filename)'}</span>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDelCert({ kind, row: a })}
+                              data-testid={`insurance-email-arch-delete-${a.certificate_id}`}
+                              aria-label="Delete archived certificate"
+                              title="Hide from view (soft-delete, preserves audit)"
+                              className="inline-flex items-center justify-center w-5 h-5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -922,6 +1294,64 @@ function InsuranceEmailModal({ doc, orgName, defaultPreamble, onClose, onSent })
               })}
             </div>
           </div>
+
+          {/* v58.13.132dv — Per-row soft-delete confirm. */}
+          {confirmDelCert && (
+            <div className="fixed inset-0 z-[60] bg-slate-900/40 flex items-center justify-center p-4" data-testid="insurance-email-arch-delete-confirm">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-500" /> Delete this certificate?
+                </h3>
+                <p className="text-sm text-slate-700 mb-4">
+                  Are you sure you want to delete this past certificate? It will be hidden from view but preserved in the audit trail. Continue?
+                </p>
+                <div className="text-[11px] text-slate-500 mb-4 font-mono truncate">
+                  {confirmDelCert.row.certificate_filename || confirmDelCert.row.certificate_id}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setConfirmDelCert(null)}
+                          data-testid="insurance-email-arch-delete-cancel"
+                          className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700">Cancel</button>
+                  <button type="button" onClick={() => doDeleteArchived(confirmDelCert.kind, confirmDelCert.row)}
+                          data-testid="insurance-email-arch-delete-ok"
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700">Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* v58.13.132dv — Bulk clear-all-archived confirm. */}
+          {confirmClearKind && (() => {
+            const kind = confirmClearKind;
+            const block = doc[`${kind}_insurance`] || {};
+            const rawArchived = block.previous_certificates || [];
+            const hiddenSet = new Set(hiddenCerts[kind] || []);
+            const visible = rawArchived.filter(
+              (a) => !a.deleted_at && !hiddenSet.has(a.certificate_id),
+            ).length;
+            const label = (kinds.find((k) => k.kind === kind) || {}).label || kind;
+            return (
+              <div className="fixed inset-0 z-[60] bg-slate-900/40 flex items-center justify-center p-4" data-testid="insurance-email-clear-archived-confirm">
+                <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                  <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-500" /> Delete all archived?
+                  </h3>
+                  <p className="text-sm text-slate-700 mb-4">
+                    Delete all {visible} archived certificate{visible === 1 ? '' : 's'} for {label}?
+                    They will be hidden from view but preserved in the audit trail. Continue?
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setConfirmClearKind(null)}
+                            data-testid="insurance-email-clear-archived-cancel"
+                            className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700">Cancel</button>
+                    <button type="button" onClick={() => doClearAllArchived(kind)}
+                            data-testid="insurance-email-clear-archived-ok"
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700">Delete all</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Subject</label>
@@ -965,19 +1395,81 @@ function InsuranceEmailModal({ doc, orgName, defaultPreamble, onClose, onSent })
 }
 
 // ─── v58.13.132dq — Insurance email audit log ────────────────────
+// v58.13.132ds — Adds per-row soft-delete + Clear-all + Show-deleted
+// toggle. Data preserved forever; delete simply flips visibility.
 
 function EmailAuditLog() {
   const [rows, setRows] = useState([]);
-  useEffect(() => {
-    api.get('/org/insurance/email/log').then(({ data }) => setRows(data?.items || []))
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [confirmRow, setConfirmRow] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const load = React.useCallback(() => {
+    const params = showDeleted ? { include_deleted: true } : {};
+    api.get('/org/insurance/email/log', { params })
+      .then(({ data }) => setRows(data?.items || []))
       .catch(() => setRows([]));
-  }, []);
-  if (rows.length === 0) return null;
+  }, [showDeleted]);
+  useEffect(() => { load(); }, [load]);
+  const doDelete = async (row) => {
+    try {
+      await api.delete(`/org/insurance/email/log/${row.id}`);
+      toast.success('Log entry hidden');
+      setConfirmRow(null);
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  const doUndelete = async (row) => {
+    try {
+      await api.post(`/org/insurance/email/log/${row.id}/undelete`);
+      toast.success('Log entry restored');
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  const doClearAll = async () => {
+    try {
+      const { data } = await api.post('/org/insurance/email/log/clear-all');
+      const n = data?.cleared || 0;
+      toast.success(`Cleared ${n} log entr${n === 1 ? 'y' : 'ies'}`);
+      setConfirmClear(false);
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  const visibleCount = rows.filter((r) => !r.deleted_at).length;
+  if (rows.length === 0 && !showDeleted) return null;
   return (
     <div className="mt-5 rounded-lg border border-slate-200 bg-white" data-testid="insurance-email-audit-log">
-      <div className="px-3 py-2 border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+      <div className="px-3 py-2 border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2 flex-wrap">
         <Clock size={12} /> Insurance email log (last 10)
+        <div className="ml-auto flex items-center gap-3">
+          <label
+            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none"
+            data-testid="insurance-email-audit-show-deleted"
+          >
+            <input
+              type="checkbox"
+              checked={showDeleted}
+              onChange={(e) => setShowDeleted(e.target.checked)}
+              className="h-3 w-3"
+            />
+            Show deleted
+          </label>
+          <button
+            type="button"
+            disabled={visibleCount === 0}
+            onClick={() => setConfirmClear(true)}
+            data-testid="insurance-email-audit-clear-all-btn"
+            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md border border-slate-300 text-slate-700 hover:bg-red-50 hover:border-red-300 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Hide all visible log entries (preserves data)"
+          >
+            <Trash2 size={11} /> Clear all / Collapse log
+          </button>
+        </div>
       </div>
+      {rows.length === 0 ? (
+        <div className="text-[11px] text-slate-400 italic px-3 py-2">
+          No log entries.
+        </div>
+      ) : (
       <table className="w-full text-[11px]">
         <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider">
           <tr>
@@ -986,19 +1478,26 @@ function EmailAuditLog() {
             <th className="text-left px-2 py-1.5 font-semibold">Recipients</th>
             <th className="text-left px-2 py-1.5 font-semibold">Certificates</th>
             <th className="text-left px-2 py-1.5 font-semibold">Status</th>
+            <th className="px-2 py-1.5"></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-t border-slate-100" data-testid={`insurance-email-audit-row-${r.id}`}>
-              <td className="px-2 py-1.5 font-mono whitespace-nowrap">
+          {rows.map((r) => {
+            const deleted = !!r.deleted_at;
+            return (
+            <tr
+              key={r.id}
+              className={`border-t border-slate-100 ${deleted ? 'text-slate-400' : ''}`}
+              data-testid={`insurance-email-audit-row-${r.id}`}
+            >
+              <td className={`px-2 py-1.5 font-mono whitespace-nowrap ${deleted ? 'line-through' : ''}`}>
                 {(r.timestamp || '').replace('T', ' ').slice(0, 16)}
               </td>
-              <td className="px-2 py-1.5">{r.sent_by_email || r.sent_by_user_id || '—'}</td>
-              <td className="px-2 py-1.5 truncate max-w-[220px]" title={(r.recipients || []).join(', ')}>
+              <td className={`px-2 py-1.5 ${deleted ? 'line-through' : ''}`}>{r.sent_by_email || r.sent_by_user_id || '—'}</td>
+              <td className={`px-2 py-1.5 truncate max-w-[220px] ${deleted ? 'line-through' : ''}`} title={(r.recipients || []).join(', ')}>
                 {(r.recipients || []).join(', ')}
               </td>
-              <td className="px-2 py-1.5">
+              <td className={`px-2 py-1.5 ${deleted ? 'line-through' : ''}`}>
                 {(r.certificate_types || []).length}
                 {(r.archived_included || []).length > 0 && ` +${r.archived_included.length} archived`}
               </td>
@@ -1011,10 +1510,89 @@ function EmailAuditLog() {
                   <span className="text-[10px] uppercase font-semibold text-red-800 bg-red-100 border border-red-200 rounded px-1.5 py-0.5" title={r.error || ''}>Failed</span>
                 )}
               </td>
+              <td className="px-2 py-1.5 text-right">
+                {!deleted ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmRow(r)}
+                    data-testid={`insurance-email-audit-delete-${r.id}`}
+                    aria-label="Delete log entry"
+                    title="Hide from view (soft-delete)"
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => doUndelete(r)}
+                    data-testid={`insurance-email-audit-undelete-${r.id}`}
+                    aria-label="Undelete log entry"
+                    title="Restore this log entry to the visible list"
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 hover:text-emerald-900 px-1.5 py-0.5 rounded hover:bg-emerald-50"
+                  >
+                    <RotateCcw size={11} /> Undelete
+                  </button>
+                )}
+              </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
+      )}
+      {confirmRow && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" data-testid="insurance-email-audit-delete-confirm">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-500" /> Delete this log entry?
+            </h3>
+            <p className="text-sm text-slate-700 mb-4">
+              Are you sure you want to delete this insurance email log entry? It will be hidden from view but preserved in the audit trail. Continue?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmRow(null)}
+                data-testid="insurance-email-audit-delete-confirm-cancel"
+                className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700"
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={() => doDelete(confirmRow)}
+                data-testid="insurance-email-audit-delete-confirm-ok"
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700"
+              >Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmClear && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" data-testid="insurance-email-audit-clear-all-confirm">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h3 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-500" /> Clear all log entries?
+            </h3>
+            <p className="text-sm text-slate-700 mb-4">
+              Are you sure? This will hide all {visibleCount} log {visibleCount === 1 ? 'entry' : 'entries'}. Data is preserved in the audit trail — this just hides them from view.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClear(false)}
+                data-testid="insurance-email-audit-clear-all-cancel"
+                className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700"
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={doClearAll}
+                data-testid="insurance-email-audit-clear-all-ok"
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700"
+              >Clear all</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
