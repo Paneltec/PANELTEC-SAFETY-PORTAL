@@ -136,12 +136,18 @@ function TilePreviewCard({ tile }) {
   const [imgError, setImgError] = useState(false);
   const showRemote = tile.remote_icon_url && !imgError;
   const accent = tile.color || DEFAULT_COLOR;
-  return (
-    <a href={tile.url} target="_blank" rel="noopener noreferrer"
-      title={tile.description || tile.url}
-      data-testid={`org-quick-links-tile-${tile.id}`}
-      style={{ borderLeftColor: accent, borderLeftWidth: 4 }}
-      className="group relative flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:shadow-sm transition p-4 min-h-[110px]">
+  // v58.13.132ez — Grey-out un-approved tiles. Every user still sees
+  // the tile (name / icon / colour) but the click is disabled and
+  // the URL has been redacted server-side.
+  const approved = tile.approved_for_me !== false;
+  const commonProps = {
+    'data-testid': `org-quick-links-tile-${tile.id}`,
+    'data-approved-for-me': approved ? 'true' : 'false',
+    style: { borderLeftColor: accent, borderLeftWidth: 4 },
+    title: approved ? (tile.description || tile.url) : 'Not approved — ask an admin',
+  };
+  const cardContent = (
+    <>
       {showRemote ? (
         <img src={tile.remote_icon_url} alt=""
           onError={() => setImgError(true)}
@@ -151,7 +157,27 @@ function TilePreviewCard({ tile }) {
         <div className="text-3xl leading-none" aria-hidden="true">{tile.icon || '🔗'}</div>
       )}
       <div className="text-xs font-semibold text-slate-800 text-center line-clamp-2">{tile.label}</div>
-      <ExternalLink size={11} className="absolute top-2 right-2 text-slate-400 group-hover:text-orange-500" />
+      {approved ? (
+        <ExternalLink size={11} className="absolute top-2 right-2 text-slate-400 group-hover:text-orange-500" />
+      ) : (
+        <Lock size={11} className="absolute top-2 right-2 text-slate-400"
+          data-testid={`org-quick-links-tile-locked-${tile.id}`} />
+      )}
+    </>
+  );
+  if (!approved) {
+    return (
+      <div {...commonProps}
+        className="group relative flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-4 min-h-[110px] opacity-40 grayscale cursor-not-allowed select-none">
+        {cardContent}
+      </div>
+    );
+  }
+  return (
+    <a href={tile.url} target="_blank" rel="noopener noreferrer"
+      {...commonProps}
+      className="group relative flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:shadow-sm transition p-4 min-h-[110px]">
+      {cardContent}
     </a>
   );
 }

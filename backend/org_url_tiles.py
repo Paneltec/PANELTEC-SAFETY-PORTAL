@@ -234,8 +234,15 @@ def _sanitize_color(raw: Optional[str]) -> Optional[str]:
     return s.lower()
 
 
-def _out(doc: dict) -> dict:
-    """Strip Mongo `_id` + expose the stable API shape."""
+def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
+    """Strip Mongo `_id` + expose the stable API shape.
+
+    v58.13.132ez — Adds `approved_for_me` per-viewer flag + optional
+    URL redaction. Un-approved viewers see the tile in the response
+    with the `url` blanked out so nothing leaks about the private
+    destination. Admins going through the Manage view (or the
+    editor) pass `redact_url=False` so they always see full detail.
+    Public tiles (empty ACL) are approved for everyone."""
     # v58.13.132ew — Auto-colour swap. When the stored color is empty
     # OR equals the legacy default sentinel (`_DEFAULT_TILE_COLOR`),
     # substitute a hash-picked palette colour so tiles read as a
@@ -246,10 +253,15 @@ def _out(doc: dict) -> dict:
         display_color = _auto_color_for(doc.get("label") or doc.get("id") or "")
     else:
         display_color = stored_color
+    allowed = list(doc.get("allowed_user_ids") or [])
+    approved = (not allowed) or (viewer_id in allowed)
     return {
         "id": doc.get("id"),
         "org_id": doc.get("org_id"),
-        "url": doc.get("url"),
+        # v58.13.132ez — Redact URL for un-approved viewers when
+        # `redact_url=True`. Admin editor / Manage view pass False
+        # so they see full detail regardless of personal approval.
+        "url": (doc.get("url") if (approved or not redact_url) else ""),
         "label": doc.get("label"),
         "icon": doc.get("icon") or "",
         "description": doc.get("description") or "",
@@ -262,7 +274,11 @@ def _out(doc: dict) -> dict:
         "color": display_color,
         # v58.13.132ey — Missing / null / non-list stored ACL coerces
         # to `[]` so any pre-.132ey rows behave as public tiles.
-        "allowed_user_ids": list(doc.get("allowed_user_ids") or []),
+        "allowed_user_ids": allowed,
+        # v58.13.132ez — Per-viewer approval flag drives the greyed-out
+        # tile UI. `true` means the viewer can click / launch / reveal
+        # credentials; `false` means the tile is visible but disabled.
+        "approved_for_me": approved,
         "created_at": doc.get("created_at"),
         "created_by": doc.get("created_by"),
         "updated_at": doc.get("updated_at"),
@@ -295,19 +311,17 @@ async def list_tiles(include_disabled: bool = False,
     cur = db.org_url_tiles.find(query).sort([("order", 1),
                                                           ("created_at", 1)])
     async for t in cur:
-        # v58.13.132ey — Server-side ACL filter. `allowed_user_ids`
-        # empty (or absent) → public → include. Non-empty → include
-        # ONLY when the caller's `id` is on the list. Admins are NOT
-        # bypassed — they must be on the list themselves (strict
-        # rule per Stephen's brief). The `include_disabled` admin
-        # view (Manage tiles table) SKIPS this filter so admins can
-        # see every tile they own regardless of ACL — otherwise they
-        # couldn't manage tiles they aren't personally listed on.
-        if not include_disabled:
-            allowed = t.get("allowed_user_ids") or []
-            if allowed and user["id"] not in allowed:
-                continue
-        tiles.append(_out(t))
+        # v58.13.132ez — REPLACES the .132ey hide-filter with a
+        # visible-but-greyed-out UX. Every authenticated user in the
+        # org sees every tile; the `_out()` payload carries
+        # `approved_for_me` so the FE can grey unapproved tiles and
+        # `url` is redacted (empty string) for those viewers so
+        # nothing leaks about the private destination. The admin
+        # Manage view (`include_disabled=true`) opts out of URL
+        # redaction so admins can always edit tiles they aren't
+        # personally approved for.
+        tiles.append(_out(t, user["id"],
+                            redact_url=not include_disabled))
     return {"tiles": tiles}
 
 
@@ -338,6 +352,115 @@ async def list_eligible_users(user: dict = Depends(get_current_user)):
         })
     out.sort(key=lambda r: (r["name"].lower(), r["email"].lower()))
     return {"users": out}
+
+
+# v58.13.132ez — Per-user approvals batch surface for the
+# Permissions page. Mirrors the tile-side "Restrict access" editor
+# from `.132ey` but pivots on the user instead of the tile.
+
+
+class UserApprovalsPatchIn(BaseModel):
+    user_id: str
+    approved_tile_ids: list[str] = Field(default_factory=list)
+
+
+@router.get("/user-approvals")
+async def get_user_approvals(user_id: str,
+                              user: dict = Depends(get_current_user)):
+    """Return the tile approval status for a specific user.
+
+    `approved_tile_ids` — restricted tiles the user is listed on.
+    `public_tile_ids`   — tiles with no ACL (visible to everyone).
+    The Permissions page renders public tiles as checked-and-disabled
+    with a "Public — everyone" hint."""
+    _admin(user)
+    org_id = user["org_id"]
+    # Validate the target user exists and is active in the caller's
+    # org — otherwise the payload is meaningless.
+    target = await db.users.find_one({
+        "id": user_id, "org_id": org_id,
+        "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}],
+    }, {"_id": 0, "id": 1})
+    if not target:
+        raise HTTPException(status_code=404,
+                            detail="User not found in this org.")
+    approved: list[str] = []
+    public: list[str] = []
+    cur = db.org_url_tiles.find({"org_id": org_id})
+    async for t in cur:
+        allowed = t.get("allowed_user_ids") or []
+        tid = t.get("id")
+        if not allowed:
+            public.append(tid)
+        elif user_id in allowed:
+            approved.append(tid)
+    return {"user_id": user_id,
+            "approved_tile_ids": approved,
+            "public_tile_ids": public}
+
+
+@router.patch("/user-approvals")
+async def patch_user_approvals(body: UserApprovalsPatchIn,
+                                user: dict = Depends(get_current_user)):
+    """Edit ONE user's approvals across every restricted tile in the
+    org.
+
+    Semantics (per Stephen's spec):
+      · Public tiles → no-op (batch never turns a public tile into a
+        restricted one — that would be a surprising side-effect).
+      · Restricted tile in `approved_tile_ids` → ensure `user_id` is
+        in the ACL (add if missing).
+      · Restricted tile NOT in `approved_tile_ids` → ensure `user_id`
+        is NOT in the ACL (remove if present).
+
+    Returns a summary of the resulting per-tile ACLs so the FE can
+    reconcile without a follow-up round-trip."""
+    _admin(user)
+    org_id = user["org_id"]
+    # Validate the target user exists in this org.
+    target = await db.users.find_one({
+        "id": body.user_id, "org_id": org_id,
+        "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}],
+    }, {"_id": 0, "id": 1})
+    if not target:
+        raise HTTPException(status_code=404,
+                            detail="User not found in this org.")
+    approved_set: set[str] = set(body.approved_tile_ids or [])
+    summary: list[dict] = []
+    now = now_iso()
+    cur = db.org_url_tiles.find({"org_id": org_id})
+    async for t in cur:
+        tid = t.get("id")
+        allowed = list(t.get("allowed_user_ids") or [])
+        should_be_on = tid in approved_set
+        was_public = not allowed
+        was_on = body.user_id in allowed
+        new_allowed = allowed
+        if was_public:
+            # Public tile: batch never restricts a public tile — a
+            # public tile listed in `approved_tile_ids` is already
+            # visible to the user (no change needed).
+            pass
+        elif should_be_on and not was_on:
+            new_allowed = allowed + [body.user_id]
+        elif (not should_be_on) and was_on:
+            new_allowed = [u for u in allowed if u != body.user_id]
+        if new_allowed != allowed:
+            await db.org_url_tiles.update_one(
+                {"id": tid, "org_id": org_id},
+                {"$set": {"allowed_user_ids": new_allowed,
+                          "updated_at": now,
+                          "updated_by": user["id"]}})
+        summary.append({"tile_id": tid,
+                        "label": t.get("label"),
+                        "allowed_user_ids": new_allowed,
+                        "is_public": not new_allowed,
+                        "user_is_approved":
+                            (not new_allowed)
+                            or (body.user_id in new_allowed)})
+    log.info("org_url_tiles.user_approvals.patch org=%s user=%s",
+             org_id, body.user_id)
+    return {"user_id": body.user_id, "tiles": summary}
 
 
 @router.post("")
@@ -375,7 +498,10 @@ async def create_tile(body: TileIn, user: dict = Depends(get_current_user)):
     await db.org_url_tiles.insert_one(doc)
     log.info("org_url_tiles.create org=%s tile=%s label=%r",
              org_id, doc["id"], label)
-    return _out(doc)
+    # v58.13.132ez — Admin editor return path: never redact. The
+    # admin should always see the URL of the tile they just created,
+    # even if they aren't on the ACL themselves.
+    return _out(doc, user["id"], redact_url=False)
 
 
 @router.patch("/{tile_id}")
@@ -415,7 +541,7 @@ async def update_tile(tile_id: str, body: TilePatch,
         updates["allowed_user_ids"] = await _sanitize_allowed_user_ids(
             body.allowed_user_ids, org_id)
     if not updates:
-        return _out(existing)
+        return _out(existing, user["id"], redact_url=False)
     updates["updated_at"] = now_iso()
     updates["updated_by"] = user["id"]
     await db.org_url_tiles.update_one({"id": tile_id, "org_id": org_id},
@@ -423,7 +549,8 @@ async def update_tile(tile_id: str, body: TilePatch,
     doc = await db.org_url_tiles.find_one({"id": tile_id, "org_id": org_id})
     log.info("org_url_tiles.update org=%s tile=%s fields=%s",
              org_id, tile_id, sorted(updates.keys()))
-    return _out(doc)
+    # v58.13.132ez — Admin editor return path: never redact.
+    return _out(doc, user["id"], redact_url=False)
 
 
 @router.delete("/{tile_id}")

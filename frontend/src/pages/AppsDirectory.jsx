@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ExternalLink, Settings, X, Rocket } from 'lucide-react';
+import { ExternalLink, Settings, X, Rocket, Lock } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 
 /**
@@ -116,10 +116,15 @@ function HubTile({ tile, onHide }) {
   const [imgError, setImgError] = useState(false);
   const showRemote = tile.remote_icon_url && !imgError;
   const accent = tile.color || DEFAULT_COLOR;
+  // v58.13.132ez — Approval gate applies to the standalone page too.
+  const approved = tile.approved_for_me !== false;
   return (
-    <div className="relative rounded-2xl bg-white border border-slate-200 hover:shadow-lg transition p-5 flex flex-col gap-3"
+    <div
+      className={`relative rounded-2xl bg-white border border-slate-200 transition p-5 flex flex-col gap-3 ${approved ? 'hover:shadow-lg' : 'opacity-40 grayscale cursor-not-allowed select-none pointer-events-none'}`}
       style={{ borderTopColor: accent, borderTopWidth: 4 }}
-      data-testid={`apps-directory-hub-tile-${tile.id}`}>
+      data-testid={`apps-directory-hub-tile-${tile.id}`}
+      data-approved-for-me={approved ? 'true' : 'false'}
+      title={approved ? undefined : 'Not approved — ask an admin'}>
       <div className="absolute top-3 right-3 flex items-center gap-1">
         <button type="button"
           onClick={() => window.open('/app/settings/org', '_blank',
@@ -146,18 +151,26 @@ function HubTile({ tile, onHide }) {
         )}
         <div className="flex-1 min-w-0">
           <div className="font-display font-bold text-slate-900 truncate">{tile.label}</div>
-          <div className="text-xs text-slate-500 truncate" title={tile.url}>{tile.url}</div>
+          <div className="text-xs text-slate-500 truncate" title={tile.url}>{tile.url || (approved ? '' : 'Not approved — ask an admin')}</div>
         </div>
       </div>
       {tile.description && (
         <p className="text-xs text-slate-600 line-clamp-2">{tile.description}</p>
       )}
-      <a href={tile.url} target="_blank" rel="noopener noreferrer"
-        style={{ color: accent }}
-        data-testid={`apps-directory-hub-tile-launch-${tile.id}`}
-        className="mt-auto inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider hover:underline">
-        Launch {tile.label} <ExternalLink size={12} />
-      </a>
+      {approved ? (
+        <a href={tile.url} target="_blank" rel="noopener noreferrer"
+          style={{ color: accent }}
+          data-testid={`apps-directory-hub-tile-launch-${tile.id}`}
+          className="mt-auto inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider hover:underline">
+          Launch {tile.label} <ExternalLink size={12} />
+        </a>
+      ) : (
+        <span
+          data-testid={`apps-directory-hub-tile-locked-${tile.id}`}
+          className="mt-auto inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-slate-500">
+          <Lock size={12} /> Not approved — ask an admin
+        </span>
+      )}
     </div>
   );
 }

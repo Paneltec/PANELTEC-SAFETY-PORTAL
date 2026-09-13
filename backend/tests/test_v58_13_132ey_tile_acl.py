@@ -153,9 +153,14 @@ def test_default_tile_is_public_visible_to_admin_and_non_admin(admin_hdr, worker
 # ── BE — restricted path (strict admin rule) ──────────────────────
 
 def test_restricted_tile_only_shown_to_listed_users(admin_hdr, worker_hdr, hseq_lead_hdr, ephemeral_users, _mongo):
-    """Restricted to Amanda (worker) — worker sees it; hseq_lead
-    doesn't; admin (Stephen) NOT on the list also doesn't see it
-    (strict admin rule)."""
+    """Restricted to Amanda (worker) — worker is approved; hseq_lead
+    off list is NOT approved; admin (Stephen) NOT on the list also
+    NOT approved (strict admin rule).
+
+    v58.13.132ez — Semantics softened from "hidden" to "greyed-out":
+    the tile now IS present in the response for un-approved viewers
+    (with `approved_for_me=False` + URL redacted). This test now
+    pins that boolean flag instead of set-membership."""
     admin = admin_hdr
     other_hdr = hseq_lead_hdr
     worker_id = _lookup_user_id(_mongo, ephemeral_users["worker"])
@@ -163,12 +168,24 @@ def test_restricted_tile_only_shown_to_listed_users(admin_hdr, worker_hdr, hseq_
                           allowed=[worker_id])
     try:
         assert tile["allowed_user_ids"] == [worker_id]
-        # Listed user sees the tile through the public list view.
-        assert tile["id"] in _list_ids(worker_hdr)
-        # Non-listed non-admin does NOT.
-        assert tile["id"] not in _list_ids(other_hdr)
-        # Non-listed admin ALSO does not (strict admin rule).
-        assert tile["id"] not in _list_ids(admin)
+        # Listed user sees the tile approved.
+        wt = next((t for t in requests.get(f"{API}/org/url-tiles",
+                                              headers=worker_hdr,
+                                              timeout=30).json()["tiles"]
+                    if t["id"] == tile["id"]), None)
+        assert wt is not None and wt["approved_for_me"] is True
+        # Non-listed non-admin — greyed-out (still visible).
+        ot = next((t for t in requests.get(f"{API}/org/url-tiles",
+                                              headers=other_hdr,
+                                              timeout=30).json()["tiles"]
+                    if t["id"] == tile["id"]), None)
+        assert ot is not None and ot["approved_for_me"] is False
+        # Non-listed admin — greyed-out too (strict admin rule).
+        at = next((t for t in requests.get(f"{API}/org/url-tiles",
+                                              headers=admin,
+                                              timeout=30).json()["tiles"]
+                    if t["id"] == tile["id"]), None)
+        assert at is not None and at["approved_for_me"] is False
     finally:
         _delete_tile(admin, tile["id"])
 

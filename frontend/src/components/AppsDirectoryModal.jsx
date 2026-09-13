@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ExternalLink, X, Rocket } from 'lucide-react';
+import { ExternalLink, X, Rocket, Lock } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 
 /**
@@ -118,12 +118,20 @@ function HubTile({ tile }) {
   const [imgError, setImgError] = useState(false);
   const showRemote = tile.remote_icon_url && !imgError;
   const accent = tile.color || DEFAULT_COLOR;
+  // v58.13.132ez — Approval gate. When the tile is not approved for
+  // the current viewer, render a greyed / non-interactive card and
+  // suppress the credential-vault reveal path.
+  const approved = tile.approved_for_me !== false;
   // v58.13.132ev — Credential-aware click. If the current admin has
   // credentials stored for this tile, intercept the click: copy the
   // password to the clipboard, open the URL in a new tab, and pop a
   // cheat-sheet window with per-field COPY buttons. Otherwise fall
   // through to the plain `<a target="_blank">` behaviour.
   const onLaunch = async (e) => {
+    if (!approved) {
+      e.preventDefault();
+      return;
+    }
     try {
       const r = await api.get(`/tile-credentials/${tile.id}`);
       const meta = r.data || {};
@@ -145,12 +153,8 @@ function HubTile({ tile }) {
       openCheatSheet(tile, meta, plainPassword);
     } catch { /* GET failed — fall through */ }
   };
-  return (
-    <a href={tile.url} target="_blank" rel="noopener noreferrer"
-      onClick={onLaunch}
-      style={{ borderTopColor: accent, borderTopWidth: 4 }}
-      data-testid={`apps-directory-modal-tile-${tile.id}`}
-      className="group relative rounded-2xl bg-white border border-slate-200 hover:shadow-lg transition p-5 flex flex-col gap-3">
+  const inner = (
+    <>
       <div className="flex items-center gap-3">
         {showRemote ? (
           <img src={tile.remote_icon_url} alt=""
@@ -161,18 +165,48 @@ function HubTile({ tile }) {
         )}
         <div className="flex-1 min-w-0">
           <div className="font-display font-bold text-slate-900 truncate">{tile.label}</div>
-          <div className="text-xs text-slate-500 truncate" title={tile.url}>{tile.url}</div>
+          <div className="text-xs text-slate-500 truncate" title={tile.url}>{tile.url || (approved ? '' : 'Not approved — ask an admin')}</div>
         </div>
       </div>
       {tile.description && (
         <p className="text-xs text-slate-600 line-clamp-2">{tile.description}</p>
       )}
-      <span
-        style={{ color: accent }}
-        data-testid={`apps-directory-modal-tile-launch-${tile.id}`}
-        className="mt-auto inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider group-hover:underline">
-        Launch {tile.label} <ExternalLink size={12} />
-      </span>
+      {approved ? (
+        <span
+          style={{ color: accent }}
+          data-testid={`apps-directory-modal-tile-launch-${tile.id}`}
+          className="mt-auto inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider group-hover:underline">
+          Launch {tile.label} <ExternalLink size={12} />
+        </span>
+      ) : (
+        <span
+          data-testid={`apps-directory-modal-tile-locked-${tile.id}`}
+          className="mt-auto inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-slate-500">
+          <Lock size={12} /> Not approved — ask an admin
+        </span>
+      )}
+    </>
+  );
+  if (!approved) {
+    return (
+      <div
+        style={{ borderTopColor: accent, borderTopWidth: 4 }}
+        data-testid={`apps-directory-modal-tile-${tile.id}`}
+        data-approved-for-me="false"
+        title="Not approved — ask an admin"
+        className="group relative rounded-2xl bg-white border border-slate-200 p-5 flex flex-col gap-3 opacity-40 grayscale cursor-not-allowed select-none pointer-events-none">
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <a href={tile.url} target="_blank" rel="noopener noreferrer"
+      onClick={onLaunch}
+      style={{ borderTopColor: accent, borderTopWidth: 4 }}
+      data-testid={`apps-directory-modal-tile-${tile.id}`}
+      data-approved-for-me="true"
+      className="group relative rounded-2xl bg-white border border-slate-200 hover:shadow-lg transition p-5 flex flex-col gap-3">
+      {inner}
     </a>
   );
 }

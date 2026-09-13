@@ -2380,6 +2380,10 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
             </div>
             <p className="mt-3 text-xs text-slate-500">Click a cell to cycle: <span className="inline-flex items-center gap-1"><Minus size={11} /> inherits</span> · <span className="inline-flex items-center gap-1"><Check size={11} className="text-emerald-600" /> explicit allow</span> · <span className="inline-flex items-center gap-1"><XIcon size={11} className="text-red-600" /> explicit deny</span></p>
             {canEdit && <button onClick={savePerms} disabled={busy} className="mt-4 px-4 py-2 bg-brand-blue text-white rounded-lg text-sm inline-flex items-center gap-1.5" data-testid="save-perms"><Save size={13} /> Save permissions</button>}
+            {/* v58.13.132ez — Apps Directory approvals panel. Same
+                underlying `allowed_user_ids` field the tile editor
+                writes; edits here PATCH the batch endpoint. */}
+            <UserApprovedTilesPanel userId={detail.id} canEdit={canEdit} />
           </div>
         )}
         {canEdit && detail?.deleted_at && (
@@ -2478,6 +2482,147 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
       </div>
     </div>
   ), document.body);
+}
+
+// v58.13.132ez — Per-user Apps Directory approvals sub-panel that
+// lives inside the Permissions tab of the User Details modal. Reads
+// `GET /org/url-tiles/user-approvals?user_id=<uid>` for the current
+// state + `GET /org/url-tiles?include_disabled=true` for the tile
+// catalog (labels/icons), and writes the selection through the
+// batch endpoint `PATCH /org/url-tiles/user-approvals`. Public
+// tiles render checked-and-disabled with a "Public — everyone"
+// hint so admins never accidentally flip them into restricted.
+function UserApprovedTilesPanel({ userId, canEdit }) {
+  const [tiles, setTiles] = useState([]);
+  const [approvals, setApprovals] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [tilesRes, apprRes] = await Promise.all([
+        api.get('/org/url-tiles?include_disabled=true'),
+        api.get(`/org/url-tiles/user-approvals?user_id=${encodeURIComponent(userId)}`),
+      ]);
+      const catalog = (tilesRes.data?.tiles || [])
+        .slice()
+        .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+      setTiles(catalog);
+      const approved = new Set(apprRes.data?.approved_tile_ids || []);
+      setApprovals(apprRes.data);
+      setSelected(approved);
+    } catch (e) {
+      setError(apiError(e) || 'Failed to load approvals');
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = (tid) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(tid)) next.delete(tid); else next.add(tid);
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.patch('/org/url-tiles/user-approvals', {
+        user_id: userId,
+        approved_tile_ids: Array.from(selected),
+      });
+      toast.success('Apps Directory approvals saved.');
+      await load();
+    } catch (e) {
+      toast.error(apiError(e) || 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const publicSet = new Set(approvals?.public_tile_ids || []);
+
+  return (
+    <div className="mt-6 pt-4 border-t border-slate-200"
+      data-testid="user-approved-tiles-panel">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider font-bold text-brand-blue">
+            Paneltec Group · Apps Directory
+          </div>
+          <div className="text-sm font-display font-semibold text-slate-800">
+            Approved tiles
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Restrict Apps Directory tiles to this user. Public tiles are visible to everyone.
+          </p>
+        </div>
+        {canEdit && !loading && (
+          <button type="button" onClick={save} disabled={busy}
+            data-testid="user-approved-tiles-save"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-blue text-white text-xs font-bold hover:brightness-110 disabled:opacity-60">
+            <Save size={12} /> {busy ? 'Saving…' : 'Save approvals'}
+          </button>
+        )}
+      </div>
+      {error && (
+        <div className="text-xs text-red-600 mb-2"
+          data-testid="user-approved-tiles-error">{error}</div>
+      )}
+      {loading ? (
+        <div className="text-xs text-slate-500"
+          data-testid="user-approved-tiles-loading">Loading…</div>
+      ) : tiles.length === 0 ? (
+        <div className="text-xs text-slate-500"
+          data-testid="user-approved-tiles-empty">
+          No tiles configured yet. Add tiles in Settings → Organisation → Apps Directory.
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 max-h-60 overflow-y-auto"
+          data-testid="user-approved-tiles-list">
+          {tiles.map((t) => {
+            const isPublic = publicSet.has(t.id);
+            const isChecked = isPublic || selected.has(t.id);
+            const disabled = !canEdit || isPublic;
+            return (
+              <label key={t.id}
+                data-testid={`user-approved-tiles-row-${t.id}`}
+                data-tile-public={isPublic ? 'true' : 'false'}
+                data-tile-checked={isChecked ? 'true' : 'false'}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs ${disabled ? 'cursor-default' : 'cursor-pointer hover:bg-slate-50'}`}>
+                <input type="checkbox"
+                  checked={isChecked}
+                  disabled={disabled}
+                  onChange={() => !disabled && toggle(t.id)}
+                  data-testid={`user-approved-tiles-checkbox-${t.id}`}
+                  className="rounded border-slate-300" />
+                <span className="text-lg leading-none" aria-hidden="true">{t.icon || '🔗'}</span>
+                <span className="flex-1 truncate font-semibold text-slate-800">{t.label}</span>
+                {isPublic ? (
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5"
+                    title="Every user sees this tile — restrict it on the tile itself to change">
+                    Public — everyone
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                    Restricted
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SavePresetModal({ overrides, onClose, onCreated }) {

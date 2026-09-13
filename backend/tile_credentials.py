@@ -80,6 +80,24 @@ def _admin(user: dict) -> None:
                             detail="Tile management is admin-only.")
 
 
+async def _require_approved(user: dict, tile_id: str) -> dict:
+    """v58.13.132ez — Reject a credential-vault call when the calling
+    admin is not on the parent tile's ACL. Public tiles skip the
+    check (public = approved). Returns the tile doc for callers
+    that want to reuse it. Raises 403 with
+    `"Not approved for this tile."` on rejection, 404 when the tile
+    is missing (masked as 404 to avoid leaking existence)."""
+    tile = await db.org_url_tiles.find_one({
+        "id": tile_id, "org_id": user["org_id"]})
+    if not tile:
+        raise HTTPException(status_code=404, detail="Tile not found")
+    allowed = tile.get("allowed_user_ids") or []
+    if allowed and user["id"] not in allowed:
+        raise HTTPException(status_code=403,
+                            detail="Not approved for this tile.")
+    return tile
+
+
 def _preview(user_id: str, doc: dict) -> str:
     """Show only the last 4 chars of the stored password, masked."""
     ct = doc.get("password_ct")
@@ -122,6 +140,7 @@ router = APIRouter(prefix="/tile-credentials", tags=["tile-credentials"])
 async def get_credentials(tile_id: str,
                            user: dict = Depends(get_current_user)):
     _admin(user)
+    await _require_approved(user, tile_id)  # v58.13.132ez
     doc = await db.user_tile_credentials.find_one({
         "user_id": user["id"], "tile_id": tile_id,
     })
@@ -141,6 +160,7 @@ async def get_credentials(tile_id: str,
 async def upsert_credentials(tile_id: str, body: CredentialsIn,
                               user: dict = Depends(get_current_user)):
     _admin(user)
+    await _require_approved(user, tile_id)  # v58.13.132ez
     org_id = user["org_id"]
     now = _now()
     update: dict = {"updated_at": now, "org_id": org_id}
@@ -180,6 +200,7 @@ async def upsert_credentials(tile_id: str, body: CredentialsIn,
 async def delete_credentials(tile_id: str,
                               user: dict = Depends(get_current_user)):
     _admin(user)
+    await _require_approved(user, tile_id)  # v58.13.132ez
     res = await db.user_tile_credentials.delete_one(
         {"user_id": user["id"], "tile_id": tile_id})
     await _audit(user["id"], tile_id, "delete")
@@ -190,6 +211,7 @@ async def delete_credentials(tile_id: str,
 async def reveal_password(tile_id: str,
                            user: dict = Depends(get_current_user)):
     _admin(user)
+    await _require_approved(user, tile_id)  # v58.13.132ez
     doc = await db.user_tile_credentials.find_one({
         "user_id": user["id"], "tile_id": tile_id})
     if not doc or not doc.get("password_ct"):
@@ -208,6 +230,7 @@ class CopyFieldIn(BaseModel):
 async def copy_field(tile_id: str, body: CopyFieldIn,
                       user: dict = Depends(get_current_user)):
     _admin(user)
+    await _require_approved(user, tile_id)  # v58.13.132ez
     doc = await db.user_tile_credentials.find_one({
         "user_id": user["id"], "tile_id": tile_id})
     if not doc:

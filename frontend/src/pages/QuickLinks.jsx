@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ExternalLink, Bookmark, Pencil } from 'lucide-react';
+import { ExternalLink, Bookmark, Pencil, Lock } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
 import { useCan } from '../lib/permissions';
@@ -77,16 +77,16 @@ function TileCard({ tile }) {
   // left-border accent + a soft tint band at the top. Falls back to
   // the Paneltec Apps Directory blue when the record predates .132er.
   const accent = tile.color || '#1d6fb8';
-  return (
-    <a
-      href={tile.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={tile.description || tile.url}
-      data-testid={`quick-links-tile-${tile.id}`}
-      style={{ borderLeftColor: accent, borderLeftWidth: 4 }}
-      className="group relative flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white hover:shadow-md transition p-5 min-h-[150px] overflow-hidden"
-    >
+  // v58.13.132ez — Greyed-out mode for un-approved viewers.
+  const approved = tile.approved_for_me !== false;
+  const commonProps = {
+    'data-testid': `quick-links-tile-${tile.id}`,
+    'data-approved-for-me': approved ? 'true' : 'false',
+    style: { borderLeftColor: accent, borderLeftWidth: 4 },
+    title: approved ? (tile.description || tile.url) : 'Not approved — ask an admin',
+  };
+  const inner = (
+    <>
       <span aria-hidden="true"
         style={{ background: accent }}
         className="absolute top-0 left-0 right-0 h-1 opacity-70" />
@@ -106,10 +106,35 @@ function TileCard({ tile }) {
       <div className="text-sm font-semibold text-slate-800 text-center line-clamp-2">
         {tile.label}
       </div>
-      <ExternalLink
-        size={12}
-        className="absolute top-3 right-3 text-slate-300 group-hover:text-orange-500"
-      />
+      {approved ? (
+        <ExternalLink
+          size={12}
+          className="absolute top-3 right-3 text-slate-300 group-hover:text-orange-500"
+        />
+      ) : (
+        <Lock size={12}
+          data-testid={`quick-links-tile-locked-${tile.id}`}
+          className="absolute top-3 right-3 text-slate-400" />
+      )}
+    </>
+  );
+  if (!approved) {
+    return (
+      <div {...commonProps}
+        className="group relative flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-5 min-h-[150px] overflow-hidden opacity-40 grayscale cursor-not-allowed select-none">
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <a
+      href={tile.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      {...commonProps}
+      className="group relative flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white hover:shadow-md transition p-5 min-h-[150px] overflow-hidden"
+    >
+      {inner}
     </a>
   );
 }
