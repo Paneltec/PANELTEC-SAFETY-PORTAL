@@ -2562,7 +2562,7 @@ function UserApprovedTilesPanel({ userId, canEdit }) {
             Approved tiles
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Restrict Apps Directory tiles to this user. Public tiles are visible to everyone.
+            Tick the tiles this user should see. Public tiles are visible to everyone.
           </p>
         </div>
         {canEdit && !loading && (
@@ -2608,12 +2608,12 @@ function UserApprovedTilesPanel({ userId, canEdit }) {
                 <span className="flex-1 truncate font-semibold text-slate-800">{t.label}</span>
                 {isPublic ? (
                   <span className="text-[9px] font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5"
-                    title="Every user sees this tile — restrict it on the tile itself to change">
+                    title="Every user sees this tile — turn on 'Approved users only' on the tile itself to change">
                     Public — everyone
                   </span>
                 ) : (
                   <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                    Restricted
+                    Approved
                   </span>
                 )}
               </label>

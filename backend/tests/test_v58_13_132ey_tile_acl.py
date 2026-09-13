@@ -108,7 +108,11 @@ def _list_ids(hdr) -> set[str]:
 
 def test_frontend_editor_has_access_section():
     """TileEditor exposes the ACL toggle + picker with the required
-    testids and helper hint copy."""
+    testids and helper hint copy.
+
+    v58.13.132fa — Helper copy rewritten to positive framing
+    ("Approved users only" / "Tick everyone who should have
+    access…"). This test now pins the new wording."""
     src = _read(QLS)
     # Toggle + picker container.
     assert 'org-quick-links-editor-access-section' in src
@@ -116,9 +120,9 @@ def test_frontend_editor_has_access_section():
     assert 'org-quick-links-editor-access-picker' in src
     assert 'org-quick-links-editor-user-search' in src
     assert 'org-quick-links-editor-user-list' in src
-    # Helper hint copy per spec.
-    assert "Only ticked users will see this tile" in src
-    assert "If you want yourself to see it, tick your own name" in src
+    # Positive-framing copy per .132fa.
+    assert "Approved users only" in src
+    assert "Tick everyone who should have access" in src
     # State + payload wiring.
     assert "restrict ? allowedUserIds : []" in src
     assert "eligible-users" in src
@@ -126,10 +130,16 @@ def test_frontend_editor_has_access_section():
 
 def test_frontend_manage_row_shows_lock_badge_when_restricted():
     """TileRow renders a lock badge next to the label when the tile
-    has a non-empty `allowed_user_ids`."""
+    has a non-empty `allowed_user_ids`.
+
+    v58.13.132fa — Predicate refactored to a `restricted` local so
+    both the pill AND the inline approved-users row can gate off it.
+    Test pins the derived local + the `Lock` import + the pill
+    testid."""
     src = _read(QLS)
     assert "apps-directory-row-restricted-" in src
-    assert "Array.isArray(tile.allowed_user_ids) && tile.allowed_user_ids.length > 0" in src
+    # `restricted` local now gates the pill + the inline chip strip.
+    assert "const restricted = allowed.length > 0" in src
     # Lock icon imported from lucide-react.
     assert re.search(r"from 'lucide-react';[\s\S]{0,200}\bLock\b", src) or \
            "Lock,\n" in src or "Lock } from 'lucide-react'" in src
