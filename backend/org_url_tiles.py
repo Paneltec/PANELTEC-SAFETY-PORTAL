@@ -114,6 +114,11 @@ class TileIn(BaseModel):
     remote_icon_url: Optional[str] = None  # v58.13.132ep
     enabled: Optional[bool] = None  # v58.13.132er
     color: Optional[str] = None  # v58.13.132er — hex accent
+    # v58.13.132ey — Per-tile ACL. `None`/`[]` → public (every user in
+    # the org sees the tile). Non-empty → only listed `users.id`
+    # values see the tile. Strict admin rule: admins are NOT bypassed;
+    # they must be on the list to see the tile.
+    allowed_user_ids: Optional[list[str]] = None
 
 
 class TilePatch(BaseModel):
@@ -125,6 +130,7 @@ class TilePatch(BaseModel):
     remote_icon_url: Optional[str] = None  # v58.13.132ep
     enabled: Optional[bool] = None  # v58.13.132er
     color: Optional[str] = None  # v58.13.132er
+    allowed_user_ids: Optional[list[str]] = None  # v58.13.132ey
 
 
 class ReorderRow(BaseModel):
@@ -178,6 +184,42 @@ def _auto_color_for(seed: str) -> str:
     return _AUTO_PALETTE[total % len(_AUTO_PALETTE)]
 
 
+async def _sanitize_allowed_user_ids(raw: Optional[list[str]],
+                                       org_id: str) -> list[str]:
+    """v58.13.132ey — Coerce, dedupe and validate an ACL list.
+
+    Invalid or cross-org IDs are **silently dropped** (not 400). This
+    is deliberate: admins may hold on to a stale ID after a user is
+    soft-deleted; failing the whole save just because one entry is
+    stale would be brittle. Deleted users are excluded from the
+    intersection so a soft-delete effectively revokes access. Order
+    is preserved from the input for a stable UX in the picker.
+    """
+    if not raw:
+        return []
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for uid in raw:
+        if not isinstance(uid, str):
+            continue
+        uid = uid.strip()
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        ordered.append(uid)
+    if not ordered:
+        return []
+    cur = db.users.find({
+        "id": {"$in": ordered},
+        "org_id": org_id,
+        "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}],
+    }, {"_id": 0, "id": 1})
+    valid: set[str] = set()
+    async for u in cur:
+        valid.add(u["id"])
+    return [uid for uid in ordered if uid in valid]
+
+
 def _sanitize_color(raw: Optional[str]) -> Optional[str]:
     """Accept `None` / empty (→ None) or a `#rrggbb` hex code.
     Rejects malformed input with HTTP 400."""
@@ -218,6 +260,9 @@ def _out(doc: dict) -> dict:
         # Directory blue. No migration needed.
         "enabled": bool(doc.get("enabled", True)),
         "color": display_color,
+        # v58.13.132ey — Missing / null / non-list stored ACL coerces
+        # to `[]` so any pre-.132ey rows behave as public tiles.
+        "allowed_user_ids": list(doc.get("allowed_user_ids") or []),
         "created_at": doc.get("created_at"),
         "created_by": doc.get("created_by"),
         "updated_at": doc.get("updated_at"),
@@ -250,8 +295,49 @@ async def list_tiles(include_disabled: bool = False,
     cur = db.org_url_tiles.find(query).sort([("order", 1),
                                                           ("created_at", 1)])
     async for t in cur:
+        # v58.13.132ey — Server-side ACL filter. `allowed_user_ids`
+        # empty (or absent) → public → include. Non-empty → include
+        # ONLY when the caller's `id` is on the list. Admins are NOT
+        # bypassed — they must be on the list themselves (strict
+        # rule per Stephen's brief). The `include_disabled` admin
+        # view (Manage tiles table) SKIPS this filter so admins can
+        # see every tile they own regardless of ACL — otherwise they
+        # couldn't manage tiles they aren't personally listed on.
+        if not include_disabled:
+            allowed = t.get("allowed_user_ids") or []
+            if allowed and user["id"] not in allowed:
+                continue
         tiles.append(_out(t))
     return {"tiles": tiles}
+
+
+# v58.13.132ey — Admin-only picker feed for the tile-editor ACL
+# section. Returns active, non-test users in the caller's org so the
+# admin can tick who should see a restricted tile.
+@router.get("/eligible-users")
+async def list_eligible_users(user: dict = Depends(get_current_user)):
+    _admin(user)
+    org_id = user["org_id"]
+    q = {
+        "org_id": org_id,
+        "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}],
+    }
+    # Deliberately DO NOT filter test users out — the picker is a
+    # tenant-scoped list of every real member the admin might grant
+    # access to. Real orgs have zero test rows; test orgs need them.
+    cur = db.users.find(q, {"_id": 0, "id": 1, "name": 1,
+                              "email": 1, "role_id": 1, "role": 1})
+    out: list[dict] = []
+    async for u in cur:
+        role = u.get("role_id") or u.get("role") or ""
+        out.append({
+            "id": u.get("id"),
+            "name": (u.get("name") or "").strip() or (u.get("email") or ""),
+            "email": u.get("email") or "",
+            "is_admin": role == "admin",
+        })
+    out.sort(key=lambda r: (r["name"].lower(), r["email"].lower()))
+    return {"users": out}
 
 
 @router.post("")
@@ -279,6 +365,10 @@ async def create_tile(body: TileIn, user: dict = Depends(get_current_user)):
         # v58.13.132er — Apps Directory fields.
         "enabled": True if body.enabled is None else bool(body.enabled),
         "color": _sanitize_color(body.color) or _DEFAULT_TILE_COLOR,
+        # v58.13.132ey — Per-tile ACL. Sanitised + intersected with
+        # the org's active user list so stale IDs are dropped.
+        "allowed_user_ids": await _sanitize_allowed_user_ids(
+            body.allowed_user_ids, org_id),
         "created_at": now, "created_by": user["id"],
         "updated_at": now, "updated_by": user["id"],
     }
@@ -320,6 +410,10 @@ async def update_tile(tile_id: str, body: TilePatch,
         # Empty string clears back to the default blue on the client
         # side. Store the sanitised value (or the default) either way.
         updates["color"] = _sanitize_color(body.color) or _DEFAULT_TILE_COLOR
+    if body.allowed_user_ids is not None:
+        # v58.13.132ey — Whole-list replace. Sanitise + drop stale IDs.
+        updates["allowed_user_ids"] = await _sanitize_allowed_user_ids(
+            body.allowed_user_ids, org_id)
     if not updates:
         return _out(existing)
     updates["updated_at"] = now_iso()

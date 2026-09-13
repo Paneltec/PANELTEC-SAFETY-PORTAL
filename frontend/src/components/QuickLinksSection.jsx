@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Link2, Plus, Pencil, Trash2, ExternalLink, X, Rocket,
+  Link2, Plus, Pencil, Trash2, ExternalLink, X, Rocket, Lock,
 } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
@@ -332,7 +332,19 @@ function TileRow({ tile, zebra, onToggle, onEdit, onDelete }) {
           <div className="text-2xl leading-none" aria-hidden="true">{tile.icon || '🔗'}</div>
         )}
       </td>
-      <td className="px-3 py-2 text-sm font-semibold text-slate-800">{tile.label}</td>
+      <td className="px-3 py-2 text-sm font-semibold text-slate-800">
+        <div className="inline-flex items-center gap-1.5">
+          {tile.label}
+          {Array.isArray(tile.allowed_user_ids) && tile.allowed_user_ids.length > 0 && (
+            <span
+              data-testid={`apps-directory-row-restricted-${tile.id}`}
+              title={`Restricted to ${tile.allowed_user_ids.length} user${tile.allowed_user_ids.length === 1 ? '' : 's'}`}
+              className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 uppercase tracking-wider">
+              <Lock size={10} /> Restricted
+            </span>
+          )}
+        </div>
+      </td>
       <td className="px-3 py-2">
         <a href={tile.url} target="_blank" rel="noopener noreferrer"
           className="text-xs text-blue-600 hover:underline break-all">
@@ -526,6 +538,17 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
     color: tile?.color || DEFAULT_COLOR,
     enabled: tile?.enabled ?? true,
   }));
+  // v58.13.132ey — Per-tile ACL state.
+  // `restrict` true → send `allowedUserIds` verbatim; false → send
+  // an empty list so the tile becomes public. Initial state derived
+  // from whatever the server returned for the tile.
+  const initialAllowed = Array.isArray(tile?.allowed_user_ids) ? tile.allowed_user_ids : [];
+  const [restrict, setRestrict] = useState(initialAllowed.length > 0);
+  const [allowedUserIds, setAllowedUserIds] = useState(initialAllowed);
+  const [eligibleUsers, setEligibleUsers] = useState([]);
+  const [eligibleLoading, setEligibleLoading] = useState(false);
+  const [eligibleError, setEligibleError] = useState(null);
+  const [userSearch, setUserSearch] = useState('');
   // v58.13.132ew — Auto-colour mode. On add mode we start in auto.
   // On edit mode we start manual (the server has already told us
   // what colour to render); if the admin clears the swatch to the
@@ -540,6 +563,27 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
     source: null, error: null,
   });
   const iconAbortRef = React.useRef(null);
+
+  // v58.13.132ey — Lazy-load the eligible-users picker feed. Only
+  // fires when the admin turns "Restrict access" ON to keep the
+  // editor snappy for the (default) public-tile flow.
+  useEffect(() => {
+    if (!restrict || eligibleUsers.length > 0 || eligibleLoading) return;
+    let cancelled = false;
+    setEligibleLoading(true);
+    setEligibleError(null);
+    api.get('/org/url-tiles/eligible-users')
+      .then((r) => { if (!cancelled) setEligibleUsers(r.data?.users || []); })
+      .catch((err) => { if (!cancelled) setEligibleError(apiError(err) || 'Failed to load users'); })
+      .finally(() => { if (!cancelled) setEligibleLoading(false); });
+    return () => { cancelled = true; };
+  }, [restrict, eligibleUsers.length, eligibleLoading]);
+
+  const toggleUser = (userId) => {
+    setAllowedUserIds((prev) => (prev.includes(userId)
+      ? prev.filter((id) => id !== userId)
+      : [...prev, userId]));
+  };
 
   const runIconFetch = React.useCallback(async () => {
     const url = form.url.trim();
@@ -583,9 +627,13 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
     try {
       // v58.13.132ew — Auto-mode sends `null` for `color`; server
       // records the sentinel default and `_out()` hash-picks on read.
+      // v58.13.132ey — ACL toggle OFF → send `[]` (public). ON → send
+      // whatever's ticked. Server intersects against active users so
+      // stale IDs are silently dropped.
       const payload = { ...form,
         color: colorAuto ? null : form.color,
-        remote_icon_url: form.remote_icon_url ? form.remote_icon_url : null };
+        remote_icon_url: form.remote_icon_url ? form.remote_icon_url : null,
+        allowed_user_ids: restrict ? allowedUserIds : [] };
       if (mode === 'add') {
         await api.post('/org/url-tiles', payload);
         toast.success(`Added "${form.label.trim()}"`);
@@ -604,7 +652,7 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
   return (
     <div className="fixed inset-0 z-[70] bg-slate-900/60 flex items-center justify-center p-4"
       data-testid={`org-quick-links-editor-${mode}`}>
-      <form onSubmit={save} className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+      <form onSubmit={save} className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
         <h4 className="font-display font-semibold text-lg text-slate-800 mb-4">
           {mode === 'add' ? 'Add tile' : 'Edit tile'}
         </h4>
@@ -724,6 +772,107 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
                 className="rounded border-slate-300" />
               <span className="text-xs font-semibold text-slate-700">Visible on Quick Links page</span>
             </label>
+          </div>
+          {/* v58.13.132ey — Per-tile ACL section. Toggle OFF (default)
+              keeps the tile public. Toggle ON reveals a searchable
+              multi-select of eligible users; only ticked names go
+              into `allowed_user_ids`. Strict admin rule: admins are
+              NOT bypassed — they must tick themselves. */}
+          <div className="pt-3 mt-2 border-t border-slate-200"
+            data-testid="org-quick-links-editor-access-section">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={restrict}
+                onChange={(e) => {
+                  setRestrict(e.target.checked);
+                  if (!e.target.checked) setAllowedUserIds([]);
+                }}
+                data-testid="org-quick-links-editor-restrict-toggle"
+                className="mt-0.5 rounded border-slate-300" />
+              <span className="text-xs font-semibold text-slate-700">
+                Restrict access to specific users
+                <span className="block font-normal text-slate-500 mt-0.5">
+                  When off, every user in your organisation sees this tile.
+                </span>
+              </span>
+            </label>
+            {restrict && (
+              <div className="mt-3 space-y-2"
+                data-testid="org-quick-links-editor-access-picker">
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
+                  data-testid="org-quick-links-editor-restrict-hint">
+                  Only ticked users will see this tile. If you want yourself to see it, tick your own name.
+                </p>
+                <input type="search"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search users by name or email…"
+                  data-testid="org-quick-links-editor-user-search"
+                  className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                {eligibleLoading && (
+                  <div className="text-xs text-slate-500"
+                    data-testid="org-quick-links-editor-users-loading">
+                    Loading users…
+                  </div>
+                )}
+                {eligibleError && (
+                  <div className="text-xs text-red-600"
+                    data-testid="org-quick-links-editor-users-error">
+                    {eligibleError}
+                  </div>
+                )}
+                {!eligibleLoading && !eligibleError && (
+                  <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100"
+                    data-testid="org-quick-links-editor-user-list">
+                    {(() => {
+                      const q = userSearch.trim().toLowerCase();
+                      const filtered = q
+                        ? eligibleUsers.filter((u) => (
+                            (u.name || '').toLowerCase().includes(q) ||
+                            (u.email || '').toLowerCase().includes(q)))
+                        : eligibleUsers;
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="text-xs text-slate-500 px-3 py-2"
+                            data-testid="org-quick-links-editor-user-empty">
+                            {eligibleUsers.length === 0
+                              ? 'No users to choose from.'
+                              : 'No users match that search.'}
+                          </div>
+                        );
+                      }
+                      return filtered.map((u) => {
+                        const checked = allowedUserIds.includes(u.id);
+                        return (
+                          <label key={u.id}
+                            data-testid={`org-quick-links-editor-user-row-${u.id}`}
+                            data-checked={checked ? 'true' : 'false'}
+                            className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer ${checked ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
+                            <input type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleUser(u.id)}
+                              data-testid={`org-quick-links-editor-user-checkbox-${u.id}`}
+                              className="rounded border-slate-300" />
+                            <span className="flex-1 truncate">
+                              <span className="font-semibold text-slate-800">{u.name || u.email}</span>
+                              {u.email && u.email !== u.name && (
+                                <span className="text-slate-500 ml-1">· {u.email}</span>
+                              )}
+                            </span>
+                            {u.is_admin && (
+                              <span className="text-[9px] font-semibold uppercase tracking-wider text-violet-600">admin</span>
+                            )}
+                          </label>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-500"
+                  data-testid="org-quick-links-editor-selected-count">
+                  {allowedUserIds.length} selected
+                </div>
+              </div>
+            )}
           </div>
         </div>
         {error && (
