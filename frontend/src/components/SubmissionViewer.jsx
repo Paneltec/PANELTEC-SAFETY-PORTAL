@@ -31,7 +31,16 @@ const WRITE_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 
 function _fileUrl(url) {
   if (!url) return null;
-  return url.startsWith('http') ? url : `${BACKEND}${url}`;
+  // v58.13.132fu — Signatures land in the submission payload as
+  // `data:image/png;base64,…` inline URLs (see forms.py L863,
+  // and the .132fu ship memo). Prefix them with the backend host
+  // and the browser tries to fetch a nonsense URL. `blob:` URLs
+  // are similarly self-contained. Only "/api/…"-shaped relative
+  // URLs need the backend host prepended.
+  if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  return `${BACKEND}${url}`;
 }
 
 function FieldRow({ field, submissionId }) {
@@ -69,7 +78,17 @@ function FieldValue({ field, submissionId }) {
       return (
         <div className="flex flex-wrap gap-2 mt-1">
           {items.map((v, i) => {
-            const url = _fileUrl(typeof v === 'string' ? v : v?.url || v?.src);
+            // v58.13.132fu — Photos stored via `POST /submissions/
+            // {id}/photos` land in the field value as objects shaped
+            // `{id, file_url, stored_name, …}`. The previous
+            // implementation only checked `v.url` and `v.src`, both
+            // undefined on the persisted shape, so photos silently
+            // rendered as empty. Recognise `file_url` alongside
+            // legacy `url` / `src` for any pre-.132fu records.
+            const src = typeof v === 'string'
+              ? v
+              : (v?.file_url || v?.url || v?.src);
+            const url = _fileUrl(src);
             if (!url) return null;
             return (
               <button key={i} type="button"

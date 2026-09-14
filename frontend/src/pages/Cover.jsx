@@ -142,14 +142,17 @@ export default function Cover() {
           <img src="/brand/hero.png" alt="Australian civil construction site at golden hour" className="absolute inset-0 w-full h-full object-cover" data-testid="cover-hero-img" />
           <div className="absolute inset-0" style={{ background: 'linear-gradient(110deg, rgba(15,27,45,0.85) 0%, rgba(15,27,45,0.55) 40%, rgba(15,27,45,0) 70%)' }} />
           <div className="relative h-full flex flex-col justify-between p-12 lg:p-16">
-            <div className="mt-[12vh] max-w-[520px]">
+            <div className="mt-[6vh] max-w-[520px]">
               {/* v58.13.132ft — Hero logo. Left edge aligns with the
                   "Build Safer" heading (same container = same left
                   padding), rendered ~1.5x larger than the previous
                   topbar logo and in the on-dark (white-text) variant
-                  so it reads clearly against the hero photo. Sits
-                  ~40 px above the WHS COMPLIANCE PLATFORM pill via
-                  `mb-6`. */}
+                  so it reads clearly against the hero photo.
+                  v58.13.132fu — Container `mt-[12vh]` → `mt-[6vh]`
+                  which shifts the hero block (including the logo)
+                  up ~65 px on a 1080-tall viewport, satisfying
+                  Stephen's "18 mm up" request without breaking the
+                  logo↔pill spacing (`mb-6`). */}
               <Link to="/" className="inline-flex mb-6" data-testid="cover-brand"
                 aria-label="Paneltec Group home">
                 <Logo size="2xl" displayName="The Paneltec Group" onDark />
