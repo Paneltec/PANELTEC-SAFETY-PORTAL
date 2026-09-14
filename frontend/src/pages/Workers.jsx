@@ -23,6 +23,9 @@ import { PageHeader, EmptyState } from '../components/capture/Ui';
 import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
 import InductionsMatrix from '../components/InductionsMatrix';
 import WorkerInductionsCard from '../components/WorkerInductionsCard';
+// v58.13.132fi — Section D panels (Private & Confidential + Licences).
+import PrivateConfidentialPanel from '../components/workers/PrivateConfidentialPanel';
+import LicencesPanel from '../components/workers/LicencesPanel';
 // Phase 4.7.1 — surface password/access controls on the Workers list.
 import AccessKebab from '../components/auth/AccessKebab';
 // v160.2.2 — Read-only worker profile drawer (eye icon).
@@ -1783,6 +1786,16 @@ function EditModal({ worker, onClose, onSaved }) {
               badges={inductionsBadges}>
               <WorkerInductionsCard workerId={worker.id} workerName={[worker.first_name, worker.last_name].filter(Boolean).join(' ')} />
             </Section>
+          )}
+
+          {/* v58.13.132fi — Section D · Licences (filtered view over certifications). */}
+          {!isNew && (
+            <LicencesPanel workerId={worker.id} />
+          )}
+
+          {/* v58.13.132fi — Section D · Private & Confidential (admin CRUD on worker_hr_documents). */}
+          {!isNew && (
+            <PrivateConfidentialPanel workerId={worker.id} />
           )}
 
           {/* Phase 4.1 — ID Card (printable wallet/lanyard PDFs + NFC pairing). */}

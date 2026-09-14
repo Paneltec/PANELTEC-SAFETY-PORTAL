@@ -33,7 +33,7 @@ from difflib import SequenceMatcher
 from pathlib import PurePosixPath
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
@@ -1108,6 +1108,128 @@ async def stream_hr_document(
     if not doc:
         raise HTTPException(404, "HR document not found")
     return await _stream_gridfs(doc.get("gridfs_id"), doc.get("filename") or "hr-doc")
+
+
+# v58.13.132fi — Admin-managed CRUD on `worker_hr_documents`.
+# Pre-.132fi the collection was populated only by the Simpro zip
+# importer. Admins now get a full drop-zone / notes / soft-delete
+# surface on the worker edit page (Section D of the .132fg brief).
+
+_HR_DOC_MAX_BYTES = 50 * 1024 * 1024  # 50 MB — matches Certifications.
+_HR_DOC_ALLOWED_MIME_PREFIXES = (
+    "application/pdf", "image/", "text/",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument",
+    "application/vnd.ms-excel",
+)
+
+
+def _hr_mime_allowed(mime: str) -> bool:
+    m = (mime or "").lower()
+    return any(m.startswith(p) for p in _HR_DOC_ALLOWED_MIME_PREFIXES)
+
+
+@router.post("/{worker_id}/hr-documents", status_code=201)
+async def upload_hr_document(
+    worker_id: str,
+    file: UploadFile = File(...),
+    notes: str = Form(""),
+    user: dict = Depends(require_roles("admin", "hr_lead")),
+):
+    """Admin upload — Private & Confidential file. GridFS-backed."""
+    # Worker exists?
+    w = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1},
+    )
+    if not w:
+        raise HTTPException(404, "Worker not found")
+    # Mime allow-list.
+    if not _hr_mime_allowed(file.content_type or ""):
+        raise HTTPException(400, f"Unsupported file type: {file.content_type or 'unknown'}")
+    # Size guard — read into memory (matches existing cert upload pattern).
+    blob = await file.read()
+    if len(blob) > _HR_DOC_MAX_BYTES:
+        raise HTTPException(413, f"File exceeds {_HR_DOC_MAX_BYTES // (1024*1024)} MB limit")
+    if len(blob) == 0:
+        raise HTTPException(400, "Empty file")
+    gid = await _fs_bucket().upload_from_stream(
+        file.filename or "hr-doc", blob,
+        metadata={"kind": "worker_hr_document", "org_id": user["org_id"],
+                   "worker_id": worker_id},
+    )
+    ts = now_iso()
+    doc = {
+        "id": new_id(), "org_id": user["org_id"], "worker_id": worker_id,
+        "filename": file.filename or "hr-doc", "folder": "private",
+        "gridfs_id": str(gid), "size": len(blob),
+        "mime_type": file.content_type or "",
+        "notes": (notes or "").strip(),
+        "source": "admin_upload", "uploaded_by": user["id"],
+        "uploaded_at": ts, "deleted_at": None,
+    }
+    await db.worker_hr_documents.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.patch("/{worker_id}/hr-documents/{doc_id}")
+async def patch_hr_document(
+    worker_id: str, doc_id: str,
+    body: dict = Body(...),
+    user: dict = Depends(require_roles("admin", "hr_lead")),
+):
+    """Notes-only edit. Filename and file blob are immutable — re-upload
+    if you need to replace the file."""
+    existing = await db.worker_hr_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id,
+         "org_id": user["org_id"], "deleted_at": None},
+    )
+    if not existing:
+        raise HTTPException(404, "HR document not found")
+    updates: dict = {"updated_at": now_iso(), "updated_by": user["id"]}
+    if "notes" in body:
+        updates["notes"] = str(body["notes"] or "").strip()
+    await db.worker_hr_documents.update_one(
+        {"id": doc_id}, {"$set": updates},
+    )
+    fresh = await db.worker_hr_documents.find_one({"id": doc_id})
+    fresh.pop("_id", None)
+    return fresh
+
+
+@router.delete("/{worker_id}/hr-documents/{doc_id}", status_code=204)
+async def delete_hr_document(
+    worker_id: str, doc_id: str,
+    user: dict = Depends(require_roles("admin", "hr_lead")),
+):
+    """Soft-delete + archive_audit trail entry."""
+    doc = await db.worker_hr_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id,
+         "org_id": user["org_id"], "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "HR document not found")
+    ts = now_iso()
+    await db.worker_hr_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"deleted_at": ts, "deleted_by": user["id"]}},
+    )
+    # Best-effort archive audit log — same collection other soft-deletes
+    # write into. Silently skipped if the collection isn't present.
+    try:
+        await db.archive_audit.insert_one({
+            "id": new_id(), "org_id": user["org_id"],
+            "resource": "worker_hr_documents",
+            "resource_id": doc_id, "worker_id": worker_id,
+            "filename": doc.get("filename"),
+            "action": "soft_delete", "actor_user_id": user["id"],
+            "actor_email": (user.get("email") or ""),
+            "at": ts,
+        })
+    except Exception:
+        pass
+    return None
 
 
 # Last sync marker for the Users page.
