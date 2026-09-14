@@ -105,12 +105,45 @@ export function apiError(e) {
     return body.message
       || `Too many attempts. Try again in ${body.retry_after_seconds || 60} seconds.`;
   }
+  // v58.13.132fq — Friendly missing-file handling. Every file
+  // download endpoint (document_library / asset_service / file_pdf /
+  // forms / simpro_zip_import) now returns `410 Gone` with a
+  // structured `detail: { code: 'file_missing_on_disk', message,
+  // record_still_exists, restore_hint }` body when the physical
+  // bytes are gone but the DB record survives. Callers get the
+  // friendly `message` verbatim instead of a JSON blob. See
+  // backend/missing_file_response.py + the .132fq ship memo.
+  if (e?.response?.status === 410) {
+    const detail = e?.response?.data?.detail;
+    if (detail && typeof detail === 'object' && detail.code === 'file_missing_on_disk') {
+      return detail.message
+        || 'This file is missing from the server. Reupload it, or delete the record.';
+    }
+  }
   const d = e?.response?.data?.detail;
   if (!d) return e?.message || 'Something went wrong';
   if (typeof d === 'string') return d;
   if (Array.isArray(d)) return d.map((x) => x?.msg || JSON.stringify(x)).join(' · ');
   if (d?.msg) return d.msg;
   return JSON.stringify(d);
+}
+
+// v58.13.132fq — Convenience: detect the structured missing-file
+// 410 payload without duplicating the shape check across callers.
+// Returns the parsed metadata (code / message / record_still_exists /
+// restore_hint) or `null` if the error is anything else. Downstream
+// components render a Reupload / Delete banner from this info.
+export function missingFileMeta(e) {
+  if (e?.response?.status !== 410) return null;
+  const detail = e?.response?.data?.detail;
+  if (!detail || typeof detail !== 'object') return null;
+  if (detail.code !== 'file_missing_on_disk') return null;
+  return {
+    code: detail.code,
+    message: detail.message || '',
+    record_still_exists: !!detail.record_still_exists,
+    restore_hint: detail.restore_hint || '',
+  };
 }
 
 // v58.13.99 — Sign-in error classifier.

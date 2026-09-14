@@ -39,6 +39,7 @@ from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from auth import require_roles
 from db import db
+from missing_file_response import missing_file_response  # v58.13.132fq
 from models import new_id, now_iso
 
 try:
@@ -1085,7 +1086,7 @@ async def stream_cert_file(
     from document_library import UPLOAD_DIR as _DOC_UPLOAD_DIR
     path = _Path(_DOC_UPLOAD_DIR) / df["folder_id"] / df["stored_name"]
     if not path.exists():
-        raise HTTPException(404, "File missing on disk")
+        raise missing_file_response()
     return FileResponse(
         str(path),
         media_type=df.get("mime") or "application/octet-stream",

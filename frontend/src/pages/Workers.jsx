@@ -311,14 +311,30 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
   return (
     <div className="flex flex-col items-center gap-1.5 shrink-0" data-testid="worker-edit-photo-block">
       {hasPhoto ? (
-        <img
-          src={src || ''}
-          alt=""
-          onError={() => setBroken(true)}
-          style={{ objectPosition: `50% ${effectiveOffset}%` }}
-          className="w-14 h-14 rounded-xl object-cover shadow-sm border border-white/70 shrink-0 bg-white"
+        // v58.13.132fq — Slider preview now uses an overflow-hidden
+        // wrapper + oversized img + transform translateY so the
+        // vertical alignment slider produces a VISIBLE crop shift
+        // even when the source photo is square. Diagnostic overlay
+        // was retired this ship — event chain proven wiring OK in
+        // .132fl; the bug was CSS geometry, not React state.
+        <div
+          className="w-14 h-14 rounded-xl overflow-hidden shadow-sm border border-white/70 shrink-0 bg-white"
           data-testid="worker-edit-photo"
-        />
+        >
+          <img
+            src={src || ''}
+            alt=""
+            onError={() => setBroken(true)}
+            style={{
+              width: '100%',
+              height: '200%',
+              objectFit: 'cover',
+              transform: `translateY(${-effectiveOffset * 0.56}px)`,
+              display: 'block',
+            }}
+            data-testid="worker-edit-photo-img"
+          />
+        </div>
       ) : (
         <div
           className="w-14 h-14 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-base shrink-0"
@@ -367,41 +383,14 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
   );
 }
 
-// v58.13.132fl — Slider with visible diagnostic overlay. Users have
-// reported the slider "does nothing"; the diagnostic box shows in
-// real time whether onChange/onInput events fire, what the state
-// setter sees, and what objectPosition string ends up applied to
-// the <img>. Take a screenshot of this box when the slider misbehaves
-// and we'll know exactly which layer is broken.
+// v58.13.132fq — Diagnostic overlay retired. The .132fl wiring
+// proof (state / onChange / onInput counters) already demonstrated
+// the React event chain was healthy — the visible-crop bug was CSS
+// geometry (object-cover in a square wrapper + square source = no
+// vertical movement), fixed above by wrapping every photo render
+// site in overflow-hidden + oversized-img + translateY. This is the
+// slimmed-down slider without the counter panel.
 function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY }) {
-  const [changeCount, setChangeCount] = React.useState(0);
-  const [inputCount, setInputCount] = React.useState(0);
-  const [lastEventAt, setLastEventAt] = React.useState(null);
-  const [lastRawValue, setLastRawValue] = React.useState(null);
-
-  const bump = (kind, e) => {
-    const v = Number(e.target.value);
-    setLastEventAt(new Date().toISOString().slice(11, 19));
-    setLastRawValue(v);
-    if (kind === 'change') setChangeCount((n) => n + 1);
-    if (kind === 'input')  setInputCount((n) => n + 1);
-    // Global inspector hook + console log for DevTools capture.
-    // eslint-disable-next-line no-console
-    console.info('[slider]', kind, 'raw=', v, 'stateBefore=', effectiveOffset);
-    if (typeof window !== 'undefined') {
-      window.__PANELTEC_SLIDER_DEBUG = {
-        changeCount: kind === 'change' ? changeCount + 1 : changeCount,
-        inputCount:  kind === 'input'  ? inputCount  + 1 : inputCount,
-        lastRawValue: v, lastKind: kind,
-        lastEventAt: new Date().toISOString(),
-        stateBefore: effectiveOffset,
-      };
-    }
-    onChangeOffsetY(v);
-  };
-
-  const objectPositionStr = `50% ${effectiveOffset}%`;
-
   return (
     <div className="w-full max-w-[240px] flex flex-col gap-1 mt-1"
       data-testid="worker-edit-photo-align-block">
@@ -423,8 +412,8 @@ function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY }) {
         type="range"
         min="0" max="100" step="1"
         value={effectiveOffset}
-        onChange={(e) => bump('change', e)}
-        onInput={(e) => bump('input', e)}
+        onChange={(e) => onChangeOffsetY(Number(e.target.value))}
+        onInput={(e) => onChangeOffsetY(Number(e.target.value))}
         data-testid="worker-edit-photo-align-slider"
         data-photo-offset-y={effectiveOffset}
         className="w-full accent-[#1e4a8c]"
@@ -432,13 +421,6 @@ function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY }) {
       <div className="flex items-center justify-between text-[10px] text-slate-500 select-none">
         <span>Higher</span>
         <span>Lower</span>
-      </div>
-      <div
-        data-testid="worker-edit-photo-align-diagnostic"
-        className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[10px] leading-tight text-slate-700">
-        <div>state: <b>{effectiveOffset}</b>  ·  objPos: <b>{objectPositionStr}</b></div>
-        <div>onChange: <b>{changeCount}</b>  ·  onInput: <b>{inputCount}</b></div>
-        <div>lastRaw: <b>{lastRawValue == null ? '—' : lastRawValue}</b>  ·  at: <b>{lastEventAt || '—'}</b></div>
       </div>
     </div>
   );
@@ -475,16 +457,33 @@ function WorkerRowPhoto({ worker }) {
     );
   }
   return (
-    <img
-      src={src || ''}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      onError={() => setBroken(true)}
-      style={{ objectPosition: `50% ${typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50}%` }}
-      className="w-10 h-10 rounded-full object-cover border border-slate-200 bg-white shrink-0"
+    // v58.13.132fq — Row avatar now wraps the img in an
+    // overflow-hidden div and renders the img at h=200% + translateY
+    // so the stored photo_offset_y produces a VISIBLE vertical crop
+    // shift even for square source photos. Prior implementation
+    // relied on `object-position` alone, which cannot produce
+    // movement when the source aspect matches the container aspect
+    // (see .132fq ship memo for the object-cover geometry proof).
+    <div
+      className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 bg-white shrink-0"
       data-testid={`worker-row-photo-${worker.id}`}
-    />
+      aria-label={`${worker?.first_name || ''} ${worker?.last_name || ''}`.trim() || 'Worker photo'}
+    >
+      <img
+        src={src || ''}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setBroken(true)}
+        style={{
+          width: '100%',
+          height: '200%',
+          objectFit: 'cover',
+          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.4}px)`,
+          display: 'block',
+        }}
+      />
+    </div>
   );
 }
 
@@ -1069,14 +1068,27 @@ function IdCardPhoto({ worker, onExpand }) {
       title={canExpand ? 'Click to expand' : undefined}
       className={`relative group block p-0 border-0 bg-transparent ${canExpand ? 'cursor-pointer' : 'cursor-default'}`}
     >
-      <img
-        src={src || ''}
-        alt=""
-        onError={() => setBroken(true)}
-        style={{ objectPosition: `50% ${typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50}%` }}
-        className={`w-32 h-32 rounded-lg object-cover border border-slate-200 bg-white transition ${canExpand ? 'group-hover:ring-2 group-hover:ring-[#1e4a8c]/50 group-hover:brightness-95' : ''}`}
+      {/* v58.13.132fq — Same overflow-hidden + oversized-img +
+          translateY treatment as the row / edit-modal photos so the
+          stored photo_offset_y produces a visible vertical shift on
+          the ID card regardless of the source photo's aspect ratio. */}
+      <div
+        className={`w-32 h-32 rounded-lg overflow-hidden border border-slate-200 bg-white transition ${canExpand ? 'group-hover:ring-2 group-hover:ring-[#1e4a8c]/50 group-hover:brightness-95' : ''}`}
         data-testid="id-card-photo-img"
-      />
+      >
+        <img
+          src={src || ''}
+          alt=""
+          onError={() => setBroken(true)}
+          style={{
+            width: '100%',
+            height: '200%',
+            objectFit: 'cover',
+            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 1.28}px)`,
+            display: 'block',
+          }}
+        />
+      </div>
       {canExpand && (
         <span
           aria-hidden="true"

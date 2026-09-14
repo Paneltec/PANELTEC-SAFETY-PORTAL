@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from auth import get_current_user
 from db import db
+from missing_file_response import missing_file_response  # v58.13.132fq
 from models import new_id, now_iso
 
 # v58.13.14 — Schedule attachment storage.
@@ -1120,7 +1121,7 @@ async def serve_schedule_attachment(
         raise HTTPException(404, "Attachment not found")
     path = SCHEDULE_ATTACHMENT_ROOT / sid / stored_name
     if not path.exists():
-        raise HTTPException(404, "File missing on disk")
+        raise missing_file_response()
     return FileResponse(
         str(path),
         media_type=rec.get("mime") or "application/octet-stream",

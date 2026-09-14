@@ -58,6 +58,7 @@ from reportlab.platypus import (
 from db import db
 from models import new_id, now_iso  # noqa: E402  — Phase 3.14 OCR-index timestamp helper
 from auth import get_current_user
+from missing_file_response import missing_file_response  # v58.13.132fq
 
 
 log = logging.getLogger("paneltec.files.pdf")
@@ -185,7 +186,7 @@ async def _resolve_file(file_id: str, user: dict) -> tuple[dict, Path]:
         raise HTTPException(404, "File not found")
     path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
     if not path.exists():
-        raise HTTPException(404, "File missing on disk")
+        raise missing_file_response()
     return doc, path
 
 

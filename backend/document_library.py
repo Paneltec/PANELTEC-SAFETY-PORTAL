@@ -24,6 +24,7 @@ from auth import get_current_user
 from permissions import require_permission, require_module
 from permissions_scope import scope_filter  # v160.3.9.28
 from db import db
+from missing_file_response import missing_file_response  # v58.13.132fq
 from models import new_id, now_iso
 
 router = APIRouter(
@@ -510,7 +511,7 @@ async def download_file(
         raise HTTPException(404, "File not found")
     path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
     if not path.exists():
-        raise HTTPException(404, "File missing on disk")
+        raise missing_file_response()
     if download:
         disp = "attachment"
     else:

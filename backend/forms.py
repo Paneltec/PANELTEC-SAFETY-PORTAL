@@ -67,6 +67,7 @@ from pymongo import ReturnDocument
 from auth import get_current_user
 from db import db
 from form_routing import resolve_template_category  # v58.13.132dz
+from missing_file_response import missing_file_response  # v58.13.132fq
 from models import new_id, now_iso
 
 from permissions import require_permission, require_module
@@ -1272,7 +1273,7 @@ async def serve_submission_attachment(submission_id: str, stored_name: str,
         raise HTTPException(404, "Attachment not found")
     path = ATTACHMENT_ROOT / submission_id / stored_name
     if not path.exists():
-        raise HTTPException(404, "File missing on disk")
+        raise missing_file_response()
     return FileResponse(str(path), media_type=rec.get("mime") or "application/octet-stream",
                         filename=rec.get("name") or stored_name,
                         content_disposition_type="attachment" if download else "inline")
