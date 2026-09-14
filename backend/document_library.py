@@ -460,12 +460,26 @@ async def upload_files(
 async def delete_file(file_id: str, user: dict = Depends(require_permission("documents", "delete"))):
     _require(user, WRITE_ROLES, action="delete")
     ts = now_iso()
+    # Snapshot filename BEFORE the update so the audit row can name
+    # the file (v58.13.132fj — Section E delete-audit).
+    existing = await db.doc_files.find_one(
+        {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "filename": 1},
+    )
     result = await db.doc_files.update_one(
         {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
         {"$set": {"deleted_at": ts, "updated_at": ts}},
     )
     if result.matched_count == 0:
         raise HTTPException(404, "File not found")
+    # v58.13.132fj — archive_audit trail.
+    from archive_audit_helpers import record_file_archive_audit
+    await record_file_archive_audit(
+        module="documents", resource="doc_files",
+        resource_id=file_id,
+        filename=(existing or {}).get("filename"),
+        user=user,
+    )
     return None
 
 

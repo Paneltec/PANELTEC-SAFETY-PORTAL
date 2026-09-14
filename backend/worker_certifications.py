@@ -397,6 +397,15 @@ async def delete_cert(
         {"id": cert_id, "org_id": user["org_id"]},
         {"$set": {"deleted_at": ts, "updated_at": ts}},
     )
+    # v58.13.132fj — archive_audit trail.
+    from archive_audit_helpers import record_file_archive_audit
+    await record_file_archive_audit(
+        module="certifications", resource="worker_certifications",
+        resource_id=cert_id,
+        filename=existing.get("name") or existing.get("filename"),
+        worker_id=existing.get("worker_id"),
+        user=user,
+    )
     file_id = existing.get("doc_file_id")
     if file_id:
         file_doc = await db.doc_files.find_one(

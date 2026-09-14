@@ -452,6 +452,14 @@ async def soft_delete_insurance_history(
         {"$set": {f"{field}.previous_certificates": prev,
                   "updated_at": now_iso()}},
     )
+    # v58.13.132fj — archive_audit trail.
+    from archive_audit_helpers import record_file_archive_audit
+    await record_file_archive_audit(
+        module="insurance", resource=f"orgs.{field}.previous_certificates",
+        resource_id=file_id,
+        filename=hit.get("filename") or hit.get("stored_name"),
+        user=user, reason=f"policy_type={policy_type}",
+    )
     return {"ok": True, "deleted_at": hit["deleted_at"]}
 
 

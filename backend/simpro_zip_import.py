@@ -1215,20 +1215,14 @@ async def delete_hr_document(
         {"id": doc_id},
         {"$set": {"deleted_at": ts, "deleted_by": user["id"]}},
     )
-    # Best-effort archive audit log — same collection other soft-deletes
-    # write into. Silently skipped if the collection isn't present.
-    try:
-        await db.archive_audit.insert_one({
-            "id": new_id(), "org_id": user["org_id"],
-            "resource": "worker_hr_documents",
-            "resource_id": doc_id, "worker_id": worker_id,
-            "filename": doc.get("filename"),
-            "action": "soft_delete", "actor_user_id": user["id"],
-            "actor_email": (user.get("email") or ""),
-            "at": ts,
-        })
-    except Exception:
-        pass
+    # v58.13.132fj — archive_audit trail. Use the shared helper for
+    # consistency with document_library / certifications / insurance.
+    from archive_audit_helpers import record_file_archive_audit
+    await record_file_archive_audit(
+        module="hr_documents", resource="worker_hr_documents",
+        resource_id=doc_id, filename=doc.get("filename"),
+        worker_id=worker_id, user=user,
+    )
     return None
 
 

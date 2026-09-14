@@ -764,6 +764,18 @@ export function DocumentLibraryFolder() {
   const [inlinePreviewFile, setInlinePreviewFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  // v58.13.132fj — File-level soft-delete confirmation modal.
+  const [confirmDeleteFile, setConfirmDeleteFile] = useState(null);
+  const confirmDeleteFileNow = async () => {
+    if (!confirmDeleteFile) return;
+    const f = confirmDeleteFile;
+    try {
+      await api.delete(`/document-library/files/${f.id}`);
+      toast.success('File deleted (recoverable from Archive for 30 days)');
+      setConfirmDeleteFile(null);
+      await loadFiles();
+    } catch (e) { toast.error(apiError(e)); }
+  };
   const fileInputRef = useRef(null);
 
   const loadFolder = useCallback(async () => {
@@ -859,12 +871,9 @@ export function DocumentLibraryFolder() {
   };
 
   const deleteFile = async (f) => {
-    if (!window.confirm(`Delete "${f.filename}"?`)) return;
-    try {
-      await api.delete(`/document-library/files/${f.id}`);
-      toast.success('File deleted');
-      await loadFiles();
-    } catch (e) { toast.error(apiError(e)); }
+    // v58.13.132fj — open the standard confirmation modal instead of
+    // window.confirm(); actual delete happens in confirmDeleteFileNow.
+    setConfirmDeleteFile(f);
   };
 
   // v58.13.73 — Whitelist of file types the browser can render natively
@@ -1174,6 +1183,41 @@ export function DocumentLibraryFolder() {
       )}
       {inlinePreviewFile && (
         <FilePreviewModal file={inlinePreviewFile} onClose={() => setInlinePreviewFile(null)} />
+      )}
+      {/* v58.13.132fj — Standard file-delete confirmation. */}
+      {confirmDeleteFile && (
+        <div
+          className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4"
+          onClick={() => setConfirmDeleteFile(null)}
+          data-testid="file-delete-modal"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display font-bold text-slate-900 text-lg mb-2">
+              Delete this file?
+            </h3>
+            <p className="text-sm text-slate-600">
+              Delete <span className="font-semibold" data-testid="file-delete-modal-name">"{confirmDeleteFile.filename}"</span>?
+              It will move to Archive and can be restored for 30 days.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDeleteFile(null)}
+                data-testid="file-delete-modal-cancel"
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >Cancel</button>
+              <button
+                onClick={confirmDeleteFileNow}
+                data-testid="file-delete-modal-confirm"
+                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 inline-flex items-center gap-1.5"
+              >
+                <Trash2 /> Delete file
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
