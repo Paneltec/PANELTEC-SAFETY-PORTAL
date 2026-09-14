@@ -1215,6 +1215,8 @@ async def upload_submission_attachments(
     dest_dir = ATTACHMENT_ROOT / submission_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     now = now_iso()
+    # v58.13.132gg — Bytes now go to GridFS via the shared helper.
+    from uploads_storage import save_upload  # noqa: WPS433 — lazy
     for i, upload in enumerate(files):
         mime = (upload.content_type or "").lower()
         if mime not in ATTACHMENT_ALLOWED_MIMES:
@@ -1223,8 +1225,13 @@ async def upload_submission_attachments(
         if len(data) > MAX_ATTACHMENT_BYTES:
             raise HTTPException(413, f"File exceeds {MAX_ATTACHMENT_BYTES} bytes")
         stored_name = f"{uuid.uuid4()}"
-        dest = dest_dir / stored_name
-        dest.write_bytes(data)
+        await save_upload(
+            "form_attachments", [submission_id, stored_name], data,
+            module="forms",
+            org_id=user.get("org_id"),
+            mime=mime,
+            orig_filename=upload.filename,
+        )
         display_name = (names[i] if i < len(names) else "") or upload.filename or stored_name
         description = descriptions[i] if i < len(descriptions) else ""
         rec = {
@@ -1271,6 +1278,19 @@ async def serve_submission_attachment(submission_id: str, stored_name: str,
             break
     if not rec:
         raise HTTPException(404, "Attachment not found")
+    # v58.13.132gg — GridFS-preferred read with disk fallback.
+    from uploads_storage import read_upload  # noqa: WPS433 — lazy
+    hit = await read_upload("form_attachments", [submission_id, stored_name])
+    if hit is not None:
+        data, mime = hit
+        from fastapi.responses import Response
+        disp = "attachment" if download else "inline"
+        return Response(
+            content=data,
+            media_type=rec.get("mime") or mime or "application/octet-stream",
+            headers={"Content-Disposition":
+                     f'{disp}; filename="{rec.get("name") or stored_name}"'},
+        )
     path = ATTACHMENT_ROOT / submission_id / stored_name
     if not path.exists():
         raise missing_file_response()
@@ -1316,6 +1336,8 @@ async def upload_submission_photos(
 
     saved: list[dict] = []
     rejected: list[dict] = []
+    # v58.13.132gg — Bytes → GridFS via shared helper.
+    from uploads_storage import save_upload as _save_photo  # noqa: WPS433
     for upload in files:
         ext = _safe_ext(upload.filename)
         mime = (upload.content_type or "").lower()
@@ -1323,23 +1345,27 @@ async def upload_submission_photos(
             rejected.append({"filename": upload.filename, "reason": "Unsupported image type"})
             continue
         stored_name = f"{uuid.uuid4().hex}{ext}"
-        target_path = sub_dir / stored_name
-        size = 0
+        buf = bytearray()
         oversize = False
-        with target_path.open("wb") as out:
-            while True:
-                chunk = await upload.read(1024 * 1024)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > MAX_PHOTO_BYTES:
-                    oversize = True
-                    break
-                out.write(chunk)
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if len(buf) > MAX_PHOTO_BYTES:
+                oversize = True
+                break
         if oversize:
-            target_path.unlink(missing_ok=True)
             rejected.append({"filename": upload.filename, "reason": "Exceeds 15MB limit"})
             continue
+        size = len(buf)
+        await _save_photo(
+            "form_photos", [submission_id, stored_name], bytes(buf),
+            module="forms",
+            org_id=user.get("org_id"),
+            mime=upload.content_type,
+            orig_filename=upload.filename,
+        )
         file_url = f"/api/files/form_photos/{submission_id}/{stored_name}"
         photo = {
             "id": new_id(),
@@ -1378,6 +1404,14 @@ async def serve_submission_photo(submission_id: str, stored_name: str,
     )
     if not sub:
         raise HTTPException(404, "Submission not found")
+    # v58.13.132gg — GridFS-preferred read with disk fallback.
+    from uploads_storage import read_upload  # noqa: WPS433 — lazy
+    hit = await read_upload("form_photos", [submission_id, stored_name])
+    if hit is not None:
+        data, mime = hit
+        from fastapi.responses import Response
+        return Response(content=data,
+                        media_type=mime or "image/jpeg")
     path = UPLOAD_ROOT / submission_id / stored_name
     if not path.exists():
         raise HTTPException(404, "Photo not found")

@@ -1055,6 +1055,8 @@ async def upload_schedule_attachments(
     dest_dir.mkdir(parents=True, exist_ok=True)
     now = now_iso()
     saved: list[dict[str, Any]] = []
+    # v58.13.132gg — Bytes → GridFS via shared helper.
+    from uploads_storage import save_upload  # noqa: WPS433 — lazy
     for i, upload in enumerate(files):
         mime = (upload.content_type or "").lower()
         if mime not in SCHEDULE_ATTACHMENT_ALLOWED_MIMES:
@@ -1065,7 +1067,13 @@ async def upload_schedule_attachments(
                 413, f"File exceeds {MAX_SCHEDULE_ATTACHMENT_BYTES} bytes",
             )
         stored_name = str(uuid.uuid4())
-        (dest_dir / stored_name).write_bytes(data)
+        await save_upload(
+            "schedule_attachments", [sid, stored_name], data,
+            module="asset_service",
+            org_id=user.get("org_id"),
+            mime=mime,
+            orig_filename=upload.filename,
+        )
         display_name = (
             (names[i] if i < len(names) else "")
             or upload.filename or stored_name
@@ -1119,6 +1127,19 @@ async def serve_schedule_attachment(
     )
     if not rec:
         raise HTTPException(404, "Attachment not found")
+    # v58.13.132gg — GridFS-preferred read with disk fallback.
+    from uploads_storage import read_upload  # noqa: WPS433 — lazy
+    hit = await read_upload("schedule_attachments", [sid, stored_name])
+    if hit is not None:
+        data, mime = hit
+        from fastapi.responses import Response
+        disp = "attachment" if download else "inline"
+        return Response(
+            content=data,
+            media_type=rec.get("mime") or mime or "application/octet-stream",
+            headers={"Content-Disposition":
+                     f'{disp}; filename="{rec.get("name") or stored_name}"'},
+        )
     path = SCHEDULE_ATTACHMENT_ROOT / sid / stored_name
     if not path.exists():
         raise missing_file_response()

@@ -42,8 +42,13 @@ UPLOAD_ROOT = BACKEND / "uploads"
 
 # (subdir, glob pattern relative to UPLOAD_ROOT/<subdir>, module tag)
 MIGRATED_MODULES = [
-    ("contractor_docs", "*",           "contractors"),
-    ("renewals",        "*/*",         "renewals"),
+    ("contractor_docs",       "*",           "contractors"),
+    ("renewals",              "*/*",         "renewals"),
+    # v58.13.132gg
+    ("document_library",      "*/*",         "document_library"),
+    ("form_attachments",      "*/*",         "forms"),
+    ("form_photos",           "*/*",         "forms"),
+    ("schedule_attachments",  "*/*",         "asset_service"),
 ]
 
 

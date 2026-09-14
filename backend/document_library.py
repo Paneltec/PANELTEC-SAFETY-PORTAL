@@ -409,6 +409,11 @@ async def upload_files(
 
     saved = []
     rejected = []
+    # v58.13.132gg — Bytes now go to GridFS via the shared helper
+    # (`uploads_storage`). Size cap enforced pre-flight against an
+    # in-memory buffer instead of a partial disk write, so a huge
+    # upload never leaves an orphan file behind.
+    from uploads_storage import save_upload  # noqa: WPS433 — lazy
     for upload in files:
         ext = _safe_ext(upload.filename)
         if not ext:
@@ -417,24 +422,31 @@ async def upload_files(
                 "reason": "Unsupported file type — allowed: PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, JPEG, TXT, CSV",
             })
             continue
-        # Stream to disk while checking size cap.
         stored_name = f"{uuid.uuid4().hex}{ext}"
-        target = folder_dir / stored_name
-        size = 0
-        with target.open("wb") as out:
-            while True:
-                chunk = await upload.read(1024 * 1024)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > MAX_FILE_BYTES:
-                    out.close()
-                    target.unlink(missing_ok=True)
-                    rejected.append({"filename": upload.filename, "reason": "Exceeds 50 MB limit"})
-                    break
-                out.write(chunk)
-        if size > MAX_FILE_BYTES:
+        # Enforce the 50 MB cap while draining the stream.
+        buf = bytearray()
+        oversize = False
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if len(buf) > MAX_FILE_BYTES:
+                oversize = True
+                break
+        if oversize:
+            rejected.append({"filename": upload.filename,
+                              "reason": "Exceeds 50 MB limit"})
             continue
+        size = len(buf)
+        data = bytes(buf)
+        await save_upload(
+            "document_library", [folder["id"], stored_name], data,
+            module="document_library",
+            org_id=user["org_id"],
+            mime=upload.content_type,
+            orig_filename=upload.filename,
+        )
         doc = {
             "id": new_id(),
             "org_id": user["org_id"],
@@ -509,13 +521,29 @@ async def download_file(
     )
     if not doc:
         raise HTTPException(404, "File not found")
-    path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
-    if not path.exists():
-        raise missing_file_response()
+    # v58.13.132gg — Try GridFS first (post-.132gf), fall back to
+    # the pre-migration local-disk path so files uploaded before
+    # `scripts/migrate_ephemeral_to_gridfs.py --run` still stream.
+    from uploads_storage import read_upload  # noqa: WPS433 — lazy
+    hit = await read_upload("document_library",
+                              [doc["folder_id"], doc["stored_name"]])
     if download:
         disp = "attachment"
     else:
         disp = "inline" if _is_browser_renderable(doc) else "attachment"
+    if hit is not None:
+        data, mime = hit
+        from fastapi.responses import Response
+        headers = {
+            "Content-Disposition": f'{disp}; filename="{doc["filename"]}"',
+        }
+        return Response(content=data,
+                          media_type=mime or doc.get("mime")
+                          or "application/octet-stream",
+                          headers=headers)
+    path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
+    if not path.exists():
+        raise missing_file_response()
     return FileResponse(
         str(path),
         media_type=doc.get("mime") or "application/octet-stream",
