@@ -734,9 +734,12 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
     )
     if not tile:
         raise HTTPException(status_code=404, detail="Tile not found")
-    if not tile.get("pin_protected"):
-        raise HTTPException(status_code=400,
-                            detail="Tile is not PIN-protected")
+    # v58.13.132g6 — PIN is now the gate for the 3-dots menu on
+    # every tile (not just pin_protected ones), so we no longer 400
+    # when a caller wants to verify against a public tile. The
+    # per-tile `pin_protected` flag still drives the URL-launch
+    # gate and the greyed / lock-overlay UI; this endpoint just
+    # verifies the caller's admin PIN against a valid tile id.
     if not _re.match(r"^\d{4}$", body.pin):
         raise HTTPException(status_code=400,
                             detail="PIN must be exactly 4 digits.")

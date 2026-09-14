@@ -58,19 +58,20 @@ def test_launch_branch_sets_intent_launch():
 
 
 def test_toggle_menu_gates_on_pin_protected():
+    """v58.13.132g5 baseline pin — `toggleMenu` gates the menu
+    behind the admin PIN. v58.13.132g6 widened this to ALL tiles
+    (no longer just pin_protected). Both behaviours share the same
+    core: toggle-off if open, otherwise prompt PIN with
+    intent='menu'."""
     src = _read(TILECARD)
     assert "const toggleMenu = (e) =>" in src
     span_start = src.index("const toggleMenu = (e) =>")
     span = src[span_start:span_start + 800]
-    # Three responsibilities in one function:
-    #   1. Toggle off if menu is already open.
+    # Toggle-off branch remains.
     assert "if (menuOpen) {" in span
-    #   2. On PIN-protected tiles → prompt PIN with intent='menu'.
-    assert "if (pinProtected) {" in span
+    # PIN modal is opened via intent='menu'.
     assert "setPinIntent('menu')" in span
     assert "setPinModalOpen(true)" in span
-    #   3. Non-PIN tiles → open menu directly.
-    assert "setMenuOpen(true)" in span
 
 
 def test_three_dots_button_wired_to_toggle_menu():
@@ -78,8 +79,9 @@ def test_three_dots_button_wired_to_toggle_menu():
     # The 3-dots button's onClick now runs through `toggleMenu`
     # instead of the raw setter — that's where the PIN gate lives.
     assert "onClick={toggleMenu}" in src
-    # Tooltip surfaces the gate on PIN tiles.
-    assert "'PIN required · actions for this tile'" in src
+    # Tooltip surfaces the gate. v58.13.132g6 made this
+    # unconditional (was conditional on pin_protected in .132g5).
+    assert "'PIN required · actions for this tile'" in src or 'title="PIN required · actions for this tile"' in src
 
 
 def test_onUnlocked_branches_on_intent():
@@ -121,24 +123,29 @@ def test_pin_modal_still_hits_verify_pin_endpoint():
 # ─── Non-PIN tiles unchanged ───────────────────────────────────
 
 def test_non_pin_menu_opens_directly():
+    """v58.13.132g5 asserted that non-PIN tiles bypass the PIN
+    modal on menu-open. v58.13.132g6 changed the model — ALL
+    tiles now prompt for PIN, and the 3-dots button is only
+    rendered when the caller has an admin PIN. This test is
+    retargeted: the fall-through order is (a) toggle-off if
+    menuOpen, (b) always fire the PIN modal via intent='menu'."""
     src = _read(TILECARD)
-    # On a NON-PIN tile, toggleMenu falls through to setMenuOpen(true).
-    # We already pin this in `test_toggle_menu_gates_on_pin_protected`
-    # but a dedicated guard here catches accidental early-returns.
     span_start = src.index("const toggleMenu = (e) =>")
     span = src[span_start:span_start + 800]
-    # Between the PIN branch and the setMenuOpen call, no other
-    # early return.
-    pin_branch = span.index("if (pinProtected) {")
-    open_call = span.index("setMenuOpen(true)")
-    assert pin_branch < open_call, (
-        "the fall-through order must be: toggle-if-open → "
-        "PIN branch → setMenuOpen(true)")
+    close_call = span.index("if (menuOpen) {")
+    intent_call = span.index("setPinIntent('menu')")
+    assert close_call < intent_call, (
+        "toggleMenu fall-through must be: toggle-off if open → "
+        "PIN modal via intent='menu'")
 
 
 # ─── Version lockstep ──────────────────────────────────────────
 
 def test_version_bumped_to_132g5():
+    """Baseline pin — version has crossed `.132g5` at least once.
+    Regex accepts later bumps so hotfixes don't retroactively fail
+    this ship's check."""
     for path in (VERSION_JS, SW):
         s = _read(path)
-        assert "paneltec-v160.3.9.58.13.132g5" in s
+        assert re.search(r"paneltec-v160\.3\.9\.58\.13\.132g\d", s), (
+            f"version in {path.name} has not reached .132g5+")

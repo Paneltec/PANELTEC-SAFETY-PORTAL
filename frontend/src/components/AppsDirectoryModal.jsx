@@ -34,6 +34,21 @@ export default function AppsDirectoryModal({ open, onClose }) {
   const [tiles, setTiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const { hidden, hideTile, resetHidden } = useHiddenTiles(user?.id);
+  // v58.13.132g6 — probe `/auth/admin-console/status` once so we
+  // know whether to render the 3-dots at all. Non-admins receive
+  // 403 and the flag stays false.
+  const [hasAdminPin, setHasAdminPin] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.post('/auth/admin-console/status');
+        if (!cancelled) setHasAdminPin(!!r.data?.has_pin);
+      } catch { /* non-admin or no PIN — keep flag false */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // v58.13.132et — Stabilise onClose via a ref so the Escape listener
   // doesn't churn every parent render.
@@ -169,6 +184,7 @@ export default function AppsDirectoryModal({ open, onClose }) {
                       key={t.id}
                       tile={t}
                       isAdmin={isAdmin}
+                      hasAdminPin={hasAdminPin}
                       onHide={hideTile}
                       testIdPrefix="apps-directory-modal-tile"
                       credentialLaunch

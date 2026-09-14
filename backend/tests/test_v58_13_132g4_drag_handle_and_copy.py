@@ -100,11 +100,16 @@ def test_touch_sensor_wired_for_ipad_admins():
 
 def test_3dots_trigger_tooltip_rewrite():
     src = _read(TILECARD)
-    # v58.13.132g5 made the tooltip conditional on pin_protected —
-    # the non-PIN tooltip is still "Actions for this tile" but it's
-    # now inside a JSX expression rather than a static string.
-    assert "'Actions for this tile'" in src or 'title="Actions for this tile"' in src
-    assert "'PIN required · actions for this tile'" in src or ".132g5" in src
+    # v58.13.132g4 introduced "Actions for this tile".
+    # v58.13.132g5 made it conditional on pin_protected.
+    # v58.13.132g6 collapsed the conditional back to a single
+    # value: "PIN required · actions for this tile" (menu now
+    # requires PIN on every tile). Accept any of the three.
+    assert (
+        "'Actions for this tile'" in src
+        or 'title="Actions for this tile"' in src
+        or 'title="PIN required · actions for this tile"' in src
+    )
     # Pre-.132g4 label retired.
     assert 'title="Tile options"' not in src
 

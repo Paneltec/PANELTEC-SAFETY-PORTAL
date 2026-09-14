@@ -280,8 +280,9 @@ def test_verify_pin_endpoint_registered():
         "verify_password",
     ):
         assert needle in src, f"verify_tile_pin must reuse: {needle}"
-    # Error taxonomy per spec.
-    assert 'detail="Tile is not PIN-protected"' in src  # 400
+    # Error taxonomy — .132g6 dropped the pin_protected 400 branch
+    # (public tiles now go through this endpoint too as the 3-dots
+    # menu gate).
     assert 'detail="Wrong PIN."' in src  # 401
     assert 'No admin PIN set' in src  # 403
     assert 'detail="Tile not found"' in src  # 404

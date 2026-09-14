@@ -30,6 +30,20 @@ export default function AppsDirectory() {
   const [tiles, setTiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const { hidden, hideTile, resetHidden } = useHiddenTiles(user?.id);
+  // v58.13.132g6 — probe /auth/admin-console/status so the 3-dots
+  // renders only for admins with a PIN configured (same gate as
+  // the launcher modal).
+  const [hasAdminPin, setHasAdminPin] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.post('/auth/admin-console/status');
+        if (!cancelled) setHasAdminPin(!!r.data?.has_pin);
+      } catch { /* non-admin or no PIN — keep flag false */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +143,7 @@ export default function AppsDirectory() {
                     key={t.id}
                     tile={t}
                     isAdmin={isAdmin}
+                    hasAdminPin={hasAdminPin}
                     onHide={hideTile}
                     testIdPrefix="apps-directory-hub-tile"
                     showAdminSettingsIcon

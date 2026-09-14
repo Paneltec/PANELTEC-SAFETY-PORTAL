@@ -234,6 +234,18 @@ ${qaRows}
  * @param {object}   props
  * @param {object}   props.tile
  * @param {boolean}  props.isAdmin
+ * @param {boolean=} props.hasAdminPin           v58.13.132g6 — flows in
+ *                                               from the parent's
+ *                                               `/auth/admin-console/status`
+ *                                               probe. Without a
+ *                                               configured PIN the
+ *                                               3-dots button is NOT
+ *                                               rendered (can't gate
+ *                                               a PIN that doesn't
+ *                                               exist). Backend
+ *                                               endpoint is admin-only,
+ *                                               so non-admins fall
+ *                                               through here naturally.
  * @param {(id: string) => void} props.onHide
  * @param {string}   props.testIdPrefix         `apps-directory-hub-tile` OR `apps-directory-modal-tile`
  * @param {boolean=} props.credentialLaunch      When true, tapping the launch link
@@ -250,7 +262,7 @@ ${qaRows}
  * @param {boolean=} props.isDragging      from useSortable
  */
 export function TileCard({
-  tile, isAdmin, onHide, testIdPrefix,
+  tile, isAdmin, hasAdminPin = false, onHide, testIdPrefix,
   credentialLaunch = false, showAdminSettingsIcon = false,
   dragAttributes, dragListeners, isDragging,
 }) {
@@ -326,9 +338,15 @@ export function TileCard({
     }
   };
 
-  // v58.13.132g5 — 3-dots click. On PIN-protected tiles we prompt
-  // for the admin PIN BEFORE opening the menu; on non-PIN tiles
-  // the menu opens directly.
+  // v58.13.132g6 — 3-dots click. Now ALWAYS prompts for the admin
+  // PIN, on every tile (public + PIN-protected). The `.132g5`
+  // behaviour where only pin_protected tiles gated the menu let
+  // any authenticated user peel URLs / hide tiles / read metadata
+  // through the 3-dots on public tiles, which Stephen flagged:
+  // "why do you give every body the ability to log the view and
+  // the ability to bring them back again and not password
+  // control". `hasAdminPin` gates whether the 3-dots renders at
+  // all — see the render below.
   const toggleMenu = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -336,13 +354,9 @@ export function TileCard({
       setMenuOpen(false);
       return;
     }
-    if (pinProtected) {
-      // Every menu-open re-prompts (per-click, not per-session).
-      setPinIntent('menu');
-      setPinModalOpen(true);
-      return;
-    }
-    setMenuOpen(true);
+    // Every menu-open re-prompts (per-click, not per-session).
+    setPinIntent('menu');
+    setPinModalOpen(true);
   };
 
   const copyUrl = async () => {
@@ -405,21 +419,29 @@ export function TileCard({
       )}
 
       <div className="absolute top-3 right-3 flex items-center gap-1 z-30" ref={menuRef}>
-        <button
-          type="button"
-          onClick={toggleMenu}
-          data-testid={`${testIdPrefix}-menu-${tile.id}`}
-          // v58.13.132g4 — clearer tooltip so users spot the affordance.
-          // v58.13.132g5 — On PIN-protected tiles the 3-dots itself is
-          // gated behind the same admin PIN. Tooltip surfaces the gate.
-          title={pinProtected ? 'PIN required · actions for this tile' : 'Actions for this tile'}
-          aria-label={pinProtected ? 'PIN required · actions for this tile' : 'Actions for this tile'}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 bg-white/90"
-        >
-          <MoreVertical size={14} />
-        </button>
+        {/* v58.13.132g6 — 3-dots button only renders when the caller
+            has an admin PIN configured. Everyone else can't clear
+            the gate anyway, so hiding the affordance is honest —
+            the pre-.132g6 always-visible button set the wrong
+            expectation. `hasAdminPin` is fetched once by each
+            parent grid via /auth/admin-console/status (admin-only;
+            non-admins get 403 and hasAdminPin stays false). */}
+        {hasAdminPin && (
+          <button
+            type="button"
+            onClick={toggleMenu}
+            data-testid={`${testIdPrefix}-menu-${tile.id}`}
+            // v58.13.132g6 — every menu open requires a PIN, so the
+            // tooltip is unconditional now.
+            title="PIN required · actions for this tile"
+            aria-label="PIN required · actions for this tile"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 bg-white/90"
+          >
+            <MoreVertical size={14} />
+          </button>
+        )}
         {menuOpen && (
           <div
             data-testid={`${testIdPrefix}-menu-panel-${tile.id}`}
