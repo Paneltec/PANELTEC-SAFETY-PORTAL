@@ -34,7 +34,14 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 ORG_URL_TILES = BACKEND / "org_url_tiles.py"
-APPS_DIRECTORY = APP_ROOT / "frontend" / "src" / "pages" / "AppsDirectory.jsx"
+# v58.13.132g3 — the tile primitives (3-dots menu, PIN modal,
+# session-hide storage, dnd-kit wire) migrated from
+# `pages/AppsDirectory.jsx` into the shared
+# `components/apps-directory/TileCard.jsx` so both the launcher
+# modal and the standalone page use one code path. Frontend pins
+# below follow the code, not the file.
+APPS_DIRECTORY = APP_ROOT / "frontend" / "src" / "components" / "apps-directory" / "TileCard.jsx"
+APPS_DIRECTORY_PAGE = APP_ROOT / "frontend" / "src" / "pages" / "AppsDirectory.jsx"
 QUICK_LINKS = APP_ROOT / "frontend" / "src" / "components" / "QuickLinksSection.jsx"
 VERSION_JS = APP_ROOT / "frontend" / "src" / "lib" / "version.js"
 SW = APP_ROOT / "frontend" / "public" / "service-worker.js"
@@ -92,7 +99,7 @@ def test_reorder_admin_only_and_writes_order_field():
 # ─── Frontend source pins ──────────────────────────────────────
 
 def test_apps_directory_uses_dnd_kit():
-    src = _read(APPS_DIRECTORY)
+    src = _read(APPS_DIRECTORY_PAGE) + _read(APPS_DIRECTORY)
     # Library import from the already-installed @dnd-kit stack.
     assert "@dnd-kit/core" in src
     assert "@dnd-kit/sortable" in src
@@ -102,15 +109,17 @@ def test_apps_directory_uses_dnd_kit():
 
 def test_three_dot_menu_present():
     src = _read(APPS_DIRECTORY)
-    # 3-dots trigger + panel + three actions.
-    assert "apps-directory-hub-tile-menu-${tile.id}" in src
-    assert "apps-directory-hub-tile-menu-panel-${tile.id}" in src
-    assert "apps-directory-hub-tile-menu-open-${tile.id}" in src
-    assert "apps-directory-hub-tile-menu-copy-${tile.id}" in src
-    assert "apps-directory-hub-tile-menu-hide-${tile.id}" in src
+    # 3-dots trigger + panel + three actions — the shared TileCard
+    # emits parameterised testids so the launcher modal and the
+    # standalone page can both consume them with distinct prefixes.
+    assert "${testIdPrefix}-menu-${tile.id}" in src
+    assert "${testIdPrefix}-menu-panel-${tile.id}" in src
+    assert "${testIdPrefix}-menu-open-${tile.id}" in src
+    assert "${testIdPrefix}-menu-copy-${tile.id}" in src
+    assert "${testIdPrefix}-menu-hide-${tile.id}" in src
     # Menu items — labels lock the copy so a future rename fires
     # a source-pin regression before the Playwright script does.
-    assert "> Open<" in src or "Open</" in src  # unlocked variant
+    assert "> Open<" in src or "Open</" in src
     assert "Copy URL" in src
     assert "Hide until next login" in src
 
@@ -123,23 +132,26 @@ def test_hide_uses_session_storage_per_user():
     assert "sessionStorage.setItem(_hideKey(userId)" in src
     assert "`hidden_tiles_${userId" in src
     # The pre-.132g1 permanent `apps_directory_hidden` localStorage
-    # affordance must be gone from active code paths — the key may
-    # still appear in a comment explaining the retirement.
-    assert "localStorage.getItem('apps_directory_hidden'" not in src
-    assert "localStorage.setItem('apps_directory_hidden'" not in src
-    assert 'localStorage.getItem("apps_directory_hidden"' not in src
-    assert 'localStorage.setItem("apps_directory_hidden"' not in src
+    # affordance must be gone from active code paths.
+    for path in (APPS_DIRECTORY, APPS_DIRECTORY_PAGE):
+        s = _read(path)
+        assert "localStorage.getItem('apps_directory_hidden'" not in s
+        assert "localStorage.setItem('apps_directory_hidden'" not in s
+        assert 'localStorage.getItem("apps_directory_hidden"' not in s
+        assert 'localStorage.setItem("apps_directory_hidden"' not in s
 
 
 def test_reorder_wired_to_patch_endpoint():
-    src = _read(APPS_DIRECTORY)
+    src = _read(APPS_DIRECTORY_PAGE)
     assert "api.patch('/org/url-tiles/reorder'" in src, (
-        "Reorder must POST the flat tile_ids list to the new "
+        "Reorder must PATCH the flat tile_ids list to the new "
         "PATCH /org/url-tiles/reorder route")
     assert "tile_ids: nextTiles.map((t) => t.id)" in src
-    # Drag handle is admin-only.
-    assert "isAdmin && (" in src
-    assert "apps-directory-hub-tile-drag-${tile.id}" in src
+    # Drag handle is admin-only — the check lives in the shared
+    # TileCard so we grep that file for the pattern.
+    shared = _read(APPS_DIRECTORY)
+    assert "isAdmin && (" in shared
+    assert "${testIdPrefix}-drag-${tile.id}" in shared
 
 
 def test_copy_url_uses_clipboard_api():
@@ -302,7 +314,7 @@ def test_frontend_tile_pin_modal_present():
 def test_frontend_lock_overlay_and_greyed_tile():
     src = _read(APPS_DIRECTORY)
     # Overlay testid + greyed opacity class trigger.
-    assert "apps-directory-hub-tile-lock-overlay-${tile.id}" in src
+    assert "${testIdPrefix}-lock-overlay-${tile.id}" in src
     # `data-pin-protected` attribute for tests / audit.
     assert 'data-pin-protected={pinProtected ? \'true\' : \'false\'}' in src
     # 3-dots menu z-30 sits above the lock overlay (z-10).
@@ -419,5 +431,11 @@ def test_verify_pin_behavioural():
 # ─── Version lockstep ──────────────────────────────────────────
 
 def test_version_bumped_to_132g1():
-    assert "paneltec-v160.3.9.58.13.132g1" in _read(VERSION_JS)
-    assert "paneltec-v160.3.9.58.13.132g1" in _read(SW)
+    """Baseline pin: version must have moved from any pre-.132g1
+    build to .132g1 or beyond. Uses a regex so subsequent bumps
+    (e.g. .132g3 hotfix) don't retroactively fail this ship's pin."""
+    for path in (VERSION_JS, SW):
+        s = _read(path)
+        # Match .132g1 through .132z999.
+        assert re.search(r"paneltec-v160\.3\.9\.58\.13\.132g\d", s), (
+            f"version in {path.name} has not reached .132g1+")
