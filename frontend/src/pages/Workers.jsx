@@ -235,7 +235,7 @@ function EditSummaryPill({ tone = 'neutral', children, testid, title }) {
 // (same endpoint as the view drawer). On success the local state
 // updates so the avatar refreshes immediately without closing the
 // modal.
-function EditWorkerPhoto({ worker }) {
+function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
   const can = useCan();
   const canEdit = can('workers', 'edit');
   // Local overrides so we can refresh the avatar without waiting for
@@ -246,6 +246,13 @@ function EditWorkerPhoto({ worker }) {
   const [broken, setBroken] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const fileRef = React.useRef(null);
+  // v58.13.132fd — Live-preview crop offset. Controlled from the
+  // parent form so the slider persists through the same PATCH the
+  // rest of the fields go through. `photoOffsetY` may be undefined
+  // when this component is rendered outside the edit form.
+  const effectiveOffset = typeof photoOffsetY === 'number'
+    ? Math.max(0, Math.min(100, photoOffsetY))
+    : (typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50);
 
   // Reload the download-token URL whenever the effective photo changes.
   React.useEffect(() => {
@@ -305,6 +312,7 @@ function EditWorkerPhoto({ worker }) {
           src={src || ''}
           alt=""
           onError={() => setBroken(true)}
+          style={{ objectPosition: `50% ${effectiveOffset}%` }}
           className="w-14 h-14 rounded-xl object-cover shadow-sm border border-white/70 shrink-0 bg-white"
           data-testid="worker-edit-photo"
         />
@@ -340,6 +348,43 @@ function EditWorkerPhoto({ worker }) {
             )}
           </button>
         </>
+      )}
+      {/* v58.13.132fd — Vertical alignment slider. Only rendered
+          when a photo exists AND the caller passes a controlled
+          `onChangeOffsetY` handler (i.e. inside the edit form).
+          Bystander render sites (list row, view drawer) show the
+          image without this control. */}
+      {canEdit && hasPhoto && typeof onChangeOffsetY === 'function' && (
+        <div className="w-full max-w-[220px] flex flex-col gap-1 mt-1"
+          data-testid="worker-edit-photo-align-block">
+          <div className="flex items-center justify-between">
+            <label htmlFor="worker-photo-offset-y"
+              className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+              Vertical alignment
+            </label>
+            <button type="button"
+              onClick={() => onChangeOffsetY(50)}
+              disabled={effectiveOffset === 50}
+              data-testid="worker-edit-photo-align-reset"
+              className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline">
+              Reset to centre
+            </button>
+          </div>
+          <input
+            id="worker-photo-offset-y"
+            type="range"
+            min="0" max="100" step="1"
+            value={effectiveOffset}
+            onChange={(e) => onChangeOffsetY(Number(e.target.value))}
+            data-testid="worker-edit-photo-align-slider"
+            data-photo-offset-y={effectiveOffset}
+            className="w-full accent-[#1e4a8c]"
+          />
+          <div className="flex items-center justify-between text-[10px] text-slate-500 select-none">
+            <span>Higher</span>
+            <span>Lower</span>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -382,6 +427,7 @@ function WorkerRowPhoto({ worker }) {
       loading="lazy"
       decoding="async"
       onError={() => setBroken(true)}
+      style={{ objectPosition: `50% ${typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50}%` }}
       className="w-10 h-10 rounded-full object-cover border border-slate-200 bg-white shrink-0"
       data-testid={`worker-row-photo-${worker.id}`}
     />
@@ -973,6 +1019,7 @@ function IdCardPhoto({ worker, onExpand }) {
         src={src || ''}
         alt=""
         onError={() => setBroken(true)}
+        style={{ objectPosition: `50% ${typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50}%` }}
         className={`w-32 h-32 rounded-lg object-cover border border-slate-200 bg-white transition ${canExpand ? 'group-hover:ring-2 group-hover:ring-[#1e4a8c]/50 group-hover:brightness-95' : ''}`}
         data-testid="id-card-photo-img"
       />
@@ -1364,6 +1411,10 @@ function EditModal({ worker, onClose, onSaved }) {
     additional_notes: worker.additional_notes || '',
     availability: normaliseAvailability(worker.availability),
     client_ids: Array.isArray(worker.client_ids) ? worker.client_ids : [],
+    // v58.13.132fd — Vertical photo alignment (0..100). Missing on
+    // a legacy record → 50 (centre) via the same coercion the
+    // backend applies on serialise.
+    photo_offset_y: typeof worker.photo_offset_y === 'number' ? worker.photo_offset_y : 50,
   });
   const [saving, setSaving] = useState(false);
   const [pickerCompany, setPickerCompany] = useState(null);
@@ -1575,7 +1626,9 @@ function EditModal({ worker, onClose, onSaved }) {
         <div className="px-6 py-4 border-b border-slate-200 bg-[#e6eff9]">
           <div className="flex items-start gap-3">
             {/* v160.3.4c — photo mirrored from the read-only VIEW modal */}
-            {!isNew && <EditWorkerPhoto worker={worker} />}
+            {!isNew && <EditWorkerPhoto worker={worker}
+              photoOffsetY={f.photo_offset_y}
+              onChangeOffsetY={(v) => setF((prev) => ({ ...prev, photo_offset_y: v }))} />}
             <div className="min-w-0 flex-1">
               <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">{isNew ? 'New worker' : 'Edit worker'}</div>
               <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">{isNew ? 'Add worker' : fullName(worker)}</h2>

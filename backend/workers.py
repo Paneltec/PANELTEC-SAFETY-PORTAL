@@ -51,6 +51,13 @@ def _require_write(user: dict, action: str = "edit"):
 
 def _serialise(doc: dict, viewer: Optional[dict] = None) -> dict:
     out = {k: v for k, v in doc.items() if k != "_id"}
+    # v58.13.132fd — Default coercion for `photo_offset_y`. Missing,
+    # null, or non-integer stored values render as 50 (centred).
+    _pox = out.get("photo_offset_y")
+    if not isinstance(_pox, int):
+        out["photo_offset_y"] = 50
+    else:
+        out["photo_offset_y"] = max(0, min(100, _pox))
     cid = doc.get("simpro_company_id")
     if doc.get("source") == "manual":
         out["company_label"] = "Manual"
@@ -209,6 +216,12 @@ class WorkerPatch(BaseModel):
     additional_notes: Optional[str] = Field(default=None, max_length=2000)
     availability: Optional[dict] = None
     client_ids: Optional[list[str]] = None
+    # v58.13.132fd — Vertical alignment for the worker photo crop.
+    # Stored as an integer 0..100 — interpreted client-side as the
+    # CSS `object-position` Y percentage (0 top, 50 centre, 100
+    # bottom). Missing / null coerces to 50 on serialise. Values
+    # outside the range are clamped server-side (never 400).
+    photo_offset_y: Optional[int] = None
     # v58.13.56 — HR-merge lite. Four flags migrated off `hr_employees`
     # so the Worker detail view can carry the HR context without a
     # separate register. Gate is `hr_employees.view` (see `_serialise`
@@ -393,6 +406,15 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
         raise HTTPException(400, "No fields supplied")
     if "availability" in payload:
         payload["availability"] = _validate_availability(payload["availability"])
+    # v58.13.132fd — Clamp `photo_offset_y` to [0, 100]. Spec calls
+    # for server-side clamp, not a 400/422, so admins nudging a
+    # slider past the range don't get rejected.
+    if "photo_offset_y" in payload:
+        pox = payload["photo_offset_y"]
+        if pox is None or not isinstance(pox, int):
+            payload["photo_offset_y"] = 50
+        else:
+            payload["photo_offset_y"] = max(0, min(100, pox))
     payload["updated_at"] = now_iso()
     result = await db.workers.find_one_and_update(
         {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
