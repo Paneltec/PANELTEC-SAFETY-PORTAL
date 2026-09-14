@@ -1,4 +1,4 @@
-"""Phase 3.22c — Shared template for card-style Paneltec Civil PDFs.
+"""Phase 3.22c — Shared template for card-style The Paneltec Group PDFs.
 
 Small-format printable artefacts (ID cards, lanyards, gate signs, label
 sheets) all share the same visual grammar so a single binder of printed
@@ -11,7 +11,7 @@ material reads as one product:
   * Orange (`PANELTEC_ORANGE`) used only for:
       – the chevron mark
       – call-to-action lines under the QR ("Scan to sign on", token text)
-      – the brand footer "PROPERTY OF PANELTEC CIVIL".
+      – the brand footer "PROPERTY OF THE PANELTEC GROUP".
   * Quiet dotted-orange pairing zones (NFC) — old violet zones forbidden.
 
 Every renderer imports colours from `pdf_brand.py`; no file may call
@@ -59,7 +59,7 @@ def chevron(c: Canvas, cx: float, cy: float, size: float = 4) -> None:
 # ──────────────────────────────────────────────────────────────────────
 def header_band(c: Canvas, x: float, y: float, w: float, h: float,
                 eyebrow: str, *,
-                wordmark: str = 'PANELTEC CIVIL',
+                wordmark: str = 'THE PANELTEC GROUP',
                 rounded_top_mm: float = 0,
                 eyebrow_align: str = 'left') -> None:
     """Slate header band with a tight chevron+wordmark cluster on the left.
@@ -160,7 +160,7 @@ def pairing_zone(c: Canvas, x: float, y: float, size: float, *,
 # Footer brand line — single orange line, all caps.
 # ──────────────────────────────────────────────────────────────────────
 def footer_brand(c: Canvas, x: float, y: float, w: float, *,
-                 line: str = 'PROPERTY OF PANELTEC CIVIL · WHS COMPLIANCE') -> None:
+                 line: str = 'PROPERTY OF THE PANELTEC GROUP · WHS COMPLIANCE') -> None:
     c.setFillColor(ORANGE)
     c.setFont('Helvetica-Bold', 7.5)
     c.drawCentredString(x + w / 2, y, line)

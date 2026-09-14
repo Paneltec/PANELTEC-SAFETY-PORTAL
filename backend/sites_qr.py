@@ -458,7 +458,7 @@ async def site_scan_pdf(site_id: str,
         # A4 portrait gate sign — slate header band + orange chevron,
         # big QR centred. Designed to laminate + zip-tie to a fence.
         header_band(c, 0, page_h - 35 * mm, page_w, 35 * mm,
-                    eyebrow='SCAN THE QR · PANELTEC CIVIL WHS',
+                    eyebrow='SCAN THE QR · THE PANELTEC GROUP WHS',
                     eyebrow_align='right')
 
         # Site name
@@ -505,7 +505,7 @@ async def site_scan_pdf(site_id: str,
                 c.drawString(x + 26 * mm, y + 12 * mm, "Scan to sign-on")
                 c.setFillColor(ORANGE)
                 c.setFont("Helvetica-Bold", 6)
-                c.drawString(x + 26 * mm, y + 8 * mm, "PANELTEC CIVIL WHS")
+                c.drawString(x + 26 * mm, y + 8 * mm, "THE PANELTEC GROUP WHS")
 
     c.showPage(); c.save()
     buf.seek(0)

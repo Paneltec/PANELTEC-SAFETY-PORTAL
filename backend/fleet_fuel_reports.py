@@ -795,7 +795,7 @@ async def _rate_limited(*, org_id: str, user_id: str) -> bool:
     return recent >= _RATE_LIMIT_MAX
 
 
-def _render_report_pdf(data: dict, *, org_name: str = "Paneltec Civil") -> bytes:
+def _render_report_pdf(data: dict, *, org_name: str = "The Paneltec Group") -> bytes:
     """Simple in-request PDF snapshot via reportlab. Kept minimal —
     the goal is a printable audit trail, not a design showcase."""
     from reportlab.lib.pagesizes import A4
@@ -955,7 +955,7 @@ async def fuel_report_email(
         f"Fills: <strong>{t.get('fills', 0)}</strong><br/>"
         f"Unique keys: <strong>{t.get('unique_keys', 0)}</strong></p>"
         f"<p style=\"color:#64748b;font-size:12px\">Sent by "
-        f"{(user.get('email') or user.get('id'))} · Paneltec Civil</p>"
+        f"{(user.get('email') or user.get('id'))} · The Paneltec Group</p>"
     )
     subject = f"Paneltec Fuel Report — {filters_snap['scope'].title()} · {now_iso()[:10]}"
 

@@ -82,7 +82,9 @@ def _draw_header(canv: Canvas, doc, title_eyebrow: str, status: Optional[str]):
     # Wordmark
     canv.setFillColor(WHITE)
     canv.setFont('Helvetica-Bold', 10.5)
-    canv.drawString(cx + 8, h - HEADER_HEIGHT / 2 + 0.5, 'PANELTEC CIVIL')
+    # v58.13.132fx — "PANELTEC CIVIL" → "THE PANELTEC GROUP" per the
+    # Paneltec Group brand sweep.
+    canv.drawString(cx + 8, h - HEADER_HEIGHT / 2 + 0.5, 'THE PANELTEC GROUP')
     canv.setFont('Helvetica', 7)
     canv.setFillColor(colors.HexColor('#94A3B8'))   # muted slate-400 on slate bg
     canv.drawString(cx + 8, h - HEADER_HEIGHT / 2 - 5, (title_eyebrow or 'WHS COMPLIANCE').upper())

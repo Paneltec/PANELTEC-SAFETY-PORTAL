@@ -190,7 +190,7 @@ async def contractor_scan_pdf(
         c_pdf = canvas.Canvas(buf, pagesize=(W, H))
         # Phase 3.22c — slate header band with orange chevron + wordmark.
         header_band(c_pdf, 0, H - 22 * mm, W, 22 * mm,
-                    eyebrow='SUPPLIER INDUCTION · PANELTEC CIVIL WHS',
+                    eyebrow='SUPPLIER INDUCTION · THE PANELTEC GROUP WHS',
                     eyebrow_align='right')
 
         # Name + ABN
@@ -224,7 +224,7 @@ async def contractor_scan_pdf(
         # Orange wordmark line (no full slate band — keeps the BC airy).
         c_pdf.setFillColor(ORANGE)
         c_pdf.setFont("Helvetica-Bold", 8)
-        c_pdf.drawString(4 * mm, H - 6 * mm, "PANELTEC CIVIL")
+        c_pdf.drawString(4 * mm, H - 6 * mm, "THE PANELTEC GROUP")
         c_pdf.setFillColor(SLATE_MUTED)
         c_pdf.setFont("Helvetica", 6)
         c_pdf.drawString(4 * mm, H - 10 * mm, "Supplier induction")

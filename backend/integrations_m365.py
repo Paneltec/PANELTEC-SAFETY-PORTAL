@@ -102,10 +102,10 @@ async def m365_test(user: dict = Depends(require_permission("integrations", "edi
     token = await get_app_only_access_token(user["org_id"])
     payload = {
         "message": {
-            "subject": "Paneltec Civil — test email",
+            "subject": "The Paneltec Group — test email",
             "body": {
                 "contentType": "HTML",
-                "content": ("<p>This is a test email from <strong>Paneltec Civil</strong> "
+                "content": ("<p>This is a test email from <strong>The Paneltec Group</strong> "
                             "to verify Microsoft 365 Graph SendMail is configured correctly.</p>"
                             "<p style='color:#64748B;font-size:12px'>If you received this, "
                             "the Application permission flow is working.</p>"),

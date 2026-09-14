@@ -87,7 +87,7 @@ def _draw_header_band(cnv: _canvas.Canvas, doc: BaseDocTemplate) -> None:
     cnv.setFillColor(colors.HexColor("#64748B"))
     cnv.setFont("Helvetica", 8)
     cnv.drawString(15 * mm, 3 * mm,
-                    f"Paneltec Civil · Fleet Service Check Sheet · {_TEMPLATE_VERSION}")
+                    f"The Paneltec Group · Fleet Service Check Sheet · {_TEMPLATE_VERSION}")
     cnv.drawRightString(page_w - 15 * mm, 3 * mm,
                           f"Page {cnv.getPageNumber()}")
 

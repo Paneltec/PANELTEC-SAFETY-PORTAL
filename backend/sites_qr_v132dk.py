@@ -115,7 +115,7 @@ def _signage_pdf(qr_png: bytes, site_name: str, address: str,
     # Footer branding.
     c.setFillColorRGB(0.99, 0.50, 0.08)  # Paneltec orange
     c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString(page_w / 2, 18 * mm, "PANELTEC CIVIL · WHS COMPLIANCE")
+    c.drawCentredString(page_w / 2, 18 * mm, "THE PANELTEC GROUP · WHS COMPLIANCE")
 
     c.showPage()
     c.save()

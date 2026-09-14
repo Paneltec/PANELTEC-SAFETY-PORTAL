@@ -119,7 +119,7 @@ async def _audit(actor: dict, action: str, **extra):
 
 
 # ───── Channels: email + SMS ─────────────────────────────────────────
-async def _org_display_name(org_id: str, fallback: str = "Paneltec Civil") -> str:
+async def _org_display_name(org_id: str, fallback: str = "The Paneltec Group") -> str:
     """v58.13.132du — Resolve the org's rendered brand name using the
     same `display_name → trading_name → name → fallback` precedence
     as the sidebar (`.132dr`). Reset / invite emails and SMS messages
@@ -154,13 +154,13 @@ async def _send_invite_email(user: dict, link: str, org_name: str, kind: str, se
         always presented in full.
       • Sub-copy explains the TTL and the safe-to-ignore path.
       • Signed off with the org's display_name (falls back to
-        trading_name → name → 'Paneltec Civil')."""
+        trading_name → name → 'The Paneltec Group')."""
     from email_outbox import queue_email_doc
     brand = await _org_display_name(user.get("org_id"),
-                                    fallback=org_name or "Paneltec Civil")
+                                    fallback=org_name or "The Paneltec Group")
     is_reset = (kind == "reset")
     subject = (f"Reset your password — {brand}" if is_reset
-               else f"You're invited to {brand} on Paneltec Civil")
+               else f"You're invited to {brand} on The Paneltec Group")
     cta_label = "Reset your password" if is_reset else "Set up your account"
     ttl_line = ("This link is valid for 24 hours. If you didn't request "
                 "this, ignore this email.") if is_reset else (

@@ -833,7 +833,7 @@ def _draw_fleet_4up_sheet(c: canvas.Canvas, docs: list[dict]):
     vehicles: big enough to laminate and scan from a couple of metres, but
     still cheap enough to sticker every truck/plant in one print run.
 
-    Layout: 2 cols × 2 rows on A4. Each tile carries the Paneltec Civil
+    Layout: 2 cols × 2 rows on A4. Each tile carries the The Paneltec Group
     orange wordmark strip, the vehicle rego (large), the asset name
     (medium), a large QR block and the scan-token underneath. Cut guides
     printed as slate hairlines between tiles."""
@@ -864,7 +864,7 @@ def _draw_fleet_4up_sheet(c: canvas.Canvas, docs: list[dict]):
         inner_w = label_w - 2 * pad
         inner_h = label_h - 2 * pad
 
-        # Orange header strip — Paneltec Civil wordmark + "PROPERTY OF".
+        # Orange header strip — The Paneltec Group wordmark + "PROPERTY OF".
         header_h = 10 * mm
         header_band(c, x, y + label_h - header_h, label_w, header_h,
                     eyebrow='PROPERTY OF · SCAN TO IDENTIFY',
@@ -936,7 +936,7 @@ def _draw_avery_sheet(c: canvas.Canvas, docs: list[dict]):
         text_x = x + qr_size + 4 * mm
         c.setFillColor(ORANGE)
         c.setFont("Helvetica-Bold", 7)
-        c.drawString(text_x, y + label_h - 5 * mm, "PANELTEC CIVIL")
+        c.drawString(text_x, y + label_h - 5 * mm, "THE PANELTEC GROUP")
         c.setFillColor(SLATE)
         c.setFont("Helvetica-Bold", 9)
         c.drawString(text_x, y + label_h - 11 * mm, (doc.get("name") or "")[:22])

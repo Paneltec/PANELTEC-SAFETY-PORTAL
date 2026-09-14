@@ -318,7 +318,7 @@ def _draw_brand_header(canvas: _canvas.Canvas, doc: SimpleDocTemplate) -> None:
     # Wordmark
     canvas.setFillColor(PAPER)
     canvas.setFont("Helvetica-Bold", 11)
-    canvas.drawString(28 * mm, A4[1] - 11 * mm, "Paneltec Civil")
+    canvas.drawString(28 * mm, A4[1] - 11 * mm, "The Paneltec Group")
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(SLATE_BORDER)
     canvas.drawString(28 * mm, A4[1] - 15 * mm, "User Manual · paneltec-v121")
@@ -339,7 +339,7 @@ def _build_pdf() -> bytes:
         buf, pagesize=A4,
         leftMargin=18 * mm, rightMargin=18 * mm,
         topMargin=26 * mm, bottomMargin=18 * mm,
-        title="Paneltec Civil — User Manual", author="Paneltec Civil",
+        title="The Paneltec Group — User Manual", author="The Paneltec Group",
     )
     styles = _styles()
     flow = _md_to_flowables(md, styles)

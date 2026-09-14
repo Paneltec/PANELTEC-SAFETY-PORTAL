@@ -294,7 +294,7 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
         _flush()
 
     story += [Spacer(1, 8), _para(
-        f"Submission id {sub.get('id', '')[:8]} · Paneltec Civil", "PtSmall")]
+        f"Submission id {sub.get('id', '')[:8]} · The Paneltec Group", "PtSmall")]
 
     doc.build(story)
     return buf.getvalue()

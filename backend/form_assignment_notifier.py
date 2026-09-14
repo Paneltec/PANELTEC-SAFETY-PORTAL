@@ -88,11 +88,11 @@ async def _send_one(worker: dict, template: dict, org_id: str, deep_link: str) -
     subject = f"New safety form: {template.get('name')}"
     body_html = (
         f"<p>Hi {name},</p>"
-        f"<p>You have been assigned a new safety form on Paneltec Civil:</p>"
+        f"<p>You have been assigned a new safety form on The Paneltec Group:</p>"
         f"<p><b>{template.get('name')}</b><br/>"
         f"<i>{(template.get('description') or '').strip() or 'Open the app to complete this form.'}</i></p>"
         f"<p><a href=\"{deep_link}\">Open in Paneltec →</a></p>"
-        f"<p style='color:#64748b;font-size:11px'>Paneltec Civil · WHS Compliance</p>"
+        f"<p style='color:#64748b;font-size:11px'>The Paneltec Group · WHS Compliance</p>"
     )
 
     # Email

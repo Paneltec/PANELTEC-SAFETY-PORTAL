@@ -218,7 +218,7 @@ def _render_card(c: Canvas, x0: float, y0: float, w: float, h: float,
     foot_y = y0 + 3 * mm
     c.setFillColor(SLATE_MUTED)
     c.setFont("Helvetica", 5.5)
-    c.drawString(x0 + 5 * mm, foot_y, "For Paneltec Civil employees only.")
+    c.drawString(x0 + 5 * mm, foot_y, "For The Paneltec Group employees only.")
 
     # Bottom-right: chevron + version tag.
     tag_x = x0 + w - 5 * mm

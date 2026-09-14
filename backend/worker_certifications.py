@@ -825,7 +825,7 @@ please arrange renewal so your site work isn't interrupted.</p>
   <tr><td><b>Status</b></td><td>{status['label']}</td></tr>
 </table>
 <p>Your HSEQ lead has been notified too — they'll be in touch if anything is needed from them.</p>
-<p>– Paneltec Civil compliance reminders</p>
+<p>– The Paneltec Group compliance reminders</p>
 """.strip()
         sms = (f"Hi {first}, your {cert_label} expires {expiry}. "
                f"Please arrange renewal — your HSEQ lead has been notified.")
@@ -842,8 +842,8 @@ please arrange renewal so your site work isn't interrupted.</p>
   <tr><td><b>Expiry</b></td><td>{expiry}</td></tr>
   <tr><td><b>Status</b></td><td>{status['label']}</td></tr>
 </table>
-<p><a href="{app_base}/app/settings/workers?worker={worker.get('id')}">Open worker profile in Paneltec Civil →</a></p>
-<p>– Paneltec Civil compliance reminders</p>
+<p><a href="{app_base}/app/settings/workers?worker={worker.get('id')}">Open worker profile in The Paneltec Group →</a></p>
+<p>– The Paneltec Group compliance reminders</p>
 """.strip()
         sms = (f"Paneltec WHS: {worker_label} {cert_label} expires {expiry}. "
                f"Renew at app.paneltec.com.au")

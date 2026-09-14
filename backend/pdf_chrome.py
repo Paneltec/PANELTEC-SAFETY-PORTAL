@@ -114,11 +114,16 @@ class BrandedCanvas(Canvas):
         # Header left: logo (image if present) or word-mark text.
         # v58.13.132fk — If org has no explicit logo_url, fall back
         # to the bundled Paneltec Group wordmark PNG on disk.
+        # v58.13.132fx — On this navy header, the standard
+        # grey+orange PNG is nearly invisible (grey "THE" / "GROUP"
+        # letters disappear on navy). Fall back to the on-dark
+        # white+orange variant (`logo-wordmark-white-960.png`,
+        # generated in .132ft) so the wordmark reads clearly.
         logo_url = self._org.get("logo_url")
         if not logo_url or not os.path.isfile(logo_url or ""):
             _default_logo = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                "..", "frontend", "public", "brand", "logo-wordmark-960.png",
+                "..", "frontend", "public", "brand", "logo-wordmark-white-960.png",
             )
             if os.path.isfile(_default_logo):
                 logo_url = _default_logo
@@ -136,7 +141,9 @@ class BrandedCanvas(Canvas):
             self.setFont("Helvetica-Bold", 18)
             self.drawString(MARGIN_MM * mm, h - band_h + 7 * mm, "PANELTEC")
             self.setFont("Helvetica", 8)
-            self.drawString(MARGIN_MM * mm, h - band_h + 3 * mm, "CIVIL")
+            # v58.13.132fx — Wordmark fallback text: "CIVIL" → "GROUP"
+            # in line with the Paneltec Group brand sweep.
+            self.drawString(MARGIN_MM * mm, h - band_h + 3 * mm, "GROUP")
 
         # Header right: address block, right-aligned, white text.
         self.setFillColor(WHITE)

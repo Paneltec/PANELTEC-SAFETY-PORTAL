@@ -445,7 +445,7 @@ def _pdf_log(site_name: str, rows: list[dict]) -> bytes:
     c.rect(0, A4[1] - 18 * mm, A4[0], 18 * mm, fill=1, stroke=0)
     c.setFillColor(ORANGE)
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(18 * mm, A4[1] - 11 * mm, "Paneltec Civil")
+    c.drawString(18 * mm, A4[1] - 11 * mm, "The Paneltec Group")
     c.setFillColor(PAPER)
     c.setFont("Helvetica", 9)
     c.drawString(18 * mm, A4[1] - 15 * mm,

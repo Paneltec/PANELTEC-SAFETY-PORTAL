@@ -168,11 +168,11 @@ def _pdf(bundle: dict, meta: dict) -> bytes:
     story += [P.signatures_section(['Admin', 'HSEQ lead', 'Auditor'])]
 
     # PDF metadata — auditable provenance baked into the file itself.
-    doc.title = meta.get('title') or 'Paneltec Civil Audit Pack'
-    doc.author = meta.get('generated_by') or 'Paneltec Civil'
+    doc.title = meta.get('title') or 'The Paneltec Group Audit Pack'
+    doc.author = meta.get('generated_by') or 'The Paneltec Group'
     doc.subject = f"WHS audit pack · {meta['date_from']} → {meta['date_to']}"
-    doc.producer = 'Paneltec Civil · paneltec-civil'
-    doc.creator = 'Paneltec Civil · audit_exports'
+    doc.producer = 'The Paneltec Group · paneltec-civil'
+    doc.creator = 'The Paneltec Group · audit_exports'
 
     doc.build(story)
     return buf.getvalue()

@@ -571,7 +571,7 @@ def _wrap_body(message: Optional[str], summary_html: str, link_path: str) -> str
     return (
         f"{msg_html}"
         f"<div style='border-left:3px solid #2C6BFF;padding-left:12px;margin:16px 0'>{summary_html}</div>"
-        f"<p><a href='{link_path}'>Open in Paneltec Civil</a></p>"
+        f"<p><a href='{link_path}'>Open in The Paneltec Group</a></p>"
     )
 
 
