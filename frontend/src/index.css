@@ -792,3 +792,12 @@ ol.zebra-list > li:hover {
     appearance: textfield;
 }
 
+
+/* v58.13.132g1 — Shake animation for wrong-PIN feedback on the
+   tile PIN modal. Short, sharp, then rest. */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    50% { transform: translateX(8px); }
+    75% { transform: translateX(-4px); }
+}

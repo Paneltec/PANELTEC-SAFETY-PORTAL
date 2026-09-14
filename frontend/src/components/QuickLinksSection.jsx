@@ -867,6 +867,8 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
     remote_icon_url: tile?.remote_icon_url || '',
     color: tile?.color || DEFAULT_COLOR,
     enabled: tile?.enabled ?? true,
+    // v58.13.132g1 — Per-tile PIN gate. Off by default.
+    pin_protected: tile?.pin_protected ?? false,
   }));
   // v58.13.132ey — Per-tile ACL state.
   // `restrict` true → send `allowedUserIds` verbatim; false → send
@@ -1006,7 +1008,9 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
         // send whatever's ticked (empty list means "hide from
         // everyone" which is now a valid state).
         access_mode: restrict ? 'private' : 'public',
-        allowed_user_ids: restrict ? allowedUserIds : [] };
+        allowed_user_ids: restrict ? allowedUserIds : [],
+        // v58.13.132g1 — PIN gate flag rides in from the form state.
+        pin_protected: !!form.pin_protected };
       if (mode === 'add') {
         await api.post('/org/url-tiles', payload);
         toast.success(`Added "${form.label.trim()}"`);
@@ -1144,6 +1148,18 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
                 data-testid="org-quick-links-editor-enabled"
                 className="rounded border-slate-300" />
               <span className="text-xs font-semibold text-slate-700">Visible on Quick Links page</span>
+            </label>
+            {/* v58.13.132g1 — Per-tile PIN gate. When on, every click
+                on the tile body (any role, including admin) has to
+                pass a 4-digit PIN before the URL opens. Uses the
+                same PIN as the header admin-console lock. */}
+            <label className="flex items-center gap-2 mt-2"
+              title="Every click on this tile will require the admin PIN">
+              <input type="checkbox" checked={!!form.pin_protected}
+                onChange={(e) => setForm({ ...form, pin_protected: e.target.checked })}
+                data-testid="org-quick-links-editor-pin-protected"
+                className="rounded border-slate-300" />
+              <span className="text-xs font-semibold text-slate-700">Require admin PIN to open</span>
             </label>
           </div>
           {/* v58.13.132ey — Per-tile ACL section. v58.13.132fa —

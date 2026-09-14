@@ -121,6 +121,10 @@ class TileIn(BaseModel):
     allowed_user_ids: Optional[list[str]] = None
     # v58.13.132ff — Explicit `access_mode`. See TilePatch below.
     access_mode: Optional[str] = None
+    # v58.13.132g1 — When true, every click on the tile body (any
+    # role, including admin) must pass a 4-digit PIN gate before the
+    # URL is opened. Per-click, not per-session.
+    pin_protected: Optional[bool] = None
 
 
 class TilePatch(BaseModel):
@@ -136,6 +140,8 @@ class TilePatch(BaseModel):
     # v58.13.132ff — Explicit access mode. `"public"` or
     # `"private"`. Missing on read → inferred from ACL emptiness.
     access_mode: Optional[str] = None
+    # v58.13.132g1 — Toggle the per-tile PIN gate.
+    pin_protected: Optional[bool] = None
 
 
 class ReorderRow(BaseModel):
@@ -145,6 +151,18 @@ class ReorderRow(BaseModel):
 
 class ReorderIn(BaseModel):
     tiles: list[ReorderRow]
+
+
+class ReorderIdsIn(BaseModel):
+    """v58.13.132g1 — Ordered-list reorder shape.
+
+    Simpler contract than `ReorderIn` for the Apps Directory drag-and-
+    drop UX: caller sends the tile ids in the target order and the
+    server writes `order = 0, 1, 2, …` in one pass. Coexists with
+    `POST /reorder` (which still accepts explicit per-tile order
+    integers) — that endpoint is still used by other flows.
+    """
+    tile_ids: list[str]
 
 
 _HEX_COLOR_RE = re.compile(r"^#([0-9a-fA-F]{6})$")
@@ -291,6 +309,11 @@ def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
         # tile UI. `true` means the viewer can click / launch / reveal
         # credentials; `false` means the tile is visible but disabled.
         "approved_for_me": approved,
+        # v58.13.132g1 — Per-tile PIN gate flag. When true, every
+        # click (any role) must pass a 4-digit PIN before the URL
+        # opens; the tile-body renders greyed with a lock overlay
+        # in the frontend.
+        "pin_protected": bool(doc.get("pin_protected", False)),
         "created_at": doc.get("created_at"),
         "created_by": doc.get("created_by"),
         "updated_at": doc.get("updated_at"),
@@ -509,6 +532,8 @@ async def create_tile(body: TileIn, user: dict = Depends(get_current_user)):
         "access_mode": (body.access_mode
                           if body.access_mode in ("public", "private")
                           else ("private" if body.allowed_user_ids else "public")),
+        # v58.13.132g1 — Per-tile PIN gate. Defaults to off.
+        "pin_protected": bool(body.pin_protected) if body.pin_protected is not None else False,
         "created_at": now, "created_by": user["id"],
         "updated_at": now, "updated_by": user["id"],
     }
@@ -564,6 +589,40 @@ async def bulk_access(body: BulkAccessIn,
             "tiles": [_out(t, user["id"], redact_url=False) for t in fresh]}
 
 
+@router.patch("/reorder")
+async def reorder_tiles_by_ids(body: ReorderIdsIn,
+                                 user: dict = Depends(get_current_user)):
+    """v58.13.132g1 — Apps Directory drag-and-drop reorder.
+
+    Admin sends the target ordering as a flat list of tile ids; server
+    writes `order = 0, 1, 2, …` on each row (scoped to caller's org,
+    ids from other orgs silently skip). Idempotent — a repeat call with
+    the same list is a no-op behaviourally.
+
+    Kept as a PATCH sibling to the existing `POST /reorder` (explicit
+    per-tile order integers) so the two flows can coexist. This route
+    MUST sit above `PATCH /{tile_id}` — otherwise the parameterised
+    route swallows `/reorder` first.
+    """
+    _admin(user)
+    org_id = user["org_id"]
+    if not body.tile_ids:
+        return {"ok": True, "updated": 0}
+    now = now_iso()
+    updated = 0
+    for position, tile_id in enumerate(body.tile_ids):
+        res = await db.org_url_tiles.update_one(
+            {"id": tile_id, "org_id": org_id},
+            {"$set": {"order": position,
+                       "updated_at": now,
+                       "updated_by": user["id"]}},
+        )
+        updated += res.modified_count
+    log.info("org_url_tiles.reorder_by_ids org=%s rows=%d updated=%d",
+             org_id, len(body.tile_ids), updated)
+    return {"ok": True, "updated": updated}
+
+
 @router.patch("/{tile_id}")
 async def update_tile(tile_id: str, body: TilePatch,
                        user: dict = Depends(get_current_user)):
@@ -605,6 +664,9 @@ async def update_tile(tile_id: str, body: TilePatch,
         # else falls back to inference from the resulting ACL.
         if body.access_mode in ("public", "private"):
             updates["access_mode"] = body.access_mode
+    if body.pin_protected is not None:
+        # v58.13.132g1 — Toggle per-tile PIN gate.
+        updates["pin_protected"] = bool(body.pin_protected)
     if not updates:
         return _out(existing, user["id"], redact_url=False)
     updates["updated_at"] = now_iso()
@@ -628,6 +690,94 @@ async def delete_tile(tile_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Tile not found")
     log.info("org_url_tiles.delete org=%s tile=%s", org_id, tile_id)
     return {"ok": True, "deleted": tile_id}
+
+
+class TilePinVerifyIn(BaseModel):
+    pin: str = Field(..., min_length=4, max_length=4)
+
+
+@router.post("/{tile_id}/verify-pin")
+async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
+                            user: dict = Depends(get_current_user)):
+    """v58.13.132g1 — Per-click PIN gate on a `pin_protected` tile.
+
+    Verifies the submitted 4-digit PIN against the caller's stored
+    `users.admin_console_pin_hash` (the same PIN the header
+    admin-console lock uses — Stephen deliberately wants one PIN per
+    person). Returns the tile URL on success so the frontend can open
+    it without a second GET round-trip.
+
+    Rate-limiting reuses the shared `admin_console_pin_attempts`
+    lockout tiers (3/30s + 6/15min) so this endpoint can't be used to
+    end-run the header lock's throttling.
+
+    Response codes:
+      · 200 → `{ok: true, url: <tile url>}`
+      · 400 → tile is not pin_protected (nothing to unlock)
+      · 401 → wrong PIN
+      · 403 → user has no admin PIN configured
+      · 404 → tile not found in caller's org
+      · 429 → locked out
+    """
+    # Deferred import — the pin helpers live in a peer router module
+    # and importing at file scope would risk load-order weirdness.
+    import re as _re
+    from admin_console_pin import (
+        _check_lockout, _record_failure, _reset_attempts,
+        verify_password,
+    )
+    org_id = user["org_id"]
+    tile = await db.org_url_tiles.find_one(
+        {"id": tile_id, "org_id": org_id},
+        {"_id": 0, "id": 1, "url": 1, "pin_protected": 1,
+         "allowed_user_ids": 1, "access_mode": 1},
+    )
+    if not tile:
+        raise HTTPException(status_code=404, detail="Tile not found")
+    if not tile.get("pin_protected"):
+        raise HTTPException(status_code=400,
+                            detail="Tile is not PIN-protected")
+    if not _re.match(r"^\d{4}$", body.pin):
+        raise HTTPException(status_code=400,
+                            detail="PIN must be exactly 4 digits.")
+    # Approval gate — if the tile is private and the caller isn't on
+    # its ACL, they cannot unlock it. Prevents a non-approved user
+    # from using their own PIN to bypass tile visibility.
+    allowed = list(tile.get("allowed_user_ids") or [])
+    mode = tile.get("access_mode") or ("private" if allowed else "public")
+    if mode == "private" and user["id"] not in allowed:
+        raise HTTPException(status_code=403,
+                            detail="Not approved for this tile.")
+
+    # Rate-limit BEFORE we touch bcrypt.
+    await _check_lockout(user["id"])
+
+    doc = await db.users.find_one(
+        {"id": user["id"]},
+        {"admin_console_pin_hash": 1},
+    )
+    existing_hash = (doc or {}).get("admin_console_pin_hash")
+    if not existing_hash:
+        raise HTTPException(
+            status_code=403,
+            detail="No admin PIN set. Configure one in your profile first.",
+        )
+    if not verify_password(body.pin, existing_hash):
+        recorded = await _record_failure(user["id"])
+        lu = recorded.get("locked_until")
+        if lu:
+            from datetime import datetime as _dt, timezone as _tz
+            remaining = int((lu - _dt.now(_tz.utc)).total_seconds())
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many wrong PINs. Try again in {remaining}s.",
+                headers={"Retry-After": str(remaining)},
+            )
+        raise HTTPException(status_code=401, detail="Wrong PIN.")
+    await _reset_attempts(user["id"])
+    log.info("org_url_tiles.verify_pin org=%s tile=%s actor=%s",
+             org_id, tile_id, user["id"])
+    return {"ok": True, "url": tile.get("url") or ""}
 
 
 @router.post("/reorder")
