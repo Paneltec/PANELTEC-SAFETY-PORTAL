@@ -101,7 +101,19 @@ export default function IncidentsTable({ items, isAdmin, onArchive, onUnarchive 
                   ))}
                   <td className="px-3 py-1.5 text-right whitespace-nowrap">
                     <div className="inline-flex items-center gap-1">
-                      <button onClick={() => navigate(`/app/incidents/${r.id}`)}
+                      {/* v58.13.132fv — View route `/app/incidents/${id}` does
+                          NOT exist in App.js (only /app/incidents and
+                          /app/incidents/new are registered). Mel's
+                          "can't view incident reports" reproduced
+                          from this broken navigate. Redirect through
+                          the existing `?open=<id>` deep-link that
+                          Incidents.jsx already honours via the
+                          `deepLinkId → openInitially` prop on
+                          CaptureCard (see Incidents.jsx L260). Cards
+                          view flips automatically because
+                          `?open=<id>` is captured before the
+                          view-mode switch renders. */}
+                      <button onClick={() => navigate(`/app/incidents?open=${r.id}`)}
                         title="View"
                         data-testid={`incidents-table-view-${r.id}`}
                         className="p-1 rounded hover:bg-slate-200 text-slate-600">
