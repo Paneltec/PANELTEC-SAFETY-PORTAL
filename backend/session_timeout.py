@@ -103,8 +103,25 @@ def _effective_for_role(settings: dict, role: str) -> dict:
 
 
 async def effective_for_user(user: dict) -> dict:
-    return _effective_for_role(await get_settings(user["org_id"]),
+    base = _effective_for_role(await get_settings(user["org_id"]),
                                user.get("role") or "worker")
+    # v58.13.132fw — Honour a per-user idle-minutes override written
+    # by PATCH /settings/session-timeout/me. The override wins over
+    # the org / role default so the user's dropdown reflects the
+    # value they saved. Absolute hours + warning modal stay on the
+    # org-wide setting.
+    override = user.get("session_timeout_minutes_override")
+    if override is None:
+        u = await db.users.find_one(
+            {"id": user["id"]},
+            {"_id": 0, "session_timeout_minutes_override": 1},
+        )
+        override = (u or {}).get("session_timeout_minutes_override")
+    if isinstance(override, int) and override >= 5:
+        base = {**base, "idle_minutes": override, "effective_minutes": override}
+    else:
+        base = {**base, "effective_minutes": base.get("idle_minutes")}
+    return base
 
 
 # ────────────── REST surface ──────────────
@@ -213,6 +230,37 @@ async def force_refresh_signal(user: dict = Depends(get_current_user)):
 @router.get("/session-timeout/me")
 async def session_timeout_me(user: dict = Depends(get_current_user)):
     return await effective_for_user(user)
+
+
+class UserTimeoutIn(BaseModel):
+    # v58.13.132fw — Per-user override for the idle-timeout preset.
+    # Range mirrors the presets shown in the UserDropdownCard select
+    # (15, 30, 60, 120, 240, 480, 720 minutes) but validates as
+    # anything >= 5 to keep the surface forgiving.
+    minutes: int = Field(..., ge=5, le=1440)
+
+
+@router.patch("/session-timeout/me")
+async def patch_session_timeout_me(
+    body: UserTimeoutIn, user: dict = Depends(get_current_user)
+):
+    """v58.13.132fw — Save a per-user idle-timeout override.
+
+    Root cause of Mel's "Could not save" toast in `.132fu` triage:
+    the FE has been shipping this PATCH for a while but the
+    endpoint was never registered → every call returned 405 Method
+    Not Allowed → toast fired. This endpoint stores the override on
+    the user document; `effective_for_user` picks it up on the next
+    /session-timeout/me GET.
+    """
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "session_timeout_minutes_override": int(body.minutes),
+            "session_timeout_updated_at": _now_iso(),
+        }},
+    )
+    return await effective_for_user({**user, "session_timeout_minutes_override": int(body.minutes)})
 
 
 @router.get("/login-options")
