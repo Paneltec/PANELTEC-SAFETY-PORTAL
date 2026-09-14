@@ -8,6 +8,7 @@ import { usePwaInstall } from '../lib/pwa';
 import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 import PaneltecHero from '../components/marketing/PaneltecHero';
 import PaletteSwitcher from '../components/civil/PaletteSwitcher';   // v58.13.67-palette-switcher
+import Logo from '../components/brand/Logo';   // v58.13.132fm — shared Paneltec Group wordmark (PNG)
 // v160.3.7k — Inoculation sweep: lock body scroll while the iOS install
 // instructions modal is open on the Cover page.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
@@ -92,24 +93,18 @@ export default function Cover() {
     <div className="min-h-screen w-full bg-[#FBF8F2] md:bg-[#FBF8F2] max-md:civil-page" data-testid="cover-page">
       {/* v58.13.67 — Phone CIVIL chrome bar (visible <md only). */}
       <div className="md:hidden civil-chrome flex items-center justify-between px-4 py-3" data-testid="cover-civil-chrome">
-        <div className="flex items-center gap-2.5">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#FF6A00" />
-          </svg>
-          <span className="civil-label-inverse">PANELTEC CIVIL</span>
-        </div>
+        {/* v58.13.132fm — Bespoke chevron+text swapped for shared
+            <Logo /> (transparent PNG wordmark). See ship memo
+            v58_13_132fm_cover_wordmark_swap. */}
+        <Logo size="sm" displayName="The Paneltec Group" data-testid="cover-mobile-brand" />
       </div>
       {/* Topbar — desktop only (md+). */}
       <div className="hidden md:flex absolute top-0 inset-x-0 z-20 items-center justify-between px-6 md:px-10 py-5">
         <Link to="/" className="flex items-center gap-2.5" data-testid="cover-brand">
-          {/* Phase 4.10 v115 — chevron mark inlined as SVG to render in
-              brand orange. The legacy /brand/mark.png is the old cobalt
-              version and is now unreferenced. */}
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
-            <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#F97316" />
-            <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" stroke="#EA580C" strokeWidth="0.5" />
-          </svg>
-          <span className="font-display text-[13px] font-bold tracking-[0.22em] text-slate-900 md:text-white">PANELTEC CIVIL</span>
+          {/* v58.13.132fm — Bespoke chevron + PANELTEC CIVIL text
+              swapped for the shared Paneltec Group wordmark (PNG)
+              via <Logo />. Legacy inline SVG chevron removed. */}
+          <Logo size="md" displayName="The Paneltec Group" />
         </Link>
         <div className="hidden sm:flex items-center gap-4 text-[12px] tracking-wide text-slate-600 md:text-white/80">
           {canInstall && (

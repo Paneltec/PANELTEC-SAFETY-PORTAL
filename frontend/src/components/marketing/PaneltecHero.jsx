@@ -19,9 +19,15 @@ import { ShieldCheck, Sparkles, Award, BarChart3 } from 'lucide-react';
 // If the marketing copy needs to change, EDIT IT HERE and only here.
 
 export const PANELTEC_HERO_COPY = Object.freeze({
-  eyebrow: 'WHS Compliance for civil teams',
+  // v58.13.132fm — Rebrand copy: eyebrow now reads as a generic
+  // "WHS Compliance Platform" tagline (dropped "for civil teams"
+  // so the pre-login page fits Paneltec Group's wider scope).
+  eyebrow: 'WHS Compliance Platform',
   headline: ['Build Safer.', 'Build Smarter.', 'Build Together.'],
-  subhead: 'All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.',
+  // v58.13.132fm — "civil construction" removed from the subhead
+  // per Stephen's rebrand directive. Reads as a generic all-trades
+  // safety-platform line so the message works for every tenant.
+  subhead: 'All your safety forms, inspections, certifications and analytics — in one powerful platform.',
   pills: Object.freeze([
     { label: 'Real-time Compliance', fluent: ShieldCheckmark24Regular, lucide: ShieldCheck },
     { label: 'AI-Powered Insights',  fluent: Sparkle24Regular,         lucide: Sparkles    },
