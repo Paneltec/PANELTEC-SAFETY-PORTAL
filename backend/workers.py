@@ -266,8 +266,13 @@ class SyncRequest(BaseModel):
 @router.get("")
 async def list_workers(
     scope: Optional[Literal["me", "team", "all"]] = None,
+    include_inactive: bool = False,
     user: dict = Depends(require_permission("workers", "view")),
 ):
+    # v58.13.132fy — `?include_inactive=true` (admin-only, silently
+    # clamped for non-admin callers) returns soft-deleted / archived
+    # workers alongside the active roster so the Workers list's
+    # "Show inactive" toggle can surface them with a Restore action.
     # v159.0 — `?scope=me` returns just the caller's own worker row (with
     # full fields — a user always sees their own PII). Any other scope
     # falls through to the normal directory list, with a thin projection
@@ -291,7 +296,11 @@ async def list_workers(
         return [_serialise(me, viewer=user)] if me else []
 
     cursor = db.workers.find(
-        {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
+        (
+            {"org_id": user["org_id"]}
+            if (include_inactive and admin_privileged)
+            else {"org_id": user["org_id"], "deleted_at": None}
+        ), {"_id": 0},
     ).sort([("active", -1), ("last_name", 1), ("first_name", 1)])
     rows = await cursor.to_list(2000)
     if _wants_full(user):
@@ -600,6 +609,81 @@ async def delete_worker(
                 },
             )
     return None
+
+
+# v58.13.132fy — Restore a soft-deleted / deactivated worker.
+#
+# Companion to the `?include_inactive=true` list flag: once an admin
+# spots a worker in the "Show inactive" toggle they need a one-click
+# path back to active state. Clears `deleted_at`, plus the legacy
+# `deactivated_at` / `soft_deleted` flags some older rows still carry
+# from the pre-v58.13 archive-refactor. Writes an `archive_audit` row
+# so the paper trail matches the `bulk_archive` / `unarchive` patterns
+# used elsewhere (see `visitor_signins.admin_unarchive_visitor`).
+#
+# Admin-only — mirrors the soft-delete permission (`workers.delete`)
+# but tightens further to `role == "admin"` because HSEQ leads can
+# archive but not resurrect. Idempotent: restoring an already-active
+# worker returns `{already_active: true}` without a duplicate audit row.
+@router.post("/{worker_id}/restore")
+async def restore_worker(
+    worker_id: str,
+    request: Request,
+    body: Optional[dict] = None,
+    user: dict = Depends(require_permission("workers", "delete")),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    existing = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"]},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Worker not found")
+    require_scoped_access(user, "workers", existing)
+
+    inactive = (
+        existing.get("deleted_at")
+        or existing.get("deactivated_at")
+        or existing.get("soft_deleted")
+    )
+    if not inactive:
+        return {"worker_id": worker_id, "already_active": True}
+
+    ts = now_iso()
+    reason = (body or {}).get("reason")
+    await db.workers.update_one(
+        {"id": worker_id, "org_id": user["org_id"]},
+        {"$set": {
+            "deleted_at": None,
+            "deactivated_at": None,
+            "soft_deleted": False,
+            "active": True,
+            "updated_at": ts,
+        }},
+    )
+    import uuid as _uuid
+    await db.archive_audit.insert_one({
+        "id": str(_uuid.uuid4()),
+        "module": "workers",
+        "actor_user_id": user["id"],
+        "actor_email": user.get("email"),
+        "action": "restore",
+        "batch_id": "",
+        "criteria": {"item_id": worker_id, "collection": "workers"},
+        "affected_count": 1,
+        "reason": reason,
+        "timestamp": ts,
+    })
+    log.info(
+        "v58.13.132fy worker_restore id=%s actor=%s org=%s",
+        worker_id, user["id"], user["org_id"],
+    )
+    return {
+        "worker_id": worker_id,
+        "already_active": False,
+        "restored_at": ts,
+    }
 
 
 @router.post("/sync-from-simpro")

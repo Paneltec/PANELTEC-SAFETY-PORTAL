@@ -1916,10 +1916,16 @@ export default function Workers() {
   // v160.3.9.32-4c.1 — Rehomed BulkSimproZipModal state.
   const [bulkZipOpen, setBulkZipOpen] = useState(false);
   const canDelete = can('workers', 'delete');
+  const isAdmin = (user?.role || '').toLowerCase() === 'admin';
   void user; void WRITE_ROLES; void canDelete;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  // v58.13.132fy — "Show inactive" toggle (admin-only). When on, the
+  // list request adds `?include_inactive=true` so soft-deleted /
+  // deactivated workers surface with a Restore action.
+  const [showInactive, setShowInactive] = useState(false);
+  const [restoring, setRestoring] = useState(null);
   const [editing, setEditing] = useState(null);
   const [viewingId, setViewingId] = useState(null); // v160.2.2 — read-only drawer
   const [viewingDefaultTab, setViewingDefaultTab] = useState(null); // v160.3.4a — deep-link from Dashboard triage tile
@@ -1969,7 +1975,11 @@ export default function Workers() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/workers');
+      // v58.13.132fy — pipe `showInactive` through as
+      // `?include_inactive=true`. Backend clamps for non-admins.
+      const { data } = await api.get('/workers', {
+        params: showInactive && isAdmin ? { include_inactive: true } : {},
+      });
       setRows(data || []);
       // Best-effort: also fetch the matrix to decorate rows with status chips.
       // Worker role still gets 200 here; if it fails we just skip chips.
@@ -1988,6 +1998,8 @@ export default function Workers() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); loadUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // v58.13.132fy — refetch whenever the "Show inactive" toggle flips.
+  useEffect(() => { load(); }, [showInactive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // v160.3.6a — sortable column headers on the Directory tab.
   // Persisted in `?sortk=<col>&sortd=asc|desc`. Default: name asc.
@@ -2078,6 +2090,23 @@ export default function Workers() {
       setConfirmDelete(null);
       await load();
     } catch (e) { toast.error(apiError(e)); }
+  };
+
+  // v58.13.132fy — Restore a soft-deleted / deactivated worker.
+  // Admin-only server-side; UI mirrors the gate.
+  const restore = async (w) => {
+    if (!isAdmin) return;
+    setRestoring(w.id);
+    try {
+      const { data } = await api.post(`/workers/${w.id}/restore`);
+      if (data?.already_active) {
+        toast(`${fullName(w)} is already active`);
+      } else {
+        toast.success(`${fullName(w)} restored`);
+      }
+      await load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setRestoring(null); }
   };
 
   // Phase 4.7.1 — admin "Create login" for a worker without a linked user
@@ -2321,6 +2350,31 @@ export default function Workers() {
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
           <Download /> Export CSV
         </button>
+        {/* v58.13.132fy — "Show inactive" toggle. Admin-only. Flips
+            the list request to `?include_inactive=true` so
+            soft-deleted / deactivated workers appear with a Restore
+            action alongside the active roster. */}
+        {isAdmin && (
+          <label
+            data-testid="show-inactive-toggle"
+            className={[
+              'inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium cursor-pointer transition-colors',
+              showInactive
+                ? 'border-[#1e4a8c] bg-[#e6eff9] text-[#1e4a8c]'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
+            ].join(' ')}
+            title="Include soft-deleted / deactivated workers"
+          >
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              data-testid="show-inactive-checkbox"
+              className="w-3.5 h-3.5 cursor-pointer"
+            />
+            Show inactive
+          </label>
+        )}
         {/* v58.13.132ad — Bulk onboarding cards (admin only). Prints a
             4-up A4 PDF with a fresh onboarding QR per active worker. */}
         {canEdit && (
@@ -2422,11 +2476,20 @@ export default function Workers() {
 
             {filtered.map((w) => {
               const clientsCount = (w.client_ids || []).length;
+              // v58.13.132fy — Row is "inactive" when the include_inactive
+              // path surfaces a soft-deleted or deactivated tombstone.
+              const isInactive = !!(w.deleted_at || w.deactivated_at || w.soft_deleted || w.active === false);
               return (
                 <div
                   key={w.id}
                   data-testid={`worker-row-${w.id}`}
-                  className="grid items-center border-t border-slate-100 hover:bg-slate-50 px-3 py-3 gap-3"
+                  data-inactive={isInactive ? 'true' : 'false'}
+                  className={[
+                    'grid items-center border-t border-slate-100 px-3 py-3 gap-3',
+                    isInactive
+                      ? 'bg-slate-50/60 opacity-60 hover:opacity-90 hover:bg-slate-50'
+                      : 'hover:bg-slate-50',
+                  ].join(' ')}
                   style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 260px' }}
                 >
                   {/* Selection */}
@@ -2551,7 +2614,16 @@ export default function Workers() {
 
                   {/* Status stack — Active + login-derived pill on their own lines */}
                   <div className="flex flex-col items-start gap-1 min-w-0">
-                    <StatusBadge active={w.active} />
+                    <StatusBadge active={!isInactive && w.active !== false} />
+                    {isInactive && (w.deleted_at || w.deactivated_at || w.soft_deleted) && (
+                      <span
+                        data-testid={`worker-archived-${w.id}`}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border bg-[#fbe4e7] text-[#7a1f33] border-[#f4c7cd]"
+                        title={w.deleted_at ? `Soft-deleted ${w.deleted_at}` : 'Deactivated'}
+                      >
+                        Archived
+                      </span>
+                    )}
                     {(() => {
                       const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
                       if (!u) return null;
@@ -2577,7 +2649,21 @@ export default function Workers() {
 
                   {/* Action icons — kept inside the row's white surface */}
                   <div className="flex justify-end">
-                    {canEdit && confirmDelete !== w.id && (
+                    {/* v58.13.132fy — Inactive rows swap the action cluster
+                        for a single Restore button (admin-only). Prevents
+                        edit / delete / print operations against tombstones. */}
+                    {isAdmin && isInactive ? (
+                      <button
+                        onClick={() => restore(w)}
+                        disabled={restoring === w.id}
+                        data-testid={`restore-${w.id}`}
+                        title="Restore worker to active roster"
+                        className="inline-flex items-center gap-1.5 px-3 h-7 rounded bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-semibold uppercase tracking-wider shrink-0 disabled:opacity-50"
+                      >
+                        {restoring === w.id ? <Loader2 size={12} className="animate-spin" /> : <ArrowUp size={12} />}
+                        Restore
+                      </button>
+                    ) : canEdit && confirmDelete !== w.id && (
                       <div className="inline-flex gap-1 items-center flex-nowrap justify-end whitespace-nowrap"
                         data-testid={`worker-actions-cluster-${w.id}`}>
                         {(() => {
