@@ -376,6 +376,7 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
             min="0" max="100" step="1"
             value={effectiveOffset}
             onChange={(e) => onChangeOffsetY(Number(e.target.value))}
+            onInput={(e) => onChangeOffsetY(Number(e.target.value))}
             data-testid="worker-edit-photo-align-slider"
             data-photo-offset-y={effectiveOffset}
             className="w-full accent-[#1e4a8c]"

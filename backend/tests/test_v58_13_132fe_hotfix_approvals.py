@@ -102,26 +102,26 @@ def test_slider_wiring_and_layout():
 # ── FE wiring: bulk buttons fix ───────────────────────────────────
 
 def test_bulk_buttons_have_type_button_and_onclick():
-    """All three bulk buttons must be `type="button"` (not
-    accidentally submitting the enclosing form) AND wired to a
-    setter — not to a no-op / undefined. Match by testid to avoid
-    the 'Select all' substring collision with 'Select all admins'."""
+    """v58.13.132fg supersedes the .132fe admins/users bulk-button
+    contract. Now: `Select everyone` + `Clear all`. Both must be
+    `type="button"` (never accidentally submitting the enclosing
+    form) AND wired to a real setter."""
     src = _read(QLS)
     for tid, handler in (
-        ("org-quick-links-editor-select-all-admins", "selectAllAdmins"),
-        ("org-quick-links-editor-select-all", "selectAll"),
+        ("org-quick-links-editor-select-everyone", "selectEveryone"),
         ("org-quick-links-editor-clear-all", "clearAll"),
     ):
-        # Grep for the whole <button ...> block owning this testid.
         m = re.search(
             r'<button[^>]*type="button"[^>]*onClick=\{(' + re.escape(handler) + r')\}[^>]*data-testid="' + re.escape(tid) + r'"',
             src, re.DOTALL)
         assert m, (f"button with testid {tid!r} must be a "
                     f"type=button with onClick={{{handler}}}")
     # Handlers are real functions setting the selection state.
-    assert re.search(r"const selectAllAdmins = \(\) => setAllowedUserIds", src)
-    assert re.search(r"const selectAll = \(\) => setAllowedUserIds", src)
+    assert re.search(r"const selectEveryone = \(\) => setAllowedUserIds", src)
     assert re.search(r"const clearAll = \(\) => setAllowedUserIds\(\[\]\)", src)
+    # Old handlers MUST be gone.
+    assert "selectAllAdmins" not in src
+    assert "const selectAll = " not in src
 
 
 # ── FE wiring: radio replaces the checkbox ────────────────────────
@@ -189,8 +189,12 @@ def test_e2e_public_then_private_then_grant_via_batch(admin_hdr, worker_hdr, eph
         assert seen_worker and seen_worker["approved_for_me"] is True
 
         # 2) PATCH to private → only admin listed.
+        # v58.13.132ff: access_mode is authoritative — must be sent
+        # explicitly alongside allowed_user_ids for the tile to
+        # actually flip to private.
         r2 = requests.patch(f"{API}/org/url-tiles/{tile['id']}",
-                             json={"allowed_user_ids": [admin_id]},
+                             json={"access_mode": "private",
+                                   "allowed_user_ids": [admin_id]},
                              headers=admin_hdr, timeout=30)
         assert r2.status_code == 200
         # Worker sees it greyed + URL redacted.
@@ -236,9 +240,11 @@ def test_e2e_public_then_private_then_grant_via_batch(admin_hdr, worker_hdr, eph
                               headers=admin_hdr, timeout=30)
 
         # 6) Strict admin off-list — remove admin from ACL, admin's
-        # own list-tiles now shows approved_for_me=false.
+        # own list-tiles now shows approved_for_me=false. Send
+        # access_mode explicitly per .132ff.
         r6 = requests.patch(f"{API}/org/url-tiles/{tile['id']}",
-                             json={"allowed_user_ids": [worker_id]},
+                             json={"access_mode": "private",
+                                   "allowed_user_ids": [worker_id]},
                              headers=admin_hdr, timeout=30)
         assert r6.status_code == 200
         admin_view = _tile(admin_hdr, tile["id"])

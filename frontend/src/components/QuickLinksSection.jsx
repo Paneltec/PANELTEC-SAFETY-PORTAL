@@ -479,9 +479,6 @@ function TileRow({ tile, zebra, usersById, currentUserId, onToggle, onEdit, onQu
                 data-testid={`apps-directory-row-approved-chip-${tile.id}-${u.id}`}
                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
                 {u.name}
-                {u.is_admin && (
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-violet-600">admin</span>
-                )}
               </span>
             ))}
             {overflow > 0 && !chipsExpanded && (
@@ -991,25 +988,24 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
               </label>
             </fieldset>
             {restrict && (() => {
-              // v58.13.132fc — Split eligible users into role
-              // groups so small teams can scan the picker faster.
+              // v58.13.132fg — Flat picker. Per Stephen's clarified
+              // model: the web portal is admin-only. All 11 users
+              // are admins. Splitting into "Admins" / "Users"
+              // groups was noise. Now a single alphabetical list,
+              // with "Select everyone" + "Clear all" only.
               const q = userSearch.trim().toLowerCase();
               const matchesSearch = (u) => !q
                 || (u.name || '').toLowerCase().includes(q)
                 || (u.email || '').toLowerCase().includes(q);
               const sorted = [...eligibleUsers].sort((a, b) =>
                 (a.name || '').localeCompare(b.name || ''));
-              const admins = sorted.filter((u) => u.is_admin).filter(matchesSearch);
-              const users = sorted.filter((u) => !u.is_admin).filter(matchesSearch);
-              const adminIds = sorted.filter((u) => u.is_admin).map((u) => u.id);
+              const visible = sorted.filter(matchesSearch);
               const allIds = sorted.map((u) => u.id);
               const dedupe = (ids) => Array.from(new Set(ids));
-              const selectAllAdmins = () => setAllowedUserIds((prev) =>
-                dedupe([...prev, ...adminIds]));
-              const selectAll = () => setAllowedUserIds(dedupe(allIds));
+              const selectEveryone = () => setAllowedUserIds(dedupe(allIds));
               const clearAll = () => setAllowedUserIds([]);
               const showSearch = sorted.length > 20;
-              // v58.13.132fc — Preflight warnings.
+              // Preflight warnings.
               const emptyWhileOn = allowedUserIds.length === 0;
               const selfMissing = !emptyWhileOn && !!currentUserId
                 && !allowedUserIds.includes(currentUserId);
@@ -1035,9 +1031,6 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
                         <span className="text-slate-500 ml-1">· {u.email}</span>
                       )}
                     </span>
-                    {u.is_admin && (
-                      <span className="text-[9px] font-semibold uppercase tracking-wider text-violet-600">admin</span>
-                    )}
                   </label>
                 );
               };
@@ -1065,17 +1058,11 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
                     </div>
                   )}
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <button type="button" onClick={selectAllAdmins}
-                      disabled={eligibleLoading || adminIds.length === 0}
-                      data-testid="org-quick-links-editor-select-all-admins"
-                      className="text-[10px] font-semibold px-2 py-1 rounded border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50">
-                      Select all admins
-                    </button>
-                    <button type="button" onClick={selectAll}
+                    <button type="button" onClick={selectEveryone}
                       disabled={eligibleLoading || allIds.length === 0}
-                      data-testid="org-quick-links-editor-select-all"
+                      data-testid="org-quick-links-editor-select-everyone"
                       className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-50">
-                      Select all
+                      Select everyone
                     </button>
                     <button type="button" onClick={clearAll}
                       disabled={eligibleLoading || allowedUserIds.length === 0}
@@ -1118,30 +1105,13 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
                           data-testid="org-quick-links-editor-user-empty">
                           No users to choose from.
                         </div>
-                      ) : (admins.length === 0 && users.length === 0) ? (
+                      ) : visible.length === 0 ? (
                         <div className="text-xs text-slate-500 px-3 py-2"
                           data-testid="org-quick-links-editor-user-empty">
                           No users match that search.
                         </div>
                       ) : (
-                        <>
-                          {admins.length > 0 && (
-                            <div data-testid="org-quick-links-editor-group-admins">
-                              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50/70 border-b border-violet-100">
-                                Admins
-                              </div>
-                              {admins.map(renderRow)}
-                            </div>
-                          )}
-                          {users.length > 0 && (
-                            <div data-testid="org-quick-links-editor-group-users">
-                              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 border-b border-slate-200">
-                                Users
-                              </div>
-                              {users.map(renderRow)}
-                            </div>
-                          )}
-                        </>
+                        visible.map(renderRow)
                       )}
                     </div>
                   )}

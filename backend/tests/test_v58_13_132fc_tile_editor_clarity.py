@@ -84,25 +84,33 @@ def test_save_buttons_disambiguated():
 
 
 # ── FE source-pins: picker rework (bulk buttons + role groups) ───
+# NOTE: superseded in v58.13.132fg. The picker is now a single flat
+# alphabetical list with "Select everyone" + "Clear all". The
+# "Select all admins" affordance and the admins/users role grouping
+# were removed because Paneltec Civil's web portal is admin-only —
+# every user is an admin, so the grouping was noise. See
+# test_v58_13_132fg_picker_flatten.
 
-def test_picker_has_bulk_buttons():
+def test_picker_has_bulk_buttons_legacy_gone():
     src = _read(QLS)
-    for label, tid in (
-        ("Select all admins", "org-quick-links-editor-select-all-admins"),
-        ("Select all", "org-quick-links-editor-select-all"),
-        ("Clear all", "org-quick-links-editor-clear-all"),
-    ):
-        assert label in src, f"bulk button label missing: {label!r}"
-        assert tid in src, f"bulk button testid missing: {tid!r}"
+    # Old testids MUST be gone.
+    assert "org-quick-links-editor-select-all-admins" not in src
+    # Old copy "Select all admins" must be gone.
+    assert "Select all admins" not in src
+    # Old "Select all" testid gone (replaced by "-select-everyone").
+    assert 'data-testid="org-quick-links-editor-select-all"' not in src
+    # Clear all still present.
+    assert "org-quick-links-editor-clear-all" in src
 
 
-def test_picker_groups_users_by_role():
+def test_picker_no_longer_groups_users_by_role():
     src = _read(QLS)
-    assert "org-quick-links-editor-group-admins" in src
-    assert "org-quick-links-editor-group-users" in src
-    # Split predicates present.
-    assert "sorted.filter((u) => u.is_admin)" in src
-    assert "sorted.filter((u) => !u.is_admin)" in src
+    # Role-group testids GONE.
+    assert "org-quick-links-editor-group-admins" not in src
+    assert "org-quick-links-editor-group-users" not in src
+    # Old split predicates GONE.
+    assert "sorted.filter((u) => u.is_admin)" not in src
+    assert "sorted.filter((u) => !u.is_admin)" not in src
 
 
 def test_picker_search_hidden_below_twenty_users():

@@ -64,11 +64,28 @@ export default function WorkerInductionsCard({ workerId, workerName }) {
         {cols.map((c) => {
           const cell = row.cells[c.column_key];
           const meta = STATUS_CHIP[cell?.status || 'unknown'];
+          // v58.13.132fg — Root cause of Mel Linford's "induction
+          // records won't show when I try to view" AND "no option
+          // to add records to a worker profile" reports: this card
+          // was a native <button> containing FilePresenceChip's
+          // inner <button>. Nested interactive elements are
+          // invalid HTML — Chrome reparents the tree and the
+          // outer click is swallowed. Same pattern already used
+          // in the Section component (see v160.3.6b). Fix: outer
+          // element is a <div role="button"> with an onKeyDown
+          // handler so keyboard access still works.
           return (
-            <button key={c.column_key} type="button"
+            <div key={c.column_key}
+              role="button" tabIndex={0}
               onClick={() => openCard(c, cell)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openCard(c, cell);
+                }
+              }}
               data-testid={`induction-card-${c.column_key}`}
-              className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 text-left hover:bg-white hover:border-[#bcd2ee] hover:shadow-sm transition-all cursor-pointer">
+              className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 text-left hover:bg-white hover:border-[#bcd2ee] hover:shadow-sm transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40">
               <div className="min-w-0">
                 <div className="text-[11px] font-medium text-slate-900 truncate">{c.header}</div>
                 <div className="text-[10px] uppercase tracking-wider text-slate-400">{c.category.replace('_', ' ')}</div>
@@ -90,7 +107,7 @@ export default function WorkerInductionsCard({ workerId, workerName }) {
                   </span>
                 )}
               </div>
-            </button>
+            </div>
           );
         })}
         {(row.access?.vehicle || row.access?.building_key || row.access?.gate_key || row.access?.extras) && (
