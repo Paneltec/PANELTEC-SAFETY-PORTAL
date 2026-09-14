@@ -2559,7 +2559,7 @@ function UserApprovedTilesPanel({ userId, canEdit }) {
             Paneltec Group · Apps Directory
           </div>
           <div className="text-sm font-display font-semibold text-slate-800">
-            Approved tiles
+            Private tiles
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Tick the tiles this user should see. Public tiles are visible to everyone.

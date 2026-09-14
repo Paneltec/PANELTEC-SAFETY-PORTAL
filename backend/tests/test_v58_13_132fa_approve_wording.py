@@ -49,23 +49,26 @@ def _admin_hdr():
 
 def test_tile_editor_uses_positive_wording():
     src = _read(QLS)
-    # New copy present.
-    assert "Approved users only" in src
+    # v58.13.132fe — Radio-group replaced the .132fa toggle. Keep
+    # the picker hint copy assertion; drop the toggle label.
+    assert "Who can see this tile?" in src
     assert "Tick everyone who should have access" in src
     assert "Approved users" in src  # picker heading
     assert "approved" in src  # selected count phrasing
 
 
 def test_tile_row_pill_reads_approved_n_users():
-    """The amber pill next to a restricted tile label reads
-    "Approved · N users" (with lock icon). The pill testid is
-    preserved as `apps-directory-row-restricted-{id}` for
-    backwards-compat with earlier ship's source-pins."""
+    """v58.13.132fe — Pill re-labelled from 'Approved · N users' to
+    'Private · N people' with a rose (red-tinted) accent. Testid
+    preserved for backwards-compat with earlier ships'
+    source-pins."""
     src = _read(QLS)
     # Pill body renders the new copy.
-    assert "Approved ·" in src, "pill must read 'Approved · N users'"
-    assert re.search(r"Approved · \{allowed\.length\} user", src), (
+    assert "Private ·" in src, "pill must read 'Private · N people'"
+    assert re.search(r"Private · \{allowed\.length\}", src), (
         "pill must interpolate `allowed.length`")
+    # Rose palette (red-tinted) replaces the .132fa amber.
+    assert re.search(r"text-rose-700[\s\S]{0,120}bg-rose-50", src)
     # Testid preserved (backwards-compat with .132ey source-pin).
     assert "apps-directory-row-restricted-" in src
 

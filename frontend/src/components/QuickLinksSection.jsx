@@ -194,6 +194,11 @@ function AppsDirectoryManager({ onClose }) {
   // renders immediately; chip labels fall back to raw IDs if the
   // fetch is still in flight.
   const [usersById, setUsersById] = useState({});
+  // v58.13.132fe — Manager-scope current user id for the Quick-lock
+  // row button. One fetch on open; the TileEditor also fetches its
+  // own copy (kept for the self-missing hint) — cheap non-blocking
+  // duplication, easier than a shared context.
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -218,6 +223,14 @@ function AppsDirectoryManager({ onClose }) {
         for (const u of (r.data?.users || [])) map[u.id] = u;
         setUsersById(map);
       })
+      .catch(() => { /* non-blocking */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/auth/me')
+      .then((r) => { if (!cancelled) setCurrentUserId(r.data?.id || null); })
       .catch(() => { /* non-blocking */ });
     return () => { cancelled = true; };
   }, []);
@@ -295,8 +308,13 @@ function AppsDirectoryManager({ onClose }) {
                 {tiles.map((t, idx) => (
                   <TileRow key={t.id} tile={t} zebra={idx % 2 === 1}
                     usersById={usersById}
+                    currentUserId={currentUserId}
                     onToggle={() => toggleEnabled(t)}
                     onEdit={() => setEditorTile({ mode: 'edit', tile: t })}
+                    onQuickLock={(cuid) => setEditorTile({
+                      mode: 'edit',
+                      tile: { ...t, allowed_user_ids: [cuid] },
+                    })}
                     onDelete={() => setConfirmDelete(t)} />
                 ))}
                 {/* Inline add row. */}
@@ -354,7 +372,7 @@ function Th({ children, className = '' }) {
   );
 }
 
-function TileRow({ tile, zebra, usersById, onToggle, onEdit, onDelete }) {
+function TileRow({ tile, zebra, usersById, currentUserId, onToggle, onEdit, onQuickLock, onDelete }) {
   const [imgError, setImgError] = useState(false);
   const [chipsExpanded, setChipsExpanded] = useState(false);
   const showRemote = tile.remote_icon_url && !imgError;
@@ -402,9 +420,9 @@ function TileRow({ tile, zebra, usersById, onToggle, onEdit, onDelete }) {
           {restricted && (
             <span
               data-testid={`apps-directory-row-restricted-${tile.id}`}
-              title={`Approved · ${allowed.length} user${allowed.length === 1 ? '' : 's'}`}
-              className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 uppercase tracking-wider">
-              <Lock size={10} /> Approved · {allowed.length} user{allowed.length === 1 ? '' : 's'}
+              title={`Private · ${allowed.length} ${allowed.length === 1 ? 'person' : 'people'}`}
+              className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5 uppercase tracking-wider">
+              <Lock size={10} /> Private · {allowed.length} {allowed.length === 1 ? 'person' : 'people'}
             </span>
           )}
         </div>
@@ -422,10 +440,21 @@ function TileRow({ tile, zebra, usersById, onToggle, onEdit, onDelete }) {
         <ColorSwatch hex={tile.color || DEFAULT_COLOR} />
       </td>
       <td className="px-3 py-2 text-right whitespace-nowrap">
+        {/* v58.13.132fe — Quick-lock: pre-fill editor with radio
+            on "private" + only current admin ticked. Hidden when
+            the tile is already private (redundant). */}
+        {!restricted && currentUserId && typeof onQuickLock === 'function' && (
+          <button type="button" onClick={() => onQuickLock(currentUserId)}
+            data-testid={`apps-directory-quick-lock-${tile.id}`}
+            title="Lock down — restrict this tile to just you (add others from the editor)"
+            className="p-1.5 rounded hover:bg-rose-50 text-rose-600 ml-1">
+            <Lock size={14} />
+          </button>
+        )}
         <button type="button" onClick={onEdit}
           data-testid={`apps-directory-edit-${tile.id}`}
           title="Edit"
-          className="p-1.5 rounded hover:bg-slate-200 text-slate-600">
+          className="p-1.5 rounded hover:bg-slate-200 text-slate-600 ml-1">
           <Pencil size={14} />
         </button>
         <button type="button" onClick={onDelete}
@@ -897,21 +926,38 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
               <span className="font-semibold">Control who in your team can see and open this tile.</span>
               {' '}This has nothing to do with your personal credentials above.
             </div>
-            <label className="flex items-start gap-2">
-              <input type="checkbox" checked={restrict}
-                onChange={(e) => {
-                  setRestrict(e.target.checked);
-                  if (!e.target.checked) setAllowedUserIds([]);
-                }}
-                data-testid="org-quick-links-editor-restrict-toggle"
-                className="mt-0.5 rounded border-slate-300" />
-              <span className="text-xs font-semibold text-slate-700">
-                Approved users only
-                <span className="block font-normal text-slate-500 mt-0.5">
-                  When ON, only the users you tick below can see this tile. When OFF, everyone sees it (public).
-                </span>
-              </span>
-            </label>
+            {/* v58.13.132fe — Radio replaces the .132fa "Approved
+                users only" checkbox. Clearer question-form; two
+                states are Everyone (public) vs Only selected
+                (private). Selecting Everyone clears
+                `allowedUserIds` immediately so the save round-
+                trip reflects the intent. */}
+            <fieldset className="space-y-1"
+              data-testid="org-quick-links-editor-access-radio">
+              <legend className="text-xs font-semibold text-slate-700 mb-1">
+                Who can see this tile?
+              </legend>
+              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                <input type="radio"
+                  name="access-mode"
+                  value="public"
+                  checked={!restrict}
+                  onChange={() => { setRestrict(false); setAllowedUserIds([]); }}
+                  data-testid="org-quick-links-editor-access-public"
+                  className="border-slate-300" />
+                Everyone in the organisation
+              </label>
+              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                <input type="radio"
+                  name="access-mode"
+                  value="private"
+                  checked={restrict}
+                  onChange={() => setRestrict(true)}
+                  data-testid="org-quick-links-editor-access-private"
+                  className="border-slate-300" />
+                Only selected people
+              </label>
+            </fieldset>
             {restrict && (() => {
               // v58.13.132fc — Split eligible users into role
               // groups so small teams can scan the picker faster.

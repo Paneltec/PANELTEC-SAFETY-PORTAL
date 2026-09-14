@@ -12986,7 +12986,7 @@
 //   persisted alongside the legacy boolean for BC.
 //   RUNNING + EXPECTED + CACHE bumped .132dg → .132dh. Mobile
 //   bundle stays at .132dc.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132fd';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132fe';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13007,7 +13007,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132fd';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132fd';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132fe';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

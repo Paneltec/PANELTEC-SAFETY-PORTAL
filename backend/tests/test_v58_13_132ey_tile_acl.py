@@ -107,21 +107,22 @@ def _list_ids(hdr) -> set[str]:
 # ── FE source-pins ────────────────────────────────────────────────
 
 def test_frontend_editor_has_access_section():
-    """TileEditor exposes the ACL toggle + picker with the required
+    """TileEditor exposes the access controls with the required
     testids and helper hint copy.
 
-    v58.13.132fa — Helper copy rewritten to positive framing
-    ("Approved users only" / "Tick everyone who should have
-    access…"). This test now pins the new wording."""
+    v58.13.132fe — Replaces the .132fa checkbox with a radio.
+    Test now pins the radio-group question copy + the hint."""
     src = _read(QLS)
-    # Toggle + picker container.
+    # Container + picker + search testids.
     assert 'org-quick-links-editor-access-section' in src
-    assert 'org-quick-links-editor-restrict-toggle' in src
     assert 'org-quick-links-editor-access-picker' in src
     assert 'org-quick-links-editor-user-search' in src
     assert 'org-quick-links-editor-user-list' in src
-    # Positive-framing copy per .132fa.
-    assert "Approved users only" in src
+    # Radio-group replacing the toggle.
+    assert "Who can see this tile?" in src
+    assert 'org-quick-links-editor-access-public' in src
+    assert 'org-quick-links-editor-access-private' in src
+    # Helper copy per .132fa unchanged.
     assert "Tick everyone who should have access" in src
     # State + payload wiring.
     assert "restrict ? allowedUserIds : []" in src

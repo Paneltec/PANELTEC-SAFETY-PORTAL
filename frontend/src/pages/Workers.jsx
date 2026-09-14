@@ -355,18 +355,18 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
           Bystander render sites (list row, view drawer) show the
           image without this control. */}
       {canEdit && hasPhoto && typeof onChangeOffsetY === 'function' && (
-        <div className="w-full max-w-[220px] flex flex-col gap-1 mt-1"
+        <div className="w-full max-w-[240px] flex flex-col gap-1 mt-1"
           data-testid="worker-edit-photo-align-block">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <label htmlFor="worker-photo-offset-y"
-              className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+              className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
               Vertical alignment
             </label>
             <button type="button"
               onClick={() => onChangeOffsetY(50)}
               disabled={effectiveOffset === 50}
               data-testid="worker-edit-photo-align-reset"
-              className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline">
+              className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline whitespace-nowrap">
               Reset to centre
             </button>
           </div>
