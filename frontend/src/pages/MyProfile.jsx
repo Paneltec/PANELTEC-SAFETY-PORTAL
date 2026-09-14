@@ -178,6 +178,138 @@ export default function MyProfile() {
           same _require_admin dep used for /set-pin, so a viewer of
           this page who isn't an admin never sees the card. */}
       {me.role === 'admin' && <AdminPinCard />}
+
+      {/* v58.13.132gd — Card 4 · Download platform manual.
+          Admin-only. Prompts for the same admin-console PIN and
+          streams the current docs/paneltec_group_platform_manual.docx
+          via the PIN-gated endpoint. */}
+      {me.role === 'admin' && <ManualDownloadCard />}
+    </div>
+  );
+}
+
+// ─── v58.13.132gd — Download platform manual card ─────────────
+function ManualDownloadCard() {
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const open = () => { setPin(''); setPinOpen(true); };
+  const close = () => { if (!busy) setPinOpen(false); };
+
+  const download = async () => {
+    if (!/^\d{4}$/.test(pin)) {
+      toast.error('PIN must be exactly 4 digits'); return;
+    }
+    setBusy(true);
+    try {
+      const resp = await api.get('/docs/manual.docx', {
+        responseType: 'blob',
+        headers: { 'X-Admin-Console-Pin': pin },
+      });
+      const blob = new Blob([resp.data], {
+        type: 'application/vnd.openxmlformats-officedocument.'
+              + 'wordprocessingml.document',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'paneltec_group_platform_manual.docx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Manual downloaded');
+      setPinOpen(false);
+    } catch (e) {
+      // Blob-typed axios errors don't carry a readable body — read
+      // it manually so the toast shows the real reason (wrong PIN,
+      // lockout, not-generated).
+      let detail = '';
+      try {
+        const txt = await (e?.response?.data?.text?.() || Promise.resolve(''));
+        if (txt) {
+          try { detail = JSON.parse(txt).detail; } catch { detail = txt; }
+        }
+      } catch { /* fallthrough */ }
+      toast.error(detail || apiError(e) || 'Manual download failed');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white"
+      data-testid="profile-manual-card">
+      <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+        <Shield size={14} className="text-blue-600" />
+        <h3 className="font-display text-sm font-semibold">
+          Platform manual
+        </h3>
+        <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">
+          Word doc · admin
+        </span>
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="text-[13px] text-slate-600 leading-relaxed">
+          Downloads the current generated{' '}
+          <code>paneltec_group_platform_manual.docx</code> — architecture,
+          integrations, permission matrix, and the full API reference —
+          rendered from the live codebase at last regeneration.
+          Requires the admin-console PIN so the manual isn't casually
+          exfiltrated from a shared browser session.
+        </div>
+      </div>
+      <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+        <button
+          onClick={open}
+          data-testid="profile-manual-download-open"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+        >
+          <Shield size={14} /> Download manual
+        </button>
+      </div>
+
+      {pinOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+          onClick={close}
+          data-testid="profile-manual-pin-modal"
+        >
+          <div onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+              <Shield size={14} className="text-blue-600" />
+              <h4 className="font-display text-sm font-semibold">
+                Enter admin console PIN
+              </h4>
+            </div>
+            <div className="p-5 space-y-3">
+              <PinField
+                label="PIN"
+                value={pin}
+                onChange={setPin}
+                testId="profile-manual-pin-input"
+                autoFocus
+              />
+              <div className="text-[11px] text-slate-500 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                Uses the same rate-limited PIN as the admin console
+                (3/30s, 6/15min lockout tiers).
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+              <button onClick={close} disabled={busy}
+                data-testid="profile-manual-pin-cancel"
+                className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={download} disabled={busy || !/^\d{4}$/.test(pin)}
+                data-testid="profile-manual-pin-submit"
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+                {busy ? 'Downloading…' : 'Download'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

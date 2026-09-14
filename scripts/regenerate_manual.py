@@ -154,6 +154,101 @@ def collect_ship_history(limit: int = 25) -> list[str]:
     return [m.name for m in memos[:limit]]
 
 
+def collect_openapi() -> dict:
+    """v58.13.132gd — Pull `/api/openapi.json` from the live pod so
+    endpoints are enumerated from Pydantic + FastAPI's own schema
+    (with tags, summaries, response codes) rather than a decorator
+    regex. Auth-required — logs in with the admin credentials from
+    `memory/test_credentials.md`. Falls back to the grep pass on
+    any failure."""
+    frontend_env = _read(FRONTEND / ".env")
+    m = re.search(r"REACT_APP_BACKEND_URL=(.+)", frontend_env)
+    if not m:
+        return {}
+    base = m.group(1).strip().rstrip("/")
+    try:
+        import urllib.request
+        # Read the standing-rule creds from the test-credentials memo
+        # rather than hard-coding them here.
+        creds_src = _read(MEMORY / "test_credentials.md")
+        em = re.search(r"Email:\s*`([^`]+@paneltec\.com\.au)`", creds_src)
+        pm = re.search(r"Password:\s*`([^`]+)`", creds_src)
+        email = (em.group(1) if em else
+                 os.environ.get("ADMIN_EMAIL", "stephen@paneltec.com.au"))
+        pwd = (pm.group(1) if pm else
+               os.environ.get("ADMIN_PWD", ""))
+        login = urllib.request.Request(
+            f"{base}/api/auth/login",
+            data=json.dumps({"email": email, "password": pwd}).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/126.0.0.0 Safari/537.36",
+            },
+        )
+        with urllib.request.urlopen(login, timeout=15) as r:
+            token = json.loads(r.read()).get("access_token")
+        oapi_req = urllib.request.Request(
+            f"{base}/api/openapi.json",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/126.0.0.0 Safari/537.36",
+            },
+        )
+        with urllib.request.urlopen(oapi_req, timeout=30) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        print(f"  ! openapi fetch failed: {e}", file=sys.stderr)
+        return {}
+
+
+def collect_permission_matrix() -> tuple[list[str], list[str], dict]:
+    """Return (roles, resources, matrix) where
+    matrix[resource][role] is a comma-joined string of granted
+    actions ('—' when the role has nothing on that resource).
+
+    Runs a subprocess with `backend/` on `sys.path` so we can import
+    `permissions` for real (with all its transitive deps) — the
+    Motor-backed `db` import is a no-op at module load."""
+    script = r"""
+import json, sys
+sys.path.insert(0, r'%s')
+import permissions as P
+role_keys = list(P.ROLE_DEFAULTS.keys())
+resource_keys = list(P.PERMISSIONS_SCHEMA.keys())
+matrix = {}
+for res in resource_keys:
+    matrix[res] = {}
+    for role in role_keys:
+        grants = P.ROLE_DEFAULTS.get(role, {}).get(res) or {}
+        verbs = [a for a, v in grants.items() if v and a != 'open']
+        matrix[res][role] = ', '.join(verbs) if verbs else '\u2014'
+print(json.dumps({'roles': role_keys,
+                  'resources': resource_keys,
+                  'matrix': matrix}))
+""" % str(BACKEND)
+    try:
+        env = os.environ.copy()
+        # Feed backend's env-vars so `from db import db` succeeds
+        # (Motor client init reads MONGO_URL / DB_NAME at import time).
+        be_env = _read(BACKEND / ".env")
+        for m in re.finditer(r"(?m)^([A-Z_][A-Z0-9_]*)=(.+)$", be_env):
+            env.setdefault(m.group(1),
+                              m.group(2).strip().strip('"').strip("'"))
+        out = subprocess.check_output(
+            [sys.executable, "-c", script],
+            env=env, cwd=str(BACKEND), timeout=30,
+        )
+        payload = json.loads(out.decode())
+        return payload["roles"], payload["resources"], payload["matrix"]
+    except Exception as e:
+        print(f"  ! permissions matrix build failed: {e}", file=sys.stderr)
+        return [], [], {}
+
+
 def collect_integrations() -> list[dict]:
     """Discover which of the four integration playbooks Stephen calls
     out are wired in the code. Status is 'wired' when the corresponding
@@ -281,6 +376,34 @@ DIAGRAM_SPECS: list[dict] = [
     TV -->|yes| SH[Show hidden · PIN required]
     TILES --> VAULT[Credential Vault<br/>AES-256-GCM · per-user]
     WEB --> ARCH[archive_audit<br/>every hide/restore/delete]
+""",
+    },
+    {
+        "slug": "archive_lifecycle",
+        "title": "Archive lifecycle · soft-delete → 30-day window → restore or expire",
+        "mermaid": """graph LR
+    subgraph CAPTURE modules
+      INC[Incidents]
+      PS[Pre-Starts]
+      SSRA[SSRAs]
+      RA[Risk Assessments]
+      FORMS[Forms]
+      WK[Workers · HR Docs]
+      DOCS[Document Library]
+    end
+    INC --> SD[Soft-delete<br/>deleted_at set]
+    PS --> SD
+    SSRA --> SD
+    RA --> SD
+    FORMS --> SD
+    WK --> SD
+    DOCS --> SD
+    SD --> AA[archive_audit row<br/>action=soft_delete]
+    SD --> ARCH[30-day restore window<br/>/api/archive]
+    ARCH -->|admin restore| REST[Restored · deleted_at=null]
+    REST --> AAR[archive_audit row<br/>action=restore]
+    ARCH -->|30d elapsed| HD[Cron sweep · hard-delete]
+    HD --> AAH[archive_audit row<br/>action=hard_delete]
 """,
     },
 ]
@@ -529,23 +652,57 @@ telemetry is captured to structured logs + the `archive_audit` /
 `admin_actions` collections.
 """)
 
-    # 7. API Reference
+    # 7. API Reference — v58.13.132gd sources from live openapi.json
     add("\n# 7. API Reference\n")
-    add(f"\nAt this snapshot the code exposes **{total_endpoints}** "
-        "HTTP endpoints across **{}** modules.".format(len(endpoints)))
-    add("Every endpoint below is authenticated via a Bearer JWT unless "
-        "it lives under a `/scan/` or `/public/` route.\n")
-    for mod, rows in sorted(endpoints.items()):
-        if not rows:
-            continue
-        add(f"\n### `{mod}` ({len(rows)} endpoints)\n")
-        add(_fmt_endpoint_table(rows))
-        add("")
+    openapi = collect_openapi()
+    if openapi and "paths" in openapi:
+        paths = openapi["paths"]
+        # Group by first tag (or "untagged").
+        by_tag: dict[str, list[tuple[str, str, str, str]]] = defaultdict(list)
+        for path, methods in sorted(paths.items()):
+            for verb, op in (methods or {}).items():
+                if verb.upper() not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+                    continue
+                tags = op.get("tags") or ["untagged"]
+                summary = (op.get("summary") or op.get("operationId")
+                           or "").strip()
+                responses = ", ".join(sorted((op.get("responses") or {}).keys()))
+                by_tag[tags[0]].append((verb.upper(), path, summary, responses))
+        openapi_total = sum(len(v) for v in by_tag.values())
+        add(f"\nAt this snapshot **`/api/openapi.json`** exposes "
+            f"**{openapi_total}** endpoints across **{len(by_tag)}** tags. "
+            "Every endpoint below is authenticated via a Bearer JWT unless "
+            "it lives under a `/scan/` or `/public/` route.\n")
+        for tag in sorted(by_tag):
+            rows = by_tag[tag]
+            add(f"\n### `{tag}` ({len(rows)} endpoints)\n")
+            add("| Method | Path | Summary | Responses |")
+            add("|--------|------|---------|-----------|")
+            for verb, path, summary, responses in sorted(
+                rows, key=lambda r: (r[1], r[0]),
+            ):
+                # Escape pipes for markdown safety.
+                s = (summary or "").replace("|", "\\|")[:80]
+                add(f"| `{verb}` | `{path}` | {s} | {responses} |")
+    else:
+        # Fallback to the pre-.132gd decorator-grep path.
+        add(f"\nAt this snapshot the code exposes **{total_endpoints}** "
+            "HTTP endpoints across **{}** modules "
+            "(openapi.json unreachable; fell back to decorator grep).".format(
+                len(endpoints)))
+        for mod, rows in sorted(endpoints.items()):
+            if not rows:
+                continue
+            add(f"\n### `{mod}` ({len(rows)} endpoints)\n")
+            add(_fmt_endpoint_table(rows))
+            add("")
 
     # 8. Data Flow
     add("\n# 8. Data Flow\n")
     add("![Worker + form + document lifecycle]"
         "(diagrams/worker_data_flow.png)\n")
+    add("\n### Archive lifecycle (soft-delete → 30-day window → restore/expire)\n")
+    add("![Archive lifecycle](diagrams/archive_lifecycle.png)\n")
 
     # 9. Security & Permissions
     add("\n# 9. Security & Permissions Model\n")
@@ -695,6 +852,24 @@ a row to `archive_audit`. Every tile hide/restore also writes a row
     add("\n\n# Appendix E · FastAPI included routers (`server.py`)\n")
     for name in collect_included_routers():
         add(f"* `{name}`")
+
+    # Appendix F · Permission matrix (v58.13.132gd)
+    add("\n\n# Appendix F · Role × resource permission matrix\n")
+    roles_list, resources, matrix = collect_permission_matrix()
+    if matrix:
+        add(f"Sourced from `ROLE_DEFAULTS` in `backend/permissions.py`. "
+            f"Cell = comma-joined verbs the role has on that resource "
+            f"(from the eight-verb set: view / edit / delete / email / "
+            f"team_view / use / approve / open). `—` means no grant.\n")
+        header = "Resource | " + " | ".join(f"`{r}`" for r in roles_list)
+        add(header)
+        add(" | ".join(["-"] * (len(roles_list) + 1)))
+        for res in resources:
+            row = [f"`{res}`"] + [matrix[res].get(r, "—") for r in roles_list]
+            add(" | ".join(row))
+    else:
+        add("_Permission matrix could not be derived at generation "
+            "time — check `scripts/regenerate_manual.py` sandbox exec._\n")
 
     return "\n".join(md) + "\n"
 

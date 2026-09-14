@@ -360,6 +360,7 @@ async def gps_map_proxy(lat: float, lng: float,
 
 from admin_console_pin import router as admin_console_pin_router  # noqa: E402
 from admin_console_pin import users_admin_router as admin_console_users_router  # noqa: E402
+from docs_manual import router as docs_manual_router  # noqa: E402  # v58.13.132gd
 # v58.13.132ci — mobile PIN → session-token onboarding endpoint.
 from auth_mobile_pin import router as auth_mobile_pin_router  # noqa: E402
 # v58.13.132cr / .132cx — Program Schematic overlays (admin edits).
@@ -370,6 +371,7 @@ from mobile_data import router as mobile_data_router  # noqa: E402
 api.include_router(program_schematic_overlays_router, prefix="/program-schematic")
 api.include_router(mobile_data_router)
 api.include_router(admin_console_pin_router)
+api.include_router(docs_manual_router)  # v58.13.132gd — /api/docs/manual.docx
 api.include_router(auth_mobile_pin_router)
 api.include_router(admin_console_users_router)
 api.include_router(auth_router)

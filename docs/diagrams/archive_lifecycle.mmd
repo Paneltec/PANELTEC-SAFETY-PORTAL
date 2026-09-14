@@ -1,0 +1,23 @@
+graph LR
+    subgraph CAPTURE modules
+      INC[Incidents]
+      PS[Pre-Starts]
+      SSRA[SSRAs]
+      RA[Risk Assessments]
+      FORMS[Forms]
+      WK[Workers · HR Docs]
+      DOCS[Document Library]
+    end
+    INC --> SD[Soft-delete<br/>deleted_at set]
+    PS --> SD
+    SSRA --> SD
+    RA --> SD
+    FORMS --> SD
+    WK --> SD
+    DOCS --> SD
+    SD --> AA[archive_audit row<br/>action=soft_delete]
+    SD --> ARCH[30-day restore window<br/>/api/archive]
+    ARCH -->|admin restore| REST[Restored · deleted_at=null]
+    REST --> AAR[archive_audit row<br/>action=restore]
+    ARCH -->|30d elapsed| HD[Cron sweep · hard-delete]
+    HD --> AAH[archive_audit row<br/>action=hard_delete]
