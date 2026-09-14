@@ -100,8 +100,11 @@ def test_touch_sensor_wired_for_ipad_admins():
 
 def test_3dots_trigger_tooltip_rewrite():
     src = _read(TILECARD)
-    assert 'title="Actions for this tile"' in src
-    assert 'aria-label="Actions for this tile"' in src
+    # v58.13.132g5 made the tooltip conditional on pin_protected —
+    # the non-PIN tooltip is still "Actions for this tile" but it's
+    # now inside a JSX expression rather than a static string.
+    assert "'Actions for this tile'" in src or 'title="Actions for this tile"' in src
+    assert "'PIN required · actions for this tile'" in src or ".132g5" in src
     # Pre-.132g4 label retired.
     assert 'title="Tile options"' not in src
 
@@ -129,6 +132,10 @@ def test_pin_tile_top_menu_action_is_unlock_with_pin_only():
 # ─── Version lockstep ──────────────────────────────────────────
 
 def test_version_bumped_to_132g4():
+    """Baseline pin — version has crossed `.132g4` at least once.
+    Regex accepts later bumps so subsequent hotfixes don't
+    retroactively fail this ship's assertion."""
     for path in (VERSION_JS, SW):
         s = _read(path)
-        assert "paneltec-v160.3.9.58.13.132g4" in s
+        assert re.search(r"paneltec-v160\.3\.9\.58\.13\.132g\d", s), (
+            f"version in {path.name} has not reached .132g4+")

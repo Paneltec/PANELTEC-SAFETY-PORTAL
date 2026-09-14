@@ -257,6 +257,12 @@ export function TileCard({
   const [imgError, setImgError] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  // v58.13.132g5 — PIN gate on the 3-dots menu too. Stephen:
+  // "so it looks like you have given everybody the ability with
+  // out signing in on the 3 dots". Track WHAT a PIN unlock is
+  // intended to trigger — either the URL launch OR revealing the
+  // dropdown menu. Reset on every close so unlocks are per-click.
+  const [pinIntent, setPinIntent] = useState(null); // 'launch' | 'menu' | null
   const menuRef = useRef(null);
   const showRemote = tile.remote_icon_url && !imgError;
   const accent = tile.color || DEFAULT_TILE_COLOR;
@@ -307,6 +313,8 @@ export function TileCard({
     if (pinProtected) {
       if (e) e.preventDefault?.();
       setMenuOpen(false);
+      // v58.13.132g5 — PIN unlock is intended to launch the URL.
+      setPinIntent('launch');
       setPinModalOpen(true);
       return;
     }
@@ -316,6 +324,25 @@ export function TileCard({
     } else {
       doPlainOpen();
     }
+  };
+
+  // v58.13.132g5 — 3-dots click. On PIN-protected tiles we prompt
+  // for the admin PIN BEFORE opening the menu; on non-PIN tiles
+  // the menu opens directly.
+  const toggleMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (menuOpen) {
+      setMenuOpen(false);
+      return;
+    }
+    if (pinProtected) {
+      // Every menu-open re-prompts (per-click, not per-session).
+      setPinIntent('menu');
+      setPinModalOpen(true);
+      return;
+    }
+    setMenuOpen(true);
   };
 
   const copyUrl = async () => {
@@ -380,11 +407,13 @@ export function TileCard({
       <div className="absolute top-3 right-3 flex items-center gap-1 z-30" ref={menuRef}>
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuOpen((v) => !v); }}
+          onClick={toggleMenu}
           data-testid={`${testIdPrefix}-menu-${tile.id}`}
           // v58.13.132g4 — clearer tooltip so users spot the affordance.
-          title="Actions for this tile"
-          aria-label="Actions for this tile"
+          // v58.13.132g5 — On PIN-protected tiles the 3-dots itself is
+          // gated behind the same admin PIN. Tooltip surfaces the gate.
+          title={pinProtected ? 'PIN required · actions for this tile' : 'Actions for this tile'}
+          aria-label={pinProtected ? 'PIN required · actions for this tile' : 'Actions for this tile'}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 bg-white/90"
@@ -497,10 +526,20 @@ export function TileCard({
       {pinModalOpen && (
         <TilePinModal
           tile={tile}
-          onClose={() => setPinModalOpen(false)}
+          onClose={() => { setPinModalOpen(false); setPinIntent(null); }}
           onUnlocked={(url) => {
+            const intent = pinIntent;
             setPinModalOpen(false);
-            doPlainOpen(url);
+            setPinIntent(null);
+            // v58.13.132g5 — Branch on intent. `menu` reveals the
+            // dropdown (still per-click — closing + reopening the
+            // 3-dots re-prompts); `launch` opens the URL in a new
+            // tab. Any other value is a no-op fallback.
+            if (intent === 'menu') {
+              setMenuOpen(true);
+            } else if (intent === 'launch') {
+              doPlainOpen(url);
+            }
           }}
         />
       )}
