@@ -2397,7 +2397,7 @@ export default function Workers() {
             {/* Sort header row */}
             <div
               className="grid items-center bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase tracking-wider px-3 py-3 gap-3 sticky top-0 z-10"
-              style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 190px' }}
+              style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 260px' }}
             >
               <div />
               <SortHeaderBtn label="Name" k="name" sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
@@ -2415,7 +2415,7 @@ export default function Workers() {
                   key={w.id}
                   data-testid={`worker-row-${w.id}`}
                   className="grid items-center border-t border-slate-100 hover:bg-slate-50 px-3 py-3 gap-3"
-                  style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 190px' }}
+                  style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 260px' }}
                 >
                   {/* Selection */}
                   <div>
@@ -2566,7 +2566,8 @@ export default function Workers() {
                   {/* Action icons — kept inside the row's white surface */}
                   <div className="flex justify-end">
                     {canEdit && confirmDelete !== w.id && (
-                      <div className="inline-flex gap-1 items-center flex-wrap justify-end">
+                      <div className="inline-flex gap-1 items-center flex-nowrap justify-end whitespace-nowrap"
+                        data-testid={`worker-actions-cluster-${w.id}`}>
                         {(() => {
                           const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
                           if (u) return (
@@ -2577,14 +2578,14 @@ export default function Workers() {
                           if (w.email) return (
                             <button onClick={() => createLogin(w)} title="Create login account"
                               data-testid={`create-login-${w.id}`}
-                              className="inline-flex items-center px-2 h-7 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 text-[10px] font-semibold uppercase tracking-wider">
+                              className="inline-flex items-center px-1.5 h-7 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 text-[10px] font-semibold uppercase tracking-wider shrink-0">
                               + Login
                             </button>
                           );
                           return null;
                         })()}
                         <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer /></button>
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4] shrink-0"><Printer /></button>
                         {/* v58.13.132ad — Per-row onboarding card. Admin-only:
                             server enforces 403, we also hide the button for
                             non-admin to avoid dead affordances. */}
@@ -2594,17 +2595,31 @@ export default function Workers() {
                             disabled={onboardingBusy === w.id}
                             title="Print onboarding card (QR)"
                             data-testid={`print-onboarding-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fff4e6] text-[#c2410c] hover:bg-[#ffe4c4] disabled:opacity-40"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fff4e6] text-[#c2410c] hover:bg-[#ffe4c4] disabled:opacity-40 shrink-0"
                           >
                             {onboardingBusy === w.id ? <Loader2 size={12} className="animate-spin" /> : <QrCode />}
                           </button>
                         )}
                         <button onClick={() => setViewingId(w.id)} title="View profile" data-testid={`view-${w.id}`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"><EyeIcon /></button>
-                        <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 /></button>
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 shrink-0"><EyeIcon /></button>
+                        {/* v58.13.132fp — Edit pencil MUST render for every
+                            worker row visible to an admin. The .132fp
+                            probe confirmed the button was already
+                            unconditional in the JSX, but rows with the
+                            wider `+ Login` action (Melinda et al.)
+                            pushed Edit + Delete onto a wrapped second
+                            line inside the fixed 190px actions column,
+                            which some bundles clipped. Widening the
+                            column to 260px and flipping the cluster to
+                            `flex-nowrap` guarantees all six buttons —
+                            Kebab/+Login, Printer, QR, View, Edit,
+                            Delete — stay on one line unconditionally. */}
+                        <button onClick={() => setEditing(w)} title="Edit worker profile"
+                          data-testid={`edit-${w.id}`}
+                          data-worker-name={fullName(w)}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4] shrink-0"><Edit3 /></button>
                         <button onClick={() => setConfirmDelete(w.id)} title="Delete" data-testid={`delete-${w.id}`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 /></button>
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd] shrink-0"><Trash2 /></button>
                       </div>
                     )}
                     {canEdit && confirmDelete === w.id && (
