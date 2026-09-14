@@ -1321,21 +1321,28 @@ async def upload_induction_file(
     seed_folder = await _resolve_seed_folder(user["org_id"], seed_name, user["id"])
     sub_folder = await _find_or_create_worker_subfolder(seed_folder, worker, user["id"])
 
-    folder_dir = UPLOAD_DIR / sub_folder["id"]
-    folder_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{_uuid.uuid4().hex}{ext}"
-    target = folder_dir / stored_name
-
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk: break
-            size += len(chunk)
-            if size > MAX_FILE_BYTES:
-                out.close(); target.unlink(missing_ok=True)
-                raise HTTPException(400, "Exceeds 50 MB limit")
-            out.write(chunk)
+    # v58.13.132gh — Bytes → GridFS under `document_library/<folder>/`.
+    # Same pattern as `worker_certifications.upload_cert_file`; shared
+    # `_serve_async` reader picks them up post-migration. No pod-local
+    # file survives the request.
+    buf = bytearray()
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > MAX_FILE_BYTES:
+            raise HTTPException(400, "Exceeds 50 MB limit")
+    size = len(buf)
+    from uploads_storage import save_upload as _save_ind  # noqa: WPS433
+    await _save_ind(
+        "document_library", [sub_folder["id"], stored_name], bytes(buf),
+        module="workers_inductions",
+        org_id=user["org_id"],
+        mime=file.content_type,
+        orig_filename=file.filename,
+    )
 
     worker_label = f"{worker.get('first_name', '')} {worker.get('last_name', '')}".strip() or "(unnamed)"
     file_doc = {

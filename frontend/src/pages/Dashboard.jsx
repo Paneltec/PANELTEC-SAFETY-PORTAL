@@ -528,6 +528,19 @@ export default function Dashboard() {
   const [briefing, setBriefing] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
+  // v58.13.132gh — Admin-only "files needing reupload" pill.
+  // Silent no-op for non-admins; count === 0 hides the banner entirely.
+  const [missingFiles, setMissingFiles] = useState(null);
+
+  useEffect(() => {
+    const u = getUser();
+    if ((u?.role || '').toLowerCase() !== 'admin') return;
+    let alive = true;
+    api.get('/admin/missing-files/scan')
+      .then((r) => { if (alive) setMissingFiles(r.data?.total || 0); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -590,6 +603,37 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-[1400px] mx-auto" data-testid="dashboard-page">
+      {/* v58.13.132gh — Post-incident banner: admin-only surface pointing
+          to the "Files needing reupload" page when byte-less doc_files
+          records exist. Hidden entirely at count=0 so it never nags. */}
+      {missingFiles > 0 && (
+        <div
+          className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex items-center justify-between gap-4"
+          data-testid="dashboard-missing-files-banner"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 font-semibold text-sm">
+              {missingFiles}
+            </div>
+            <div>
+              <div className="font-medium text-amber-900 text-sm">
+                {missingFiles} file{missingFiles === 1 ? '' : 's'} need attention
+              </div>
+              <div className="text-xs text-amber-800">
+                The underlying bytes are missing. Reupload the source or remove the record.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/app/settings/missing-files')}
+            className="text-xs font-semibold rounded-md px-3 py-2 bg-amber-600 text-white hover:bg-amber-700"
+            data-testid="dashboard-missing-files-open-btn"
+          >
+            Review →
+          </button>
+        </div>
+      )}
       {/* v157 — Personalised hero greeting on top of the existing banner. Uses
           time-of-day salutation + logged-in user's first name + today's date.
           Includes a slow-drifting orange/blue radial glow for premium feel

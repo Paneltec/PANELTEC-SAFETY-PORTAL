@@ -49,6 +49,10 @@ MIGRATED_MODULES = [
     ("form_attachments",      "*/*",         "forms"),
     ("form_photos",           "*/*",         "forms"),
     ("schedule_attachments",  "*/*",         "asset_service"),
+    # v58.13.132gh — SWMS signed-evidence scans + Hazards vision uploads.
+    # Cert / induction uploads already land under `document_library/*/*`.
+    ("swms_scans",            "*",           "swms_phase45"),
+    ("hazards",               "*",           "hazards"),
 ]
 
 

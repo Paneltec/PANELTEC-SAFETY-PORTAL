@@ -616,6 +616,11 @@ api.include_router(admin_active_sessions_router)
 # v58.13.81 — admin-only test-data purge endpoint.
 from admin_purge_test_data import router as admin_purge_router  # noqa: E402
 api.include_router(admin_purge_router)
+# v58.13.132gh — admin surface for byte-less file records (Stephen's
+# 410s). Read-only scan + hard-remove for cleanup after the
+# GridFS sweep in `scripts/migrate_ephemeral_to_gridfs.py`.
+from admin_missing_files import router as admin_missing_files_router  # noqa: E402
+api.include_router(admin_missing_files_router)
 # Phase 3.21 — Session history audit log (30d retention).
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
 api.include_router(session_history_router)

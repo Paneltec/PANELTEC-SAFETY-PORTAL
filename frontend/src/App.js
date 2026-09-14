@@ -68,6 +68,9 @@ import FleetRegister from '@/pages/FleetRegister';
 import FuelCardsAdmin from '@/pages/FuelCardsAdmin';
 // v58.13.132ab — admin daily-job assignment for mobile home screen.
 import AdminAssignDailyJobs from '@/pages/AdminAssignDailyJobs';
+// v58.13.132gh — Post-incident admin surface for byte-less file
+// records. Landing page + dashboard banner both link here.
+import AdminMissingFiles from '@/pages/AdminMissingFiles';
 // v58.13.131c — SmartFill fuel-anomaly inbox route.
 import FuelAnomalyInbox from '@/pages/FuelAnomalyInbox';
 // v58.13.131d — SmartFill fuel reporting page.
@@ -383,6 +386,8 @@ function App() {
               <Route path="settings/system" element={<SystemSettings />} />
               <Route path="settings/certifications" element={<Certifications />} />
               <Route path="settings/backup" element={<BackupTab />} />
+              {/* v58.13.132gh — Files needing reupload (post-incident admin surface). */}
+              <Route path="settings/missing-files" element={<AdminMissingFiles />} />
               <Route path="forms" element={<Forms />} />
               <Route path="forms/templates/:templateId/submissions" element={<FormSubmissions />} />
               <Route path="outbox" element={<Outbox />} />

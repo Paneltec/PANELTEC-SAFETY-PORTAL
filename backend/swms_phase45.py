@@ -383,22 +383,28 @@ async def swms_from_scan(
 
     # Save to disk with size cap (streamed so a hostile 100 MB upload
     # can't OOM the worker).
-    scan_root = Path(__file__).parent / "uploads" / SCAN_DIR_NAME
-    scan_root.mkdir(parents=True, exist_ok=True)
+    # v58.13.132gh — Buffer bytes in-memory, hand a short-lived
+    # temp file to the OCR toolchain (Tesseract wants a real path),
+    # then persist the bytes to GridFS. No pod-local file survives
+    # the request.
+    import tempfile as _tmp
     stored_name = f"{_uuid.uuid4().hex}{ext}"
-    target = scan_root / stored_name
+    buf = bytearray()
     total = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_SCAN_BYTES:
-                out.close()
-                target.unlink(missing_ok=True)
-                raise HTTPException(413, "File too large — 25 MB limit.")
-            out.write(chunk)
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_SCAN_BYTES:
+            raise HTTPException(413, "File too large — 25 MB limit.")
+        buf.extend(chunk)
+    data = bytes(buf)
+    _tf = _tmp.NamedTemporaryFile(suffix=ext, delete=False)
+    _tf.write(data)
+    _tf.flush()
+    _tf.close()
+    target = Path(_tf.name)
 
     # OCR. PDFs go through `ocr_pdf_to_text` (text-layer first, raster
     # fallback via Poppler+Tesseract). If those binaries aren't on the
@@ -438,6 +444,20 @@ async def swms_from_scan(
 
     ocr_text = (ocr_text or "").strip()
     ocr_chars = len(ocr_text)
+    # v58.13.132gh — Persist bytes to GridFS regardless of OCR
+    # outcome. Cleanup the temp file at this exit path too.
+    try:
+        from uploads_storage import save_upload  # noqa: WPS433 — lazy
+        await save_upload(
+            SCAN_DIR_NAME, [stored_name], data,
+            module="swms_phase45",
+            org_id=user.get("org_id"),
+            mime=file.content_type,
+            orig_filename=file.filename,
+        )
+    finally:
+        try: Path(_tf.name).unlink(missing_ok=True)
+        except Exception: pass
     if ocr_chars < MIN_PASTE_CHARS:
         # Keep the file so admins can inspect what went wrong, but bail.
         raise HTTPException(

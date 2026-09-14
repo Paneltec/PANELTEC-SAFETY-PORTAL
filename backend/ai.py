@@ -199,13 +199,21 @@ async def hazard_vision(file: UploadFile = File(...), user: dict = Depends(requi
     if len(raw) > 8 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large (max 8MB)")
 
-    # Save to disk so we can serve back via /api/files/hazards/<name>
+    # v58.13.132gh — Bytes → GridFS (`hazards` subdir). Serve
+    # endpoint at `/api/files/hazards/<name>` reads via
+    # `_serve_async` with disk fallback.
     ext = (Path(file.filename or "photo.jpg").suffix or ".jpg").lower()
     if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
         ext = ".jpg"
     name = f"{uuid.uuid4()}{ext}"
-    save_path = UPLOAD_DIR / name
-    save_path.write_bytes(raw)
+    from uploads_storage import save_upload as _save_hazard  # noqa: WPS433
+    await _save_hazard(
+        "hazards", [name], raw,
+        module="hazards",
+        org_id=(user or {}).get("org_id"),
+        mime=file.content_type,
+        orig_filename=file.filename,
+    )
     photo_url = f"/api/files/hazards/{name}"
 
     mime = file.content_type or "image/jpeg"

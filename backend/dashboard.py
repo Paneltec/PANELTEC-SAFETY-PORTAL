@@ -225,7 +225,8 @@ async def _serve_async(subdir: str, *parts: str):
 
 @files_router.get("/hazards/{name}")
 async def serve_hazard(name: str, user: dict = Depends(get_current_user)):
-    return _serve("hazards", name)
+    # v58.13.132gh — GridFS-preferring reader; disk fallback retained.
+    return await _serve_async("hazards", name)
 
 
 @files_router.get("/contractor_docs/{name}")
@@ -257,7 +258,10 @@ async def serve_document_library(
     user: dict = Depends(get_current_user),
 ):
     await _org_scope_document_library(folder_id, user)
-    return _serve("document_library", folder_id, name)
+    # v58.13.132gh — Doc-library serve was still on the sync _serve;
+    # swap so worker-cert + induction uploads (which live under
+    # `document_library/<folder>/...`) stream from GridFS post-migration.
+    return await _serve_async("document_library", folder_id, name)
 
 
 @files_router.get("/form_photos/{submission_id}/{name}")
@@ -266,13 +270,13 @@ async def serve_form_photo(
     user: dict = Depends(get_current_user),
 ):
     await _org_scope_form_photo(submission_id, user)
-    return _serve("form_photos", submission_id, name)
+    return await _serve_async("form_photos", submission_id, name)
 
 
 # Phase 4.6 — signed-evidence SWMS scans (PDF + JPG/PNG).
 @files_router.get("/swms_scans/{name}")
 async def serve_swms_scan(name: str, user: dict = Depends(get_current_user)):
-    return _serve("swms_scans", name)
+    return await _serve_async("swms_scans", name)
 
 
 # v160.3.7q — Program Schematic module-stats endpoint.
