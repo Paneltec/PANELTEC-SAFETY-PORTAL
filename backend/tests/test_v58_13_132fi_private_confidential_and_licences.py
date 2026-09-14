@@ -109,11 +109,13 @@ def test_delete_endpoint_soft_deletes_and_audits():
     assert re.search(
         r'\{"\$set":\s*\{"deleted_at":\s*ts,\s*"deleted_by":\s*user\["id"\]\}\}',
         src), "DELETE must be soft (sets deleted_at)"
-    # Audit log write attempted.
+    # v58.13.132fj — audit write now goes through the shared
+    # helper. .132fi shipped an inline archive_audit.insert_one;
+    # .132fj replaced it with the shared helper.
+    assert "from archive_audit_helpers import record_file_archive_audit" in src
     assert re.search(
-        r'archive_audit\.insert_one\(\{[\s\S]{0,600}'
-        r'"resource":\s*"worker_hr_documents"[\s\S]{0,300}'
-        r'"action":\s*"soft_delete"',
+        r"await record_file_archive_audit\(\s*"
+        r'module="hr_documents",\s*resource="worker_hr_documents"',
         src)
 
 
