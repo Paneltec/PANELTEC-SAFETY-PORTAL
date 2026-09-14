@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    participant Simpro
+    participant Cron as SimproDeltaCron
+    participant API as FastAPI
+    participant Mongo as MongoDB
+    participant Mobile as Worker Mobile App
+    participant Admin as Admin Web
+
+    Simpro->>Cron: nightly delta pull
+    Cron->>API: POST /api/integrations/simpro/workers/refresh
+    API->>Mongo: upsert workers + hr_employees
+    Admin->>API: assign daily job / form
+    API->>Mongo: form_assignments
+    Mobile->>API: POST /api/mobile/pin (login)
+    API-->>Mobile: JWT
+    Mobile->>API: GET /api/mobile/home (my forms)
+    Mobile->>API: POST /api/forms/{tpl}/submit + photos
+    API->>Mongo: form_submissions
+    API->>Mongo: GridFS attachments
+    Admin->>API: GET /api/form-submissions
+    Admin->>API: DELETE /api/document-library/files/{id}
+    API->>Mongo: archive_audit (soft_delete)
+    Note over Admin,Mongo: 30-day restore window via /api/archive

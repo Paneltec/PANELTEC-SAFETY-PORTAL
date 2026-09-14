@@ -1,0 +1,21 @@
+graph LR
+    subgraph Login
+      L1[Email + password]
+      L2[Mobile PIN 4-digit]
+    end
+    L1 --> R{role}
+    L2 --> RW[Worker mobile only]
+    R -->|admin| WEB[Admin Web · all data]
+    R -->|hseq_lead| WEB2[Admin Web · limited]
+    R -->|supervisor| WEB3[Admin Web · read-mostly]
+    R -->|contractor_rep| CR[Contractor portal]
+    R -->|worker| RW
+    WEB --> APIN[Admin console PIN<br/>4-digit · bcrypt · rate-limited]
+    APIN --> APINGATE[3/30s + 6/15min lockout]
+    WEB --> TILES[Apps Directory tiles]
+    TILES --> TP{tile.pin_protected?}
+    TP -->|yes| APIN
+    TILES --> TV{tile.hidden?}
+    TV -->|yes| SH[Show hidden · PIN required]
+    TILES --> VAULT[Credential Vault<br/>AES-256-GCM · per-user]
+    WEB --> ARCH[archive_audit<br/>every hide/restore/delete]

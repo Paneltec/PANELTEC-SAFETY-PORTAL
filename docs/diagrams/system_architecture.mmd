@@ -1,0 +1,34 @@
+graph TB
+    subgraph Clients
+      W[React CRA web app<br/>frontend/src]
+      M[Expo mobile app<br/>mobile/src]
+    end
+    subgraph Backend
+      API[FastAPI · uvicorn<br/>backend/server.py]
+      AUTH[Auth · JWT + admin PIN + mobile PIN<br/>backend/auth.py]
+      MOD[145 backend modules<br/>routers + business logic]
+    end
+    subgraph Data
+      MONGO[(MongoDB<br/>Motor async)]
+      GRIDFS[GridFS<br/>PDFs · attachments]
+      DISK[Ephemeral disk uploads<br/>parked for v58.14.x]
+    end
+    subgraph Integrations
+      MS[Microsoft 365 · email]
+      NAV[Navixy · GPS]
+      SF[SmartFill · fuel]
+      SIM[Simpro · workers]
+      LLM[Emergent LLM · Claude/OpenAI]
+    end
+    W -->|HTTPS · Bearer JWT| API
+    M -->|HTTPS · Bearer JWT + mobile PIN| API
+    API --> AUTH
+    API --> MOD
+    MOD --> MONGO
+    MOD --> GRIDFS
+    MOD --> DISK
+    MOD --> MS
+    MOD --> NAV
+    MOD --> SF
+    MOD --> SIM
+    MOD --> LLM
