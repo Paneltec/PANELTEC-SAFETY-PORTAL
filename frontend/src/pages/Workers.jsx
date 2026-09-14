@@ -327,9 +327,15 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
             onError={() => setBroken(true)}
             style={{
               width: '100%',
-              height: '120%',
+              // v58.13.132g2 — 150% (was 120%) gives ~50% total
+              // vertical range so Stephen can push the framing lower
+              // on subjects like Mel where the face sits high in the
+              // source photo. Multiplier scales in lockstep — 2.5×
+              // the .132fs value to keep offset=100 hitting the
+              // fully-shifted-down bottom of the extra height.
+              height: '150%',
               objectFit: 'cover',
-              transform: `translateY(${-effectiveOffset * 0.112}px)`,
+              transform: `translateY(${-effectiveOffset * 0.280}px)`,
               display: 'block',
             }}
             data-testid="worker-edit-photo-img"
@@ -477,9 +483,10 @@ function WorkerRowPhoto({ worker }) {
         onError={() => setBroken(true)}
         style={{
           width: '100%',
-          height: '120%',
+          // v58.13.132g2 — bump 120% → 150% (2.5× multiplier).
+          height: '150%',
           objectFit: 'cover',
-          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.08}px)`,
+          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.200}px)`,
           display: 'block',
         }}
       />
@@ -1082,9 +1089,10 @@ function IdCardPhoto({ worker, onExpand }) {
           onError={() => setBroken(true)}
           style={{
             width: '100%',
-            height: '120%',
+            // v58.13.132g2 — bump 120% → 150% (2.5× multiplier).
+            height: '150%',
             objectFit: 'cover',
-            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.256}px)`,
+            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.640}px)`,
             display: 'block',
           }}
         />
