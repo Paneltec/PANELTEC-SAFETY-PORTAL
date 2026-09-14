@@ -72,3 +72,48 @@ async def record_file_archive_audit(
         })
     except Exception as e:  # pragma: no cover — silent by design
         log.warning("archive_audit write failed: %s", e)
+
+
+# v58.13.132ga — Tile visibility audit trail. Every hide/restore
+# writes one row so Stephen has a paper trail of who took a tile
+# out of the org-wide grid (and when it came back). The frontend
+# path is always PIN-gated (3-dots menu is admin-PIN-only per
+# .132g6), so we stamp `pin_verified=True` in the row. The BE
+# admin gate on the PATCH endpoint is the trust boundary; the
+# PIN attestation is a UX-level marker, not a cryptographic
+# proof, and is documented as such.
+async def record_tile_visibility_audit(
+    *,
+    tile_id: str,
+    tile_name: Optional[str],
+    action: str,       # "tile_hidden" | "tile_restored"
+    user: dict,
+) -> None:
+    """Insert a `tile_hidden` / `tile_restored` audit row.
+    Best-effort; failures are logged but never block the caller."""
+    if action not in ("tile_hidden", "tile_restored"):
+        log.warning("record_tile_visibility_audit: invalid action=%s", action)
+        return
+    try:
+        await db.archive_audit.insert_one({
+            "id": new_id(),
+            "module": "org_url_tiles",
+            "resource": "org_url_tiles",
+            "resource_id": tile_id,
+            "tile_id": tile_id,
+            "tile_name": tile_name,
+            "filename": tile_name,       # legacy schema mirror
+            "actor_user_id": user.get("id"),
+            "actor_id": user.get("id"),  # Stephen's requested field name
+            "actor_email": user.get("email") or "",
+            "action": action,
+            "pin_verified": True,
+            "batch_id": None,
+            "criteria": {},
+            "affected_count": 1,
+            "reason": None,
+            "timestamp": now_iso(),
+            "org_id": user.get("org_id"),
+        })
+    except Exception as e:  # pragma: no cover — silent by design
+        log.warning("tile visibility audit write failed: %s", e)

@@ -704,6 +704,21 @@ async def update_tile(tile_id: str, body: TilePatch,
     doc = await db.org_url_tiles.find_one({"id": tile_id, "org_id": org_id})
     log.info("org_url_tiles.update org=%s tile=%s fields=%s",
              org_id, tile_id, sorted(updates.keys()))
+    # v58.13.132ga — Audit trail for org-wide visibility changes.
+    # Fires only when `hidden` was in the patch AND the value
+    # actually flipped (idempotent PATCHes must NOT spam the audit
+    # log). Best-effort — a failed audit does not block the PATCH.
+    if "hidden" in updates:
+        prev_hidden = bool(existing.get("hidden", False))
+        new_hidden = bool(updates["hidden"])
+        if prev_hidden != new_hidden:
+            from archive_audit_helpers import record_tile_visibility_audit
+            await record_tile_visibility_audit(
+                tile_id=tile_id,
+                tile_name=doc.get("label"),
+                action="tile_hidden" if new_hidden else "tile_restored",
+                user=user,
+            )
     # v58.13.132ez — Admin editor return path: never redact.
     return _out(doc, user["id"], redact_url=False)
 
