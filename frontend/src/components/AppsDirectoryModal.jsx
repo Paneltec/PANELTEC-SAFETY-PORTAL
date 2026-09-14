@@ -4,7 +4,7 @@ import { X, Rocket } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import {
-  DndContext, PointerSensor, KeyboardSensor,
+  DndContext, PointerSensor, KeyboardSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
 } from '@dnd-kit/core';
 import {
@@ -74,9 +74,15 @@ export default function AppsDirectoryModal({ open, onClose }) {
     [tiles, hidden],
   );
 
-  // v58.13.132g3 — @dnd-kit setup (admin only).
+  // v58.13.132g4 — Sensor tuning. `.132g3` used
+  // `PointerSensor { distance: 6 }` which was too high for
+  // MacBook trackpad — Stephen was triggering clicks before the
+  // drag activated. Lower the threshold to 3px and add
+  // `TouchSensor` (with a short delay to disambiguate from taps)
+  // so iPad admins can reorder too.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 

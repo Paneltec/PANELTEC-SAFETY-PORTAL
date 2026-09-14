@@ -4,7 +4,7 @@ import { Rocket } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import {
-  DndContext, PointerSensor, KeyboardSensor,
+  DndContext, PointerSensor, KeyboardSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
 } from '@dnd-kit/core';
 import {
@@ -52,8 +52,10 @@ export default function AppsDirectory() {
     [tiles, hidden],
   );
 
+  // v58.13.132g4 — Sensor tuning (matches AppsDirectoryModal).
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 

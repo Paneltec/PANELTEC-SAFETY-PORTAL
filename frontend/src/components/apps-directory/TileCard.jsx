@@ -354,6 +354,15 @@ export function TileCard({
         </div>
       )}
 
+      {/* v58.13.132g4 — Prominent drag handle. Stephen's .132g3
+          feedback was "i cant drag the tils around" — the .132g3
+          handle was a 14px slate-300 grip that was almost invisible
+          on light backgrounds. Now: 18px, slate-500 by default,
+          slate-800 on hover with a soft slate-100 background,
+          `cursor-grab` on hover / `cursor-grabbing` when held.
+          Sits at top-left with a title="Drag to reorder" tooltip
+          and `touch-action: none` per @dnd-kit docs so mobile
+          Safari doesn't steal the gesture. Admin-only. */}
       {isAdmin && (
         <button
           type="button"
@@ -361,9 +370,10 @@ export function TileCard({
           {...(dragListeners || {})}
           data-testid={`${testIdPrefix}-drag-${tile.id}`}
           title="Drag to reorder"
-          className="absolute top-3 left-3 p-1 rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 cursor-grab active:cursor-grabbing touch-none z-20"
+          aria-label="Drag to reorder"
+          className="absolute top-2.5 left-2.5 p-1.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-grab active:cursor-grabbing touch-none z-20 bg-white/90 border border-slate-200 shadow-sm"
         >
-          <GripVertical size={14} />
+          <GripVertical size={18} />
         </button>
       )}
 
@@ -372,7 +382,9 @@ export function TileCard({
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuOpen((v) => !v); }}
           data-testid={`${testIdPrefix}-menu-${tile.id}`}
-          title="Tile options"
+          // v58.13.132g4 — clearer tooltip so users spot the affordance.
+          title="Actions for this tile"
+          aria-label="Actions for this tile"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 bg-white/90"
@@ -383,9 +395,13 @@ export function TileCard({
           <div
             data-testid={`${testIdPrefix}-menu-panel-${tile.id}`}
             role="menu"
-            className="absolute right-0 top-8 z-40 w-56 rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden"
+            className="absolute right-0 top-8 z-40 w-64 rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* v58.13.132g4 — On PIN-protected tiles the top action
+                becomes the ONLY launch affordance (was "Open" alongside
+                a locked card body). One clear primary action removes
+                the confusion Stephen flagged between Hide and PIN. */}
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); openTile(); }}
@@ -404,13 +420,18 @@ export function TileCard({
             >
               <Copy size={13} /> Copy URL
             </button>
+            {/* v58.13.132g4 — Copy rewrite. Stephen confused Hide with
+                PIN protection. New label + sub-label makes clear this
+                is a view-only, per-user, non-secure toggle. Distinct
+                testid preserved for source pins / Playwright. */}
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); onHide(tile.id); setMenuOpen(false); }}
               data-testid={`${testIdPrefix}-menu-hide-${tile.id}`}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 border-t border-slate-100"
+              className="w-full flex flex-col items-start gap-0.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 border-t border-slate-100"
             >
-              <EyeOff size={13} /> Hide until next login
+              <span className="flex items-center gap-2"><EyeOff size={13} /> Hide from my view (until logout)</span>
+              <span className="text-[10px] text-slate-400 ml-5 italic">Only affects your view. Not secure.</span>
             </button>
           </div>
         )}

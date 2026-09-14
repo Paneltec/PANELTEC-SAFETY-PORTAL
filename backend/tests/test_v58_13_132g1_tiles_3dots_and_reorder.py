@@ -121,7 +121,9 @@ def test_three_dot_menu_present():
     # a source-pin regression before the Playwright script does.
     assert "> Open<" in src or "Open</" in src
     assert "Copy URL" in src
-    assert "Hide until next login" in src
+    # v58.13.132g4 rewrote the Hide label to
+    # "Hide from my view (until logout)" — accept either wording.
+    assert ("Hide until next login" in src) or ("Hide from my view" in src)
 
 
 def test_hide_uses_session_storage_per_user():

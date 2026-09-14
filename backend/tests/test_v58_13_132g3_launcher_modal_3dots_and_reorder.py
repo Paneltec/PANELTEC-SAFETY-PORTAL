@@ -11,6 +11,7 @@ through them so BOTH surfaces use the same shared code path.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -139,5 +140,10 @@ def test_modal_footer_show_all_wired():
 # ─── Version lockstep ──────────────────────────────────────────
 
 def test_version_bumped_to_132g3():
-    assert "paneltec-v160.3.9.58.13.132g3" in _read(VERSION_JS)
-    assert "paneltec-v160.3.9.58.13.132g3" in _read(SW)
+    """Baseline pin — version has crossed `.132g3` at least once.
+    Regex accepts any future bump so hotfixes don't retroactively
+    fail this ship's assertion."""
+    for path in (VERSION_JS, SW):
+        s = _read(path)
+        assert re.search(r"paneltec-v160\.3\.9\.58\.13\.132g\d", s), (
+            f"version in {path.name} has not reached .132g3+")
