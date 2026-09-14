@@ -644,6 +644,17 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
   const [eligibleLoading, setEligibleLoading] = useState(false);
   const [eligibleError, setEligibleError] = useState(null);
   const [userSearch, setUserSearch] = useState('');
+  // v58.13.132fc — Current user's id for the "you haven't ticked
+  // yourself" hint. One-shot fetch on editor mount; cheap and
+  // avoids threading a new prop through every caller.
+  const [currentUserId, setCurrentUserId] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/auth/me')
+      .then((r) => { if (!cancelled) setCurrentUserId(r.data?.id || null); })
+      .catch(() => { /* non-blocking; hint just won't show */ });
+    return () => { cancelled = true; };
+  }, []);
   // v58.13.132ew — Auto-colour mode. On add mode we start in auto.
   // On edit mode we start manual (the server has already told us
   // what colour to render); if the admin clears the swatch to the
@@ -872,9 +883,20 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
               Positive-framing rewrite: "Restrict" → "Approve".
               Toggle ON means "only ticked users can see this tile";
               OFF means public. Strict admin rule preserved — admins
-              are NOT bypassed and must tick themselves. */}
+              are NOT bypassed and must tick themselves.
+              v58.13.132fc — Clarifier banner + role-grouped picker
+              + bulk select buttons + preflight warnings. */}
           <div className="pt-3 mt-2 border-t border-slate-200"
             data-testid="org-quick-links-editor-access-section">
+            {/* v58.13.132fc — Approvals clarifier banner: Stephen
+                was editing his personal credentials thinking that
+                restricted access. Make the two responsibilities
+                unambiguous. */}
+            <div className="mb-3 rounded-md border border-slate-300 bg-slate-100 px-2.5 py-2 text-[11px] text-slate-700"
+              data-testid="org-quick-links-editor-approvals-clarifier">
+              <span className="font-semibold">Control who in your team can see and open this tile.</span>
+              {' '}This has nothing to do with your personal credentials above.
+            </div>
             <label className="flex items-start gap-2">
               <input type="checkbox" checked={restrict}
                 onChange={(e) => {
@@ -890,90 +912,164 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
                 </span>
               </span>
             </label>
-            {restrict && (
-              <div className="mt-3 space-y-2"
-                data-testid="org-quick-links-editor-access-picker">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-700"
-                    data-testid="org-quick-links-editor-approved-users-heading">
-                    Approved users
+            {restrict && (() => {
+              // v58.13.132fc — Split eligible users into role
+              // groups so small teams can scan the picker faster.
+              const q = userSearch.trim().toLowerCase();
+              const matchesSearch = (u) => !q
+                || (u.name || '').toLowerCase().includes(q)
+                || (u.email || '').toLowerCase().includes(q);
+              const sorted = [...eligibleUsers].sort((a, b) =>
+                (a.name || '').localeCompare(b.name || ''));
+              const admins = sorted.filter((u) => u.is_admin).filter(matchesSearch);
+              const users = sorted.filter((u) => !u.is_admin).filter(matchesSearch);
+              const adminIds = sorted.filter((u) => u.is_admin).map((u) => u.id);
+              const allIds = sorted.map((u) => u.id);
+              const dedupe = (ids) => Array.from(new Set(ids));
+              const selectAllAdmins = () => setAllowedUserIds((prev) =>
+                dedupe([...prev, ...adminIds]));
+              const selectAll = () => setAllowedUserIds(dedupe(allIds));
+              const clearAll = () => setAllowedUserIds([]);
+              const showSearch = sorted.length > 20;
+              // v58.13.132fc — Preflight warnings.
+              const emptyWhileOn = allowedUserIds.length === 0;
+              const selfMissing = !emptyWhileOn && !!currentUserId
+                && !allowedUserIds.includes(currentUserId);
+              const renderRow = (u) => {
+                const checked = allowedUserIds.includes(u.id);
+                const isSelf = currentUserId && u.id === currentUserId;
+                return (
+                  <label key={u.id}
+                    data-testid={`org-quick-links-editor-user-row-${u.id}`}
+                    data-checked={checked ? 'true' : 'false'}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer ${checked ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
+                    <input type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleUser(u.id)}
+                      data-testid={`org-quick-links-editor-user-checkbox-${u.id}`}
+                      className="rounded border-slate-300" />
+                    <span className="flex-1 truncate">
+                      <span className="font-semibold text-slate-800">{u.name || u.email}</span>
+                      {isSelf && (
+                        <span className="ml-1 text-[9px] font-bold uppercase tracking-wider text-emerald-700">you</span>
+                      )}
+                      {u.email && u.email !== u.name && (
+                        <span className="text-slate-500 ml-1">· {u.email}</span>
+                      )}
+                    </span>
+                    {u.is_admin && (
+                      <span className="text-[9px] font-semibold uppercase tracking-wider text-violet-600">admin</span>
+                    )}
+                  </label>
+                );
+              };
+              return (
+                <div className="mt-3 space-y-2"
+                  data-testid="org-quick-links-editor-access-picker">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-700"
+                      data-testid="org-quick-links-editor-approved-users-heading">
+                      Approved users
+                    </div>
+                    <div className="text-[11px] text-slate-500"
+                      data-testid="org-quick-links-editor-selected-count">
+                      {allowedUserIds.length} approved
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500"
-                    data-testid="org-quick-links-editor-selected-count">
-                    {allowedUserIds.length} approved
+                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
+                    data-testid="org-quick-links-editor-restrict-hint">
+                    Tick everyone who should have access. Include yourself if you want to see the tile.
+                  </p>
+                  {emptyWhileOn && (
+                    <div className="rounded-md border border-amber-300 bg-amber-100 px-2.5 py-2 text-[11px] text-amber-900"
+                      data-testid="org-quick-links-editor-empty-warning">
+                      <span className="font-semibold">Warning</span> — this tile will be hidden from everyone (including you). Tick at least yourself before saving.
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button type="button" onClick={selectAllAdmins}
+                      disabled={eligibleLoading || adminIds.length === 0}
+                      data-testid="org-quick-links-editor-select-all-admins"
+                      className="text-[10px] font-semibold px-2 py-1 rounded border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50">
+                      Select all admins
+                    </button>
+                    <button type="button" onClick={selectAll}
+                      disabled={eligibleLoading || allIds.length === 0}
+                      data-testid="org-quick-links-editor-select-all"
+                      className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-50">
+                      Select all
+                    </button>
+                    <button type="button" onClick={clearAll}
+                      disabled={eligibleLoading || allowedUserIds.length === 0}
+                      data-testid="org-quick-links-editor-clear-all"
+                      className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-50">
+                      Clear all
+                    </button>
                   </div>
+                  {showSearch && (
+                    <input type="search"
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      placeholder="Search users by name or email…"
+                      data-testid="org-quick-links-editor-user-search"
+                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                  )}
+                  {eligibleLoading && (
+                    <div className="text-xs text-slate-500"
+                      data-testid="org-quick-links-editor-users-loading">
+                      Loading users…
+                    </div>
+                  )}
+                  {eligibleError && (
+                    <div className="text-xs text-red-600"
+                      data-testid="org-quick-links-editor-users-error">
+                      {eligibleError}
+                    </div>
+                  )}
+                  {!eligibleLoading && !eligibleError && (
+                    <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100"
+                      data-testid="org-quick-links-editor-user-list">
+                      {sorted.length === 0 ? (
+                        <div className="text-xs text-slate-500 px-3 py-2"
+                          data-testid="org-quick-links-editor-user-empty">
+                          No users to choose from.
+                        </div>
+                      ) : (admins.length === 0 && users.length === 0) ? (
+                        <div className="text-xs text-slate-500 px-3 py-2"
+                          data-testid="org-quick-links-editor-user-empty">
+                          No users match that search.
+                        </div>
+                      ) : (
+                        <>
+                          {admins.length > 0 && (
+                            <div data-testid="org-quick-links-editor-group-admins">
+                              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50/70 border-b border-violet-100">
+                                Admins
+                              </div>
+                              {admins.map(renderRow)}
+                            </div>
+                          )}
+                          {users.length > 0 && (
+                            <div data-testid="org-quick-links-editor-group-users">
+                              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 border-b border-slate-200">
+                                Users
+                              </div>
+                              {users.map(renderRow)}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {selfMissing && (
+                    <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1.5"
+                      data-testid="org-quick-links-editor-self-missing-hint">
+                      Note — you haven't ticked yourself. This tile will be greyed out for you after saving. Tick yourself to see it.
+                    </div>
+                  )}
                 </div>
-                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
-                  data-testid="org-quick-links-editor-restrict-hint">
-                  Tick everyone who should have access. Include yourself if you want to see the tile.
-                </p>
-                <input type="search"
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                  placeholder="Search users by name or email…"
-                  data-testid="org-quick-links-editor-user-search"
-                  className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-400" />
-                {eligibleLoading && (
-                  <div className="text-xs text-slate-500"
-                    data-testid="org-quick-links-editor-users-loading">
-                    Loading users…
-                  </div>
-                )}
-                {eligibleError && (
-                  <div className="text-xs text-red-600"
-                    data-testid="org-quick-links-editor-users-error">
-                    {eligibleError}
-                  </div>
-                )}
-                {!eligibleLoading && !eligibleError && (
-                  <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100"
-                    data-testid="org-quick-links-editor-user-list">
-                    {(() => {
-                      const q = userSearch.trim().toLowerCase();
-                      const filtered = q
-                        ? eligibleUsers.filter((u) => (
-                            (u.name || '').toLowerCase().includes(q) ||
-                            (u.email || '').toLowerCase().includes(q)))
-                        : eligibleUsers;
-                      if (filtered.length === 0) {
-                        return (
-                          <div className="text-xs text-slate-500 px-3 py-2"
-                            data-testid="org-quick-links-editor-user-empty">
-                            {eligibleUsers.length === 0
-                              ? 'No users to choose from.'
-                              : 'No users match that search.'}
-                          </div>
-                        );
-                      }
-                      return filtered.map((u) => {
-                        const checked = allowedUserIds.includes(u.id);
-                        return (
-                          <label key={u.id}
-                            data-testid={`org-quick-links-editor-user-row-${u.id}`}
-                            data-checked={checked ? 'true' : 'false'}
-                            className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer ${checked ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
-                            <input type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleUser(u.id)}
-                              data-testid={`org-quick-links-editor-user-checkbox-${u.id}`}
-                              className="rounded border-slate-300" />
-                            <span className="flex-1 truncate">
-                              <span className="font-semibold text-slate-800">{u.name || u.email}</span>
-                              {u.email && u.email !== u.name && (
-                                <span className="text-slate-500 ml-1">· {u.email}</span>
-                              )}
-                            </span>
-                            {u.is_admin && (
-                              <span className="text-[9px] font-semibold uppercase tracking-wider text-violet-600">admin</span>
-                            )}
-                          </label>
-                        );
-                      });
-                    })()}
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
         {error && (
@@ -987,8 +1083,9 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
           </button>
           <button type="submit" disabled={busy}
             data-testid="org-quick-links-editor-save"
+            title="Saves the tile settings including approved users."
             className="text-sm font-semibold px-4 py-1.5 rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50">
-            {busy ? 'Saving…' : 'Save'}
+            {busy ? 'Saving…' : 'Save tile'}
           </button>
         </div>
       </form>
@@ -1082,6 +1179,16 @@ function CredentialSubEditor({ tileId }) {
       <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
         Your credentials for this tile
       </div>
+      {/* v58.13.132fc — Clarifier banner. Stephen's confusion:
+          editing this section thinking it restricted access. Make
+          it explicit that credentials are personal-only. */}
+      <div className="mb-2 rounded-md border border-slate-300 bg-slate-100 px-2.5 py-2 text-[11px] text-slate-700"
+        data-testid="credential-sub-editor-clarifier">
+        <span className="font-semibold">This is your personal login for this site</span> —
+        encrypted just for you. Nobody else on the team can see it. It does
+        <span className="font-semibold"> NOT</span> control who else can access
+        this tile — see <span className="font-semibold">Approved users only</span> below.
+      </div>
       <p className="text-[10px] text-slate-500 mb-2">
         Encrypted at rest. Only you can see these. Password preview: <code className="text-slate-700">{meta?.password_preview || '—'}</code>
       </p>
@@ -1140,8 +1247,9 @@ function CredentialSubEditor({ tileId }) {
         </button>
         <button type="button" onClick={save} disabled={busy}
           data-testid="credential-editor-save"
-          className="text-[10px] font-semibold px-3 py-1 rounded bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50">
-          {busy ? 'Saving…' : 'Save credentials'}
+          title="Saves only your personal password for this tile — does not save tile settings or approvals."
+          className="text-[10px] font-semibold px-3 py-1 rounded bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 inline-flex items-center gap-1">
+          <Lock size={10} /> {busy ? 'Saving…' : 'Save my login only'}
         </button>
       </div>
     </div>
