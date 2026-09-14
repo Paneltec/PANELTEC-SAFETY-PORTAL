@@ -965,11 +965,26 @@ def _slugify(text: str, maxlen: int = 40) -> str:
     return (s or "doc")[:maxlen]
 
 
-def persist_pdf(name_hint: str, data: bytes) -> tuple[str, str]:
-    """Write bytes to /uploads/pdfs/{hint}.pdf, return (file_url, filename)."""
+async def persist_pdf(name_hint: str, data: bytes) -> tuple[str, str]:
+    """Write bytes to GridFS bucket, return (file_url, filename).
+
+    v58.13.132gi — Migrated from `PDFS_DIR/{filename}.pdf` to GridFS
+    under subdir `pdfs`. `dashboard.serve_pdf` reads via `_serve_async`
+    so the response bytes come from GridFS first (disk fallback for
+    pre-migration files kept by `_serve_async`). The `/api/files/pdfs/...`
+    URL shape is preserved so no caller changes.
+
+    Async because the only live caller
+    (`email_outbox._pdf_attachment_for`) is already async and GridFS
+    writes are I/O bound — no reason to bridge sync/async.
+    """
     filename = f"{_slugify(name_hint)}.pdf"
-    path = PDFS_DIR / filename
-    path.write_bytes(data)
+    from uploads_storage import save_upload  # noqa: WPS433
+    await save_upload(
+        "pdfs", [filename], data,
+        module="pdf_renderer", mime="application/pdf",
+        orig_filename=filename,
+    )
     return f"/api/files/pdfs/{filename}", filename
 
 

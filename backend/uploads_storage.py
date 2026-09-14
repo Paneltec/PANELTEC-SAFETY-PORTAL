@@ -68,6 +68,18 @@ async def save_upload(
     return parts[-1] if parts else subdir
 
 
+def save_upload_sync(*args, **kwargs):
+    """Deprecated placeholder — persist_pdf is async now.
+
+    Kept as a no-op raise so any straggling sync caller surfaces
+    cleanly instead of silently writing to disk. Delete once no
+    module imports it (grep '/save_upload_sync/' in the tree).
+    """
+    raise RuntimeError(
+        "save_upload_sync is deprecated (v58.13.132gi). Use the async "
+        "`save_upload` from an async caller.")
+
+
 async def read_upload(
     subdir: str, parts: Iterable[str],
 ) -> Optional[Tuple[bytes, str]]:

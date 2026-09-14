@@ -127,7 +127,18 @@ async def upload_reference_image(
                 pass
 
     disk_path = _slot_disk_path(slot, ext)
-    disk_path.write_bytes(data)
+    # v58.13.132gj — Persist slot bytes to GridFS (subdir=
+    # `help_reference_images`, parts=[slot.ext]). No pod-local write —
+    # the serve endpoint below reads GridFS first with a disk
+    # fallback for pre-migration slots.
+    from uploads_storage import save_upload as _save  # noqa: WPS433
+    await _save(
+        "help_reference_images", [disk_path.name], data,
+        module="help_reference_images",
+        org_id=user.get("org_id"),
+        mime=content_type,
+        orig_filename=disk_path.name,
+    )
 
     uploaded_at = now_iso()
     doc = {
@@ -208,8 +219,24 @@ async def list_reference_images() -> dict[str, Any]:
 @router.get("/{slot}")
 async def get_reference_image(slot: str) -> Response:
     """Serve the raw image bytes. Public — no auth required so <img> tags
-    on the guide render without token juggling."""
+    on the guide render without token juggling.
+
+    v58.13.132gj — GridFS-preferring reader; disk fallback retained
+    for pre-migration slots. New writes go to GridFS only.
+    """
     slot = _sanitize_slot(slot)
+    # Try GridFS first for each allowed extension. Newest blob wins
+    # (matches `read_upload` sort order).
+    from uploads_storage import read_upload
+    for ext in ("png", "jpg", "webp"):
+        hit = await read_upload("help_reference_images", [f"{slot}.{ext}"])
+        if hit is not None:
+            data, mime = hit
+            return Response(
+                content=data, media_type=mime,
+                headers={"Cache-Control": "no-cache, must-revalidate"},
+            )
+    # Legacy disk fallback.
     disk_path = _find_slot_file(slot)
     if disk_path is None:
         raise HTTPException(404, "Reference image not uploaded yet")

@@ -244,12 +244,14 @@ async def serve_renewal(token: str, name: str):
 
 @files_router.get("/exports/{name}")
 async def serve_export(name: str, user: dict = Depends(get_current_user)):
-    return _serve("exports", name)
+    # v58.13.132gi — GridFS-preferring reader; disk fallback retained.
+    return await _serve_async("exports", name)
 
 
 @files_router.get("/pdfs/{name}")
 async def serve_pdf(name: str, user: dict = Depends(get_current_user)):
-    return _serve("pdfs", name)
+    # v58.13.132gi — GridFS-preferring reader; disk fallback retained.
+    return await _serve_async("pdfs", name)
 
 
 @files_router.get("/document_library/{folder_id}/{name}")

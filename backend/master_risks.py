@@ -216,35 +216,20 @@ async def reimport_master_risks(
     inline with the current user as the actor.
     """
     # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
-    if bool(file) == bool(url):
-        raise HTTPException(400, "supply-exactly-one-of-file-or-url")
-
-    # Persist a fresh copy of the source next to the import script.
-    import os as _os
-    from pathlib import Path as _Path
-    dest = (_Path(__file__).resolve().parent / "scripts" / "data"
-            / "master_risks_source.xlsx")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
-    if file:
-        content = await file.read()
-        dest.write_bytes(content)
-        size = len(content)
-    else:
-        import httpx as _httpx
-        async with _httpx.AsyncClient(follow_redirects=True, timeout=60.0) as c:
-            r = await c.get(url)
-            r.raise_for_status()
-            dest.write_bytes(r.content)
-            size = len(r.content)
-
-    # Run the ingestion using the sibling module's helpers.
-    from scripts.import_master_risks import (
-        parse_workbook, upsert_master_risks, ensure_indexes as _idx,
-    )
-    await _idx()
-    rows = parse_workbook(dest)
-    stats = await upsert_master_risks(rows, actor_id=user["id"])
+    # v58.13.132gj — Route through shared staging helper. The archive
+    # copy in GridFS replaces the old "next to import script" file for
+    # audit/retrospective inspection.
+    from reimport_staging import staged_reimport_xlsx
+    async with staged_reimport_xlsx(
+        file=file, url=url, module="master_risks", user=user,
+    ) as (size, dest):
+        # Run the ingestion using the sibling module's helpers.
+        from scripts.import_master_risks import (
+            parse_workbook, upsert_master_risks, ensure_indexes as _idx,
+        )
+        await _idx()
+        rows = parse_workbook(dest)
+        stats = await upsert_master_risks(rows, actor_id=user["id"])
     total = await db.master_risks.count_documents({"deleted_at": None})
     return {"source_bytes": size, "parsed_rows": len(rows),
             "inserted": stats["inserted"], "updated": stats["updated"],

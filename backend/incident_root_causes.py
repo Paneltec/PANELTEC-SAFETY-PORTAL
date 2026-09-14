@@ -169,32 +169,17 @@ async def reimport_rows(
     user: dict = Depends(require_permission("reference_library", "edit")),
 ):
     # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
-    if bool(file) == bool(url):
-        raise HTTPException(400, "supply-exactly-one-of-file-or-url")
-
-    from pathlib import Path as _Path
-    dest = (_Path(__file__).resolve().parent / "scripts" / "data"
-            / "incident_root_causes_source.xlsx")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
-    if file:
-        content = await file.read()
-        dest.write_bytes(content)
-        size = len(content)
-    else:
-        import httpx as _httpx
-        async with _httpx.AsyncClient(follow_redirects=True, timeout=60.0) as c:
-            r = await c.get(url)
-            r.raise_for_status()
-            dest.write_bytes(r.content)
-            size = len(r.content)
-
-    from scripts.import_incident_root_causes import (
-        parse_workbook, upsert_rows, ensure_indexes as _idx,
-    )
-    await _idx()
-    rows = parse_workbook(dest)
-    stats = await upsert_rows(rows, actor_id=user["id"])
+    # v58.13.132gj — Route through shared staging helper.
+    from reimport_staging import staged_reimport_xlsx
+    async with staged_reimport_xlsx(
+        file=file, url=url, module="incident_root_causes", user=user,
+    ) as (size, dest):
+        from scripts.import_incident_root_causes import (
+            parse_workbook, upsert_rows, ensure_indexes as _idx,
+        )
+        await _idx()
+        rows = parse_workbook(dest)
+        stats = await upsert_rows(rows, actor_id=user["id"])
     total = await db.incident_root_causes.count_documents({"deleted_at": None})
     return {"source_bytes": size, "parsed_rows": len(rows),
             "inserted": stats["inserted"], "updated": stats["updated"],

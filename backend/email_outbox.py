@@ -177,7 +177,7 @@ async def _pdf_attachment_for(record: dict, resource: str) -> Optional[dict]:
         renderer, _coll = RENDERERS[resource]
         pdf_bytes = renderer(record)
         name_hint = filename_for(record, resource).removesuffix(".pdf")
-        file_url, fname = persist_pdf(name_hint, pdf_bytes)
+        file_url, fname = await persist_pdf(name_hint, pdf_bytes)
         return {"file_url": file_url, "filename": fname,
                 "label": f"{resource.replace('_', ' ').title()} PDF"}
     except Exception as e:

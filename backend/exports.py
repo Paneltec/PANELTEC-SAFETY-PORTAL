@@ -215,8 +215,21 @@ async def create_export(body: ExportIn, user: dict = Depends(get_current_user)):
     sha = hashlib.sha256(payload).hexdigest()
     meta["sha256"] = sha
     filename = f"{export_id}.{ext}"
-    path = UPLOAD_DIR / filename
-    path.write_bytes(payload)
+    # v58.13.132gi — audit-pack artefact → GridFS. Callers still
+    # read via `/api/files/exports/<filename>` which now serves
+    # from the bucket (disk fallback for pre-migration files).
+    from uploads_storage import save_upload as _save_export  # noqa: WPS433
+    await _save_export(
+        "exports", [filename], payload,
+        module="exports",
+        org_id=user["org_id"],
+        mime=(
+            "application/pdf" if ext == "pdf"
+            else "application/zip" if ext == "zip"
+            else "application/json"
+        ),
+        orig_filename=filename,
+    )
 
     record = {
         "id": export_id, "org_id": user["org_id"], "workspace_id": body.workspace_id,
@@ -244,7 +257,15 @@ async def create_export(body: ExportIn, user: dict = Depends(get_current_user)):
             pdf_sha = hashlib.sha256(pdf_bytes).hexdigest()
             pdf_id = new_id()
             pdf_filename = f"{pdf_id}.pdf"
-            (UPLOAD_DIR / pdf_filename).write_bytes(pdf_bytes)
+            # v58.13.132gi — PDF sibling → GridFS (same subdir as
+            # the primary artefact).
+            await _save_export(
+                "exports", [pdf_filename], pdf_bytes,
+                module="exports",
+                org_id=user["org_id"],
+                mime="application/pdf",
+                orig_filename=pdf_filename,
+            )
             sibling = {
                 "id": pdf_id, "org_id": user["org_id"], "workspace_id": body.workspace_id,
                 "title": meta["title"], "date_from": body.date_from, "date_to": body.date_to,
@@ -380,7 +401,15 @@ async def render_pdf_sibling(eid: str, user: dict = Depends(get_current_user)):
     pdf_sha = hashlib.sha256(pdf_bytes).hexdigest()
     pdf_id = new_id()
     pdf_filename = f"{pdf_id}.pdf"
-    (UPLOAD_DIR / pdf_filename).write_bytes(pdf_bytes)
+    # v58.13.132gi — On-demand PDF sibling → GridFS.
+    from uploads_storage import save_upload as _save_export  # noqa: WPS433
+    await _save_export(
+        "exports", [pdf_filename], pdf_bytes,
+        module="exports",
+        org_id=user["org_id"],
+        mime="application/pdf",
+        orig_filename=pdf_filename,
+    )
     sibling = {
         "id":           pdf_id,
         "org_id":       user["org_id"],

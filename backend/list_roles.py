@@ -157,24 +157,16 @@ async def reimport(
     user: dict = Depends(require_permission("reference_library", "edit")),
 ):
     # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
-    if bool(file) == bool(url):
-        raise HTTPException(400, "supply-exactly-one-of-file-or-url")
-    from pathlib import Path as _P
-    dest = (_P(__file__).resolve().parent / "scripts" / "data"
-            / "list_roles_source.xlsx")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if file:
-        content = await file.read(); dest.write_bytes(content); size = len(content)
-    else:
-        import httpx as _h
-        async with _h.AsyncClient(follow_redirects=True, timeout=60.0) as c:
-            r = await c.get(url); r.raise_for_status()
-            dest.write_bytes(r.content); size = len(r.content)
-    from scripts.import_list_roles import (
-        parse_workbook, upsert_rows, ensure_indexes as _idx)
-    await _idx()
-    rows = parse_workbook(dest)
-    stats = await upsert_rows(rows, actor_id=user["id"])
+    # v58.13.132gj — Route through shared staging helper.
+    from reimport_staging import staged_reimport_xlsx
+    async with staged_reimport_xlsx(
+        file=file, url=url, module="list_roles", user=user,
+    ) as (size, dest):
+        from scripts.import_list_roles import (
+            parse_workbook, upsert_rows, ensure_indexes as _idx)
+        await _idx()
+        rows = parse_workbook(dest)
+        stats = await upsert_rows(rows, actor_id=user["id"])
     total = await db.list_roles.count_documents({"deleted_at": None})
     return {"source_bytes": size, "parsed_rows": len(rows),
             "live_total": total, **stats}

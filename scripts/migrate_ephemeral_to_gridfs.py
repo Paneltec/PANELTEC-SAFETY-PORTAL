@@ -53,6 +53,20 @@ MIGRATED_MODULES = [
     # Cert / induction uploads already land under `document_library/*/*`.
     ("swms_scans",            "*",           "swms_phase45"),
     ("hazards",               "*",           "hazards"),
+    # v58.13.132gi — PDF renderer output + audit-pack exports.
+    ("pdfs",                  "*",           "pdf_renderer"),
+    ("exports",               "*",           "exports"),
+]
+
+# v58.13.132gj — Migrations that live OUTSIDE `backend/uploads/` because
+# their pre-.132gj location was a colocated content directory. Extend
+# MIGRATED_MODULES-style tuples with the absolute root path so the sweeper
+# can still find and hoist any legacy files into GridFS.
+from pathlib import Path as _AbsPath
+EXTRA_MODULES = [
+    # (abs_root, subdir_in_gridfs, module_tag, glob)
+    (BACKEND / "content" / "reference_images",
+     "help_reference_images", "help_reference_images", "*"),
 ]
 
 
@@ -118,6 +132,46 @@ async def sweep(*, dry_run: bool) -> dict:
                     module=module,
                     note="local file vanished mid-sweep",
                 )
+            except Exception as e:  # pragma: no cover
+                stats["errors"] += 1
+                print(f"  ! error migrating {path}: {e}",
+                      file=sys.stderr)
+    # v58.13.132gj — sweep EXTRA_MODULES roots that live outside
+    # `backend/uploads/`.
+    for abs_root, subdir, module, glob_pat in EXTRA_MODULES:
+        if not abs_root.exists():
+            print(f"  · {subdir}: no local dir at {abs_root} — skip")
+            continue
+        for path in abs_root.glob(glob_pat):
+            if not path.is_file():
+                continue
+            stats["scanned"] += 1
+            parts = path.relative_to(abs_root).parts
+            if await has_upload(subdir, list(parts)):
+                stats["already_in_gridfs"] += 1
+                continue
+            if dry_run:
+                print(f"  · would migrate {subdir}/{'/'.join(parts)} "
+                      f"({path.stat().st_size} bytes)")
+                stats["migrated"] += 1
+                continue
+            try:
+                data = path.read_bytes()
+                mime, _ = mimetypes.guess_type(str(path))
+                await save_upload(
+                    subdir, list(parts), data,
+                    module=module,
+                    mime=mime,
+                    orig_filename=path.name,
+                )
+                await _audit(
+                    "ephemeral_to_gridfs_migration",
+                    subdir, list(parts),
+                    module=module, size=len(data),
+                )
+                stats["migrated"] += 1
+                print(f"  ✓ migrated {subdir}/{'/'.join(parts)} "
+                      f"({len(data)} bytes)")
             except Exception as e:  # pragma: no cover
                 stats["errors"] += 1
                 print(f"  ! error migrating {path}: {e}",
