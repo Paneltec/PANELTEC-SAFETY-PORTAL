@@ -199,6 +199,30 @@ def _serve(*parts: str):
     return FileResponse(str(path), media_type=mime or "application/octet-stream")
 
 
+async def _serve_async(subdir: str, *parts: str):
+    """v58.13.132gf — GridFS-preferring async variant of `_serve()`.
+
+    Reads GridFS via `uploads_storage.read_upload`; on miss, falls
+    back to the pre-`.132gf` local-disk path so files uploaded
+    before the migration keep serving until the sweeper runs."""
+    for p in (subdir, *parts):
+        if "/" in p or "\\" in p or ".." in p:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+    from uploads_storage import read_upload  # noqa: WPS433 — lazy
+    from fastapi.responses import Response
+
+    hit = await read_upload(subdir, parts)
+    if hit is not None:
+        data, mime = hit
+        return Response(content=data, media_type=mime)
+    path = UPLOAD_ROOT.joinpath(subdir, *parts)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    mime, _ = mimetypes.guess_type(str(path))
+    return FileResponse(str(path),
+                        media_type=mime or "application/octet-stream")
+
+
 @files_router.get("/hazards/{name}")
 async def serve_hazard(name: str, user: dict = Depends(get_current_user)):
     return _serve("hazards", name)
@@ -206,7 +230,7 @@ async def serve_hazard(name: str, user: dict = Depends(get_current_user)):
 
 @files_router.get("/contractor_docs/{name}")
 async def serve_contractor_doc(name: str, user: dict = Depends(get_current_user)):
-    return _serve("contractor_docs", name)
+    return await _serve_async("contractor_docs", name)
 
 
 @files_router.get("/renewals/{token}/{name}")
@@ -214,7 +238,7 @@ async def serve_renewal(token: str, name: str):
     # PUBLIC share-link path — auth is the `token` in the URL, which
     # was minted by the renewal-email flow and is scope-limited to a
     # single renewal record. Kept unauthenticated intentionally.
-    return _serve("renewals", token, name)
+    return await _serve_async("renewals", token, name)
 
 
 @files_router.get("/exports/{name}")

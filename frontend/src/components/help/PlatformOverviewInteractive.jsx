@@ -43,13 +43,22 @@ const MODULES = [
   { key: 'fleet',       label: 'Plant & Vehicles',         to: '/app/fleet',                   icon: Truck },
   { key: 'certs',       label: 'Certifications',           to: '/app/settings/certifications', icon: Award },
   { key: 'audit',       label: 'Audit Exports',            to: '/app/audit-exports',           icon: Archive },
-  { key: 'ask',         label: 'Ask Intelligence',         to: '/app/ask',                     icon: Sparkles },
+  // v58.13.132gf — Ask Intelligence disabled per Stephen's brief.
+  // Feature is mocked at the backend end and hasn't shipped an
+  // ask-actual-questions UX yet — the tile now reads as read-only
+  // "Coming soon" like Mobile App / MongoDB.
+  { key: 'ask',         label: 'Ask Intelligence',
+    disabledReason: 'Coming soon — Ask Intelligence is on the roadmap.', icon: Sparkles },
 ];
 
 /** @type {Tile[]} */
 const OUTPUTS = [
   { key: 'pdf',    label: 'PDF Reports',    to: '/app/document-library', icon: FileType },
-  { key: 'live',   label: 'Live Dashboard', to: '/app/dashboard',        icon: BarChart3, hint: "You're here." },
+  // v58.13.132gf — Live Dashboard tile is now a no-op with the
+  // "You're here" tooltip — clicking used to reload the same route
+  // which felt broken. Disabled pattern matches Mobile App / Mongo.
+  { key: 'live',   label: 'Live Dashboard',
+    disabledReason: "You're here.", icon: BarChart3 },
   { key: 'mobile', label: 'Mobile App',     disabledReason: 'Mobile app is a separate install — contact admin.', icon: Smartphone },
 ];
 

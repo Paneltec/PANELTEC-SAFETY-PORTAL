@@ -224,9 +224,17 @@ async def upload_document(
     if safe_ext not in {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".doc", ".docx"}:
         safe_ext = ".bin"
     name = f"{cid}_{uuid.uuid4()}{safe_ext}"
-    target = UPLOAD_DIR / name
-    with target.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+    # v58.13.132gf — GridFS-backed upload. Same URL shape as the
+    # pre-migration local-disk path so no frontend rewrite needed.
+    from uploads_storage import save_upload  # noqa: WPS433 — lazy
+    data = await file.read()
+    await save_upload(
+        "contractor_docs", [name], data,
+        module="contractors",
+        org_id=user.get("org_id"),
+        mime=file.content_type,
+        orig_filename=file.filename,
+    )
 
     doc = {
         "id": new_id(),

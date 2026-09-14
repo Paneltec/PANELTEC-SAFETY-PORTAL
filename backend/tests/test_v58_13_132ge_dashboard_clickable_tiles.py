@@ -77,16 +77,20 @@ def test_platform_overview_component_present():
         "fleet":       "/app/fleet",
         "certs":       "/app/settings/certifications",
         "audit":       "/app/audit-exports",
-        "ask":         "/app/ask",
+        # v58.13.132gf — 'ask' tile flipped to disabled ("Coming
+        # soon"); route no longer wired.
     }
     for key, route in module_routes.items():
         assert route in src, (
             f"capture module {key!r} route {route!r} missing")
 
-    # Outputs: PDF Reports + Live Dashboard routed; Mobile App
-    # disabled with the required tooltip.
+    # v58.13.132gf — Live Dashboard flipped to a disabled tile
+    # ("You're here." tooltip). Accept either the .132ge active
+    # link or the .132gf disabled state so this guard survives
+    # both incarnations.
     assert "/app/document-library" in src
-    assert "'/app/dashboard'" in src or '"/app/dashboard"' in src
+    assert ("'/app/dashboard'" in src) or ('"/app/dashboard"' in src) \
+        or ("You're here." in src)
     assert (
         "Mobile app is a separate install — contact admin."
     ) in src
@@ -131,6 +135,10 @@ def test_downloader_uses_pin_header_and_docs_endpoint():
 def test_version_bumped_to_132ge():
     js = _read(VERSION_JS)
     sw = _read(SW)
-    assert re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132ge'", js)
-    assert re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132ge'", js)
-    assert re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132ge'", sw)
+    # Version bump is monotonic — .132ge or newer is acceptable.
+    assert re.search(
+        r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132g[e-z]", js)
+    assert re.search(
+        r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132g[e-z]", js)
+    assert re.search(
+        r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132g[e-z]", sw)

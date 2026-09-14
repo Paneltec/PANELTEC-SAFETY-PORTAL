@@ -516,13 +516,21 @@ async def public_submit(token: str, files: List[UploadFile] = File(...)):
 
     submitted = []
     doc_types = link.get("doc_types_requested", [])
-    # Map by position: file[i] -> doc_types[i] if present, else 'other'
+    # v58.13.132gf — GridFS-backed upload. Same URL shape as the
+    # pre-migration local-disk path so the public share-link
+    # endpoint keeps serving without a frontend rewrite.
+    from uploads_storage import save_upload  # noqa: WPS433 — lazy
     for i, up in enumerate(files):
         ext = Path(up.filename or "doc").suffix.lower() or ".bin"
         name = f"{uuid.uuid4()}{ext}"
-        target = folder / name
-        with target.open("wb") as f:
-            shutil.copyfileobj(up.file, f)
+        data = await up.read()
+        await save_upload(
+            "renewals", [token, name], data,
+            module="renewals",
+            org_id=link.get("org_id"),
+            mime=up.content_type,
+            orig_filename=up.filename,
+        )
 
         doc_type = doc_types[i] if i < len(doc_types) else "other"
         file_url = f"/api/files/renewals/{token}/{name}"
