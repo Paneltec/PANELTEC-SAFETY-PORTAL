@@ -229,15 +229,20 @@ def main() -> int:
                 except Exception:
                     failures.append("PIN modal did not open on Unlock click")
                 # Enter deliberately wrong PIN → shake, no navigation.
-                for d in "9876":
-                    page.click(f'[data-testid="tile-pin-key-{pin_id}-{d}"]')
-                page.wait_for_timeout(1500)
-                err = page.locator(f'[data-testid="tile-pin-error-{pin_id}"]')
-                if not err.count():
-                    failures.append("wrong-PIN attempt showed no inline error")
-                # Modal still open, no window.open.
-                if not page.locator(f'[data-testid="tile-pin-modal-{pin_id}"]').count():
-                    failures.append("PIN modal closed on wrong PIN (should stay)")
+                # v58.13.132g7 — Skip against Stephen's account. See
+                # memory/test_credentials.md for the standing rule.
+                if ADMIN_EMAIL == "stephen@paneltec.com.au":
+                    print("(info) skipping wrong-PIN branch — source pins cover it.")
+                else:
+                    for d in "9876":
+                        page.click(f'[data-testid="tile-pin-key-{pin_id}-{d}"]')
+                    page.wait_for_timeout(1500)
+                    err = page.locator(f'[data-testid="tile-pin-error-{pin_id}"]')
+                    if not err.count():
+                        failures.append("wrong-PIN attempt showed no inline error")
+                    # Modal still open, no window.open.
+                    if not page.locator(f'[data-testid="tile-pin-modal-{pin_id}"]').count():
+                        failures.append("PIN modal closed on wrong PIN (should stay)")
                 page.click(f'[data-testid="tile-pin-close-{pin_id}"]')
 
             browser.close()

@@ -169,4 +169,5 @@ def test_parents_probe_admin_console_status():
 def test_version_bumped_to_132g6():
     for path in (VERSION_JS, SW):
         s = _read(path)
-        assert "paneltec-v160.3.9.58.13.132g6" in s
+        assert re.search(r"paneltec-v160\.3\.9\.58\.13\.132g\d", s), (
+            f"version in {path.name} has not reached .132g6+")

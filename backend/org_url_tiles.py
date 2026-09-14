@@ -125,6 +125,10 @@ class TileIn(BaseModel):
     # role, including admin) must pass a 4-digit PIN gate before the
     # URL is opened. Per-click, not per-session.
     pin_protected: Optional[bool] = None
+    # v58.13.132g9 — Org-wide hide (was per-user sessionStorage).
+    # When true, the tile is filtered out of GET /api/org/url-tiles
+    # for every user; admins can pass ?include_hidden=true to see it.
+    hidden: Optional[bool] = None
 
 
 class TilePatch(BaseModel):
@@ -142,6 +146,8 @@ class TilePatch(BaseModel):
     access_mode: Optional[str] = None
     # v58.13.132g1 — Toggle the per-tile PIN gate.
     pin_protected: Optional[bool] = None
+    # v58.13.132g9 — Toggle org-wide hide.
+    hidden: Optional[bool] = None
 
 
 class ReorderRow(BaseModel):
@@ -314,6 +320,10 @@ def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
         # opens; the tile-body renders greyed with a lock overlay
         # in the frontend.
         "pin_protected": bool(doc.get("pin_protected", False)),
+        # v58.13.132g9 — Org-wide hide flag; regular reads filter
+        # hidden tiles out, admins can surface them via
+        # ?include_hidden=true.
+        "hidden": bool(doc.get("hidden", False)),
         "created_at": doc.get("created_at"),
         "created_by": doc.get("created_by"),
         "updated_at": doc.get("updated_at"),
@@ -323,6 +333,7 @@ def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
 
 @router.get("")
 async def list_tiles(include_disabled: bool = False,
+                      include_hidden: bool = False,
                       user: dict = Depends(get_current_user)):
     # v58.13.132eq — Read is open to ANY authenticated user in the
     # caller's org so the read-only Quick Links page (sidebar entry
@@ -334,14 +345,26 @@ async def list_tiles(include_disabled: bool = False,
     # but they should never see hidden tiles in production; we gate
     # the flag admin-only to prevent staff from bypassing the
     # organisation's curated tile visibility.
+    #
+    # v58.13.132g9 — `include_hidden` (management + PIN-gated
+    # "Show hidden" toggle) surfaces org-wide-hidden tiles. Same
+    # admin-only clamp as include_disabled: without it a curious
+    # staff member could hand-craft the query and un-hide tiles.
     org_id = user["org_id"]
-    if include_disabled and (user.get("role") or user.get("role_id")) != "admin":
+    role = (user.get("role") or user.get("role_id"))
+    if include_disabled and role != "admin":
         include_disabled = False
+    if include_hidden and role != "admin":
+        include_hidden = False
     query: dict = {"org_id": org_id}
     if not include_disabled:
-        # Rows written before .132er lack the `enabled` field; treat
-        # them as enabled by default (i.e. include them in the list).
         query["$or"] = [{"enabled": {"$ne": False}}, {"enabled": {"$exists": False}}]
+    if not include_hidden:
+        # Rows pre-dating .132g9 lack the `hidden` field — treat as
+        # visible.
+        query["$and"] = [
+            {"$or": [{"hidden": {"$ne": True}}, {"hidden": {"$exists": False}}]},
+        ]
     tiles = []
     cur = db.org_url_tiles.find(query).sort([("order", 1),
                                                           ("created_at", 1)])
@@ -534,6 +557,8 @@ async def create_tile(body: TileIn, user: dict = Depends(get_current_user)):
                           else ("private" if body.allowed_user_ids else "public")),
         # v58.13.132g1 — Per-tile PIN gate. Defaults to off.
         "pin_protected": bool(body.pin_protected) if body.pin_protected is not None else False,
+        # v58.13.132g9 — new tiles default to visible.
+        "hidden": bool(body.hidden) if body.hidden is not None else False,
         "created_at": now, "created_by": user["id"],
         "updated_at": now, "updated_by": user["id"],
     }
@@ -667,6 +692,9 @@ async def update_tile(tile_id: str, body: TilePatch,
     if body.pin_protected is not None:
         # v58.13.132g1 — Toggle per-tile PIN gate.
         updates["pin_protected"] = bool(body.pin_protected)
+    if body.hidden is not None:
+        # v58.13.132g9 — Toggle org-wide hide.
+        updates["hidden"] = bool(body.hidden)
     if not updates:
         return _out(existing, user["id"], redact_url=False)
     updates["updated_at"] = now_iso()

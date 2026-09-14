@@ -52,21 +52,20 @@ function _writeHidden(userId, next) {
   } catch { /* private mode — noop */ }
 }
 
-export function useHiddenTiles(userId) {
-  const [hidden, setHidden] = useState(() => _readHidden(userId));
-  const hideTile = (id) => {
-    const n = new Set(hidden); n.add(id);
-    setHidden(n);
-    _writeHidden(userId, n);
-    toast.message('Hidden until next login', {
-      description: 'Log out or close the tab to bring it back.',
-    });
+/**
+ * v58.13.132g9 — `useHiddenTiles` retained as a NO-OP compatibility
+ * shim so existing imports don't break. Hide is now a server field
+ * (`org_url_tiles.hidden`) — the parent grids handle the PATCH and
+ * refetch cycle directly. The hook returns empty state; the real
+ * work lives in the parent's `hideTile` / `resetHidden` handlers
+ * (which call the server and refresh).
+ */
+export function useHiddenTiles(_userId) {
+  return {
+    hidden: new Set(),
+    hideTile: () => {},
+    resetHidden: () => {},
   };
-  const resetHidden = () => {
-    setHidden(new Set());
-    _writeHidden(userId, new Set());
-  };
-  return { hidden, hideTile, resetHidden };
 }
 
 // ── PIN modal (portalled) ──────────────────────────────────────
@@ -76,12 +75,27 @@ export function TilePinModal({ tile, onClose, onUnlocked }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
+  // v58.13.132g7 — Surface backend 429 (lockout) with a live
+  // countdown instead of the generic shake. Prevents repeated
+  // ".132g4/g5/g6"-style Playwright hammering from silently
+  // burning through Stephen's PIN attempts — now the modal blocks
+  // input and tells the user exactly how long to wait.
+  const [lockedUntil, setLockedUntil] = useState(0); // epoch ms; 0 = unlocked
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!lockedUntil) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [lockedUntil]);
+  const lockedRemaining = Math.max(0, Math.ceil((lockedUntil - now) / 1000));
+  const isLocked = lockedRemaining > 0;
+
   const tap = (digit) => {
-    if (busy) return;
+    if (busy || isLocked) return;
     setError('');
     setPin((p) => (p + digit).slice(0, 4));
   };
-  const backspace = () => { if (!busy) { setError(''); setPin((p) => p.slice(0, -1)); } };
+  const backspace = () => { if (!busy && !isLocked) { setError(''); setPin((p) => p.slice(0, -1)); } };
 
   useEffect(() => {
     if (pin.length !== 4 || busy) return;
@@ -89,7 +103,19 @@ export function TilePinModal({ tile, onClose, onUnlocked }) {
     api.post(`/org/url-tiles/${tile.id}/verify-pin`, { pin })
       .then((r) => { onUnlocked(r.data?.url); })
       .catch((e) => {
-        setError(apiError(e) || 'Wrong PIN.');
+        const status = e?.response?.status;
+        const detail = e?.response?.data?.detail || '';
+        if (status === 429) {
+          // Parse the "in Ns" from the detail; fall back to
+          // Retry-After header if the detail shape ever changes.
+          const m = /in\s+(\d+)\s*s/i.exec(detail);
+          const secs = m ? parseInt(m[1], 10)
+            : parseInt(e?.response?.headers?.['retry-after'] || '60', 10);
+          setLockedUntil(Date.now() + Math.max(1, secs) * 1000);
+          setError(''); // countdown UI replaces the error line
+        } else {
+          setError(apiError(e) || 'Wrong PIN.');
+        }
         setShake(true);
         setBusy(false);
         setPin('');
@@ -128,7 +154,16 @@ export function TilePinModal({ tile, onClose, onUnlocked }) {
             ))}
           </div>
           {busy && <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-2"><Loader2 size={12} className="animate-spin" /> Verifying…</div>}
-          {error && <div className="text-xs text-red-600 mb-2 text-center max-w-[220px]"
+          {isLocked && (
+            <div className="w-full mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-center"
+              data-testid={`tile-pin-locked-${tile.id}`}>
+              <div className="text-xs font-bold text-red-700 uppercase tracking-wider">PIN locked</div>
+              <div className="text-[11px] text-red-600 mt-0.5">
+                Try again in {Math.floor(lockedRemaining / 60)}m {lockedRemaining % 60}s
+              </div>
+            </div>
+          )}
+          {error && !isLocked && <div className="text-xs text-red-600 mb-2 text-center max-w-[220px]"
             data-testid={`tile-pin-error-${tile.id}`}>{error}</div>}
           <div className="grid grid-cols-3 gap-2 w-full">
             {[1,2,3,4,5,6,7,8,9].map((n) => (
@@ -247,6 +282,15 @@ ${qaRows}
  *                                               so non-admins fall
  *                                               through here naturally.
  * @param {(id: string) => void} props.onHide
+ * @param {(id: string) => void=} props.onRestore   v58.13.132g9 — Server-
+ *                                                  side restore (flips
+ *                                                  `hidden` → false). When
+ *                                                  `tile.hidden === true`
+ *                                                  the menu swaps "Hide"
+ *                                                  for "Restore". Menu is
+ *                                                  already PIN-gated by
+ *                                                  .132g6 so the PIN
+ *                                                  requirement holds.
  * @param {string}   props.testIdPrefix         `apps-directory-hub-tile` OR `apps-directory-modal-tile`
  * @param {boolean=} props.credentialLaunch      When true, tapping the launch link
  *                                               intercepts to auto-copy password
@@ -262,7 +306,7 @@ ${qaRows}
  * @param {boolean=} props.isDragging      from useSortable
  */
 export function TileCard({
-  tile, isAdmin, hasAdminPin = false, onHide, testIdPrefix,
+  tile, isAdmin, hasAdminPin = false, onHide, onRestore, testIdPrefix,
   credentialLaunch = false, showAdminSettingsIcon = false,
   dragAttributes, dragListeners, isDragging,
 }) {
@@ -474,16 +518,34 @@ export function TileCard({
             {/* v58.13.132g4 — Copy rewrite. Stephen confused Hide with
                 PIN protection. New label + sub-label makes clear this
                 is a view-only, per-user, non-secure toggle. Distinct
-                testid preserved for source pins / Playwright. */}
-            <button
-              type="button"
-              onClick={(e) => { e.preventDefault(); onHide(tile.id); setMenuOpen(false); }}
-              data-testid={`${testIdPrefix}-menu-hide-${tile.id}`}
-              className="w-full flex flex-col items-start gap-0.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 border-t border-slate-100"
-            >
-              <span className="flex items-center gap-2"><EyeOff size={13} /> Hide from my view (until logout)</span>
-              <span className="text-[10px] text-slate-400 ml-5 italic">Only affects your view. Not secure.</span>
-            </button>
+                testid preserved for source pins / Playwright.
+
+                v58.13.132g9 — Hide is now ORG-WIDE via a server field
+                (`org_url_tiles.hidden`). When the tile is already
+                hidden, this row becomes "Restore" instead of "Hide"
+                so admins in `Show hidden` mode can put it back. The
+                sub-label is updated to reflect org-wide scope. */}
+            {tile.hidden ? (
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); if (onRestore) onRestore(tile.id); setMenuOpen(false); }}
+                data-testid={`${testIdPrefix}-menu-restore-${tile.id}`}
+                className="w-full flex flex-col items-start gap-0.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 border-t border-slate-100"
+              >
+                <span className="flex items-center gap-2"><EyeOff size={13} /> Restore tile for the whole org</span>
+                <span className="text-[10px] text-slate-400 ml-5 italic">Makes this tile visible again for every user.</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); onHide(tile.id); setMenuOpen(false); }}
+                data-testid={`${testIdPrefix}-menu-hide-${tile.id}`}
+                className="w-full flex flex-col items-start gap-0.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 border-t border-slate-100"
+              >
+                <span className="flex items-center gap-2"><EyeOff size={13} /> Hide tile for the whole org</span>
+                <span className="text-[10px] text-slate-400 ml-5 italic">Removes this tile from every user's view. Admins with PIN can restore it.</span>
+              </button>
+            )}
           </div>
         )}
         {isAdmin && showAdminSettingsIcon && (

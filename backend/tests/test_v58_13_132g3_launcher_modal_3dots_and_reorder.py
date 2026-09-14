@@ -63,7 +63,11 @@ def test_modal_uses_shared_tilecard():
         "AppsDirectoryModal must import from the shared TileCard "
         "so it stays in sync with the standalone page")
     assert "SortableTileCard" in src
-    assert "useHiddenTiles" in src
+    # v58.13.132g9 — `useHiddenTiles` retired as a NO-OP shim; the
+    # modal no longer imports it. `TilePinModal` is now the shared
+    # primitive that proves the modal is still wired through the
+    # shared file (used by the "Show hidden" PIN gate).
+    assert "TilePinModal" in src
     # The pre-.132g3 credential-aware launch code path (`onLaunch`,
     # `openCheatSheet`) that used to live inline in the modal must
     # now come from the shared module.

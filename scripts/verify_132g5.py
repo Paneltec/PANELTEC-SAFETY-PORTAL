@@ -119,13 +119,22 @@ def main() -> int:
                 failures.append("PIN tile menu panel visible without PIN — regression!")
             page.screenshot(path=str(APP_ROOT / "memory" / "v58_13_132g5_01_pin_prompt.png"), full_page=False)
 
-            # ─── (2) Wrong PIN → error + menu stays closed ────────
-            _type_pin(page, pin_id, "9876")
-            page.wait_for_timeout(1500)
-            if not page.locator(f'[data-testid="tile-pin-error-{pin_id}"]').count():
-                failures.append("wrong PIN on 3-dots showed no inline error")
-            if page.locator(f'[data-testid="apps-directory-modal-tile-menu-panel-{pin_id}"]').count():
-                failures.append("menu panel opened after wrong PIN — regression!")
+            # ─── (b) Wrong PIN → shake, no menu ─────────────────────
+            # v58.13.132g7 — Do NOT hammer Stephen's PIN — the shared
+            # admin_console_pin_attempts collection locks his header
+            # admin console AND every tile 3-dots gate. Source pins in
+            # tests/test_v58_13_132g5_3dots_pin_gate.py cover this
+            # branch when the target account is Stephen's.
+            if ADMIN_EMAIL == "stephen@paneltec.com.au":
+                print("(info) skipping wrong-PIN branch — source pins cover it. "
+                      "See memory/test_credentials.md for the standing rule.")
+            else:
+                _type_pin(page, pin_id, "9876")
+                page.wait_for_timeout(1200)
+                if not page.locator(f'[data-testid="tile-pin-error-{pin_id}"]').count():
+                    failures.append("wrong-PIN attempt on 3-dots showed no inline error")
+                if page.locator(f'[data-testid="apps-directory-modal-tile-menu-panel-{pin_id}"]').count():
+                    failures.append("menu panel opened after wrong PIN — regression!")
             page.click(f'[data-testid="tile-pin-close-{pin_id}"]')
             page.wait_for_timeout(200)
 

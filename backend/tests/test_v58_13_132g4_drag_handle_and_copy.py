@@ -116,10 +116,19 @@ def test_3dots_trigger_tooltip_rewrite():
 
 def test_hide_menu_item_has_label_and_sublabel():
     src = _read(TILECARD)
-    # New primary label.
-    assert "Hide from my view (until logout)" in src
-    # Sub-label italic hint.
-    assert "Only affects your view. Not secure." in src
+    # v58.13.132g4 primary label was "Hide from my view (until
+    # logout)". v58.13.132g9 rewrote it to "Hide tile for the whole
+    # org" (hide is now org-wide). Accept either.
+    assert (
+        "Hide from my view (until logout)" in src
+        or "Hide tile for the whole org" in src
+    )
+    # Sub-label italic hint. v58.13.132g9 rewrote the copy — accept
+    # either.
+    assert (
+        "Only affects your view. Not secure." in src
+        or "Removes this tile from every user's view" in src
+    )
     # Pre-.132g4 label gone.
     assert "Hide until next login" not in src
 

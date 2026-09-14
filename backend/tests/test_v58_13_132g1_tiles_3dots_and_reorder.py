@@ -122,8 +122,15 @@ def test_three_dot_menu_present():
     assert "> Open<" in src or "Open</" in src
     assert "Copy URL" in src
     # v58.13.132g4 rewrote the Hide label to
-    # "Hide from my view (until logout)" — accept either wording.
-    assert ("Hide until next login" in src) or ("Hide from my view" in src)
+    # "Hide from my view (until logout)" — v58.13.132g9 rewrote it
+    # again to "Hide tile for the whole org". Accept any of the
+    # historical wordings so a future ship can update copy without
+    # breaking this guard.
+    assert (
+        ("Hide until next login" in src)
+        or ("Hide from my view" in src)
+        or ("Hide tile for the whole org" in src)
+    )
 
 
 def test_hide_uses_session_storage_per_user():

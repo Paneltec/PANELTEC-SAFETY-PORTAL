@@ -12,7 +12,7 @@ import {
   sortableKeyboardCoordinates, arrayMove,
 } from '@dnd-kit/sortable';
 import {
-  SortableTileCard, useHiddenTiles,
+  SortableTileCard, TilePinModal,
 } from './apps-directory/TileCard';
 
 /**
@@ -33,11 +33,40 @@ export default function AppsDirectoryModal({ open, onClose }) {
   const isAdmin = (user?.role || '').toLowerCase() === 'admin';
   const [tiles, setTiles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { hidden, hideTile, resetHidden } = useHiddenTiles(user?.id);
-  // v58.13.132g6 — probe `/auth/admin-console/status` once so we
-  // know whether to render the 3-dots at all. Non-admins receive
-  // 403 and the flag stays false.
+  // v58.13.132g9 — Hide is now an org-wide server field. sessionStorage
+  // hook retired.
   const [hasAdminPin, setHasAdminPin] = useState(false);
+  // v58.13.132g8 — Restore now flips hidden:false via PATCH.
+  const [restorePinOpen, setRestorePinOpen] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
+
+  const loadTiles = React.useCallback(async (includeHidden) => {
+    try {
+      const params = includeHidden ? { include_hidden: 'true' } : {};
+      const r = await api.get('/org/url-tiles', { params });
+      setTiles(r.data.tiles || []);
+    } catch (e) {
+      toast.error(apiError(e) || 'Failed to load Apps Directory');
+    }
+  }, []);
+
+  const hideTile = async (id) => {
+    // 3-dots menu is already PIN-gated by .132g6 — reaching the
+    // "Hide" item means the caller already passed the PIN.
+    try {
+      await api.patch(`/org/url-tiles/${id}`, { hidden: true });
+      toast.success('Tile hidden org-wide');
+      await loadTiles(showHidden);
+    } catch (e) { toast.error(apiError(e) || 'Hide failed'); }
+  };
+
+  const restoreTile = async (id) => {
+    try {
+      await api.patch(`/org/url-tiles/${id}`, { hidden: false });
+      toast.success('Tile restored');
+      await loadTiles(showHidden);
+    } catch (e) { toast.error(apiError(e) || 'Restore failed'); }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +86,10 @@ export default function AppsDirectoryModal({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return undefined;
+    // v58.13.132g9 — Reset showHidden on reopen so the modal
+    // always lands in the default (visible-only) view. Admin
+    // must re-clear the PIN gate to see hidden tiles again.
+    setShowHidden(false);
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -84,9 +117,20 @@ export default function AppsDirectoryModal({ open, onClose }) {
     return () => document.removeEventListener('keydown', handler, true);
   }, [open]);
 
+  // v58.13.132g9 — `hidden` is now a server field. When
+  // `showHidden` is true we've fetched with `include_hidden=true`,
+  // so the API response already contains the hidden tiles — we
+  // just render everything. When false, the server has already
+  // filtered them out. Defensive `!t.hidden` on the false branch
+  // guards a stale cache edge case where a tile was hidden in
+  // another tab between fetches.
   const visible = useMemo(
-    () => tiles.filter((t) => !hidden.has(t.id)),
-    [tiles, hidden],
+    () => (showHidden ? tiles : tiles.filter((t) => !t.hidden)),
+    [tiles, showHidden],
+  );
+  const hiddenCount = useMemo(
+    () => tiles.filter((t) => t.hidden).length,
+    [tiles],
   );
 
   // v58.13.132g4 — Sensor tuning. `.132g3` used
@@ -186,6 +230,7 @@ export default function AppsDirectoryModal({ open, onClose }) {
                       isAdmin={isAdmin}
                       hasAdminPin={hasAdminPin}
                       onHide={hideTile}
+                      onRestore={restoreTile}
                       testIdPrefix="apps-directory-modal-tile"
                       credentialLaunch
                     />
@@ -196,17 +241,52 @@ export default function AppsDirectoryModal({ open, onClose }) {
           )}
         </div>
 
-        {hidden.size > 0 && (
+        {isAdmin && hasAdminPin && (
           <footer className="border-t border-slate-200 bg-white px-8 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500"
             data-testid="apps-directory-modal-footer">
-            <span data-testid="apps-directory-modal-hidden-count">{hidden.size}</span>{' '}tiles hidden this session ·{' '}
-            <button type="button"
-              onClick={resetHidden}
-              data-testid="apps-directory-modal-show-all"
-              className="text-emerald-600 hover:underline">
-              Show them again
-            </button>
+            {showHidden ? (
+              <>
+                <span data-testid="apps-directory-modal-hidden-count">{hiddenCount}</span>{' '}tiles hidden org-wide · Showing all ·{' '}
+                <button type="button"
+                  onClick={() => { setShowHidden(false); loadTiles(false); }}
+                  data-testid="apps-directory-modal-hide-again"
+                  className="text-emerald-600 hover:underline">
+                  Back to visible only
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button"
+                  onClick={() => {
+                    // v58.13.132g9 — PIN-gate the reveal. Restore
+                    // of individual tiles happens via the tile's
+                    // own 3-dots menu (already PIN-gated by .132g6).
+                    if (tiles.length && hasAdminPin) {
+                      setRestorePinOpen(true);
+                    } else {
+                      setShowHidden(true);
+                      loadTiles(true);
+                    }
+                  }}
+                  data-testid="apps-directory-modal-show-all"
+                  className="text-emerald-600 hover:underline">
+                  Show hidden tiles
+                </button>
+              </>
+            )}
           </footer>
+        )}
+
+        {restorePinOpen && tiles.length > 0 && (
+          <TilePinModal
+            tile={{ id: tiles[0].id, label: 'Show hidden tiles' }}
+            onClose={() => setRestorePinOpen(false)}
+            onUnlocked={() => {
+              setRestorePinOpen(false);
+              setShowHidden(true);
+              loadTiles(true);
+            }}
+          />
         )}
       </div>
     </div>

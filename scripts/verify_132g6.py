@@ -121,12 +121,18 @@ def main() -> int:
                 failures.append("public tile menu panel visible before PIN — regression!")
             page.screenshot(path=str(APP_ROOT / "memory" / "v58_13_132g6_01_public_pin_prompt.png"), full_page=False)
 
-            _type_pin(page, public_id, "9876")
-            page.wait_for_timeout(1500)
-            if not page.locator(f'[data-testid="tile-pin-error-{public_id}"]').count():
-                failures.append("wrong PIN on public tile 3-dots showed no inline error")
-            if page.locator(f'[data-testid="apps-directory-modal-tile-menu-panel-{public_id}"]').count():
-                failures.append("menu panel opened on public tile after wrong PIN — regression!")
+            # v58.13.132g7 — See memory/test_credentials.md standing
+            # rule. Never enter wrong PINs against Stephen's account.
+            if ADMIN_EMAIL == "stephen@paneltec.com.au":
+                print("(info) skipping wrong-PIN branch — source pins cover it. "
+                      "See memory/test_credentials.md for the standing rule.")
+            else:
+                _type_pin(page, public_id, "9876")
+                page.wait_for_timeout(1500)
+                if not page.locator(f'[data-testid="tile-pin-error-{public_id}"]').count():
+                    failures.append("wrong PIN on public tile 3-dots showed no inline error")
+                if page.locator(f'[data-testid="apps-directory-modal-tile-menu-panel-{public_id}"]').count():
+                    failures.append("menu panel opened on public tile after wrong PIN — regression!")
             page.click(f'[data-testid="tile-pin-close-{public_id}"]')
             page.wait_for_timeout(200)
 
