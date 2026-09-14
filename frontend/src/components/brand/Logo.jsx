@@ -32,23 +32,32 @@ const IMG_SIZES = {
   sm: 'h-5',   // 20px
   md: 'h-6',   // 24px  → ~124px wide
   lg: 'h-8',   // 32px  → ~165px wide
+  xl: 'h-9',   // 36px  → ~185px wide  (v58.13.132ft — Cover hero)
+  '2xl': 'h-11', // 44px → ~227px wide (v58.13.132ft — Cover hero larger)
 };
 
-export const Logo = ({ size = 'md', className = '', displayName }) => {
+// v58.13.132ft — `onDark` swaps to the white-text variant of the
+// Paneltec Group PNG wordmark (`logo-wordmark-white-{480,960}.png`,
+// generated from the originals by swapping grey pixels to white).
+// Only the Cover.jsx pre-login hero uses it — every other surface
+// (header, sidebar, favicon) keeps the original grey-and-orange
+// wordmark for continuity with the printed brand.
+export const Logo = ({ size = 'md', className = '', displayName, onDark = false }) => {
   const name = ((displayName || '').trim() || BRAND_DEFAULT);
   const usePngWordmark = PANELTEC_FAMILY.has(name);
 
   if (usePngWordmark) {
+    const base = onDark ? 'logo-wordmark-white' : 'logo-wordmark';
     return (
       <div
         className={`inline-flex items-center rounded-md px-1 ${className}`}
         data-testid="brand-logo"
         data-brand-name={name}
-        data-brand-variant="paneltec-group-png"
+        data-brand-variant={onDark ? 'paneltec-group-png-on-dark' : 'paneltec-group-png'}
       >
         <img
-          src="/brand/logo-wordmark-480.png"
-          srcSet="/brand/logo-wordmark-480.png 1x, /brand/logo-wordmark-960.png 2x"
+          src={`/brand/${base}-480.png`}
+          srcSet={`/brand/${base}-480.png 1x, /brand/${base}-960.png 2x`}
           alt={name}
           className={`${IMG_SIZES[size] || IMG_SIZES.md} w-auto object-contain`}
           draggable={false}

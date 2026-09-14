@@ -98,14 +98,12 @@ export default function Cover() {
             v58_13_132fm_cover_wordmark_swap. */}
         <Logo size="sm" displayName="The Paneltec Group" data-testid="cover-mobile-brand" />
       </div>
-      {/* Topbar — desktop only (md+). */}
-      <div className="hidden md:flex absolute top-0 inset-x-0 z-20 items-center justify-between px-6 md:px-10 py-5">
-        <Link to="/" className="flex items-center gap-2.5" data-testid="cover-brand">
-          {/* v58.13.132fm — Bespoke chevron + PANELTEC CIVIL text
-              swapped for the shared Paneltec Group wordmark (PNG)
-              via <Logo />. Legacy inline SVG chevron removed. */}
-          <Logo size="md" displayName="The Paneltec Group" />
-        </Link>
+      {/* Topbar — desktop only (md+). v58.13.132ft — Logo moved out
+          of the topbar and into the hero block (below) so it aligns
+          horizontally with the "Build Safer" heading and sits
+          near the pill vertically per Stephen's brief. Topbar now
+          only carries the right-side install / contact items. */}
+      <div className="hidden md:flex absolute top-0 inset-x-0 z-20 items-center justify-end px-6 md:px-10 py-5">
         <div className="hidden sm:flex items-center gap-4 text-[12px] tracking-wide text-slate-600 md:text-white/80">
           {canInstall && (
             <button type="button" onClick={handleInstall} data-testid="cover-install-pill"
@@ -145,6 +143,17 @@ export default function Cover() {
           <div className="absolute inset-0" style={{ background: 'linear-gradient(110deg, rgba(15,27,45,0.85) 0%, rgba(15,27,45,0.55) 40%, rgba(15,27,45,0) 70%)' }} />
           <div className="relative h-full flex flex-col justify-between p-12 lg:p-16">
             <div className="mt-[12vh] max-w-[520px]">
+              {/* v58.13.132ft — Hero logo. Left edge aligns with the
+                  "Build Safer" heading (same container = same left
+                  padding), rendered ~1.5x larger than the previous
+                  topbar logo and in the on-dark (white-text) variant
+                  so it reads clearly against the hero photo. Sits
+                  ~40 px above the WHS COMPLIANCE PLATFORM pill via
+                  `mb-6`. */}
+              <Link to="/" className="inline-flex mb-6" data-testid="cover-brand"
+                aria-label="Paneltec Group home">
+                <Logo size="2xl" displayName="The Paneltec Group" onDark />
+              </Link>
               {/* Phase 4.10.4 (v119) — hero block is now a single shared
                   component. Any future copy change should land in
                   `/app/frontend/src/components/marketing/PaneltecHero.jsx`
