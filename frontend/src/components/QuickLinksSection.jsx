@@ -667,7 +667,11 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
   // an empty list so the tile becomes public. Initial state derived
   // from whatever the server returned for the tile.
   const initialAllowed = Array.isArray(tile?.allowed_user_ids) ? tile.allowed_user_ids : [];
-  const [restrict, setRestrict] = useState(initialAllowed.length > 0);
+  // v58.13.132ff — Prefer explicit `access_mode` over inference.
+  const [restrict, setRestrict] = useState(
+    tile?.access_mode
+      ? tile.access_mode === 'private'
+      : initialAllowed.length > 0);
   const [allowedUserIds, setAllowedUserIds] = useState(initialAllowed);
   const [eligibleUsers, setEligibleUsers] = useState([]);
   const [eligibleLoading, setEligibleLoading] = useState(false);
@@ -698,21 +702,44 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
     source: null, error: null,
   });
   const iconAbortRef = React.useRef(null);
+  // v58.13.132ff — Retry counter forces the eligible-users effect
+  // to re-fire when the Retry button clears an error state. Keeps
+  // `eligibleLoading` out of the effect dep array (which was
+  // triggering the effect's own cleanup mid-flight and cancelling
+  // the fetch that had just been kicked off).
+  const [retryTick, setRetryTick] = useState(0);
 
   // v58.13.132ey — Lazy-load the eligible-users picker feed. Only
   // fires when the admin turns "Restrict access" ON to keep the
   // editor snappy for the (default) public-tile flow.
   useEffect(() => {
-    if (!restrict || eligibleUsers.length > 0 || eligibleLoading) return;
+    if (!restrict || eligibleUsers.length > 0) return;
     let cancelled = false;
     setEligibleLoading(true);
     setEligibleError(null);
+    // v58.13.132ff — 10s guard. If the fetch never resolves the
+    // picker used to hang on "Loading users…" forever. Force a
+    // Retryable error state instead.
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) {
+        setEligibleError('Timed out loading users.');
+        setEligibleLoading(false);
+      }
+    }, 10000);
     api.get('/org/url-tiles/eligible-users')
-      .then((r) => { if (!cancelled) setEligibleUsers(r.data?.users || []); })
-      .catch((err) => { if (!cancelled) setEligibleError(apiError(err) || 'Failed to load users'); })
+      .then((r) => {
+        if (cancelled) return;
+        clearTimeout(timeoutId);
+        setEligibleUsers(r.data?.users || []);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        clearTimeout(timeoutId);
+        setEligibleError(apiError(err) || "Couldn't load user list.");
+      })
       .finally(() => { if (!cancelled) setEligibleLoading(false); });
-    return () => { cancelled = true; };
-  }, [restrict, eligibleUsers.length, eligibleLoading]);
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [restrict, eligibleUsers.length, retryTick]);
 
   const toggleUser = (userId) => {
     setAllowedUserIds((prev) => (prev.includes(userId)
@@ -768,6 +795,11 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
       const payload = { ...form,
         color: colorAuto ? null : form.color,
         remote_icon_url: form.remote_icon_url ? form.remote_icon_url : null,
+        // v58.13.132ff — access_mode is authoritative. Public →
+        // always send an empty ACL to keep the doc tidy; private →
+        // send whatever's ticked (empty list means "hide from
+        // everyone" which is now a valid state).
+        access_mode: restrict ? 'private' : 'public',
         allowed_user_ids: restrict ? allowedUserIds : [] };
       if (mode === 'add') {
         await api.post('/org/url-tiles', payload);
@@ -1067,9 +1099,15 @@ function TileEditor({ mode, tile, onCancel, onSaved }) {
                     </div>
                   )}
                   {eligibleError && (
-                    <div className="text-xs text-red-600"
+                    <div className="text-xs text-red-600 flex items-center gap-2"
                       data-testid="org-quick-links-editor-users-error">
-                      {eligibleError}
+                      <span>Couldn't load user list.</span>
+                      <button type="button"
+                        onClick={() => { setEligibleUsers([]); setEligibleError(null); setRetryTick((n) => n + 1); }}
+                        data-testid="org-quick-links-editor-users-retry"
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100">
+                        Retry
+                      </button>
                     </div>
                   )}
                   {!eligibleLoading && !eligibleError && (

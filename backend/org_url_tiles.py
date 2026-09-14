@@ -119,6 +119,8 @@ class TileIn(BaseModel):
     # values see the tile. Strict admin rule: admins are NOT bypassed;
     # they must be on the list to see the tile.
     allowed_user_ids: Optional[list[str]] = None
+    # v58.13.132ff — Explicit `access_mode`. See TilePatch below.
+    access_mode: Optional[str] = None
 
 
 class TilePatch(BaseModel):
@@ -131,6 +133,9 @@ class TilePatch(BaseModel):
     enabled: Optional[bool] = None  # v58.13.132er
     color: Optional[str] = None  # v58.13.132er
     allowed_user_ids: Optional[list[str]] = None  # v58.13.132ey
+    # v58.13.132ff — Explicit access mode. `"public"` or
+    # `"private"`. Missing on read → inferred from ACL emptiness.
+    access_mode: Optional[str] = None
 
 
 class ReorderRow(BaseModel):
@@ -254,7 +259,13 @@ def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
     else:
         display_color = stored_color
     allowed = list(doc.get("allowed_user_ids") or [])
-    approved = (not allowed) or (viewer_id in allowed)
+    # v58.13.132ff — access_mode is now authoritative. Missing on
+    # pre-.132ff rows → infer: non-empty ACL means private,
+    # empty means public (backwards-compat).
+    stored_mode = doc.get("access_mode")
+    if stored_mode not in ("public", "private"):
+        stored_mode = "private" if allowed else "public"
+    approved = (stored_mode == "public") or (viewer_id in allowed)
     return {
         "id": doc.get("id"),
         "org_id": doc.get("org_id"),
@@ -275,6 +286,7 @@ def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
         # v58.13.132ey — Missing / null / non-list stored ACL coerces
         # to `[]` so any pre-.132ey rows behave as public tiles.
         "allowed_user_ids": allowed,
+        "access_mode": stored_mode,
         # v58.13.132ez — Per-viewer approval flag drives the greyed-out
         # tile UI. `true` means the viewer can click / launch / reveal
         # credentials; `false` means the tile is visible but disabled.
@@ -492,6 +504,11 @@ async def create_tile(body: TileIn, user: dict = Depends(get_current_user)):
         # the org's active user list so stale IDs are dropped.
         "allowed_user_ids": await _sanitize_allowed_user_ids(
             body.allowed_user_ids, org_id),
+        # v58.13.132ff — Explicit access_mode. Fallback: infer from
+        # ACL if the client didn't set it.
+        "access_mode": (body.access_mode
+                          if body.access_mode in ("public", "private")
+                          else ("private" if body.allowed_user_ids else "public")),
         "created_at": now, "created_by": user["id"],
         "updated_at": now, "updated_by": user["id"],
     }
@@ -540,6 +557,11 @@ async def update_tile(tile_id: str, body: TilePatch,
         # v58.13.132ey — Whole-list replace. Sanitise + drop stale IDs.
         updates["allowed_user_ids"] = await _sanitize_allowed_user_ids(
             body.allowed_user_ids, org_id)
+    if body.access_mode is not None:
+        # v58.13.132ff — Accept only the two enum values; anything
+        # else falls back to inference from the resulting ACL.
+        if body.access_mode in ("public", "private"):
+            updates["access_mode"] = body.access_mode
     if not updates:
         return _out(existing, user["id"], redact_url=False)
     updates["updated_at"] = now_iso()
