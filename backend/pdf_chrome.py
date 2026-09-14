@@ -112,7 +112,16 @@ class BrandedCanvas(Canvas):
         self.rect(0, h - band_h - stripe_h, w, stripe_h, stroke=0, fill=1)
 
         # Header left: logo (image if present) or word-mark text.
+        # v58.13.132fk — If org has no explicit logo_url, fall back
+        # to the bundled Paneltec Group wordmark PNG on disk.
         logo_url = self._org.get("logo_url")
+        if not logo_url or not os.path.isfile(logo_url or ""):
+            _default_logo = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "..", "frontend", "public", "brand", "logo-wordmark-960.png",
+            )
+            if os.path.isfile(_default_logo):
+                logo_url = _default_logo
         logo_drawn = False
         if logo_url and os.path.isfile(logo_url):
             try:
