@@ -28,6 +28,7 @@ import {
   ArrowSync20Regular as RefreshCw,
   ArrowUpload20Regular as Upload,
   Eye20Regular as Eye,
+  Edit20Regular as Edit3,  // v58.13.132fs — pinned-chip edit pencil
   Filter20Regular as Filter,
   Print20Regular as Printer,
   Search20Regular as Search,
@@ -399,10 +400,15 @@ export default function InductionsMatrix({ onWorkerClick }) {
             <span className="text-[10px] uppercase tracking-wider font-semibold text-[#1e4a8c]">Pinned to</span>
             <span className="text-sm font-semibold text-[#1e4a8c]">{pinned.name}</span>
             {onWorkerClick && (
+              // v58.13.132fs — Prominent edit-pencil affordance in the
+              // pinned chip so the workers-portal matrix view has the
+              // same "open the edit modal" entry point that the
+              // desktop workers list gives via the per-row pencil.
               <button onClick={() => onWorkerClick(pinned)}
-                data-testid="matrix-pinned-open-profile"
-                className="text-[11px] font-medium text-[#1e4a8c] underline hover:no-underline">
-                Open profile
+                data-testid="matrix-pinned-edit-profile"
+                title="Edit worker profile"
+                className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
+                <Edit3 />
               </button>
             )}
             <button onClick={() => doPrint([pinned.id], printOpts, 'inline')}
@@ -515,20 +521,36 @@ export default function InductionsMatrix({ onWorkerClick }) {
                       className="w-3.5 h-3.5" />
                   </td>
                   <th scope="row"
-                      className="sticky z-10 bg-white text-left p-0 border-b border-r border-slate-100 align-middle"
+                      className="sticky z-10 bg-white text-left p-0 border-b border-r border-slate-100 align-middle relative"
                       style={{ width: 200, minWidth: 200, height: rowH, left: 32 }}>
                     <button
                       type="button"
                       onMouseDown={(e) => { e.preventDefault(); setPinnedWorkerId(r.id); }}
                       data-testid={`matrix-worker-${r.id}`}
                       title={`Pin matrix to ${r.name}`}
-                      className="w-full h-full text-left px-3 py-1.5 cursor-pointer hover:bg-slate-50">
+                      className="w-full h-full text-left pl-3 pr-8 py-1.5 cursor-pointer hover:bg-slate-50">
                       <div className="font-semibold text-slate-900 truncate text-[12px] leading-tight">{r.name}</div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <RowChip status={r.chip} />
                         {r.company && <span className="text-[9px] text-slate-400 truncate">{r.company}</span>}
                       </div>
                     </button>
+                    {/* v58.13.132fs — Per-row edit pencil so the
+                        workers-portal matrix view carries the same
+                        "one click to edit" affordance as the desktop
+                        workers list. Absolute-positioned so it
+                        overlays the pin button without stealing the
+                        onMouseDown event. */}
+                    {canEdit && onWorkerClick && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onWorkerClick({ id: r.id, name: r.name }); }}
+                        data-testid={`matrix-row-edit-${r.id}`}
+                        title="Edit worker profile"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4] shrink-0 z-20">
+                        <Edit3 />
+                      </button>
+                    )}
                   </th>
                   {grouped.map((g) => {
                     if (collapsed.has(g.key)) {

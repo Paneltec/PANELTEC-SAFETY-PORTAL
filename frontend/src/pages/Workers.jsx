@@ -327,9 +327,9 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
             onError={() => setBroken(true)}
             style={{
               width: '100%',
-              height: '200%',
+              height: '120%',
               objectFit: 'cover',
-              transform: `translateY(${-effectiveOffset * 0.56}px)`,
+              transform: `translateY(${-effectiveOffset * 0.112}px)`,
               display: 'block',
             }}
             data-testid="worker-edit-photo-img"
@@ -477,9 +477,9 @@ function WorkerRowPhoto({ worker }) {
         onError={() => setBroken(true)}
         style={{
           width: '100%',
-          height: '200%',
+          height: '120%',
           objectFit: 'cover',
-          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.4}px)`,
+          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.08}px)`,
           display: 'block',
         }}
       />
@@ -1082,9 +1082,9 @@ function IdCardPhoto({ worker, onExpand }) {
           onError={() => setBroken(true)}
           style={{
             width: '100%',
-            height: '200%',
+            height: '120%',
             objectFit: 'cover',
-            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 1.28}px)`,
+            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.256}px)`,
             display: 'block',
           }}
         />
