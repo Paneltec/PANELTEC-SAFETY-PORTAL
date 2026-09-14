@@ -358,38 +358,88 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
           Bystander render sites (list row, view drawer) show the
           image without this control. */}
       {canEdit && hasPhoto && typeof onChangeOffsetY === 'function' && (
-        <div className="w-full max-w-[240px] flex flex-col gap-1 mt-1"
-          data-testid="worker-edit-photo-align-block">
-          <div className="flex items-center justify-between gap-3">
-            <label htmlFor="worker-photo-offset-y"
-              className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
-              Vertical alignment
-            </label>
-            <button type="button"
-              onClick={() => onChangeOffsetY(50)}
-              disabled={effectiveOffset === 50}
-              data-testid="worker-edit-photo-align-reset"
-              className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline whitespace-nowrap">
-              Reset to centre
-            </button>
-          </div>
-          <input
-            id="worker-photo-offset-y"
-            type="range"
-            min="0" max="100" step="1"
-            value={effectiveOffset}
-            onChange={(e) => onChangeOffsetY(Number(e.target.value))}
-            onInput={(e) => onChangeOffsetY(Number(e.target.value))}
-            data-testid="worker-edit-photo-align-slider"
-            data-photo-offset-y={effectiveOffset}
-            className="w-full accent-[#1e4a8c]"
-          />
-          <div className="flex items-center justify-between text-[10px] text-slate-500 select-none">
-            <span>Higher</span>
-            <span>Lower</span>
-          </div>
-        </div>
+        <SliderWithDiagnostic
+          effectiveOffset={effectiveOffset}
+          onChangeOffsetY={onChangeOffsetY}
+        />
       )}
+    </div>
+  );
+}
+
+// v58.13.132fl — Slider with visible diagnostic overlay. Users have
+// reported the slider "does nothing"; the diagnostic box shows in
+// real time whether onChange/onInput events fire, what the state
+// setter sees, and what objectPosition string ends up applied to
+// the <img>. Take a screenshot of this box when the slider misbehaves
+// and we'll know exactly which layer is broken.
+function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY }) {
+  const [changeCount, setChangeCount] = React.useState(0);
+  const [inputCount, setInputCount] = React.useState(0);
+  const [lastEventAt, setLastEventAt] = React.useState(null);
+  const [lastRawValue, setLastRawValue] = React.useState(null);
+
+  const bump = (kind, e) => {
+    const v = Number(e.target.value);
+    setLastEventAt(new Date().toISOString().slice(11, 19));
+    setLastRawValue(v);
+    if (kind === 'change') setChangeCount((n) => n + 1);
+    if (kind === 'input')  setInputCount((n) => n + 1);
+    // Global inspector hook + console log for DevTools capture.
+    // eslint-disable-next-line no-console
+    console.info('[slider]', kind, 'raw=', v, 'stateBefore=', effectiveOffset);
+    if (typeof window !== 'undefined') {
+      window.__PANELTEC_SLIDER_DEBUG = {
+        changeCount: kind === 'change' ? changeCount + 1 : changeCount,
+        inputCount:  kind === 'input'  ? inputCount  + 1 : inputCount,
+        lastRawValue: v, lastKind: kind,
+        lastEventAt: new Date().toISOString(),
+        stateBefore: effectiveOffset,
+      };
+    }
+    onChangeOffsetY(v);
+  };
+
+  const objectPositionStr = `50% ${effectiveOffset}%`;
+
+  return (
+    <div className="w-full max-w-[240px] flex flex-col gap-1 mt-1"
+      data-testid="worker-edit-photo-align-block">
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor="worker-photo-offset-y"
+          className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
+          Vertical alignment
+        </label>
+        <button type="button"
+          onClick={() => onChangeOffsetY(50)}
+          disabled={effectiveOffset === 50}
+          data-testid="worker-edit-photo-align-reset"
+          className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline whitespace-nowrap">
+          Reset to centre
+        </button>
+      </div>
+      <input
+        id="worker-photo-offset-y"
+        type="range"
+        min="0" max="100" step="1"
+        value={effectiveOffset}
+        onChange={(e) => bump('change', e)}
+        onInput={(e) => bump('input', e)}
+        data-testid="worker-edit-photo-align-slider"
+        data-photo-offset-y={effectiveOffset}
+        className="w-full accent-[#1e4a8c]"
+      />
+      <div className="flex items-center justify-between text-[10px] text-slate-500 select-none">
+        <span>Higher</span>
+        <span>Lower</span>
+      </div>
+      <div
+        data-testid="worker-edit-photo-align-diagnostic"
+        className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[10px] leading-tight text-slate-700">
+        <div>state: <b>{effectiveOffset}</b>  ·  objPos: <b>{objectPositionStr}</b></div>
+        <div>onChange: <b>{changeCount}</b>  ·  onInput: <b>{inputCount}</b></div>
+        <div>lastRaw: <b>{lastRawValue == null ? '—' : lastRawValue}</b>  ·  at: <b>{lastEventAt || '—'}</b></div>
+      </div>
     </div>
   );
 }

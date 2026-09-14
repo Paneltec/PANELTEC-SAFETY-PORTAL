@@ -199,6 +199,19 @@ function AppsDirectoryManager({ onClose }) {
   // own copy (kept for the self-missing hint) — cheap non-blocking
   // duplication, easier than a shared context.
   const [currentUserId, setCurrentUserId] = useState(null);
+  // v58.13.132fl — Bulk lockdown state. `checked` is a Set of tile
+  // ids currently ticked in the left-most checkbox column. `bulkModal`
+  // is falsy or { action: 'lock'|'unlock', ids: [...] }.
+  const [checked, setChecked] = useState(() => new Set());
+  const [bulkModal, setBulkModal] = useState(null);
+  const [bulkAllowed, setBulkAllowed] = useState([]);
+  const toggleChecked = (id) => setChecked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const clearChecked = () => setChecked(new Set());
+
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -287,6 +300,32 @@ function AppsDirectoryManager({ onClose }) {
           </button>
         </div>
 
+        {/* v58.13.132fl — Bulk-action bar above the table. */}
+        {checked.size > 0 && (
+          <div className="bg-slate-900 border-t border-slate-700 px-5 py-2 flex items-center gap-3 text-xs text-slate-100"
+            data-testid="apps-directory-bulk-bar">
+            <span className="font-semibold">{checked.size} selected</span>
+            <button type="button"
+              data-testid="apps-directory-bulk-lock"
+              onClick={() => { setBulkAllowed([]); setBulkModal({ action: 'lock', ids: [...checked] }); }}
+              className="px-3 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold inline-flex items-center gap-1">
+              <Lock size={12} /> Bulk lock selected tiles
+            </button>
+            <button type="button"
+              data-testid="apps-directory-bulk-unlock"
+              onClick={() => setBulkModal({ action: 'unlock', ids: [...checked] })}
+              className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">
+              Bulk unlock selected tiles
+            </button>
+            <button type="button"
+              data-testid="apps-directory-bulk-clear"
+              onClick={clearChecked}
+              className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-100">
+              Clear selection
+            </button>
+          </div>
+        )}
+
         {/* Body — table. */}
         <div className="flex-1 overflow-auto">
           {loading ? (
@@ -295,6 +334,13 @@ function AppsDirectoryManager({ onClose }) {
             <table className="min-w-full text-sm" data-testid="apps-directory-table">
               <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 z-10">
                 <tr>
+                  <Th className="w-8">
+                    <input type="checkbox"
+                      data-testid="apps-directory-bulk-check-all"
+                      checked={tiles.length > 0 && checked.size === tiles.length}
+                      onChange={(e) => setChecked(
+                        e.target.checked ? new Set(tiles.map((t) => t.id)) : new Set())} />
+                  </Th>
                   <Th>On</Th>
                   <Th>Icon</Th>
                   <Th>Name</Th>
@@ -309,6 +355,8 @@ function AppsDirectoryManager({ onClose }) {
                   <TileRow key={t.id} tile={t} zebra={idx % 2 === 1}
                     usersById={usersById}
                     currentUserId={currentUserId}
+                    checked={checked.has(t.id)}
+                    onToggleChecked={() => toggleChecked(t.id)}
                     onToggle={() => toggleEnabled(t)}
                     onEdit={() => setEditorTile({ mode: 'edit', tile: t })}
                     onQuickLock={(cuid) => setEditorTile({
@@ -321,7 +369,7 @@ function AppsDirectoryManager({ onClose }) {
                 <AddTileRow onSaved={onSaved} />
                 {tiles.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500"
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500"
                       data-testid="org-quick-links-manager-empty">
                       No tiles yet. Use the row below to add your first bookmark.
                     </td>
@@ -360,9 +408,160 @@ function AppsDirectoryManager({ onClose }) {
           onConfirm={() => onDelete(confirmDelete)}
         />
       )}
+      {/* v58.13.132fl — Bulk-lock / bulk-unlock modal. */}
+      {bulkModal && (
+        <BulkAccessModal
+          action={bulkModal.action}
+          tileIds={bulkModal.ids}
+          tiles={tiles.filter((t) => bulkModal.ids.includes(t.id))}
+          eligibleUsers={Object.values(usersById || {})}
+          allowedUserIds={bulkAllowed}
+          setAllowedUserIds={setBulkAllowed}
+          onClose={() => setBulkModal(null)}
+          onSaved={async () => {
+            setBulkModal(null);
+            clearChecked();
+            setBulkAllowed([]);
+            await refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
+
+// v58.13.132fl — Bulk-access modal for the Manage Tiles bulk-lock /
+// bulk-unlock buttons.
+function BulkAccessModal({ action, tileIds, tiles, eligibleUsers,
+                            allowedUserIds, setAllowedUserIds,
+                            onClose, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const sorted = React.useMemo(() =>
+    [...(eligibleUsers || [])].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '')),
+    [eligibleUsers]);
+  const showSearch = sorted.length > 20;
+  const q = search.trim().toLowerCase();
+  const visible = q
+    ? sorted.filter((u) => (u.name || '').toLowerCase().includes(q)
+      || (u.email || '').toLowerCase().includes(q))
+    : sorted;
+  const selectEveryone = () => setAllowedUserIds(sorted.map((u) => u.id));
+  const clearAll = () => setAllowedUserIds([]);
+  const toggle = (id) => setAllowedUserIds((prev) => prev.includes(id)
+    ? prev.filter((x) => x !== id)
+    : [...prev, id]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const body = {
+        tile_ids: tileIds,
+        access_mode: action === 'lock' ? 'private' : 'public',
+        allowed_user_ids: action === 'lock' ? allowedUserIds : [],
+      };
+      const r = await api.patch('/org/url-tiles/bulk-access', body);
+      toast.success(
+        action === 'lock'
+          ? `Locked ${r.data.updated} tile${r.data.updated === 1 ? '' : 's'}`
+          : `Unlocked ${r.data.updated} tile${r.data.updated === 1 ? '' : 's'}`);
+      await onSaved();
+    } catch (e) {
+      toast.error(apiError(e) || 'Bulk save failed');
+    } finally { setSaving(false); }
+  };
+
+  const title = action === 'lock' ? `Lock ${tileIds.length} tiles` : `Unlock ${tileIds.length} tiles`;
+  const nameList = tiles.map((t) => t.label || t.url).join(', ');
+  return (
+    <div className="fixed inset-0 z-[80] bg-slate-950/60 flex items-center justify-center p-4"
+      onClick={onClose}
+      data-testid="apps-directory-bulk-modal">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-display font-bold text-lg text-slate-900 mb-2">{title}</h3>
+        <p className="text-xs text-slate-600 mb-3">
+          <span className="font-semibold">Tiles:</span> {nameList}
+        </p>
+        {action === 'lock' && (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-700">
+              Only the users you tick will see these tiles after saving.
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" onClick={selectEveryone}
+                data-testid="apps-directory-bulk-select-everyone"
+                disabled={sorted.length === 0}
+                className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-50">
+                Select everyone
+              </button>
+              <button type="button" onClick={clearAll}
+                data-testid="apps-directory-bulk-clear-all"
+                disabled={allowedUserIds.length === 0}
+                className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-50">
+                Clear all
+              </button>
+              <span className="ml-auto text-[10px] text-slate-500"
+                data-testid="apps-directory-bulk-selected-count">
+                {allowedUserIds.length} approved
+              </span>
+            </div>
+            {showSearch && (
+              <input type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search users…"
+                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300" />
+            )}
+            <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100"
+              data-testid="apps-directory-bulk-user-list">
+              {visible.map((u) => (
+                <label key={u.id}
+                  data-testid={`apps-directory-bulk-user-row-${u.id}`}
+                  data-checked={allowedUserIds.includes(u.id) ? 'true' : 'false'}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer ${
+                    allowedUserIds.includes(u.id) ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
+                  <input type="checkbox"
+                    checked={allowedUserIds.includes(u.id)}
+                    onChange={() => toggle(u.id)}
+                    className="rounded border-slate-300" />
+                  <span className="flex-1 truncate">
+                    <span className="font-semibold text-slate-800">{u.name || u.email || u.id}</span>
+                    {u.email && u.email !== u.name && (
+                      <span className="text-slate-500 ml-1">· {u.email}</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+        {action === 'unlock' && (
+          <p className="text-sm text-slate-700">
+            These tiles will be visible to everyone after saving.
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose}
+            data-testid="apps-directory-bulk-cancel"
+            className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button type="button" onClick={save} disabled={saving}
+            data-testid="apps-directory-bulk-save"
+            className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${
+              action === 'lock' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+            } disabled:opacity-50`}>
+            {saving ? 'Saving…' : (action === 'lock' ? `Lock ${tileIds.length} tiles` : `Unlock ${tileIds.length} tiles`)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 function Th({ children, className = '' }) {
   return (
@@ -372,7 +571,7 @@ function Th({ children, className = '' }) {
   );
 }
 
-function TileRow({ tile, zebra, usersById, currentUserId, onToggle, onEdit, onQuickLock, onDelete }) {
+function TileRow({ tile, zebra, usersById, currentUserId, checked, onToggleChecked, onToggle, onEdit, onQuickLock, onDelete }) {
   const [imgError, setImgError] = useState(false);
   const [chipsExpanded, setChipsExpanded] = useState(false);
   const showRemote = tile.remote_icon_url && !imgError;
@@ -401,6 +600,13 @@ function TileRow({ tile, zebra, usersById, currentUserId, onToggle, onEdit, onQu
           (zebra ? 'bg-slate-50 ' : 'bg-white ') +
           (tile.enabled ? '' : 'opacity-60 ')
         }>
+      <td className="px-3 py-2 w-8">
+        <input type="checkbox"
+          data-testid={`apps-directory-row-check-${tile.id}`}
+          checked={!!checked}
+          onChange={onToggleChecked}
+          className="rounded border-slate-300" />
+      </td>
       <td className="px-3 py-2">
         <OnPill enabled={tile.enabled} onToggle={onToggle}
           testid={`apps-directory-on-pill-${tile.id}`} />
@@ -468,7 +674,7 @@ function TileRow({ tile, zebra, usersById, currentUserId, onToggle, onEdit, onQu
     {restricted && (
       <tr data-testid={`apps-directory-row-approved-users-${tile.id}`}
           className={(zebra ? 'bg-slate-50 ' : 'bg-white ') + 'border-t border-slate-100/60'}>
-        <td colSpan={7} className="px-3 py-1.5">
+        <td colSpan={8} className="px-3 py-1.5">
           <div className="flex flex-wrap items-center gap-1.5 pl-1"
             data-testid={`apps-directory-row-approved-users-list-${tile.id}`}>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mr-1">
@@ -581,6 +787,9 @@ function AddTileRow({ onSaved }) {
   return (
     <tr className="border-t-2 border-slate-200 bg-orange-50/40"
         data-testid="apps-directory-add-row">
+      <td className="px-3 py-2 w-8">
+        {/* v58.13.132fl — spacer for the bulk-checkbox column. */}
+      </td>
       <td className="px-3 py-2">
         <OnPill enabled={form.enabled}
           onToggle={() => setForm({ ...form, enabled: !form.enabled })}

@@ -444,11 +444,20 @@ async def upload_cert_file(
             "Unsupported file type — allowed: PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, JPEG, TXT, CSV",
         )
 
-    # Smart routing: filename stem → seed folder → per-worker subfolder.
+    # Smart routing: filename stem → seed folder.
+    # v58.13.132fl — Skip the per-worker subfolder layer. Stephen's
+    # brief: "Document Library is meant to be shared across the
+    # whole team, not per-worker". The cert record still carries
+    # worker_id (via `worker_certifications`) so per-worker
+    # attribution is preserved without polluting the shared
+    # library tree with per-person subfolders. The subfolder
+    # helper `_find_or_create_worker_subfolder` is kept for
+    # backwards compatibility but no longer called from the
+    # cert-upload path.
     cert_name = Path(file.filename or "").stem[:160] or "Certification"
     seed_name = _match_folder_name(cert_name)
     seed_folder = await _resolve_seed_folder(user["org_id"], seed_name, user["id"])
-    sub_folder = await _find_or_create_worker_subfolder(seed_folder, worker, user["id"])
+    sub_folder = seed_folder
 
     folder_dir = UPLOAD_DIR / sub_folder["id"]
     folder_dir.mkdir(parents=True, exist_ok=True)
@@ -564,7 +573,8 @@ async def attach_cert_file(
     # blank (shouldn't happen — model enforces min_length=1).
     seed_name = _match_folder_name(existing.get("name") or file.filename or "")
     seed_folder = await _resolve_seed_folder(user["org_id"], seed_name, user["id"])
-    sub_folder = await _find_or_create_worker_subfolder(seed_folder, worker, user["id"])
+    # v58.13.132fl — Skip per-worker subfolder layer (see note above).
+    sub_folder = seed_folder
 
     folder_dir = UPLOAD_DIR / sub_folder["id"]
     folder_dir.mkdir(parents=True, exist_ok=True)

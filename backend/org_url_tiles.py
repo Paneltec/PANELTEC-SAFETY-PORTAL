@@ -34,7 +34,7 @@ import logging
 import re
 import socket
 import time
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -521,6 +521,49 @@ async def create_tile(body: TileIn, user: dict = Depends(get_current_user)):
     return _out(doc, user["id"], redact_url=False)
 
 
+
+# v58.13.132fl — Bulk lockdown / unlock.
+
+class BulkAccessIn(BaseModel):
+    tile_ids: List[str] = Field(default_factory=list)
+    access_mode: str = "private"
+    allowed_user_ids: List[str] = Field(default_factory=list)
+
+
+@router.patch("/bulk-access")
+async def bulk_access(body: BulkAccessIn,
+                       user: dict = Depends(get_current_user)):
+    """Set access_mode + allowed_user_ids on many tiles in one call.
+    Admin-only. Returns { updated: N, tiles: [<summary>...] }."""
+    _admin(user)
+    if body.access_mode not in ("public", "private"):
+        raise HTTPException(400, "access_mode must be 'public' or 'private'")
+    org_id = user["org_id"]
+    ids = [t for t in (body.tile_ids or []) if isinstance(t, str) and t]
+    if not ids:
+        return {"updated": 0, "tiles": []}
+    if body.access_mode == "private":
+        allowed = await _sanitize_allowed_user_ids(body.allowed_user_ids, org_id)
+    else:
+        allowed = []
+    now = now_iso()
+    result = await db.org_url_tiles.update_many(
+        {"id": {"$in": ids}, "org_id": org_id},
+        {"$set": {
+            "access_mode": body.access_mode,
+            "allowed_user_ids": allowed,
+            "updated_at": now,
+            "updated_by": user["id"],
+        }},
+    )
+    fresh = await db.org_url_tiles.find(
+        {"id": {"$in": ids}, "org_id": org_id}).to_list(len(ids))
+    log.info("org_url_tiles.bulk_access org=%s n=%d mode=%s",
+             org_id, result.modified_count, body.access_mode)
+    return {"updated": result.modified_count,
+            "tiles": [_out(t, user["id"], redact_url=False) for t in fresh]}
+
+
 @router.patch("/{tile_id}")
 async def update_tile(tile_id: str, body: TilePatch,
                        user: dict = Depends(get_current_user)):
@@ -573,6 +616,7 @@ async def update_tile(tile_id: str, body: TilePatch,
              org_id, tile_id, sorted(updates.keys()))
     # v58.13.132ez — Admin editor return path: never redact.
     return _out(doc, user["id"], redact_url=False)
+
 
 
 @router.delete("/{tile_id}")
