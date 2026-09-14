@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, BarChart3, Sparkles, Database, Radar, FileSearch, AlertTriangle, Award, Clock, HardHat, UserCog, Users2, FolderOpen, Truck, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
@@ -7,6 +7,8 @@ import { openAuthedFile } from '../lib/downloads';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 import HowThisWorks from '../components/help/HowThisWorks';
+import PlatformOverviewInteractive from '../components/help/PlatformOverviewInteractive';   // v58.13.132ge
+import UserManualDownloader from '../components/help/UserManualDownloader';                  // v58.13.132ge
 import PaletteSwitcher from '../components/civil/PaletteSwitcher';   // v58.13.67-palette-switcher
 import { AnimatedNumber, TrendDelta } from '../components/ui/polish';
 import { getUser } from '../lib/auth';
@@ -600,7 +602,7 @@ export default function Dashboard() {
         <div className="hero-drift-glow" aria-hidden />
         <div className="relative px-6 sm:px-8 py-6 sm:py-7 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>
-            <div className="text-[11px] font-semibold tracking-[0.22em] text-orange-400 uppercase">Paneltec Civil · Intelligence Centre</div>
+            <div className="text-[11px] font-semibold tracking-[0.22em] text-orange-400 uppercase">The Paneltec Group · Intelligence Centre</div>
             <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold mt-2 leading-tight tracking-tight text-white">
               {(() => {
                 const h = new Date().getHours();
@@ -622,11 +624,13 @@ export default function Dashboard() {
                     : `${m.records_needing_attention} record${m.records_needing_attention === 1 ? '' : 's'} need attention — quick review recommended.`)}
             </p>
           </div>
-          <Link to="/app/help" data-testid="dashboard-user-manual-btn-v157"
-            className="btn-primary-gradient self-start sm:self-end shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs sm:text-sm">
+          <UserManualDownloader
+            testId="dashboard-user-manual-btn-v157"
+            className="btn-primary-gradient self-start sm:self-end shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs sm:text-sm"
+          >
             <BookOpen20Regular />
             User Manual
-          </Link>
+          </UserManualDownloader>
         </div>
       </div>
 
@@ -649,7 +653,7 @@ export default function Dashboard() {
             {/* v58.13.67 — Phone-viewport: plain "DASHBOARD" chrome label +
                 "Dashboard" title, no Intelligence-Centre marketing gloss.
                 Desktop (md+) keeps the fuller SaaS heading below. */}
-            <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase hidden md:block" data-testid="dashboard-eyebrow-md">Paneltec Civil Intelligence Centre</div>
+            <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase hidden md:block" data-testid="dashboard-eyebrow-md">THE PANELTEC GROUP INTELLIGENCE CENTRE</div>
             <div className="md:hidden civil-label" data-testid="dashboard-eyebrow-phone">DASHBOARD</div>
             <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900 max-md:text-2xl max-md:text-civil-bitumen" data-testid="dashboard-title">
               <span className="hidden md:inline">Live Compliance Dashboard</span>
@@ -658,15 +662,21 @@ export default function Dashboard() {
             <p className="mt-3 text-slate-700 max-w-2xl hidden md:block">Organisation-wide monitoring feeds your single source of truth.</p>
             <p className="mt-2 md:hidden text-sm text-civil-bitumen opacity-75">Status and actions for your site.</p>
           </div>
-          <Link to="/app/help" data-testid="dashboard-user-manual-btn"
-            className="self-start shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white border border-slate-200 text-slate-700 hover:text-orange-600 text-xs sm:text-sm font-semibold shadow-sm transition-colors">
+          <UserManualDownloader
+            testId="dashboard-user-manual-btn"
+            className="self-start shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white border border-slate-200 text-slate-700 hover:text-orange-600 text-xs sm:text-sm font-semibold shadow-sm transition-colors"
+          >
             <BookOpen20Regular />
             User Manual
-          </Link>
+          </UserManualDownloader>
         </div>
       </div>
 
-      <HowThisWorks schematicSlug="architecture" title="Platform overview" />
+      {/* v58.13.132ge — Live tiles first, static schematic below
+          (collapsed by default; retained so admins can still fetch
+          the marketing-style diagram if they want to share it). */}
+      <PlatformOverviewInteractive />
+      <HowThisWorks schematicSlug="architecture" title="Platform overview (static diagram)" />
 
       {/* Compliance Snapshot — value-prop cards (Thread B) */}
       <section className="mb-8" data-testid="compliance-snapshot">
