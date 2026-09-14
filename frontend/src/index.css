@@ -801,3 +801,20 @@ ol.zebra-list > li:hover {
     50% { transform: translateX(8px); }
     75% { transform: translateX(-4px); }
 }
+
+/* v58.13.132gb — Document Library search highlight.
+ * When a global-search hit is opened from `/document-library`,
+ * the target folder page appends `?highlight=<file_id>`. The
+ * matching `<tr>` gets `.g132gb-highlight-row` for ~2s and pulses
+ * the row in amber. Fades cleanly back to the standard hover
+ * palette. Contained by the row itself so it never bleeds into
+ * neighbouring rows. */
+@keyframes g132gb-highlight-fade-kf {
+  0%   { background-color: #fde68a; box-shadow: inset 4px 0 0 0 #b45309; }
+  40%  { background-color: #fef3c7; box-shadow: inset 4px 0 0 0 #d97706; }
+  100% { background-color: transparent; box-shadow: inset 4px 0 0 0 transparent; }
+}
+tr.g132gb-highlight-row {
+  animation: g132gb-highlight-fade-kf 2s ease-out both;
+}
+

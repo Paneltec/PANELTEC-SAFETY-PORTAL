@@ -7,7 +7,7 @@
 // MOCKED: "AI Smart Search" is a Mongo regex hit on filename + ai_tags. True
 // semantic RAG is deferred to a future phase.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, ShieldOff, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
@@ -382,12 +382,35 @@ export default function DocumentLibrary() {
     if (!q) { setSearchResults(null); return; }
     setSearchBusy(true);
     try {
-      const { data } = await api.get('/document-library/search', { params: { q } });
+      // v58.13.132gb — Global search stays recursive (default) and
+      // returns folder_path + match_field markers per result.
+      const { data } = await api.get('/document-library/search',
+        { params: { q, recursive: 'true' } });
       setSearchResults(data);
     } catch (err) {
       toast.error(apiError(err));
     } finally { setSearchBusy(false); }
   };
+
+  // v58.13.132gb — Group global-search hits by folder so users can
+  // see which folder each match sits in. Ordering respects the
+  // backend's uploaded_at-desc sort.
+  const groupedSearchResults = useMemo(() => {
+    if (!searchResults?.results?.length) return [];
+    const bucket = new Map();
+    for (const r of searchResults.results) {
+      const key = r.folder?.id || '__unknown__';
+      if (!bucket.has(key)) {
+        bucket.set(key, {
+          folder: r.folder || { id: '', name: 'Unknown folder' },
+          folder_path: r.folder_path || (r.folder?.name || ''),
+          rows: [],
+        });
+      }
+      bucket.get(key).rows.push(r);
+    }
+    return Array.from(bucket.values());
+  }, [searchResults]);
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="document-library-page">
@@ -432,23 +455,47 @@ export default function DocumentLibrary() {
             {searchResults.results.length === 0 ? (
               <div className="text-sm text-slate-500 italic">No files found.</div>
             ) : (
-              <ul className="space-y-1 max-h-60 overflow-auto">
-                {searchResults.results.map((r) => (
-                  <li key={r.id} className="bg-white rounded-lg border border-[#f0e6c6] px-3 py-2 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{r.filename}</div>
-                      <div className="text-xs text-slate-500">
-                        in <Link to={`/app/document-library/${r.folder?.id || ''}`} className="hover:underline">
-                          {r.folder?.name || 'Unknown folder'}
-                        </Link>
-                        {' · '}{humanSize(r.size)}
-                      </div>
+              // v58.13.132gb — Results grouped by folder. Clicking
+              // a row navigates to the folder page with a
+              // `?highlight=<file_id>` query string; that page
+              // scrolls to the row and pulses it amber for 2 s.
+              <div className="space-y-3 max-h-[420px] overflow-auto pr-1"
+                data-testid="smart-search-groups">
+                {groupedSearchResults.map((grp) => (
+                  <div key={grp.folder.id} className="bg-white rounded-lg border border-[#f0e6c6]"
+                    data-testid={`smart-search-group-${grp.folder.id || 'unknown'}`}>
+                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] font-semibold text-[#8c6a1a] border-b border-[#f0e6c6] bg-[#fbf3df]">
+                      {grp.folder_path || grp.folder.name} · {grp.rows.length} match{grp.rows.length === 1 ? '' : 'es'}
                     </div>
-                    <Link to={`/app/document-library/${r.folder?.id || ''}`}
-                      className="text-xs text-[#8c6a1a] hover:underline shrink-0">Open →</Link>
-                  </li>
+                    <ul className="divide-y divide-[#f7ecca]">
+                      {grp.rows.map((r) => (
+                        <li key={r.file_id || r.id}
+                          className="px-3 py-2 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate flex items-center gap-2">
+                              {r.filename}
+                              <span
+                                data-testid={`smart-search-match-field-${r.file_id || r.id}`}
+                                className="text-[9px] uppercase tracking-widest font-semibold text-[#8c6a1a] bg-[#fbf3df] border border-[#f0e6c6] rounded px-1.5 py-0.5">
+                                {r.match_field || 'match'}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500 truncate">
+                              {humanSize(r.size)}{r.uploaded_by_name ? ` · uploaded by ${r.uploaded_by_name}` : ''}
+                            </div>
+                          </div>
+                          <Link
+                            to={`/app/document-library/${r.folder?.id || ''}?highlight=${r.file_id || r.id}`}
+                            data-testid={`smart-search-result-${r.file_id || r.id}`}
+                            className="text-xs text-[#8c6a1a] hover:underline shrink-0 font-medium">
+                            Open →
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
         )}
@@ -743,6 +790,8 @@ export default function DocumentLibrary() {
 export function DocumentLibraryFolder() {
   const { folderId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const user = getUser();
   // v58.13.132bf — Migrated from `WRITE_ROLES.has(user?.role)` to the
   // granular `documents.edit` token so the paneltec_civil / viatec_traffic
@@ -756,6 +805,15 @@ export function DocumentLibraryFolder() {
   const [loading, setLoading] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  // v58.13.132gb — Per-folder + subfolder search.
+  const [folderSearchQ, setFolderSearchQ] = useState('');
+  const [folderSearchResults, setFolderSearchResults] = useState(null);
+  const [folderSearchBusy, setFolderSearchBusy] = useState(false);
+  // v58.13.132gb — Highlight target from `?highlight=<file_id>`.
+  // Applied to the matching file row for a 2-second amber pulse
+  // + `scrollIntoView` after load.
+  const highlightFileId = searchParams.get('highlight') || '';
+  const [highlightActive, setHighlightActive] = useState('');
   const [previewFile, setPreviewFile] = useState(null);
   // v58.13.74 — Inline file preview (PDF / image / text). Bypasses
   // Edge's `edge://settings/content/pdfDocuments` "Download PDFs"
@@ -801,6 +859,51 @@ export function DocumentLibraryFolder() {
   }, [folderId]);
 
   useEffect(() => { loadFolder(); loadFiles(); }, [loadFolder, loadFiles]);
+
+  // v58.13.132gb — Debounced per-folder search. When empty, results
+  // are cleared and the full file list shows. Non-empty queries hit
+  // the shared /search endpoint scoped to this folder with
+  // `recursive=true` so files in subfolders (per-worker cert
+  // uploads, supplier docs, etc.) surface too.
+  useEffect(() => {
+    const q = folderSearchQ.trim();
+    if (!q) { setFolderSearchResults(null); return undefined; }
+    let cancelled = false;
+    setFolderSearchBusy(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/document-library/search', {
+          params: { q, folder_id: folderId, recursive: 'true' },
+        });
+        if (!cancelled) setFolderSearchResults(data);
+      } catch (e) {
+        if (!cancelled) toast.error(apiError(e));
+      } finally {
+        if (!cancelled) setFolderSearchBusy(false);
+      }
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [folderSearchQ, folderId]);
+
+  // v58.13.132gb — Highlight flow: when `?highlight=<file_id>` is
+  // present and the file list is loaded AND the target row is in
+  // this folder, scroll to it + apply a 2 s amber pulse via the
+  // `.132gb-highlight-row` class (see index.css keyframes).
+  useEffect(() => {
+    if (!highlightFileId || loading) return undefined;
+    if (!files.some((f) => f.id === highlightFileId)) return undefined;
+    setHighlightActive(highlightFileId);
+    const t1 = setTimeout(() => {
+      const el = document.querySelector(
+        `[data-testid="file-row-${highlightFileId}"]`,
+      );
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 60);
+    const t2 = setTimeout(() => setHighlightActive(''), 2200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [highlightFileId, loading, files, location.key]);
 
   const uploadFiles = async (fileList) => {
     if (!fileList || fileList.length === 0) return;
@@ -993,6 +1096,36 @@ export function DocumentLibraryFolder() {
         )}
       </div>
 
+      {/* v58.13.132gb — Per-folder search. Live-filters the file
+          list below as you type. Recursive against subfolders so
+          per-worker cert uploads / supplier docs surface too. */}
+      <div className="mb-5 flex items-center gap-2"
+        data-testid="folder-search-bar">
+        <div className="relative flex-1 max-w-md ml-auto">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={folderSearchQ}
+            onChange={(e) => setFolderSearchQ(e.target.value)}
+            placeholder="Search this folder (filename, AI tags, uploader)…"
+            data-testid="folder-search-input"
+            className="w-full pl-9 pr-9 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
+          />
+          {folderSearchBusy && (
+            <Loader2 size={14}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 animate-spin"
+              data-testid="folder-search-busy" />
+          )}
+          {folderSearchQ && !folderSearchBusy && (
+            <button type="button"
+              onClick={() => { setFolderSearchQ(''); setFolderSearchResults(null); }}
+              data-testid="folder-search-clear"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {canEdit && (
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -1034,7 +1167,12 @@ export function DocumentLibraryFolder() {
 
       {loading ? (
         <div className="text-sm text-slate-500">Loading files…</div>
-      ) : files.length === 0 ? (
+      ) : folderSearchResults && folderSearchResults.results.length === 0 ? (
+        <EmptyState
+          title="No matches in this folder"
+          body={`Nothing matches "${folderSearchResults.query}" in this folder or its subfolders. Try broader keywords or clear the search.`}
+        />
+      ) : files.length === 0 && !folderSearchResults ? (
         <EmptyState title="This folder is empty"
           body={canEdit
             ? "Upload your first file with the picker above, or paste from your clipboard."
@@ -1055,8 +1193,23 @@ export function DocumentLibraryFolder() {
             <tbody>
               {/* v58.13.52 — Rows now grouped by IMS-NN / ai_tag /
                   mime bucket → "Other". Each group gets a header
-                  row + a 4-px left stripe on every data row. */}
-              {groupFilesForDisplay(files).map(([groupKey, groupFiles]) => {
+                  row + a 4-px left stripe on every data row.
+
+                  v58.13.132gb — When a per-folder search is active,
+                  we render the search results as a single "search"
+                  group instead of the default grouping. Rows still
+                  carry `data-testid="file-row-<id>"` so the highlight
+                  flow scrolls to the right anchor. */}
+              {(folderSearchResults
+                ? [['SEARCH', folderSearchResults.results.map((r) => ({
+                    ...r,
+                    id: r.file_id || r.id,
+                    _search_match_field: r.match_field,
+                    _search_folder_path: r.folder_path,
+                    _search_folder_name: r.folder?.name,
+                  }))]]
+                : groupFilesForDisplay(files)
+              ).map(([groupKey, groupFiles]) => {
                 const palette = resolveGroupPalette({ groupKey, page: 'document-library' });
                 return (
                   <React.Fragment key={`grp-${groupKey}`}>
@@ -1069,14 +1222,18 @@ export function DocumentLibraryFolder() {
                           className="text-[10px] uppercase tracking-[0.16em] font-semibold"
                           style={{ color: palette.text }}
                         >
-                          {groupKey} · {groupFiles.length} {groupFiles.length === 1 ? 'file' : 'files'}
+                          {groupKey === 'SEARCH'
+                            ? `Search results · ${groupFiles.length} match${groupFiles.length === 1 ? '' : 'es'}`
+                            : `${groupKey} · ${groupFiles.length} ${groupFiles.length === 1 ? 'file' : 'files'}`}
                         </span>
                       </td>
                     </tr>
                     {groupFiles.map((f) => (
                       <tr
                         key={f.id}
-                        className="border-t border-slate-100 hover:bg-slate-50"
+                        className={`border-t border-slate-100 hover:bg-slate-50 ${
+                          highlightActive === f.id ? 'g132gb-highlight-row' : ''
+                        }`}
                         data-testid={`file-row-${f.id}`}
                         style={{ borderLeft: `4px solid ${palette.hex}` }}
                       >
@@ -1090,7 +1247,20 @@ export function DocumentLibraryFolder() {
                               data-testid={`file-open-${f.id}`}>
                               {f.filename}
                             </button>
+                            {f._search_match_field && (
+                              <span
+                                data-testid={`file-match-field-${f.id}`}
+                                className="text-[9px] uppercase tracking-widest font-semibold text-[#8c6a1a] bg-[#fbf3df] border border-[#f0e6c6] rounded px-1.5 py-0.5">
+                                {f._search_match_field}
+                              </span>
+                            )}
                           </div>
+                          {f._search_folder_path && f._search_folder_name && f.folder_id !== folderId && (
+                            <div className="text-[11px] text-slate-500 mt-0.5"
+                              data-testid={`file-subfolder-path-${f.id}`}>
+                              in {f._search_folder_path}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{humanSize(f.size)}</td>
                         <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{f.uploaded_by_name || '—'}</td>

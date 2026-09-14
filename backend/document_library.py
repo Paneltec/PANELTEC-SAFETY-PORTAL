@@ -530,37 +530,136 @@ async def download_file(
 @router.get("/search")
 async def search(
     q: str = Query(min_length=1, max_length=120),
+    folder_id: Optional[str] = None,
+    recursive: bool = True,
     user: dict = Depends(require_permission("documents", "view")),
 ):
+    """v58.13.132gb — Document Library search.
+
+    Enhanced from the pre-`.132gb` endpoint:
+      · Adds `folder_id` (optional) + `recursive=true` (default) —
+        restrict search to a folder and its descendants.
+      · Matches uploader name (`uploaded_by_name`) as well as
+        filename + AI tags.
+      · Returns `folder_path` (breadcrumb) + `match_field` for each
+        hit so the UI can annotate the reason a row matched.
+
+    Case-insensitive substring match. Returns up to 60 rows sorted
+    by upload date desc.
+    """
     pattern = re.escape(q.strip())
-    cursor = db.doc_files.find(
-        {
-            "org_id": user["org_id"],
-            "deleted_at": None,
-            "$or": [
-                {"filename": {"$regex": pattern, "$options": "i"}},
-                {"ai_tags": {"$regex": pattern, "$options": "i"}},
-            ],
-        },
-        {"_id": 0},
-    ).sort([("uploaded_at", -1)]).limit(40)
-    files = await cursor.to_list(40)
-    # Attach folder name for context.
+    org_id = user["org_id"]
+    query: dict = {
+        "org_id": org_id,
+        "deleted_at": None,
+        "$or": [
+            {"filename": {"$regex": pattern, "$options": "i"}},
+            {"ai_tags": {"$regex": pattern, "$options": "i"}},
+            {"uploaded_by_name": {"$regex": pattern, "$options": "i"}},
+        ],
+    }
+    # v58.13.132gb — Folder scope with optional recursive descent.
+    # When `folder_id` is provided we resolve every descendant folder
+    # (BFS) so a search from "Alcohol & Drug Screening" also finds
+    # files in a per-worker subfolder inside it.
+    if folder_id:
+        allowed_ids: list = [folder_id]
+        if recursive:
+            frontier: list = [folder_id]
+            visited: set = {folder_id}
+            for _ in range(20):  # depth guard — 20 levels is generous
+                if not frontier:
+                    break
+                cursor = db.doc_folders.find(
+                    {"org_id": org_id,
+                     "parent_folder_id": {"$in": frontier},
+                     "deleted_at": None},
+                    {"_id": 0, "id": 1},
+                )
+                next_frontier: list = []
+                async for fd in cursor:
+                    if fd["id"] in visited:
+                        continue
+                    visited.add(fd["id"])
+                    allowed_ids.append(fd["id"])
+                    next_frontier.append(fd["id"])
+                frontier = next_frontier
+        query["folder_id"] = {"$in": allowed_ids}
+
+    cursor = db.doc_files.find(query, {"_id": 0}).sort(
+        [("uploaded_at", -1)]).limit(60)
+    files = await cursor.to_list(60)
+
+    # Attach folder name + path for context.
     folder_ids = list({f["folder_id"] for f in files})
     folder_map: dict = {}
     if folder_ids:
         async for fd in db.doc_folders.find(
-            {"id": {"$in": folder_ids}, "org_id": user["org_id"]},
-            {"_id": 0, "id": 1, "name": 1, "color_key": 1},
+            {"id": {"$in": folder_ids}, "org_id": org_id},
+            {"_id": 0, "id": 1, "name": 1, "color_key": 1,
+             "parent_folder_id": 1},
         ):
             folder_map[fd["id"]] = fd
+
+    # Build a folder_path (breadcrumb) for each hit — walk parent
+    # links up to a small depth. Cached across hits in the same
+    # response so a big result set doesn't re-walk repeatedly.
+    path_cache: dict = {}
+
+    async def _folder_path(fid: Optional[str]) -> str:
+        if not fid:
+            return ""
+        if fid in path_cache:
+            return path_cache[fid]
+        parts: list = []
+        cur = folder_map.get(fid)
+        seen: set = set()
+        while cur and cur["id"] not in seen and len(parts) < 8:
+            seen.add(cur["id"])
+            parts.append(cur["name"])
+            parent_id = cur.get("parent_folder_id")
+            if not parent_id:
+                break
+            cur = folder_map.get(parent_id)
+            if not cur:
+                nxt = await db.doc_folders.find_one(
+                    {"id": parent_id, "org_id": org_id},
+                    {"_id": 0, "id": 1, "name": 1,
+                     "parent_folder_id": 1, "color_key": 1},
+                )
+                if nxt:
+                    folder_map[parent_id] = nxt
+                    cur = nxt
+                else:
+                    cur = None
+        path = " / ".join(reversed(parts))
+        path_cache[fid] = path
+        return path
+
+    def _match_field(doc: dict) -> str:
+        needle = q.strip().lower()
+        fname = (doc.get("filename") or "").lower()
+        if needle in fname:
+            return "filename"
+        for t in (doc.get("ai_tags") or []):
+            if needle in (t or "").lower():
+                return "tags"
+        uploader = (doc.get("uploaded_by_name") or "").lower()
+        if needle in uploader:
+            return "uploader"
+        return "filename"
+
     results = []
     for f in files:
         results.append({
             **_serialise_file(f),
+            "file_id": f["id"],
             "folder": folder_map.get(f["folder_id"]),
+            "folder_path": await _folder_path(f["folder_id"]),
+            "match_field": _match_field(f),
         })
-    return {"query": q, "count": len(results), "results": results}
+    return {"query": q, "count": len(results), "results": results,
+              "folder_id": folder_id, "recursive": bool(recursive)}
 
 
 
