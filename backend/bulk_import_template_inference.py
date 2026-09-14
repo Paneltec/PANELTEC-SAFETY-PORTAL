@@ -231,6 +231,31 @@ def resolve_against_roster(
 
 # Keyword rules — order matters (earlier = stronger).
 _CATEGORY_KEYWORDS: tuple[tuple[str, str], ...] = (
+    # v58.13.132fz — Legacy template matcher additions. These four
+    # asset/task-specific template names come in from the Simpro ZIP
+    # importer and the `list_forms` roster and would otherwise get
+    # a coarser classification from the generic keywords below:
+    #   · "Excavator Pre-Start"  — would match "pre-start" → pre_start
+    #     but is a piece of plant, so it belongs in plant_pre_start
+    #     to match the .132be plant-hours grouping.
+    #   · "Trailer Pre-Start"    — same story, plant not personnel.
+    #   · "Drain Cleaning SSRA"  — bare "ssra" still maps to `hazard`
+    #     for backward-compat, but the .132dz/.132eb ships established
+    #     the canonical destination for SSRAs is `risk_assessment`.
+    #     Pinning this specific legacy name early routes it correctly
+    #     without disturbing the existing "ssra" → "hazard" rule that
+    #     downstream `form_routing_rules` overrides handle on the
+    #     write path.
+    #   · "Excavation Permit"    — already covered by the generic
+    #     "permit" line below (both map to `permit`), but promoting it
+    #     to a dedicated legacy match here makes the reclassification
+    #     audit unambiguous.
+    ("excavator pre-start", "plant_pre_start"),
+    ("excavator pre start", "plant_pre_start"),
+    ("trailer pre-start", "plant_pre_start"),
+    ("trailer pre start", "plant_pre_start"),
+    ("drain cleaning ssra", "risk_assessment"),
+    ("excavation permit", "permit"),
     ("ssra", "hazard"),
     ("safe work method statement", "swms"),
     ("swms", "swms"),
