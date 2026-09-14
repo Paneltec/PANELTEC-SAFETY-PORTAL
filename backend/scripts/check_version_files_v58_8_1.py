@@ -43,7 +43,7 @@ FILES = [
     (REPO / "mobile/src/lib/version.ts",
      r"^export const MOBILE_BUNDLE_VERSION\s*=\s*'([^']+)'", "mobile"),
 ]
-VERSION_SHAPE = re.compile(r"^paneltec-v\d+\.\d+\.\d+\.\d+(?:\.\d+[a-z]*)*$")
+VERSION_SHAPE = re.compile(r"^paneltec-v\d+\.\d+\.\d+\.\d+(?:\.\d+(?:[a-z]+\d*)*)*$")
 
 MOBILE_OPTIONAL = os.environ.get("MOBILE_VERSION_SYNC_OPTIONAL", "").lower() in ("1", "true", "yes")
 

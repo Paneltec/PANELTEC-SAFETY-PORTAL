@@ -6,8 +6,10 @@ matches them against `form_templates`, extracts fields via the shared
 `extract_fields_from_parsed` helper, and inserts one `form_submissions`
 row per PDF flagged as `imported: true, source: "user_import"`.
 
-Idempotency: content-hash + filename check against existing imports.
-Duplicate uploads return 409 with the existing submission id — never a
+Idempotency: content fingerprint (sha256 + size + first-512-byte
+sha256) against existing imports. Filename plays no role — an
+admin can rename a duplicate PDF and it's still detected. Duplicate
+uploads return 409 with the existing submission id — never a
 new duplicate row.
 """
 from __future__ import annotations
@@ -109,11 +111,36 @@ async def import_pdf(
 
     org_id = user["org_id"]
     sha = hashlib.sha256(data).hexdigest()
+    # v58.13.132g0 — Duplicate detection tightening.
+    #
+    # Pre-.132g0 the dedupe key was `filename OR sha256`, which fired
+    # false positives whenever an admin re-uploaded a genuinely new
+    # PDF that happened to reuse an earlier filename (Simpro exports
+    # collide on "Pre-Start.pdf" all day long). Now we use a proper
+    # content fingerprint: `sha256(all)` PLUS `size` PLUS
+    # `sha256(head_512)`. All three must agree for a row to count as
+    # a duplicate — filename plays no role. The head-hash + size are
+    # belt-and-braces against the astronomically-improbable sha256
+    # collision on the full payload; they cost microseconds to
+    # compute and make the audit story unambiguous.
+    file_size = len(data)
+    head_sha = hashlib.sha256(data[:512]).hexdigest()
 
-    # Idempotency — same filename or same content hash for this org.
+    # Idempotency — proper content fingerprint match. Legacy rows
+    # (pre-.132g0) carry `import_sha256` only; the sha check alone
+    # is authoritative for those, so we deliberately keep the query
+    # tolerant to missing size / head fields via `$in [value, null,
+    # missing]` semantics: we look for a sha match FIRST, then
+    # confirm size + head agree if the row carries them.
     existing = await db.form_submissions.find_one(
         {"org_id": org_id, "imported": True, "deleted_at": None,
-         "$or": [{"imported_from_pdf": filename}, {"import_sha256": sha}]},
+         "import_sha256": sha,
+         "$and": [
+             {"$or": [{"import_file_size": file_size},
+                      {"import_file_size": {"$exists": False}}]},
+             {"$or": [{"import_head_sha256": head_sha},
+                      {"import_head_sha256": {"$exists": False}}]},
+         ]},
         {"_id": 0, "id": 1, "template_id": 1, "template_name_snapshot": 1},
     )
     if existing:
@@ -174,6 +201,10 @@ async def import_pdf(
             "imported_at": now,
             "imported_by": user["id"],
             "import_sha256": sha,
+            # v58.13.132g0 — content-fingerprint fields for
+            # duplicate detection tightening.
+            "import_file_size": file_size,
+            "import_head_sha256": head_sha,
             "deep_parsed": True,
             "deep_parsed_at": now,
             "deep_parse_stats": {"populated": populated, "total": len(matched.get("fields") or []),
