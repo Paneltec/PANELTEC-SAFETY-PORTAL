@@ -1290,7 +1290,13 @@
 // v58.13.132bo — CACHE bumped so the Fuel Reporting page reloads
 // with the new leaderboard row click-through + SmartFill card
 // drill-down drawer wiring.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.132fm';
+// v58.13.132fn — CACHE bumped as forced eviction after Stephen's
+// "cannot edit worker profile" report failed to reproduce end-to-end
+// in Playwright + curl on the live preview. Bumping CACHE_VERSION
+// ensures any stale bundle still sitting in his ServiceWorker's
+// static cache is discarded on next visit. Ship memo:
+// v58_13_132fn_worker_edit_permission_fix_shipped_finish_deferred.md
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.132fn';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
