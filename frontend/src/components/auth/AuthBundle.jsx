@@ -105,12 +105,18 @@ export function ChangePasswordModal({ open, onClose, locked = false, onChanged }
             <label className="block text-xs font-semibold text-slate-600">Current password</label>
             <input type="password" value={cur} onChange={(e) => setCur(e.target.value)}
               autoFocus required data-testid="pw-current"
+              name="current-password"
+              autoComplete="current-password"
+              spellCheck={false}
               className="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-600">New password</label>
             <input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
               required data-testid="pw-new"
+              name="new-password-self"
+              autoComplete="new-password"
+              spellCheck={false}
               className="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400" />
             <StrengthBar value={pw} />
           </div>
@@ -118,6 +124,9 @@ export function ChangePasswordModal({ open, onClose, locked = false, onChanged }
             <label className="block text-xs font-semibold text-slate-600">Confirm</label>
             <input type="password" value={cf} onChange={(e) => setCf(e.target.value)}
               required data-testid="pw-confirm"
+              name="new-password-self-confirm"
+              autoComplete="new-password"
+              spellCheck={false}
               className="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400" />
           </div>
           <DialogFooter>

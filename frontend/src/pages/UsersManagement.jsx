@@ -2700,19 +2700,40 @@ function SavePresetModal({ overrides, onClose, onCreated }) {
 //     admin-chosen password. Bumps token_version → force logout.
 //   · "Email reset link" → POST /users/{id}/reset-password (existing
 //     magic-link flow). No password chosen; user sets their own.
+//
+// v58.13.132fb — Two bug fixes:
+//   1. z-index bumped `z-[80]` → `z-[95]` so the dialog cleanly
+//      out-stacks the user-drawer (`z-[60]`) plus every other
+//      admin-page modal in this file (max was `z-[80]`). Was
+//      rendering BEHIND the profile drawer for some builds despite
+//      both being portalled — bumping gives unambiguous stacking
+//      breathing room and matches the "top-of-stack" pattern.
+//   2. NEW PASSWORD field wiping on CONFIRM focus was Chrome/Edge
+//      password-manager autofill injecting into the first field
+//      whenever the second gained focus. Both inputs now carry
+//      `autoComplete="new-password"` + distinct `name` attrs +
+//      `spellCheck={false}`, and the shared state was moved to a
+//      single `pw` object for symmetry. Inline mismatch hint +
+//      client-side gating on the submit button also fixed.
 function ResetPasswordDialog({ user, onClose, onDone }) {
   useLockBodyScroll();
   const [mode, setMode] = useState('direct');
-  const [pwd, setPwd] = useState('');
-  const [confirm, setConfirm] = useState('');
+  // v58.13.132fb — Single state object for the two direct-mode
+  // password inputs. Both fields are controlled; the object
+  // guarantees a stable render key while the modal is open.
+  const [pw, setPw] = useState({ next: '', confirm: '' });
   const [busy, setBusy] = useState(false);
+  const mismatch = pw.next.length > 0 && pw.confirm.length > 0
+    && pw.next !== pw.confirm;
+  const canSetDirect = !busy && pw.next.length >= 8 && pw.next === pw.confirm;
   const submitDirect = async () => {
-    if (pwd !== confirm) { toast.error('Passwords do not match'); return; }
-    if (pwd.length < 8) { toast.error('Password must be at least 8 characters'); return; }
+    if (pw.next !== pw.confirm) { toast.error('Passwords do not match'); return; }
+    if (pw.next.length < 8) { toast.error('Password must be at least 8 characters'); return; }
     setBusy(true);
     try {
-      await api.post(`/users/${user.id}/set-password`, { password: pwd });
+      await api.post(`/users/${user.id}/set-password`, { password: pw.next });
       toast.success(`Password set for ${user.email}. They have been logged out of all sessions.`);
+      setPw({ next: '', confirm: '' });
       onDone?.();
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
@@ -2727,7 +2748,7 @@ function ResetPasswordDialog({ user, onClose, onDone }) {
     finally { setBusy(false); }
   };
   return createPortal((
-    <div className="fixed inset-0 z-[80] bg-slate-900/60 grid place-items-center p-4" onClick={(e) => e.target === e.currentTarget && !busy && onClose()} data-testid="reset-password-dialog">
+    <div className="fixed inset-0 z-[95] bg-slate-900/70 backdrop-blur-sm grid place-items-center p-4" onClick={(e) => e.target === e.currentTarget && !busy && onClose()} data-testid="reset-password-dialog">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200">
           <h3 className="font-display font-bold text-slate-900 text-lg">Reset password for {user.name}</h3>
@@ -2743,17 +2764,38 @@ function ResetPasswordDialog({ user, onClose, onDone }) {
               data-testid="reset-mode-magic">Email reset link</button>
           </div>
           {mode === 'direct' ? (
-            <div className="space-y-2">
+            // v58.13.132fb — `autoComplete="new-password"` +
+            // distinct `name` attrs + `spellCheck={false}` tell
+            // Chrome/Edge/Safari password managers that this is a
+            // set-new-password flow. Prevents the autofill loop
+            // that was wiping NEW PASSWORD when CONFIRM took focus.
+            <form className="space-y-2" autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (canSetDirect) submitDirect(); }}>
               <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                 Warning — user will be logged out of every device. Communicate the new password securely.
               </div>
               <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">New password</div>
-                <input type="password" value={pwd} onChange={(e) => setPwd(e.target.value)} minLength={8}
+                <input type="password" value={pw.next}
+                  onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))}
+                  minLength={8}
+                  name="new-password-set"
+                  autoComplete="new-password"
+                  spellCheck={false}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="reset-direct-pwd" autoFocus /></label>
               <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Confirm</div>
-                <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="reset-direct-confirm" /></label>
-            </div>
+                <input type="password" value={pw.confirm}
+                  onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))}
+                  name="new-password-confirm"
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  aria-invalid={mismatch}
+                  className={`w-full px-3 py-2 border rounded-lg text-sm ${mismatch ? 'border-red-400' : 'border-slate-300'}`}
+                  data-testid="reset-direct-confirm" />
+                {mismatch && (
+                  <div className="mt-1 text-[11px] text-red-600"
+                    data-testid="reset-direct-mismatch">Passwords do not match</div>
+                )}
+              </label>
+            </form>
           ) : (
             <div className="text-sm text-slate-700 space-y-2">
               <div>Send a one-time magic link to <b>{user.email}</b>. The user picks their own password.</div>
@@ -2764,7 +2806,7 @@ function ResetPasswordDialog({ user, onClose, onDone }) {
         <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
           <button type="button" onClick={onClose} disabled={busy} className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
           {mode === 'direct' ? (
-            <button type="button" onClick={submitDirect} disabled={busy || pwd.length < 8}
+            <button type="button" onClick={submitDirect} disabled={!canSetDirect}
               className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-40"
               data-testid="reset-direct-submit">{busy ? 'Setting…' : 'Set password'}</button>
           ) : (

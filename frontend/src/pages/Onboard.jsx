@@ -92,11 +92,17 @@ export function PasswordPanel({ flavour, token }) {
       <label className="block text-xs font-semibold text-slate-600">New password</label>
       <input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
         data-testid="pw-new" autoFocus
+        name="new-password-onboard"
+        autoComplete="new-password"
+        spellCheck={false}
         className="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400" />
       <StrengthMeter value={pw} />
       <label className="block text-xs font-semibold text-slate-600 mt-4">Confirm password</label>
       <input type="password" value={cf} onChange={(e) => setCf(e.target.value)}
         data-testid="pw-confirm"
+        name="new-password-onboard-confirm"
+        autoComplete="new-password"
+        spellCheck={false}
         className="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400" />
       <button type="submit" disabled={busy} data-testid={`${flavour}-submit`}
         className="w-full mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-sm font-semibold py-2.5">
