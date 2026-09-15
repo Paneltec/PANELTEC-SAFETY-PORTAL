@@ -251,7 +251,14 @@ export default function DocumentLibrary() {
   const [busy, setBusy] = useState(false);
   // v159.4 — bulk-restrict modal state (Doc Library admin action).
   const [restrictOpen, setRestrictOpen] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // v58.13.132gp — Was `confirmDeleteId` (string), which forced the
+  // modal to look up the folder via `folders.find(...)` on every
+  // render. Combined with the `.132gl-a` optimistic `setFolders`
+  // that path had the modal receive `target=undefined` mid-flight
+  // and crash when the confirm button's closure de-referenced it.
+  // Store the folder object directly — the modal can read it without
+  // touching state.
+  const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
 
   // Smart Search state
   const [searchQ, setSearchQ] = useState('');
@@ -372,22 +379,19 @@ export default function DocumentLibrary() {
 
   const deleteFolder = async (f) => {
     if (!f?.id) return;
-    // v58.13.132gl-a — Optimistic UI. Some users reported the modal
-    // closing but the folder staying visible; that was a stale
-    // service-worker cache returning the pre-delete list. Remove the
-    // row from state first so the confirm feels instant, then let
-    // `load()` reconcile with the server.
-    setFolders((prev) => prev.filter((x) => x.id !== f.id));
+    // v58.13.132gp — Reverted the `.132gl-a` optimistic setFolders.
+    // The cache-bust in `.132gk` closed the original "delete does
+    // nothing" symptom; the optimistic mutation left the confirm
+    // modal (which resolved its target via `folders.find`) pointing
+    // at nothing mid-await and crashed the app on confirm. Now:
+    // close modal → API → toast → reload.
     try {
       await api.delete(`/document-library/folders/${f.id}`);
+      setConfirmDeleteTarget(null);
       toast.success(`"${f.name}" deleted`);
-      setConfirmDeleteId(null);
       await load();
     } catch (e) {
       toast.error(apiError(e));
-      // Rollback — reload state so the deleted-locally row reappears
-      // if the server rejected the request.
-      await load();
     }
   };
 
@@ -649,7 +653,7 @@ export default function DocumentLibrary() {
                     {f.file_count} {f.file_count === 1 ? 'file' : 'files'}
                   </div>
                 </button>
-                {canEdit && !f.is_system && confirmDeleteId !== f.id && (
+                {canEdit && !f.is_system && confirmDeleteTarget?.id !== f.id && (
                   <div className="hidden group-hover:flex absolute top-1.5 right-1.5 gap-0.5 z-10" data-testid={`folder-actions-${f.id}`}>
                     {/* v160.3.7o — recolour swatch: click to open the palette picker,
                         pick a new group and the tile re-tints instantly.
@@ -675,7 +679,7 @@ export default function DocumentLibrary() {
                       <Pencil />
                     </button>
                     {canDeleteFolder && (
-                      <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(f.id); }} data-testid={`folder-delete-btn-${f.id}`}
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteTarget(f); }} data-testid={`folder-delete-btn-${f.id}`}
                         title="Delete"
                         className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-brand-red hover:bg-white">
                         <X size={11} />
@@ -736,15 +740,21 @@ export default function DocumentLibrary() {
           instead of deleting. This modal has a full backdrop and a
           large explicit "Delete folder" button, and shows the
           file count so the user knows what's being cascaded. */}
-      {confirmDeleteId && (() => {
-        const target = folders.find((x) => x.id === confirmDeleteId);
-        if (!target) return null;
+      {confirmDeleteTarget && (() => {
+        // v58.13.132gp — Read the folder from state directly (not via
+        // `folders.find`) so the modal never renders a null target
+        // after an optimistic list mutation. Guards against a stale
+        // reference by walking `folders` for the freshest counts —
+        // falls back to the captured object when the row has already
+        // been removed from `folders` by an in-flight refresh.
+        const fresh = folders.find((x) => x.id === confirmDeleteTarget.id);
+        const target = fresh || confirmDeleteTarget;
         const fc = target.file_count || 0;
         const sc = target.subfolder_count || 0;
         return (
           <div
             className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4"
-            onClick={() => setConfirmDeleteId(null)}
+            onClick={() => setConfirmDeleteTarget(null)}
             data-testid="folder-delete-modal"
           >
             <div
@@ -780,7 +790,7 @@ export default function DocumentLibrary() {
               </div>
               <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => setConfirmDeleteId(null)}
+                  onClick={() => setConfirmDeleteTarget(null)}
                   data-testid="folder-delete-modal-cancel"
                   className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >Cancel</button>
