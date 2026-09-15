@@ -431,8 +431,17 @@ async def list_roles(user: dict = Depends(require_roles("admin"))):
     v58.4 — response now includes `user_count` on each row (a single
     aggregation query, not N per-role queries) so the UI can sort /
     filter by "in use" without extra round-trips.
+
+    v58.13.132go — Exclude soft-deleted rows. The DELETE endpoint
+    sets `is_active=False` + `deleted_at=<ts>` (line 685) but the
+    list wasn't filtering either, so admins clicking the trash icon
+    saw the row reappear after the refetch — visible as a "delete
+    does nothing" bug on the Custom Roles admin page.
     """
-    docs = await db.roles.find({}, {"_id": 0}).sort("role_id", 1).to_list(200)
+    docs = await db.roles.find(
+        {"$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]},
+        {"_id": 0},
+    ).sort("role_id", 1).to_list(200)
 
     # One-shot pass: for each user pick the FIRST non-null of
     # (role_id, role) and increment the running count. `break` after
