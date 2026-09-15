@@ -140,6 +140,9 @@ const NAV = [
     // v58.13.120c — Fleet & Service Register. Sole survivor entry
     // for the fleet/plant/service surface.
     { to: '/app/fleet', label: 'Fleet & Service Register', icon: VehicleTruck24Regular, iconActive: VehicleTruck24Filled, testid: 'nav-fleet', resource: 'assets', pastel: 'violet' },
+    // v58.13.132gl-b — Equipment Register (gas monitors, test gauges,
+    // calibration certs with expiry tracking).
+    { to: '/app/equipment', label: 'Equipment Register', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-equipment', pastel: 'butter' },
     { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', requiresCan: ['sites', 'edit'], pastel: 'lavender' },
     // v58.13.132ab — admin-only screen to assign a mobile daily job.
     { to: '/app/mobile/assign-daily-jobs', label: 'Ad-hoc Jobs', icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-assign-daily-jobs', requiresCan: ['users', 'edit'], pastel: 'coral' },

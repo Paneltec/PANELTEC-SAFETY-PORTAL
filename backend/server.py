@@ -621,6 +621,9 @@ api.include_router(admin_purge_router)
 # GridFS sweep in `scripts/migrate_ephemeral_to_gridfs.py`.
 from admin_missing_files import router as admin_missing_files_router  # noqa: E402
 api.include_router(admin_missing_files_router)
+# v58.13.132gl-b — Equipment Register admin CRUD.
+from equipment_register import router as equipment_register_router  # noqa: E402
+api.include_router(equipment_register_router)
 # Phase 3.21 — Session history audit log (30d retention).
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
 api.include_router(session_history_router)
