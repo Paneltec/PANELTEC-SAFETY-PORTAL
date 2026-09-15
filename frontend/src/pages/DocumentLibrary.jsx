@@ -11,6 +11,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, ShieldOff, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
+import useClipboardPaste from '../lib/useClipboardPaste';
 import { getToken, getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import { stashInlinePdf } from '../lib/pdfStash';
@@ -946,36 +947,12 @@ export function DocumentLibraryFolder() {
     if (e.dataTransfer.files?.length) uploadFiles(Array.from(e.dataTransfer.files));
   };
 
-  // Clipboard paste handler — paste any file (image screenshots, files copied
-  // from Finder/Explorer) and upload them straight to this folder.
-  useEffect(() => {
-    if (!canEdit) return;
-    const onPaste = (e) => {
-      const items = Array.from(e.clipboardData?.items || []);
-      const pasted = [];
-      for (const it of items) {
-        if (it.kind === 'file') {
-          const file = it.getAsFile();
-          if (!file) continue;
-          // Re-name pasted clipboard images (which arrive as "image.png") to a
-          // unique timestamped name so they don't all collide.
-          if (file.name === 'image.png' || /^image\.\w+$/i.test(file.name)) {
-            const ext = (file.type || 'image/png').split('/')[1] || 'png';
-            const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            pasted.push(new File([file], `Pasted-image-${stamp}.${ext}`, { type: file.type }));
-          } else {
-            pasted.push(file);
-          }
-        }
-      }
-      if (pasted.length) {
-        e.preventDefault();
-        uploadFiles(pasted);
-      }
-    };
-    window.addEventListener('paste', onPaste);
-    return () => window.removeEventListener('paste', onPaste);
-  }, [folderId, canEdit]);
+  // v58.13.132gm — Extracted to the shared `useClipboardPaste` hook so
+  // the Equipment Register modal and Worker "Private & Confidential"
+  // panel share the exact same UX. Behaviour is identical (image.png
+  // → `Pasted-image-<iso>.png`, only fires on real File clipboard
+  // items), so this stays a straight drop-in.
+  useClipboardPaste(uploadFiles, canEdit, [folderId, canEdit]);
 
   const saveRename = async () => {
     if (!renameValue.trim()) return;

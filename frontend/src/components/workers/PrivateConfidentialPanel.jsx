@@ -12,10 +12,11 @@
  * gate here beyond the backend's admin+hr_lead check.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Lock, UploadCloud, Loader2, Download, Trash2, Save, FileText, X } from 'lucide-react';
+import { Lock, UploadCloud, Loader2, Download, Trash2, Save, FileText, X, Clipboard } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
+import useClipboardPaste from '../../lib/useClipboardPaste';
 
 const MAX_MB = 50;
 
@@ -71,6 +72,9 @@ export default function PrivateConfidentialPanel({ workerId }) {
     upload(e.dataTransfer?.files || []);
   };
 
+  // v58.13.132gm — Paste screenshots / files directly into the panel.
+  useClipboardPaste(upload, !!workerId, [workerId]);
+
   const saveNotes = async () => {
     if (!editingNotes) return;
     try {
@@ -124,7 +128,10 @@ export default function PrivateConfidentialPanel({ workerId }) {
           }`}>
           <UploadCloud size={22} className="mx-auto text-rose-700 mb-1.5" />
           <div className="text-sm font-medium text-rose-800">
-            {uploading ? 'Uploading…' : 'Drop private files here (creates a new row)'}
+            {uploading ? 'Uploading…' : 'Drop files, click to browse, or paste (Ctrl/Cmd+V)'}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center justify-center gap-1">
+            <Clipboard size={10} /> Screenshots welcome — pasted images auto-named with a timestamp.
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
             PDF, image, DOCX, XLSX, TXT, CSV — up to {MAX_MB} MB per file.

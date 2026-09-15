@@ -12,9 +12,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
+import useClipboardPaste from '@/lib/useClipboardPaste';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Plus, Pencil, Trash2, Upload, FileText, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, Upload, FileText, AlertTriangle, RefreshCw, Clipboard } from 'lucide-react';
 
 function daysUntil(iso) {
   if (!iso) return null;
@@ -36,7 +37,7 @@ const CATEGORIES = [
   'Multimeter', 'Insulation tester', 'Traffic-management sign', 'Other',
 ];
 
-function EquipmentModal({ initial, onClose, onSaved }) {
+function EquipmentModal({ initial, onClose, onSaved, onCertsChanged }) {
   const isEdit = !!initial?.id;
   const [form, setForm] = useState({
     name: initial?.name || '',
@@ -47,6 +48,30 @@ function EquipmentModal({ initial, onClose, onSaved }) {
     notes: initial?.notes || '',
   });
   const [busy, setBusy] = useState(false);
+  const [pasteBusy, setPasteBusy] = useState(false);
+
+  // v58.13.132gm — Clipboard paste for cert files. Only enabled when
+  // editing an existing row (need an `id` to POST against). For new
+  // rows we surface a hint that says "save first, then paste certs".
+  const uploadPasted = useCallback(async (files) => {
+    if (!isEdit || !initial?.id) return;
+    setPasteBusy(true);
+    try {
+      for (const f of files) {
+        const fd = new FormData();
+        fd.append('file', f, f.name);
+        // eslint-disable-next-line no-await-in-loop
+        await api.post(`/equipment/${initial.id}/certs`, fd,
+          { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success(`Cert added from clipboard · ${f.name}`);
+      }
+      onCertsChanged?.();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setPasteBusy(false); }
+  }, [isEdit, initial?.id, onCertsChanged]);
+
+  useClipboardPaste(uploadPasted, isEdit, [initial?.id]);
 
   const save = async () => {
     if (!form.name.trim()) {
@@ -103,6 +128,26 @@ function EquipmentModal({ initial, onClose, onSaved }) {
             <span className="block mb-1 font-medium">Notes</span>
             <textarea rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" data-testid="equipment-notes-input" />
           </label>
+        </div>
+        {/* v58.13.132gm — Clipboard paste hint. Shown only in Edit mode
+            because paste-upload POSTs against an existing eid. */}
+        <div
+          className={`mt-4 rounded-lg border border-dashed px-3 py-2.5 text-xs flex items-start gap-2 ${
+            isEdit ? 'border-slate-300 bg-slate-50 text-slate-600' : 'border-slate-200 bg-slate-50/50 text-slate-400'
+          }`}
+          data-testid="equipment-paste-hint"
+        >
+          <Clipboard size={14} className="mt-0.5 shrink-0" />
+          <div>
+            {isEdit ? (
+              <>
+                <b>Paste (Ctrl/Cmd&nbsp;+&nbsp;V)</b> a screenshot or file here to attach it as a calibration cert.
+                {pasteBusy && <span className="ml-2 inline-flex items-center gap-1 text-brand-blue"><Loader2 size={11} className="animate-spin" /> Uploading…</span>}
+              </>
+            ) : (
+              <>Save this equipment first, then reopen to paste calibration certs directly.</>
+            )}
+          </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -313,7 +358,7 @@ export default function EquipmentRegister() {
       )}
 
       {modal && (
-        <EquipmentModal initial={modal.id ? modal : null} onClose={() => setModal(null)} onSaved={load} />
+        <EquipmentModal initial={modal.id ? modal : null} onClose={() => setModal(null)} onSaved={load} onCertsChanged={load} />
       )}
       <input ref={uploadInputRef} type="file" className="hidden" onChange={onFilePicked} data-testid="equipment-cert-file-input" />
     </div>
