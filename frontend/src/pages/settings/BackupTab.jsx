@@ -134,8 +134,45 @@ export default function BackupTab() {
     setBusy(true);
     setError("");
     try {
-      await api.post(`${API}/snapshots`, {}, { headers: authHdr() });
+      // v58.13.132gr — Backend now returns immediately with
+      // `queued_id` (a placeholder row in `bk_snapshots`); the
+      // real snapshot lands in the background 30–90 s later. Poll
+      // the snapshots list until the placeholder disappears (real
+      // row present) OR flips to `status: "failed"` OR 3-min timeout.
+      const r = await api.post(`${API}/snapshots`, {}, { headers: authHdr() });
+      const body = r?.data || {};
+      const watchId = body.queued_id || body.existing_queued_id;
       await refresh();
+      if (!watchId) {
+        // Old-shape response or no placeholder — fall back to a
+        // single refresh so the button doesn't stay stuck. Older
+        // pods that haven't rolled `.132gr` still work.
+        return;
+      }
+      const deadline = Date.now() + 3 * 60 * 1000;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (Date.now() > deadline) {
+          setError("Backup didn't complete in 3 minutes — check the ops log.");
+          break;
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((res) => setTimeout(res, 5000));
+        // eslint-disable-next-line no-await-in-loop
+        const list = await api.get(`${API}/snapshots`, { headers: authHdr() });
+        const rows = Array.isArray(list?.data) ? list.data : (list?.data?.snapshots || []);
+        const watched = rows.find((s) => s.id === watchId);
+        if (!watched) {
+          // Placeholder was deleted → real snapshot completed.
+          // eslint-disable-next-line no-await-in-loop
+          await refresh();
+          break;
+        }
+        if (watched.status === "failed") {
+          setError(`Backup failed: ${watched.error || "check the ops log"}.`);
+          break;
+        }
+      }
     } catch (e) {
       setError(e?.response?.data?.detail || e.message);
     } finally {

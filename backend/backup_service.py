@@ -889,15 +889,57 @@ def install(app, db, require_admin):
     # requests handled by the same worker.
     app.state.bk_snapshot_running = False
 
-    async def _guarded_snapshot():
+    async def _guarded_snapshot(placeholder_id: str | None = None):
         if getattr(app.state, "bk_snapshot_running", False):
             return
         app.state.bk_snapshot_running = True
+        import logging as _logging
+        _log = _logging.getLogger("backup")
+        # v58.13.132gr — Retry loop for transient
+        # `pymongo.errors.AutoReconnect: [Errno 104] Connection reset
+        # by peer` errors mid-snapshot. Observed on 300+ MB dumps
+        # against the local Mongo when the network briefly hiccups
+        # partway through the streaming write. Up to 3 attempts with
+        # a 5 s backoff — subsequent attempts run against a fresh
+        # Motor client (Motor auto-reconnects on the next await).
+        last_err: Exception | None = None
+        for attempt in range(3):
+            try:
+                await _do_snapshot()
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                _log.warning(
+                    "background snapshot attempt %d failed: %s",
+                    attempt + 1, e,
+                )
+                if attempt < 2:
+                    import asyncio as _asyncio
+                    await _asyncio.sleep(5)
         try:
-            await _do_snapshot()
-        except Exception as e:  # pragma: no cover — logged for the ops trail
-            import logging
-            logging.getLogger("backup").exception("background snapshot failed: %s", e)
+            if last_err is None and placeholder_id:
+                # Success — drop the placeholder row so the UI shows
+                # only the ready snapshot on its next poll.
+                try:
+                    await db.bk_snapshots.delete_one({"id": placeholder_id})
+                except Exception:
+                    pass
+            elif last_err is not None:
+                _log.exception(
+                    "background snapshot failed after 3 attempts: %s",
+                    last_err,
+                )
+                if placeholder_id:
+                    try:
+                        await db.bk_snapshots.update_one(
+                            {"id": placeholder_id},
+                            {"$set": {"status": "failed",
+                                      "error": str(last_err)[:500],
+                                      "failed_at": _now_iso()}},
+                        )
+                    except Exception:
+                        pass
         finally:
             app.state.bk_snapshot_running = False
 
@@ -908,18 +950,57 @@ def install(app, db, require_admin):
         v58.13.132gq — Previously ran inline (~30–90s for a 300 MB
         pod), which timed out the Cloudflare ingress at 30s and
         surfaced to Stephen as `HTTP 502` on the Backup tab. Now we
-        return `202 Accepted` immediately; the manifest row appears
-        in `GET /snapshots` once the writer finishes. The
+        return immediately; the manifest row appears in
+        `GET /snapshots` once the writer finishes. The
         `app.state.bk_snapshot_running` guard prevents parallel runs.
+
+        v58.13.132gr — Insert a `status: 'queued'` placeholder row in
+        `bk_snapshots` at click time so the UI can render the
+        in-progress state immediately (before the writer finishes
+        ~30–60 s later). `_guarded_snapshot` deletes the placeholder
+        when the real snapshot lands or flips it to `status: 'failed'`
+        if the writer errors out. Placeholder ids are returned to the
+        FE so a poller can watch the specific snapshot instead of
+        just "any new row".
         """
         if getattr(app.state, "bk_snapshot_running", False):
+            # Return the currently-running placeholder if one is on
+            # disk so the FE can watch it instead of firing blind.
+            existing = await db.bk_snapshots.find_one(
+                {"status": "queued"},
+                sort=[("created_at", -1)],
+                projection={"_id": 0, "id": 1, "created_at": 1},
+            )
             return {"ok": True, "queued": False,
+                    "existing_queued_id": (existing or {}).get("id"),
                     "message": "A snapshot is already running — check "
                                "the snapshots list in ~30 seconds."}
-        bg.add_task(_guarded_snapshot)
+
+        import uuid as _uuid
+        placeholder_id = str(_uuid.uuid4())
+        now = _now_iso()
+        try:
+            await db.bk_snapshots.insert_one({
+                "id": placeholder_id,
+                "created_at": now,
+                "queued_at": now,
+                "status": "queued",
+                "size": 0,
+                "total_documents": 0,
+                "collections": [],
+                "gridfs_id": None,
+            })
+        except Exception:
+            # If the placeholder write fails, still queue the
+            # background task — the user will just miss the
+            # in-progress row and see the final ready row appear.
+            placeholder_id = None
+
+        bg.add_task(_guarded_snapshot, placeholder_id)
         return {"ok": True, "queued": True,
+                "queued_id": placeholder_id,
                 "message": "Snapshot queued — refresh the snapshots list "
-                           "in ~30 seconds."}
+                           "in ~60 seconds."}
 
     # Exposed for the scheduler (server.py) to call directly so the
     # daily auto-snapshot doesn't need a fake HTTP request + admin
@@ -1273,8 +1354,10 @@ def install(app, db, require_admin):
             media_type="application/zip",
             headers={
                 "Content-Disposition": f'attachment; filename="paneltec-snapshot-{snap_id}.zip"',
-                "X-Snapshot-SHA256": snap["sha256"],
-                "Content-Length": str(snap["size"]),
+                # v58.13.132gr — Guard legacy rows that predate the
+                # sha256/size fields.
+                "X-Snapshot-SHA256": snap.get("sha256") or "",
+                "Content-Length": str(snap.get("size") or 0),
             },
         )
 
