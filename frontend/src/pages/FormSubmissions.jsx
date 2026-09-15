@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
+import deriveAssessmentDate from '../lib/deriveAssessmentDate';
 import { PageHeader } from '../components/capture/Ui';
 import { SubmissionViewModal } from './Forms';
 
@@ -210,7 +211,7 @@ export default function FormSubmissions() {
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="text-left px-4 py-3 font-semibold">Submitted by</th>
-                <th className="text-left px-4 py-3 font-semibold">When</th>
+                <th className="text-left px-4 py-3 font-semibold" title="Business date captured on the form (falls back to submission time when the form has no date field).">Date</th>
                 <th className="text-left px-4 py-3 font-semibold">Status</th>
                 <th className="text-left px-4 py-3 font-semibold">Photos</th>
                 <th className="text-left px-4 py-3 font-semibold">Signature</th>
@@ -223,7 +224,12 @@ export default function FormSubmissions() {
                 <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
                   onClick={() => setViewId(r.id)} data-testid={`submission-row-${r.id}`}>
                   <td className="px-4 py-3 font-medium text-slate-800">{r.submitted_by_name || '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{(r.submitted_at || '').slice(0, 16).replace('T', ' ')}</td>
+                  {/* v58.13.132gn — Show the business (assessment) date
+                      captured on the form; fall back to submitted_at
+                      when no date field exists (legacy templates). */}
+                  <td className="px-4 py-3 text-slate-600" data-testid={`submission-date-${r.id}`}>
+                    {deriveAssessmentDate(r) || (r.submitted_at || '').slice(0, 10) || '—'}
+                  </td>
                   <td className="px-4 py-3"><StatusPill status={r.status} /></td>
                   <td className="px-4 py-3 text-slate-700"><span className="inline-flex items-center gap-1"><ImageIcon size={12} className="text-slate-400" /> {r.photo_count || 0}</span></td>
                   <td className="px-4 py-3"><span className={`text-xs ${r.has_signature ? 'text-[#1f7a3f]' : 'text-slate-400'}`}>{r.has_signature ? '✓' : '×'}</span></td>
@@ -254,7 +260,9 @@ export default function FormSubmissions() {
               <div key={r.id} className="p-4 active:bg-slate-50" data-testid={`submission-card-${r.id}`}>
                 <div className="flex items-center gap-2 mb-1">
                   <StatusPill status={r.status} />
-                  <span className="text-[11px] text-slate-500 ml-auto">{(r.submitted_at || '').slice(0, 16).replace('T', ' ')}</span>
+                  <span className="text-[11px] text-slate-500 ml-auto" data-testid={`submission-card-date-${r.id}`}>
+                    {deriveAssessmentDate(r) || (r.submitted_at || '').slice(0, 10) || '—'}
+                  </span>
                 </div>
                 <div className="text-sm font-semibold text-slate-800">{r.submitted_by_name || '—'}</div>
                 <div className="mt-1 flex items-center gap-3 text-[11px] text-slate-500">

@@ -28,6 +28,7 @@ import PdfActions from './PdfActions';
 import DeleteRecordButton from './DeleteRecordButton';
 import EmailButton from './EmailButton';
 import SubmissionViewer from './SubmissionViewer';
+import deriveAssessmentDate from '../lib/deriveAssessmentDate';
 import { templateColor, templateShortLabel } from '../lib/templateColors';
 
 export default function CaptureCard({
@@ -101,7 +102,15 @@ export default function CaptureCard({
   const isArchived = Boolean(r.archived_at);
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
   const operator = r.submitted_by_name || r.operator || r.created_by_name || '';
-  const dateStr = r.date || (r.submitted_at || '').substring(0, 10) || '';
+  // v58.13.132gn — Prefer the business date from an inner date-type
+  // field (SSRA "Date", Pre-Start "Date" etc). SSRAs in particular
+  // capture the assessment day inside `fields[]`, distinct from the
+  // submission day (`r.date` and `r.submitted_at` both reflect the
+  // upload day, not the day the work was assessed).
+  const dateStr = deriveAssessmentDate(r)
+    || r.date
+    || (r.submitted_at || '').substring(0, 10)
+    || '';
   const colour = templateColor(r);
   const short = templateShortLabel(title);
 
