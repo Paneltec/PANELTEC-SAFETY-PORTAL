@@ -26,14 +26,18 @@ import ListRolesTab from './ListRolesTab';
 import CompletedTrainingTab from './CompletedTrainingTab';
 import CompaniesTab from './CompaniesTab';
 
+// v58.13.132gl-a — Risk Assessments only owns Submissions + the 3
+// risk-related reference libraries. `list_roles`, `completed_training`
+// and `companies` are HR/Directory concerns and live on their own
+// pages under the Compliance sidebar section — remove them from
+// here. The imports above are retained temporarily so the tab
+// components stay tree-shaken alongside their pages; a follow-up can
+// drop them once every consumer is confirmed on the new nav.
 const TABS = [
   { key: 'submissions',   label: 'Submissions' },
   { key: 'master',        label: 'Master Risks' },
   { key: 'list_forms',    label: 'List Forms' },
   { key: 'root_causes',   label: 'Incident Root Causes' },
-  { key: 'list_roles',    label: 'List Roles' },
-  { key: 'completed_training', label: 'My Completed Training' },
-  { key: 'companies',     label: 'Companies' },
 ];
 
 function loadUser() {

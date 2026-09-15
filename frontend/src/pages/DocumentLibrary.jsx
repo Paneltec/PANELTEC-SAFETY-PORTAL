@@ -104,6 +104,8 @@ function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
     try {
       await api.delete(`/document-library/folders/${sf.id}`);
       toast.success(`Deleted "${sf.name}"`);
+      // v58.13.132gl-a — Fire `onChanged` before clearing `busy` so
+      // the parent list refreshes even if the button unmounts.
       onChanged?.();
     } catch (err) { toast.error(apiError(err)); }
     finally { setBusy(false); }
@@ -368,12 +370,24 @@ export default function DocumentLibrary() {
   };
 
   const deleteFolder = async (f) => {
+    if (!f?.id) return;
+    // v58.13.132gl-a — Optimistic UI. Some users reported the modal
+    // closing but the folder staying visible; that was a stale
+    // service-worker cache returning the pre-delete list. Remove the
+    // row from state first so the confirm feels instant, then let
+    // `load()` reconcile with the server.
+    setFolders((prev) => prev.filter((x) => x.id !== f.id));
     try {
       await api.delete(`/document-library/folders/${f.id}`);
       toast.success(`"${f.name}" deleted`);
       setConfirmDeleteId(null);
       await load();
-    } catch (e) { toast.error(apiError(e)); }
+    } catch (e) {
+      toast.error(apiError(e));
+      // Rollback — reload state so the deleted-locally row reappears
+      // if the server rejected the request.
+      await load();
+    }
   };
 
   const runSearch = async (e) => {
