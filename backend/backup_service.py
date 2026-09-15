@@ -65,7 +65,7 @@ from typing import Optional, List, Dict, Any, Tuple
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Query, UploadFile, File
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ConfigDict
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
@@ -882,11 +882,44 @@ def install(app, db, require_admin):
     # re-importing this module (which would rebuild the router).
     app.state.bk_do_snapshot = _do_snapshot
 
+    # v58.13.132gq — In-flight guard so multiple button clicks don't
+    # spawn parallel snapshots (each ~313 MB / 100k docs — parallel
+    # runs would double the GridFS write pressure and can race the
+    # prune step). Backed by `app.state` so the flag survives across
+    # requests handled by the same worker.
+    app.state.bk_snapshot_running = False
+
+    async def _guarded_snapshot():
+        if getattr(app.state, "bk_snapshot_running", False):
+            return
+        app.state.bk_snapshot_running = True
+        try:
+            await _do_snapshot()
+        except Exception as e:  # pragma: no cover — logged for the ops trail
+            import logging
+            logging.getLogger("backup").exception("background snapshot failed: %s", e)
+        finally:
+            app.state.bk_snapshot_running = False
+
     @api_router.post("/snapshots", dependencies=[Depends(require_admin)])
-    async def create_snapshot():
-        """Build a full snapshot ZIP and stash a manifest row.
-        The agent will pull the bytes via GET /snapshots/{id}/data."""
-        return await _do_snapshot()
+    async def create_snapshot(bg: BackgroundTasks):
+        """Kick off a full snapshot ZIP in the background.
+
+        v58.13.132gq — Previously ran inline (~30–90s for a 300 MB
+        pod), which timed out the Cloudflare ingress at 30s and
+        surfaced to Stephen as `HTTP 502` on the Backup tab. Now we
+        return `202 Accepted` immediately; the manifest row appears
+        in `GET /snapshots` once the writer finishes. The
+        `app.state.bk_snapshot_running` guard prevents parallel runs.
+        """
+        if getattr(app.state, "bk_snapshot_running", False):
+            return {"ok": True, "queued": False,
+                    "message": "A snapshot is already running — check "
+                               "the snapshots list in ~30 seconds."}
+        bg.add_task(_guarded_snapshot)
+        return {"ok": True, "queued": True,
+                "message": "Snapshot queued — refresh the snapshots list "
+                           "in ~30 seconds."}
 
     # Exposed for the scheduler (server.py) to call directly so the
     # daily auto-snapshot doesn't need a fake HTTP request + admin
