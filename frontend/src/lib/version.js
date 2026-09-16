@@ -13003,7 +13003,7 @@
 //   CACHE all bumped `.132fm` → `.132fn` so any stale service-worker
 //   bundle on Stephen's device is invalidated on next tab focus. Mobile
 //   bundle intentionally untouched.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132gr';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132gs';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13024,7 +13024,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132gr';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132gr';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132gs';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

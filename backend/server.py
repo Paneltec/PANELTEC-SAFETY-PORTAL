@@ -622,7 +622,14 @@ api.include_router(admin_purge_router)
 from admin_missing_files import router as admin_missing_files_router  # noqa: E402
 api.include_router(admin_missing_files_router)
 # v58.13.132gl-b — Equipment Register admin CRUD.
-from equipment_register import router as equipment_register_router  # noqa: E402
+# v58.13.132gs Phase 1 — categories_router MUST mount before the
+# main equipment_register_router so `/equipment/categories` isn't
+# swallowed by the `/{eid}` catch-all.
+from equipment_register import (  # noqa: E402
+    router as equipment_register_router,
+    categories_router as equipment_categories_router,
+)
+api.include_router(equipment_categories_router)
 api.include_router(equipment_register_router)
 # Phase 3.21 — Session history audit log (30d retention).
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402

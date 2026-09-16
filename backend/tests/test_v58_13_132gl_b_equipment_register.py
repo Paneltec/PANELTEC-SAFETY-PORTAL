@@ -59,7 +59,14 @@ def test_backend_router_exists_with_expected_endpoints():
 
 def test_router_registered_in_server():
     src = _read(BE / "server.py")
-    assert "from equipment_register import router as equipment_register_router" in src
+    # .132gs Phase 1 broadened the import to also pull in
+    # categories_router; either the pre-.132gs single-import shape
+    # or the new multi-import shape is acceptable.
+    assert (
+        "from equipment_register import router as equipment_register_router" in src
+        or "from equipment_register import (" in src
+    )
+    assert "equipment_register_router" in src
     assert "api.include_router(equipment_register_router)" in src
 
 
