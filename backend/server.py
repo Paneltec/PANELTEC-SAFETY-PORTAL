@@ -631,6 +631,10 @@ from equipment_register import (  # noqa: E402
 )
 api.include_router(equipment_categories_router)
 api.include_router(equipment_register_router)
+
+# v58.13.132gv Phase 3 — Editable induction-type dropdown CRUD.
+from induction_types import router as induction_types_router  # noqa: E402
+api.include_router(induction_types_router)
 # Phase 3.21 — Session history audit log (30d retention).
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
 api.include_router(session_history_router)

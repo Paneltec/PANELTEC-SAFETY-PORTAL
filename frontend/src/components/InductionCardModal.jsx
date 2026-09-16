@@ -4,10 +4,10 @@
 // or any cell in the InductionsMatrix. LEFT pane = record detail / inline
 // edit; RIGHT pane = cert document iframe (signed-token preview) or
 // drop-zone when no doc is attached.
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Loader2, Edit3, Trash2, Save, Upload, FileText, ExternalLink, Download,
-  CalendarOff, Check, AlertTriangle,
+  CalendarOff, Check, AlertTriangle, Plus, Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -32,6 +32,10 @@ const STATUS = {
   unknown:        { label: '—',            cls: 'bg-slate-50 text-slate-400 border border-dashed border-slate-300' },
 };
 
+// v58.13.132gv Phase 3 — Legacy display-label map for the three
+// seeded induction-type slug codes. Kept purely for display where
+// the raw `type` string is rendered outside the dropdown (e.g.
+// the Row summary). The dropdown itself is now API-driven.
 const TYPE_LABEL = {
   site_induction: 'Site induction',
   competency:     'Competency',
@@ -55,6 +59,11 @@ export default function InductionCardModal({
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(initialMode !== 'add');
   const [saving, setSaving] = useState(false);
+  // v58.13.132gv Phase 3 — API-driven induction types + admin
+  // Manage-Types modal state.
+  const [inductionTypes, setInductionTypes] = useState([]);
+  const [showManageTypes, setShowManageTypes] = useState(false);
+  const isAdmin = user?.role === 'admin';
   // Editable buffer (only used in edit/add modes).
   const [form, setForm] = useState({
     name: inductionNameHint || '',
@@ -96,6 +105,26 @@ export default function InductionCardModal({
     })();
     return () => { alive = false; };
   }, [workerId, inductionId, mode]);
+
+  // v58.13.132gv Phase 3 — Load admin-managed induction types for
+  // the dropdown. Auto-seeds legacy values on the backend if the
+  // collection is empty for this org, so the fallback array below
+  // is very rarely used.
+  const loadTypes = useCallback(async () => {
+    try {
+      const { data } = await api.get('/inductions/types');
+      setInductionTypes(data.items || []);
+    } catch {
+      // Fallback to the three legacy hardcoded values so the modal
+      // never renders with an empty dropdown.
+      setInductionTypes([
+        { id: 'fb-competency', name: 'competency' },
+        { id: 'fb-site_induction', name: 'site_induction' },
+        { id: 'fb-license', name: 'license' },
+      ]);
+    }
+  }, []);
+  useEffect(() => { loadTypes(); }, [loadTypes]);
 
   // Fetch document preview when we have a doc_file_id (signed token blob).
   useEffect(() => {
@@ -349,7 +378,10 @@ export default function InductionCardModal({
                 <Loader2 size={14} className="animate-spin" /> Loading…
               </div>
             ) : mode === 'add' || mode === 'edit' ? (
-              <DetailEditor form={form} setForm={setForm} mode={mode} />
+              <DetailEditor form={form} setForm={setForm} mode={mode}
+                inductionTypes={inductionTypes}
+                isAdmin={isAdmin}
+                onManageTypes={() => setShowManageTypes(true)} />
             ) : (
               <DetailView data={data} />
             )}
@@ -491,6 +523,14 @@ export default function InductionCardModal({
           )}
         </div>
       </div>
+      {/* v58.13.132gv Phase 3 — Admin CRUD modal for induction types. */}
+      {showManageTypes && (
+        <ManageInductionTypesModal
+          types={inductionTypes}
+          onClose={() => setShowManageTypes(false)}
+          onChanged={(items) => setInductionTypes(items)}
+        />
+      )}
     </div>
   );
 }
@@ -535,8 +575,20 @@ function Row({ label, value, mono }) {
   );
 }
 
-function DetailEditor({ form, setForm, mode }) {
+function DetailEditor({ form, setForm, mode, inductionTypes = [], isAdmin = false, onManageTypes }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
+  // v58.13.132gv Phase 3 — If the record's stored `type` doesn't
+  // match any active induction type (e.g. the admin soft-deleted
+  // the category since this record was created), surface it as a
+  // snapshot entry with " (removed)" so users see the original
+  // value + can either keep it or pick a live one.
+  const dropdownTypes = (() => {
+    const names = inductionTypes.map((t) => t.name);
+    if (form.type && !names.includes(form.type)) {
+      return [{ id: '__snapshot', name: form.type, snapshot: true }, ...inductionTypes];
+    }
+    return inductionTypes;
+  })();
   return (
     <div className="space-y-4 text-sm" data-testid="induction-detail-editor">
       {mode === 'add' && (
@@ -547,13 +599,32 @@ function DetailEditor({ form, setForm, mode }) {
               className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e4a8c]/30" />
           </Field>
           <Field label="Type">
-            <select value={form.type} onChange={(e) => set('type', e.target.value)}
-              data-testid="induction-field-type"
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#1e4a8c]/30">
-              <option value="competency">Competency</option>
-              <option value="site_induction">Site induction</option>
-              <option value="license">Licence</option>
-            </select>
+            <div className="flex items-center gap-2">
+              <select value={form.type} onChange={(e) => set('type', e.target.value)}
+                data-testid="induction-field-type"
+                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#1e4a8c]/30">
+                {dropdownTypes.length === 0 ? (
+                  <option value="">— no types configured —</option>
+                ) : (
+                  dropdownTypes.map((t) => (
+                    <option key={t.id} value={t.name}>
+                      {t.name}{t.snapshot ? ' (removed)' : ''}
+                    </option>
+                  ))
+                )}
+              </select>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={onManageTypes}
+                  data-testid="induction-manage-types-btn"
+                  className="inline-flex items-center gap-1 px-2 py-2 text-xs text-slate-600 hover:text-[#1e4a8c] hover:bg-slate-50 rounded border border-slate-300"
+                  title="Manage induction types"
+                >
+                  <Tag size={12} /> Manage
+                </button>
+              )}
+            </div>
           </Field>
         </>
       )}
@@ -614,5 +685,168 @@ function Field({ label, required, children }) {
       </div>
       {children}
     </label>
+  );
+}
+
+
+// v58.13.132gv Phase 3 — Admin CRUD modal for the induction-type
+// dropdown. Mirrors the Equipment Register "Manage categories"
+// modal (`.132gs`) — add / rename / soft-delete with a warning
+// that existing records keep their snapshot value.
+function ManageInductionTypesModal({ types, onClose, onChanged }) {
+  const [items, setItems] = useState(types);
+  const [newName, setNewName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  const refresh = useCallback(async () => {
+    try {
+      const { data } = await api.get('/inductions/types');
+      setItems(data.items || []);
+      onChanged?.(data.items || []);
+    } catch (e) { toast.error(apiError(e)); }
+  }, [onChanged]);
+
+  const add = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      await api.post('/inductions/types', { name });
+      setNewName('');
+      toast.success(`Added "${name}"`);
+      await refresh();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  const startEdit = (t) => { setEditingId(t.id); setEditValue(t.name); };
+
+  const saveEdit = async (t) => {
+    const name = editValue.trim();
+    if (!name || name === t.name) { setEditingId(null); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/inductions/types/${t.id}`, { name });
+      toast.success(`Renamed to "${name}"`);
+      setEditingId(null);
+      await refresh();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async (t) => {
+    if (!window.confirm(
+      `Remove induction type "${t.name}"?\n\nExisting worker ` +
+      `inductions tagged with this type keep the name, but it will ` +
+      `no longer appear in the dropdown for new inductions.`
+    )) return;
+    setBusy(true);
+    try {
+      await api.delete(`/inductions/types/${t.id}`);
+      toast.success(`Removed "${t.name}"`);
+      await refresh();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] bg-slate-950/60 flex items-center justify-center p-4"
+         onClick={onClose} data-testid="induction-types-modal">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-900 text-lg">Manage induction types</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mb-4 flex gap-2">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+            placeholder="New induction type name"
+            className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm"
+            disabled={busy}
+            data-testid="induction-type-new-input"
+          />
+          <button
+            type="button"
+            onClick={add}
+            disabled={busy || !newName.trim()}
+            data-testid="induction-type-add-btn"
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold hover:bg-[#163965] disabled:opacity-60"
+          >
+            <Plus size={12} /> Add
+          </button>
+        </div>
+
+        <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+          {items.length === 0 && (
+            <div className="p-4 text-sm text-slate-500 text-center">No induction types yet.</div>
+          )}
+          {items.map((t) => (
+            <div key={t.id} className="flex items-center gap-2 p-2"
+                 data-testid={`induction-type-row-${t.id}`}>
+              {editingId === t.id ? (
+                <>
+                  <input
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveEdit(t)}
+                    className="flex-1 px-2 py-1 rounded border border-slate-300 text-sm"
+                    autoFocus
+                    data-testid={`induction-type-edit-input-${t.id}`}
+                  />
+                  <button type="button" onClick={() => saveEdit(t)} disabled={busy}
+                    className="px-2 py-1 rounded bg-[#1e4a8c] text-white text-xs disabled:opacity-60"
+                    data-testid={`induction-type-save-${t.id}`}>
+                    <Check size={12} />
+                  </button>
+                  <button type="button" onClick={() => setEditingId(null)} disabled={busy}
+                    className="px-2 py-1 rounded border border-slate-300 text-xs text-slate-600">
+                    <X size={12} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Tag size={12} className="text-slate-400 shrink-0" />
+                  <span className="flex-1 text-sm text-slate-700">{t.name}</span>
+                  <button type="button" onClick={() => startEdit(t)}
+                    className="text-slate-400 hover:text-slate-700 p-1"
+                    disabled={busy}
+                    data-testid={`induction-type-rename-${t.id}`}
+                    aria-label="Rename"
+                  >
+                    <Edit3 size={12} />
+                  </button>
+                  <button type="button" onClick={() => remove(t)}
+                    className="text-slate-400 hover:text-rose-600 p-1"
+                    disabled={busy}
+                    data-testid={`induction-type-delete-${t.id}`}
+                    aria-label="Delete"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
