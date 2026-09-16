@@ -962,7 +962,42 @@ def install(app, db, require_admin):
         if the writer errors out. Placeholder ids are returned to the
         FE so a poller can watch the specific snapshot instead of
         just "any new row".
+
+        v58.13.132gw — Pre-flight disk guard. Snapshots write a
+        temporary ZIP under `/app` before streaming into GridFS, so
+        a full-disk pod either truncates the ZIP mid-write or blows
+        up the writer with `[Errno 28] No space left on device`.
+        Return HTTP 507 (Insufficient Storage) if `/app` free-space
+        drops below 10 % so the FE surfaces a clean error instead
+        of a truncated snapshot manifest + a 502 from the writer.
         """
+        # v58.13.132gw — Pre-flight disk guard.
+        try:
+            import shutil as _shutil
+            usage = _shutil.disk_usage("/app")
+            free_pct = (usage.free / usage.total) * 100 if usage.total else 100
+            if free_pct < 10:
+                raise HTTPException(
+                    status_code=507,
+                    detail=(
+                        f"Insufficient disk space on /app: "
+                        f"{free_pct:.1f}% free "
+                        f"({usage.free // (1024 * 1024)} MB / "
+                        f"{usage.total // (1024 * 1024)} MB). "
+                        "Free at least 10% before triggering a snapshot. "
+                        "Common cleanups: purge old backups, clear "
+                        "frontend/node_modules/.cache, rotate application logs."
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception as _disk_err:  # noqa: BLE001
+            # If the disk-usage probe itself fails (unlikely — this
+            # is a stdlib call), fall through and let the snapshot
+            # run; better to attempt the backup than to hard-fail on
+            # a probing error.
+            logger.warning("disk-usage probe failed: %s", _disk_err)
+
         if getattr(app.state, "bk_snapshot_running", False):
             # Return the currently-running placeholder if one is on
             # disk so the FE can watch it instead of firing blind.
