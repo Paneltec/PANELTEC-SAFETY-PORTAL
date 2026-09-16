@@ -315,6 +315,28 @@ export default function DocumentLibrary() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [creating, setCreating] = useState(false);
+  // v58.13.132gy — Doc Library restructure. Admin-only parent
+  // dropdown when creating a folder so new folders can nest under
+  // any of the 12 seed parents (Compliance & Safety, Training &
+  // Competency, Administration, etc.) or under a specific
+  // sub-parent like WHS Framework / Risk & Hazard.
+  const [newParentId, setNewParentId] = useState('');
+  // v58.13.132gy — Full flat folder list (roots + sub-parents) for
+  // the parent-picker dropdown on the create form. Lazy-loaded on
+  // first open so we don't slow the initial page render.
+  const [allFolders, setAllFolders] = useState([]);
+  const [allFoldersLoaded, setAllFoldersLoaded] = useState(false);
+  const loadAllFolders = useCallback(async () => {
+    if (allFoldersLoaded) return;
+    try {
+      const { data } = await api.get('/document-library/folders/all');
+      setAllFolders(Array.isArray(data) ? data : []);
+      setAllFoldersLoaded(true);
+    } catch {
+      setAllFolders([]);
+      setAllFoldersLoaded(true);
+    }
+  }, [allFoldersLoaded]);
   const [renamingId, setRenamingId] = useState(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -418,15 +440,19 @@ export default function DocumentLibrary() {
     return out;
   }, [folders, filter, colorFilter]);
 
-  const startCreate = () => { setCreating(true); setNewName(''); };
+  const startCreate = () => { setCreating(true); setNewName(''); setNewParentId(''); loadAllFolders(); };
   const startRename = (f) => { setRenamingId(f.id); setNewName(f.name); };
-  const cancelEdit = () => { setCreating(false); setRenamingId(null); setNewName(''); };
+  const cancelEdit = () => { setCreating(false); setRenamingId(null); setNewName(''); setNewParentId(''); };
 
   const saveCreate = async () => {
     if (!newName.trim()) return;
     setBusy(true);
     try {
-      await api.post('/document-library/folders', { name: newName.trim() });
+      // v58.13.132gy — Send parent_folder_id when the admin picked
+      // one from the dropdown. Backend treats empty string as root.
+      const payload = { name: newName.trim() };
+      if (newParentId) payload.parent_folder_id = newParentId;
+      await api.post('/document-library/folders', payload);
       toast.success('Folder created');
       cancelEdit();
       await load();
@@ -668,14 +694,51 @@ export default function DocumentLibrary() {
       />
 
       {creating && (
-        <div className="mb-4 rounded-xl border border-brand-blue/40 bg-white p-3 flex items-center gap-2" data-testid="folder-create-form">
-          <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') saveCreate(); if (e.key === 'Escape') cancelEdit(); }}
-            placeholder="Folder name" maxLength={80}
-            data-testid="folder-create-input"
-            className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg" />
-          <PrimaryButton onClick={saveCreate} busy={busy} testid="folder-create-save">Create</PrimaryButton>
-          <GhostButton onClick={cancelEdit} testid="folder-create-cancel">Cancel</GhostButton>
+        <div className="mb-4 rounded-xl border border-brand-blue/40 bg-white p-3 flex flex-col gap-2" data-testid="folder-create-form">
+          <div className="flex items-center gap-2">
+            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveCreate(); if (e.key === 'Escape') cancelEdit(); }}
+              placeholder="Folder name" maxLength={80}
+              data-testid="folder-create-input"
+              className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg" />
+            <PrimaryButton onClick={saveCreate} busy={busy} testid="folder-create-save">Create</PrimaryButton>
+            <GhostButton onClick={cancelEdit} testid="folder-create-cancel">Cancel</GhostButton>
+          </div>
+          {/* v58.13.132gy — Parent-folder picker. Admin-only, and only
+              rendered when the flat folder list has loaded. Shows the
+              hierarchy path ("Compliance & Safety › WHS Framework") so
+              admins pick the right sub-parent without ambiguity. */}
+          {user?.role === 'admin' && allFoldersLoaded && (
+            <label className="text-xs text-slate-500 inline-flex items-center gap-2">
+              <span className="font-medium">Nest under:</span>
+              <select
+                value={newParentId}
+                onChange={(e) => setNewParentId(e.target.value)}
+                data-testid="folder-create-parent-select"
+                className="px-2 py-1 text-sm border border-slate-300 rounded-lg bg-white min-w-[240px]"
+              >
+                <option value="">— No parent (root) —</option>
+                {(() => {
+                  // Build id → node lookup + path resolver.
+                  const byId = {};
+                  for (const f of allFolders) byId[f.id] = f;
+                  const pathFor = (f, depth = 0) => {
+                    if (!f || depth > 6) return f?.name || '';
+                    if (!f.parent_folder_id) return f.name;
+                    const p = byId[f.parent_folder_id];
+                    if (!p) return f.name;
+                    return `${pathFor(p, depth + 1)} › ${f.name}`;
+                  };
+                  return allFolders
+                    .map((f) => ({ id: f.id, label: pathFor(f) }))
+                    .sort((a, b) => a.label.localeCompare(b.label))
+                    .map((o) => (
+                      <option key={o.id} value={o.id}>{o.label}</option>
+                    ));
+                })()}
+              </select>
+            </label>
+          )}
         </div>
       )}
 

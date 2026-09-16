@@ -116,6 +116,107 @@ DEFAULT_FOLDERS = [
 ]
 UNCATEGORISED = "Uncategorised"
 
+# v58.13.132gy Phase 1 (Doc Library restructure) — Nested tree.
+#
+# Shape: {parent_name: [child_name, ...] OR {sub_parent: [grandchildren]}}.
+# The 12 new parents get created idempotently. Existing folders whose
+# name matches a leaf get `parent_folder_id` set to point at the
+# resolved parent id. `Uncategorised` stays at root (system folder).
+# `Work`, `Archives`, `IMS (Integrated Management System)`, and the
+# `Compliance & Safety / SDS (Safety Data Sheets)` node all render as
+# leaf-parents (no seeded children) — users add children via the
+# folder-create form which now accepts `parent_folder_id`.
+#
+# IMS numbered folders (0.IMS Index / 1..6.) are user-created and
+# nested via a name-prefix match `^\d+\.\s` OR the exact known
+# names — see `IMS_LEAF_PATTERNS`.
+DEFAULT_FOLDER_TREE: dict = {
+    "Compliance & Safety": {
+        "WHS Framework": [
+            "WHS Acts & Regulations", "Australian Standards",
+            "Company Policies", "Manuals & Procedures",
+        ],
+        "Risk & Hazard": [
+            "JSEA / Risk Assessments", "SWMS", "Working at Heights",
+            "Confined Space", "Hot Work", "Electrical Safety",
+            "Chemical Storage & Handling", "Asbestos",
+            "Permits to Work", "BYDA (Before You Dig)",
+        ],
+        "Site Operations": [
+            "Traffic Management", "Site Management", "PPE",
+            "Barriers", "Plant & Equipment",
+        ],
+        "Environmental": [
+            "Environmental Management", "Carbon Reduction",
+        ],
+        "Incidents & Emergency": [
+            "Incident Reports", "Emergency Management",
+            "First Aid", "Rehabilitation & RTW",
+        ],
+        "Audits & Inspections": [
+            "Audits", "Checklists", "ITPs (Inspection & Test Plans)",
+            "Reports",
+        ],
+        "SDS (Safety Data Sheets)": [],
+    },
+    "Training & Competency": [
+        "Inductions", "TasWater Inductions", "Toolbox Talks",
+        "Competencies Matrices", "Training Records",
+        "Licences & Tickets", "Alcohol & Drug Screening", "CodeSafe",
+    ],
+    "Administration": [
+        "Contract Management", "Subcontractor Management",
+        "Procurement", "Insurance", "Committees & Memberships",
+        "CCF (Civil Contractors Federation)", "Forms",
+    ],
+    "Equipment & Assets": ["Calibration Certificates"],
+    "IMS (Integrated Management System)": [],
+    "Archives": [],
+    "Work": [],
+}
+
+# IMS folders are user-created with prefixes like `0.IMS Index`,
+# `1. Management & Quality…`, `SWMS-CURRENT IMS - 2025 2026`. Any
+# top-level folder whose name matches one of these patterns gets
+# reparented under `IMS (Integrated Management System)`.
+IMS_LEAF_PATTERNS = [
+    r"^\d+\.",               # `0.IMS Index`, `1. Management…`, etc.
+    r"^SWMS-CURRENT IMS",    # `SWMS-CURRENT IMS - 2025 2026`
+]
+
+# Parents that must NEVER be reparented themselves. Includes the
+# tree parents (once created) + the Uncategorised system folder.
+TREE_PARENT_NAMES = {
+    "Compliance & Safety", "WHS Framework", "Risk & Hazard",
+    "Site Operations", "Environmental", "Incidents & Emergency",
+    "Audits & Inspections", "SDS (Safety Data Sheets)",
+    "Training & Competency", "Administration", "Equipment & Assets",
+    "IMS (Integrated Management System)", "Archives", "Work",
+}
+
+
+def _flatten_tree_leaves(tree: dict) -> dict:
+    """Return {leaf_name: parent_name} for the reparent mapping.
+
+    Walks `DEFAULT_FOLDER_TREE` — sub-parents (like "WHS Framework")
+    are leaves-of-their-grandparent AND parents-of-their-own-children;
+    both mappings are emitted so the reparent step can resolve either.
+    """
+    out: dict = {}
+    for top, val in tree.items():
+        if isinstance(val, dict):
+            for sub_parent, leaves in val.items():
+                out[sub_parent] = top
+                for leaf in leaves:
+                    out[leaf] = sub_parent
+        elif isinstance(val, list):
+            for leaf in val:
+                out[leaf] = top
+    return out
+
+
+LEAF_TO_PARENT = _flatten_tree_leaves(DEFAULT_FOLDER_TREE)
+
 
 def _require(user: dict, roles: set, action: str = "edit"):
     if user.get("role") not in roles:
@@ -186,6 +287,224 @@ async def _seed_default_folders(org_id: str, created_by: str) -> None:
     await db.doc_folders.insert_many(docs)
 
 
+# v58.13.132gy — Doc Library restructure engine.
+#
+# `_compute_reorganise_diff(org_id)` produces an idempotent diff:
+# which new parent folders need creating, which existing leaves
+# need reparenting. `_apply_reorganise(org_id, ...)` commits it.
+# Both are safe to call repeatedly.
+
+import re as _re
+
+
+def _is_ims_leaf(name: str) -> bool:
+    for pat in IMS_LEAF_PATTERNS:
+        if _re.search(pat, name):
+            return True
+    return False
+
+
+async def _compute_reorganise_diff(org_id: str, actor_id: str) -> dict:
+    """Return `{parents_to_create: [name…], reparents: [{id, name,
+    current_parent, target_parent_name}], skipped: [name…]}`.
+
+    Idempotent: if the tree is already applied, all three lists
+    come back empty except for `skipped` (which surfaces every
+    leaf that already sits in the right place)."""
+    # Snapshot everything for the org.
+    all_folders: list = []
+    async for f in db.doc_folders.find(
+        {"org_id": org_id, "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "parent_folder_id": 1,
+         "is_system": 1, "worker_id": 1},
+    ):
+        all_folders.append(f)
+    by_name: dict = {}
+    by_id: dict = {}
+    for f in all_folders:
+        by_id[f["id"]] = f
+        # If two folders share a name we keep the one at the root
+        # (parent_folder_id None) — new parents will collide by name.
+        cur = by_name.get(f["name"])
+        if cur is None or (
+            not f.get("parent_folder_id") and cur.get("parent_folder_id")
+        ):
+            by_name[f["name"]] = f
+
+    parents_to_create: list = []
+    for parent_name in TREE_PARENT_NAMES:
+        if parent_name not in by_name:
+            parents_to_create.append(parent_name)
+
+    reparents: list = []
+    skipped: list = []
+
+    def _target_for(leaf_name: str) -> Optional[str]:
+        # Direct match in the leaf→parent map.
+        if leaf_name in LEAF_TO_PARENT:
+            return LEAF_TO_PARENT[leaf_name]
+        # IMS numbered / SWMS-CURRENT belong under the IMS parent.
+        if _is_ims_leaf(leaf_name):
+            return "IMS (Integrated Management System)"
+        return None
+
+    for f in all_folders:
+        # Skip system folder + per-worker folders — those keep their
+        # existing parent (a worker profile) and never get retargeted.
+        if f.get("is_system") or f.get("worker_id"):
+            skipped.append(f["name"])
+            continue
+        # Skip the new tree parents themselves — they stay at root.
+        if f["name"] in TREE_PARENT_NAMES:
+            skipped.append(f["name"])
+            continue
+
+        target_parent_name = _target_for(f["name"])
+        if not target_parent_name:
+            # Not in the mapping — leave it at root (safety net).
+            skipped.append(f["name"])
+            continue
+
+        current_parent_id = f.get("parent_folder_id")
+        current_parent = (
+            by_id.get(current_parent_id) if current_parent_id else None
+        )
+        current_parent_name = current_parent.get("name") if current_parent else None
+
+        if current_parent_name == target_parent_name:
+            skipped.append(f["name"])
+            continue
+
+        reparents.append({
+            "id": f["id"],
+            "name": f["name"],
+            "current_parent": current_parent_name,
+            "target_parent_name": target_parent_name,
+        })
+
+    return {
+        "parents_to_create": parents_to_create,
+        "reparents": reparents,
+        "skipped": skipped,
+        "counts": {
+            "parents_to_create": len(parents_to_create),
+            "reparents": len(reparents),
+            "skipped": len(skipped),
+        },
+    }
+
+
+async def _apply_reorganise(org_id: str, actor_id: str) -> dict:
+    """Commit `_compute_reorganise_diff`. Returns the counts of
+    actions taken. Idempotent — re-running is a no-op."""
+    diff = await _compute_reorganise_diff(org_id, actor_id)
+    # 1. Create missing parents. Order matters: tree parents that
+    # ARE children of other tree parents (e.g. "WHS Framework" ⊂
+    # "Compliance & Safety") need their own parent id resolved,
+    # so we do two passes.
+    top_level_parents = set(DEFAULT_FOLDER_TREE.keys())
+    sub_parents: dict = {}
+    for top, val in DEFAULT_FOLDER_TREE.items():
+        if isinstance(val, dict):
+            for sub in val.keys():
+                sub_parents[sub] = top
+
+    # Pass 1: create top-level parents.
+    now = now_iso()
+    for i, name in enumerate(diff["parents_to_create"]):
+        if name not in top_level_parents:
+            continue
+        await db.doc_folders.update_one(
+            {"org_id": org_id, "name": name, "deleted_at": None},
+            {"$setOnInsert": {
+                "id": new_id(), "org_id": org_id, "name": name,
+                "color_key": PASTEL_CYCLE[i % len(PASTEL_CYCLE)],
+                "sort_order": 100000 + i * 10,
+                "is_system": False, "parent_folder_id": None,
+                "created_at": now, "updated_at": now,
+                "created_by": actor_id, "deleted_at": None,
+            }},
+            upsert=True,
+        )
+
+    # Rebuild the name→id map now that top-levels exist.
+    name_to_id: dict = {}
+    async for f in db.doc_folders.find(
+        {"org_id": org_id, "deleted_at": None,
+         "name": {"$in": list(TREE_PARENT_NAMES)}},
+        {"_id": 0, "id": 1, "name": 1},
+    ):
+        name_to_id[f["name"]] = f["id"]
+
+    # Pass 2: create sub-parents under their top-level parent.
+    # MongoDB rejects the same field in both $setOnInsert and $set,
+    # so we do a two-step: upsert (create-if-missing) then a
+    # separate $set to lock in the parent_folder_id (idempotent).
+    for i, name in enumerate(diff["parents_to_create"]):
+        if name in top_level_parents:
+            continue
+        parent_top = sub_parents.get(name)
+        parent_id = name_to_id.get(parent_top) if parent_top else None
+        await db.doc_folders.update_one(
+            {"org_id": org_id, "name": name, "deleted_at": None},
+            {"$setOnInsert": {
+                "id": new_id(), "org_id": org_id, "name": name,
+                "color_key": PASTEL_CYCLE[(i + 5) % len(PASTEL_CYCLE)],
+                "sort_order": 200000 + i * 10,
+                "is_system": False,
+                "created_at": now, "updated_at": now,
+                "created_by": actor_id, "deleted_at": None,
+            }},
+            upsert=True,
+        )
+        # Lock in the parent_folder_id regardless of whether we
+        # inserted or matched an existing row.
+        if parent_id:
+            await db.doc_folders.update_one(
+                {"org_id": org_id, "name": name, "deleted_at": None},
+                {"$set": {"parent_folder_id": parent_id,
+                            "updated_at": now}},
+            )
+
+    # Refresh the name→id map after all parents exist.
+    async for f in db.doc_folders.find(
+        {"org_id": org_id, "deleted_at": None,
+         "name": {"$in": list(TREE_PARENT_NAMES)}},
+        {"_id": 0, "id": 1, "name": 1},
+    ):
+        name_to_id[f["name"]] = f["id"]
+
+    # 3. Reparent leaves.
+    reparented = 0
+    for rp in diff["reparents"]:
+        target_id = name_to_id.get(rp["target_parent_name"])
+        if not target_id:
+            continue
+        r = await db.doc_folders.update_one(
+            {"id": rp["id"], "org_id": org_id, "deleted_at": None},
+            {"$set": {"parent_folder_id": target_id,
+                        "updated_at": now}},
+        )
+        if r.modified_count:
+            reparented += 1
+
+    return {
+        "parents_created": len(diff["parents_to_create"]),
+        "reparented": reparented,
+        "skipped": len(diff["skipped"]),
+    }
+
+
+async def _ensure_tree_structure(org_id: str, actor_id: str) -> None:
+    """Auto-apply the reorganise on every list_folders call. Cheap
+    when idempotent (a no-op after the first run) and means fresh
+    orgs get the tree without waiting for an admin to hit the
+    reorganise endpoint."""
+    diff = await _compute_reorganise_diff(org_id, actor_id)
+    if diff["parents_to_create"] or diff["reparents"]:
+        await _apply_reorganise(org_id, actor_id)
+
+
 async def _file_counts(org_id: str) -> dict:
     """Return {folder_id: count} for non-deleted files."""
     pipeline = [
@@ -203,20 +522,84 @@ async def _file_counts(org_id: str) -> dict:
 class FolderIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     color_key: Optional[str] = Field(default=None, max_length=20)
+    # v58.13.132gy — Doc Library restructure. Allow admins to nest a
+    # new folder under any existing folder at create time. Cycle
+    # safety isn't a concern on create (a brand-new folder can't be
+    # its own ancestor).
+    parent_folder_id: Optional[str] = Field(default=None, max_length=64)
 
 
 class FolderPatch(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     color_key: Optional[str] = Field(default=None, max_length=20)
     sort_order: Optional[int] = Field(default=None, ge=0, le=1000000)
+    # v58.13.132gy — Reparent an existing folder. Pass `null` (JSON
+    # null) or an explicit sentinel to move a folder back to root;
+    # since Pydantic can't distinguish "field absent" from "field
+    # explicitly null" with default=None, we use a "-" sentinel
+    # meaning "move to root" and default=None meaning "no change".
+    parent_folder_id: Optional[str] = Field(default=None, max_length=64)
+
+
+@router.post("/reorganise")
+async def reorganise(
+    dry_run: bool = True,
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132gy — Doc Library restructure admin endpoint.
+
+    · `?dry_run=true` (default): returns the diff without touching
+      any data. Safe to poll from the FE Settings surface.
+    · `?dry_run=false`: applies the diff. Idempotent — re-running
+      is a no-op. Only admins can flip dry_run off.
+    """
+    _require(user, {"admin"}, action="reorganise")
+    if dry_run:
+        return await _compute_reorganise_diff(user["org_id"], user["id"])
+    return await _apply_reorganise(user["org_id"], user["id"])
+
+
+@router.get("/folders/all")
+async def list_all_folders(user: dict = Depends(get_current_user)):
+    """v58.13.132gy — Flat list of every non-deleted folder in the
+    org (roots + sub-parents + leaves + per-worker folders).
+    Powers the admin "Parent" dropdown on the folder-create form so
+    admins can nest new folders under any sub-parent like `WHS
+    Framework` or `Risk & Hazard`. Kept lightweight — only id,
+    name, parent_folder_id, is_system."""
+    await _seed_default_folders(user["org_id"], user["id"])
+    await _ensure_tree_structure(user["org_id"], user["id"])
+    out: list = []
+    async for f in db.doc_folders.find(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "parent_folder_id": 1,
+         "is_system": 1, "worker_id": 1},
+    ).sort([("name", 1)]):
+        # Skip per-worker folders — they're not meaningful parents
+        # for user-created top-level or sub-folders.
+        if f.get("worker_id"):
+            continue
+        out.append({
+            "id": f["id"],
+            "name": f["name"],
+            "parent_folder_id": f.get("parent_folder_id"),
+            "is_system": bool(f.get("is_system")),
+        })
+    return out
 
 
 @router.get("/folders")
 async def list_folders(user: dict = Depends(get_current_user)):
     """Top-level folders only. Per-worker subfolders (created via the
     Worker Certifications upload flow) are returned via
-    `GET /folders/{id}/subfolders`."""
+    `GET /folders/{id}/subfolders`.
+
+    v58.13.132gy — Auto-applies the tree restructure on first call
+    per org (idempotent). Fresh orgs seed the base folders first,
+    then the ensure-tree helper creates the 12 new parents + nests
+    everything under them."""
     await _seed_default_folders(user["org_id"], user["id"])
+    await _ensure_tree_structure(user["org_id"], user["id"])
     cursor = db.doc_folders.find(
         {"org_id": user["org_id"], "deleted_at": None,
          "$or": [{"parent_folder_id": None}, {"parent_folder_id": {"$exists": False}}]},
@@ -264,6 +647,20 @@ async def list_subfolders(folder_id: str, user: dict = Depends(get_current_user)
 @router.post("/folders", status_code=201)
 async def create_folder(body: FolderIn, user: dict = Depends(require_permission("documents", "edit"))):
     _require(user, WRITE_ROLES)
+    # v58.13.132gy — Validate parent (if supplied) belongs to the
+    # same org and isn't soft-deleted. Empty string / "-" is treated
+    # as "no parent" so the FE can pass either.
+    parent_id: Optional[str] = None
+    raw_parent = (body.parent_folder_id or "").strip()
+    if raw_parent and raw_parent != "-":
+        parent = await db.doc_folders.find_one(
+            {"id": raw_parent, "org_id": user["org_id"], "deleted_at": None},
+            {"_id": 0, "id": 1},
+        )
+        if not parent:
+            raise HTTPException(400, "Parent folder not found")
+        parent_id = raw_parent
+
     last = await db.doc_folders.find_one(
         {"org_id": user["org_id"], "deleted_at": None},
         {"_id": 0, "sort_order": 1},
@@ -275,6 +672,7 @@ async def create_folder(body: FolderIn, user: dict = Depends(require_permission(
         "id": new_id(), "org_id": user["org_id"],
         "name": body.name.strip(), "color_key": color,
         "sort_order": next_order, "is_system": False,
+        "parent_folder_id": parent_id,
         "created_at": now_iso(), "updated_at": now_iso(),
         "created_by": user["id"], "deleted_at": None,
     }
@@ -302,6 +700,42 @@ async def rename_folder(
         update["color_key"] = body.color_key.strip().lower()
     if body.sort_order is not None:
         update["sort_order"] = int(body.sort_order)
+    # v58.13.132gy — Reparent path. "-" sentinel = detach to root.
+    # Any other non-empty string = new parent id (validated + cycle
+    # checked). Empty/None = no change.
+    if body.parent_folder_id is not None:
+        raw = body.parent_folder_id.strip()
+        if raw == "" or raw == "-":
+            update["parent_folder_id"] = None
+        elif raw == folder_id:
+            raise HTTPException(400, "A folder cannot be its own parent")
+        else:
+            new_parent = await db.doc_folders.find_one(
+                {"id": raw, "org_id": user["org_id"], "deleted_at": None},
+                {"_id": 0, "id": 1, "parent_folder_id": 1},
+            )
+            if not new_parent:
+                raise HTTPException(400, "Parent folder not found")
+            # Cycle check — walk ancestors of the proposed parent
+            # and reject if we hit our own id.
+            visited = set()
+            cur = new_parent
+            while cur and cur.get("parent_folder_id"):
+                pid = cur["parent_folder_id"]
+                if pid in visited:
+                    break  # safety: existing bad data — bail gracefully
+                if pid == folder_id:
+                    raise HTTPException(
+                        400,
+                        "Reparent would create a cycle "
+                        "(target parent is a descendant of this folder)",
+                    )
+                visited.add(pid)
+                cur = await db.doc_folders.find_one(
+                    {"id": pid, "org_id": user["org_id"], "deleted_at": None},
+                    {"_id": 0, "id": 1, "parent_folder_id": 1},
+                )
+            update["parent_folder_id"] = raw
     if len(update) == 1:
         raise HTTPException(400, "No editable fields supplied")
     result = await db.doc_folders.find_one_and_update(
