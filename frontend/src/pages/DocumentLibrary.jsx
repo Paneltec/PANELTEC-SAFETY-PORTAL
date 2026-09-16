@@ -1235,6 +1235,11 @@ export function DocumentLibraryFolder() {
 
   const [folder, setFolder] = useState(null);
   const [subfolders, setSubfolders] = useState([]);
+  // v58.13.132hc — Ancestor chain for the breadcrumb rail. Walked
+  // once per folder change from a single `/folders/all` fetch so
+  // deep nests (Compliance & Safety › Risk & Hazard › SWMS) can
+  // click any segment to jump up the tree.
+  const [ancestors, setAncestors] = useState([]);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [renaming, setRenaming] = useState(false);
@@ -1281,6 +1286,27 @@ export function DocumentLibraryFolder() {
       const { data } = await api.get(`/document-library/folders/${folderId}/subfolders`);
       setFolder(data?.parent || null);
       setSubfolders(data?.children || []);
+      // v58.13.132hc — Walk parent chain once via /folders/all for
+      // the breadcrumb rail. Silent-fail keeps the folder-detail
+      // page usable even if the tree endpoint hiccups.
+      try {
+        const all = await api.get('/document-library/folders/all');
+        const byId = {};
+        for (const f of (all.data || [])) byId[f.id] = f;
+        const chain = [];
+        let cur = byId[folderId];
+        const seen = new Set();
+        while (cur && cur.parent_folder_id && !seen.has(cur.id)) {
+          seen.add(cur.id);
+          const parent = byId[cur.parent_folder_id];
+          if (!parent) break;
+          chain.unshift(parent);
+          cur = parent;
+        }
+        setAncestors(chain);
+      } catch (_e) {
+        setAncestors([]);
+      }
     } catch (e) {
       toast.error(apiError(e));
       navigate('/app/document-library');
@@ -1469,7 +1495,42 @@ export function DocumentLibraryFolder() {
 
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-slate-500 mb-2">Compliance / Document Library / {folder?.name || '…'}</div>
+          <nav
+            aria-label="Folder breadcrumb"
+            data-testid="folder-breadcrumb-rail"
+            className="text-xs text-slate-500 mb-2 flex flex-wrap items-center gap-1"
+          >
+            <button
+              type="button"
+              onClick={() => navigate('/app/document-library')}
+              data-testid="folder-breadcrumb-root"
+              className="hover:text-brand-blue hover:underline"
+            >
+              Document Library
+            </button>
+            {ancestors.map((a) => (
+              <span key={a.id} className="inline-flex items-center gap-1">
+                <span className="text-slate-300" aria-hidden>›</span>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/app/document-library/${a.id}`)}
+                  data-testid={`folder-breadcrumb-${a.id}`}
+                  className="hover:text-brand-blue hover:underline max-w-[240px] truncate"
+                  title={a.name}
+                >
+                  {a.name}
+                </button>
+              </span>
+            ))}
+            <span className="text-slate-300" aria-hidden>›</span>
+            <span
+              className="text-slate-700 font-medium max-w-[240px] truncate"
+              data-testid="folder-breadcrumb-current"
+              title={folder?.name || ''}
+            >
+              {folder?.name || '…'}
+            </span>
+          </nav>
           {renaming ? (
             <div className="flex items-center gap-2">
               <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
