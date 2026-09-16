@@ -1049,3 +1049,124 @@ async def admin_file_search_text(file_id: str, user: dict = Depends(get_current_
     if not doc:
         raise HTTPException(404, "File not found")
     return doc
+
+
+
+# ─────────────────── v58.13.132hj — public helpers ───────────────────
+#
+# Exposes the DocLib conversion core so other modules (worker HR docs,
+# equipment attachments, submission attachments, etc.) can render their
+# own file bytes as PDF without re-implementing the pipeline. The
+# helpers below are PARALLEL to the existing `_convert` / `_cache_*`
+# flow — they use a separate cache collection (`preview_pdf_cache`) so
+# the DocLib code path stays byte-for-byte identical and rollback is
+# a single-file delete of `preview_sources.py`.
+
+
+def _sha1_bytes(blob: bytes) -> str:
+    """SHA-1 of an in-memory blob (mirrors `_sha1_file` for the disk path)."""
+    h = hashlib.sha1()
+    h.update(blob)
+    return h.hexdigest()
+
+
+async def _cache_lookup_v2(namespace: str, cache_key: str,
+                            sha1: str, pipeline: str) -> Optional[bytes]:
+    row = await db.preview_pdf_cache.find_one(
+        {"ns": namespace, "key": cache_key, "sha1": sha1, "pipeline": pipeline},
+        {"_id": 0, "pdf_b64": 1},
+    )
+    if not row:
+        return None
+    return base64.b64decode(row["pdf_b64"])
+
+
+async def _cache_store_v2(namespace: str, cache_key: str,
+                           sha1: str, pipeline: str, pdf: bytes) -> None:
+    await db.preview_pdf_cache.update_one(
+        {"ns": namespace, "key": cache_key, "sha1": sha1, "pipeline": pipeline},
+        {"$set": {
+            "ns": namespace, "key": cache_key, "sha1": sha1, "pipeline": pipeline,
+            "pdf_b64": base64.b64encode(pdf).decode("ascii"),
+            "size": len(pdf),
+            "cached_at": now_iso(),
+        }},
+        upsert=True,
+    )
+
+
+async def convert_bytes_to_pdf(
+    blob: bytes,
+    mime: str,
+    filename: str,
+    *,
+    cache_namespace: str,
+    cache_key: str,
+) -> tuple[bytes, str]:
+    """Generic (blob, mime, filename) → (pdf_bytes, pipeline).
+
+    Mirrors `_convert(doc, path)` but takes raw bytes + no DB access.
+    Uses the `preview_pdf_cache` collection keyed by
+    `(cache_namespace, cache_key, sha1, pipeline)` so re-conversions of
+    the same source blob are ~free.
+
+    Raises the same `HTTPException(415)` shape as the DocLib pipeline
+    when the input format isn't supported.
+    """
+    sha1 = _sha1_bytes(blob)
+    pipeline = _pipeline_for(mime, filename)
+    if not pipeline:
+        ctype = mime or "application/octet-stream"
+        msg = (f"LibreOffice not installed — PDF preview not available for "
+               f"this format ({ctype})") if "officedocument" in ctype else \
+              f"PDF preview not available for {ctype}"
+        raise HTTPException(415, msg)
+    cached = await _cache_lookup_v2(cache_namespace, cache_key, sha1, pipeline)
+    if cached:
+        return cached, pipeline
+    # Magic-byte sniff mirrors `_convert`.
+    kind = _sniff_kind(blob)
+    if pipeline == "passthrough" and kind != "pdf":
+        if kind in ("jpeg", "png", "webp", "gif"):
+            pipeline = "image"
+        elif kind == "heic":
+            pipeline = "heic"
+        else:
+            raise HTTPException(
+                415,
+                f"File is {kind} ({len(blob)} bytes), not a valid PDF. "
+                "Preview unavailable — please re-upload.",
+            )
+    if pipeline == "passthrough":
+        pdf = blob
+    elif pipeline == "image":
+        pdf = _img_to_pdf(blob)
+    elif pipeline == "heic":
+        pdf = _heic_to_pdf(blob)
+    elif pipeline == "text":
+        pdf = _text_to_pdf(blob, filename or "Document")
+    elif pipeline == "docx_libreoffice":
+        pdf, pipeline = _docx_to_pdf(blob, filename or "Document")
+    elif pipeline in {"xlsx_libreoffice", "pptx_libreoffice",
+                       "odt_libreoffice", "rtf_libreoffice"}:
+        ext = pipeline.split("_", 1)[0]
+        pdf, pipeline = _office_to_pdf_or_415(
+            blob, ext, filename or f"Document.{ext}", pipeline,
+        )
+    else:
+        raise HTTPException(500, f"Unknown pipeline: {pipeline}")
+    await _cache_store_v2(cache_namespace, cache_key, sha1, pipeline, pdf)
+    return pdf, pipeline
+
+
+def pdf_response_bytes(pdf: bytes, filename: str, dl: bool, pipeline: str) -> Response:
+    """Public alias for `_pdf_response` so callers outside this module can
+    build a PDF Response with the same CSP + inline-disposition headers."""
+    return _pdf_response(pdf, filename, dl, pipeline)
+
+
+def preview_secret_bytes() -> bytes:
+    """Public accessor for the HMAC secret used to sign preview tokens.
+    Callers that need to mint / verify their own preview tokens (with a
+    different subject shape) can import this."""
+    return _preview_secret()

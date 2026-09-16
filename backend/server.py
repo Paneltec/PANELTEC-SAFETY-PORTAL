@@ -601,6 +601,13 @@ api.include_router(help_reference_images_router)
 from file_pdf import router as file_pdf_router  # noqa: E402
 api.include_router(file_pdf_router)
 
+# v58.13.132hj — Universal PDF-preview registry (worker HR docs,
+# equipment attachments, submission attachments, SWMS source .docx,
+# insurance certs, etc). Bridges the DocLib pipeline to every other
+# file surface via a signed-token flow.
+from preview_sources import router as preview_sources_router  # noqa: E402
+api.include_router(preview_sources_router)
+
 from workers_inductions import router as workers_inductions_router  # noqa: E402
 from workers_inductions import card_router as workers_inductions_card_router  # noqa: E402
 api.include_router(workers_inductions_router)
