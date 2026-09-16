@@ -151,10 +151,30 @@ function humanSize(n) {
 }
 
 // ────────────────────── Subfolder card with edit/delete ──────────────────────
-function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
+function SubfolderCard({ sf, canEdit, onOpen, onChanged, fileDropActive, onFileDrop }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(sf.name);
   const [busy, setBusy] = useState(false);
+  // v58.13.132he — File DnD drop target. Highlight when a file is
+  // being dragged into this card and the target is admissible.
+  const [dragOverActive, setDragOverActive] = useState(false);
+
+  const onDragOverCapture = (e) => {
+    if (!fileDropActive) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!dragOverActive) setDragOverActive(true);
+  };
+  const onDragLeaveCapture = () => {
+    if (dragOverActive) setDragOverActive(false);
+  };
+  const onDropCapture = (e) => {
+    if (!fileDropActive) return;
+    e.preventDefault();
+    setDragOverActive(false);
+    const fid = e.dataTransfer.getData('text/paneltec-file');
+    if (fid) onFileDrop?.(fid, sf.id, sf.name);
+  };
 
   const saveRename = async () => {
     const next = name.trim();
@@ -205,8 +225,18 @@ function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
   }
 
   return (
-    <div className="group relative flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-brand-blue/40 hover:bg-brand-blue-soft/20 rounded-xl transition"
-      data-testid={`subfolder-${sf.id}`}>
+    <div
+      className={`group relative flex items-center gap-3 p-3 bg-white border rounded-xl transition ${
+        dragOverActive
+          ? 'border-brand-blue ring-2 ring-brand-blue/30 bg-brand-blue-soft/40'
+          : 'border-slate-200 hover:border-brand-blue/40 hover:bg-brand-blue-soft/20'
+      }`}
+      onDragOver={onDragOverCapture}
+      onDragLeave={onDragLeaveCapture}
+      onDrop={onDropCapture}
+      data-testid={`subfolder-${sf.id}`}
+      data-file-drop-target={fileDropActive ? 'true' : 'false'}
+    >
       <button onClick={onOpen} disabled={busy}
         className="flex items-center gap-3 flex-1 min-w-0 text-left disabled:opacity-60">
         <div className="rounded-lg bg-[#e6eff9] p-2.5 shrink-0"><FolderOpen size={16} className="text-[#1e4a8c]" /></div>
@@ -1473,6 +1503,21 @@ export function DocumentLibraryFolder() {
   const [editFile, setEditFile] = useState(null);
   const [sortKey, setSortKey] = useState('uploaded_desc');
   const [expiryFilter, setExpiryFilter] = useState('all');
+  // v58.13.132he — File-move DnD. `draggingFileId` reflects the
+  // in-flight drag so drop targets (subfolder cards + breadcrumb
+  // segments) can highlight themselves. `moveFile` PATCHes the
+  // existing /files/{id} endpoint with the new folder_id and
+  // refreshes the list.
+  const [draggingFileId, setDraggingFileId] = useState(null);
+  const moveFile = useCallback(async (fileId, targetFolderId, targetLabel) => {
+    if (!fileId || !targetFolderId) return;
+    if (targetFolderId === folderId) return;
+    try {
+      await api.patch(`/document-library/files/${fileId}`, { folder_id: targetFolderId });
+      toast.success(`Moved to "${targetLabel || 'folder'}".`);
+      await loadFiles();
+    } catch (e) { toast.error(apiError(e)); }
+  }, [folderId]);
   const confirmDeleteFileNow = async () => {
     if (!confirmDeleteFile) return;
     const f = confirmDeleteFile;
@@ -1720,6 +1765,22 @@ export function DocumentLibraryFolder() {
                 <button
                   type="button"
                   onClick={() => navigate(`/app/document-library/${a.id}`)}
+                  onDragOver={(e) => {
+                    if (!canEdit || !draggingFileId) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    e.currentTarget.classList.add('ring-2', 'ring-brand-blue', 'rounded');
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove('ring-2', 'ring-brand-blue', 'rounded');
+                  }}
+                  onDrop={(e) => {
+                    if (!canEdit) return;
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('ring-2', 'ring-brand-blue', 'rounded');
+                    const fid = e.dataTransfer.getData('text/paneltec-file');
+                    if (fid) moveFile(fid, a.id, a.name);
+                  }}
                   data-testid={`folder-breadcrumb-${a.id}`}
                   className="hover:text-brand-blue hover:underline max-w-[240px] truncate"
                   title={a.name}
@@ -1865,7 +1926,9 @@ export function DocumentLibraryFolder() {
             {subfolders.map((sf) => (
               <SubfolderCard key={sf.id} sf={sf} canEdit={canEdit}
                 onOpen={() => navigate(`/app/document-library/${sf.id}`)}
-                onChanged={loadFolder} />
+                onChanged={loadFolder}
+                fileDropActive={canEdit && !!draggingFileId}
+                onFileDrop={moveFile} />
             ))}
           </div>
         </div>
@@ -1953,8 +2016,16 @@ export function DocumentLibraryFolder() {
                         key={f.id}
                         className={`border-t border-slate-100 hover:bg-slate-50 ${rowBg} ${
                           highlightActive === f.id ? 'g132gb-highlight-row' : ''
-                        }`}
+                        } ${draggingFileId === f.id ? 'opacity-40' : ''}`}
                         data-testid={`file-row-${f.id}`}
+                        draggable={canEdit}
+                        onDragStart={(e) => {
+                          if (!canEdit) return;
+                          e.dataTransfer.setData('text/paneltec-file', f.id);
+                          e.dataTransfer.effectAllowed = 'move';
+                          setDraggingFileId(f.id);
+                        }}
+                        onDragEnd={() => setDraggingFileId(null)}
                         style={{ borderLeft: `4px solid ${borderColor}` }}
                       >
                         <td className="px-4 py-3">

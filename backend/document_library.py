@@ -1187,6 +1187,10 @@ class FilePatch(BaseModel):
     filename: Optional[str] = Field(default=None, min_length=1, max_length=200)
     expiry_date: Optional[str] = Field(default=None, max_length=32)
     clear_expiry: bool = Field(default=False)
+    # v58.13.132he — File DnD between folders. When set, the file is
+    # moved to the target folder (same-org validated). Audited as
+    # `file_moved` with old_folder_id → new_folder_id.
+    folder_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
 
 
 @router.patch("/files/{file_id}")
@@ -1237,6 +1241,26 @@ async def rename_or_update_file(
             raise HTTPException(400, "expiry_date must be ISO-8601 (YYYY-MM-DD)")
         patch["expiry_date"] = raw[:10]
 
+    # v58.13.132he — File-move via folder_id. Validates the target
+    # folder exists in the same org and isn't soft-deleted. No-op if
+    # the file is already there.
+    move_from_folder = None
+    move_to_folder = None
+    if body.folder_id is not None:
+        target = body.folder_id.strip()
+        if not target:
+            raise HTTPException(400, "folder_id cannot be empty")
+        if target != existing.get("folder_id"):
+            target_doc = await db.doc_folders.find_one(
+                {"id": target, "org_id": user["org_id"], "deleted_at": None},
+                {"_id": 0, "id": 1, "name": 1},
+            )
+            if not target_doc:
+                raise HTTPException(404, "Target folder not found")
+            move_from_folder = existing.get("folder_id")
+            move_to_folder = target
+            patch["folder_id"] = target
+
     if not patch:
         raise HTTPException(400, "Nothing to update")
 
@@ -1250,6 +1274,20 @@ async def rename_or_update_file(
     )
     if not r:
         raise HTTPException(404, "File not found")
+    # v58.13.132he — Emit audit trail on folder move.
+    if move_to_folder is not None:
+        await db.doc_files_audit.insert_one({
+            "id": new_id(),
+            "org_id": user["org_id"],
+            "file_id": file_id,
+            "action": "file_moved",
+            "actor_id": user["id"],
+            "actor_name": user.get("name") or user.get("email"),
+            "filename": r.get("filename"),
+            "old_folder_id": move_from_folder,
+            "new_folder_id": move_to_folder,
+            "created_at": now_iso(),
+        })
     return _serialise_file(r)
 
 
