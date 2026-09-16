@@ -1174,9 +1174,244 @@ async def upload_files(
             "deleted_at": None,
         }
         await db.doc_files.insert_one(doc)
+        # v58.13.132hf — Kick text extraction off in the background
+        # using the buffer we already have in memory. Never blocks
+        # the upload response; failures are logged and picked up by
+        # the admin backfill worker on next sweep.
+        try:
+            import asyncio as _asyncio
+            _asyncio.create_task(_extract_and_persist(
+                doc["id"], user["org_id"], upload.filename or stored_name,
+                doc["mime"], data,
+            ))
+        except Exception as _e:
+            log_ex = _e
+            del log_ex  # keep upload path silent
         saved.append(_serialise_file(doc))
 
     return {"saved": saved, "rejected": rejected}
+
+
+# ─────────── v58.13.132hf — Text extraction pipeline ───────────
+# Extracted-text lives on the doc_files row alongside the metadata
+# it belongs to. On upload we kick off `_extract_and_persist` from
+# the in-memory buffer; a boot-time backfill task sweeps every row
+# whose `extracted_text` is still null.
+
+_BACKFILL_STATE: dict = {
+    "running": False,
+    "started_at": None,
+    "finished_at": None,
+    "total": 0,
+    "done": 0,
+    "ok": 0,
+    "failed": 0,
+    "current_id": None,
+    "cancel_requested": False,
+    "engines": {},
+}
+
+
+async def _extract_and_persist(
+    file_id: str, org_id: str, filename: str, mime: str, data: bytes,
+) -> dict:
+    """Run text_extraction and stamp the doc_files row. Never
+    raises. Returns the extraction result dict."""
+    try:
+        from text_extraction import extract_text
+        import asyncio as _asyncio
+        # Extraction is CPU-bound (esp. Tesseract) so hop to a thread
+        # to avoid blocking the event loop.
+        result = await _asyncio.to_thread(
+            extract_text, data, mime=mime, filename=filename,
+        )
+    except Exception as e:
+        result = {"text": "", "engine": "unknown", "status": "failed", "chars": 0}
+        try:
+            import logging as _l
+            _l.getLogger("paneltec.document_library").info(
+                "extract_and_persist failed for %s: %s", file_id, e,
+            )
+        except Exception:
+            pass
+    patch: dict = {
+        "extracted_text": result.get("text") or "",
+        "extracted_text_at": now_iso(),
+        "extraction_engine": result.get("engine"),
+        "extraction_status": result.get("status"),
+        "extracted_chars": result.get("chars", 0),
+    }
+    if result.get("status") != "ok":
+        patch["extraction_failed_count"] = 1  # rebuilt via $inc below
+        await db.doc_files.update_one(
+            {"id": file_id, "org_id": org_id},
+            {"$set": {k: v for k, v in patch.items()
+                       if k != "extraction_failed_count"},
+             "$inc": {"extraction_failed_count": 1}},
+        )
+    else:
+        await db.doc_files.update_one(
+            {"id": file_id, "org_id": org_id},
+            {"$set": patch, "$unset": {"extraction_failed_count": ""}},
+        )
+    return result
+
+
+async def _load_binary_for_file(doc: dict) -> Optional[bytes]:
+    """Fetch the binary for a doc_files row from GridFS (preferred)
+    or the legacy disk fallback."""
+    url = doc.get("file_url") or ""
+    if not url.startswith("/api/files/"):
+        return None
+    key = url[len("/api/files/"):]
+    row = await db["upload_storage.files"].find_one(
+        {"metadata.key": key}, {"_id": 1},
+    )
+    if row:
+        from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+        bucket = AsyncIOMotorGridFSBucket(db, bucket_name="upload_storage")
+        stream = await bucket.open_download_stream(row["_id"])
+        buf = bytearray()
+        while True:
+            chunk = await stream.readchunk()
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if len(buf) > 60 * 1024 * 1024:  # ~50 MB cap + slack
+                break
+        return bytes(buf)
+    # Legacy disk fallback (pre-.132gh migrations)
+    disk = UPLOAD_DIR.parent / key
+    if disk.exists():
+        try:
+            return disk.read_bytes()
+        except Exception:
+            return None
+    return None
+
+
+async def _run_backfill(org_id: Optional[str] = None) -> None:
+    """Sweep every doc_files row whose extracted_text is still
+    unpopulated and run the extractor. Progress is tracked in the
+    module-level `_BACKFILL_STATE` dict so the admin status endpoint
+    can report on it. Cancel-safe: sets a flag the loop watches."""
+    if _BACKFILL_STATE["running"]:
+        return
+    _BACKFILL_STATE.update({
+        "running": True,
+        "started_at": now_iso(),
+        "finished_at": None,
+        "total": 0,
+        "done": 0,
+        "ok": 0,
+        "failed": 0,
+        "current_id": None,
+        "cancel_requested": False,
+        "engines": {},
+    })
+    try:
+        query: dict = {
+            "deleted_at": None,
+            "$or": [
+                {"extracted_text": {"$exists": False}},
+                {"extracted_text": None},
+                {"extracted_text": ""},
+            ],
+        }
+        if org_id:
+            query["org_id"] = org_id
+        _BACKFILL_STATE["total"] = await db.doc_files.count_documents(query)
+        cursor = db.doc_files.find(query, {"_id": 0}).batch_size(20)
+        async for doc in cursor:
+            if _BACKFILL_STATE["cancel_requested"]:
+                break
+            _BACKFILL_STATE["current_id"] = doc.get("id")
+            data = await _load_binary_for_file(doc)
+            if data is None:
+                # No binary — mark failed and move on.
+                await db.doc_files.update_one(
+                    {"id": doc["id"], "org_id": doc["org_id"]},
+                    {"$set": {
+                        "extraction_status": "failed",
+                        "extraction_engine": "missing-binary",
+                        "extracted_text_at": now_iso(),
+                    }},
+                )
+                _BACKFILL_STATE["failed"] += 1
+                _BACKFILL_STATE["engines"]["missing-binary"] = \
+                    _BACKFILL_STATE["engines"].get("missing-binary", 0) + 1
+            else:
+                res = await _extract_and_persist(
+                    doc["id"], doc["org_id"], doc.get("filename") or "",
+                    doc.get("mime") or "", data,
+                )
+                if res.get("status") == "ok":
+                    _BACKFILL_STATE["ok"] += 1
+                else:
+                    _BACKFILL_STATE["failed"] += 1
+                eng = res.get("engine") or "unknown"
+                _BACKFILL_STATE["engines"][eng] = \
+                    _BACKFILL_STATE["engines"].get(eng, 0) + 1
+            _BACKFILL_STATE["done"] += 1
+    finally:
+        _BACKFILL_STATE["running"] = False
+        _BACKFILL_STATE["finished_at"] = now_iso()
+        _BACKFILL_STATE["current_id"] = None
+
+
+@router.post("/admin/backfill-extracted-text")
+async def start_backfill(
+    scope_org: bool = True,
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132hf — Admin: kick off the extraction backfill. Runs
+    as a background asyncio task so the call returns immediately.
+    Idempotent: if a backfill is already running, returns the
+    current state instead of starting a second one.
+    Set `scope_org=false` (admin-of-admins) to sweep every org.
+    """
+    _require(user, {"admin"}, action="backfill-extracted-text")
+    if _BACKFILL_STATE["running"]:
+        return {"already_running": True, **_BACKFILL_STATE}
+    import asyncio as _asyncio
+    scope = user["org_id"] if scope_org else None
+    _asyncio.create_task(_run_backfill(scope))
+    return {"started": True, "scope_org": scope}
+
+
+@router.get("/admin/backfill-extracted-text/status")
+async def backfill_status(
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132hf — Admin: current backfill progress."""
+    _require(user, {"admin"}, action="backfill-status")
+    return dict(_BACKFILL_STATE)
+
+
+@router.post("/admin/backfill-extracted-text/cancel")
+async def cancel_backfill(
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132hf — Admin: request the backfill loop to stop after
+    its current row. Idempotent no-op if nothing is running."""
+    _require(user, {"admin"}, action="backfill-cancel")
+    _BACKFILL_STATE["cancel_requested"] = True
+    return {"cancel_requested": True}
+
+
+async def schedule_boot_backfill(delay_seconds: int = 300) -> None:
+    """v58.13.132hf — Server-boot hook. Waits `delay_seconds` (so
+    backend startup isn't stalled) then kicks the backfill across
+    every org whose files still have unpopulated `extracted_text`.
+    Called from server.py once during app startup."""
+    import asyncio as _asyncio
+    try:
+        await _asyncio.sleep(delay_seconds)
+        if _BACKFILL_STATE["running"]:
+            return
+        await _run_backfill(org_id=None)
+    except Exception:
+        pass
 
 
 # v58.13.132gt Phase 2 — SDS module enhancements. File rename +

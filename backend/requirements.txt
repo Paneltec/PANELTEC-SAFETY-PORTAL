@@ -136,3 +136,8 @@ zipp==4.1.0
 bleach==6.4.0
 tinycss2==1.5.1
 slowapi==0.1.9
+pdfplumber==0.11.10
+pdfminer.six==20260107
+pdf2image==1.17.0
+pypdfium2==5.13.0
+pytesseract==0.3.13

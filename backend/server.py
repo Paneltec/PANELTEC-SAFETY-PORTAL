@@ -686,6 +686,30 @@ install_backup(app, _mongo_db, require_roles("admin"))
 @app.on_event("startup")
 async def on_startup():
     await ensure_indexes()
+    # v58.13.132hf — Boot-trigger the doc_files extracted_text
+    # backfill 5 minutes after startup. Admin can cancel via
+    # POST /api/document-library/admin/backfill-extracted-text/cancel.
+    try:
+        from document_library import (
+            schedule_boot_backfill as _dl_backfill_boot,
+        )
+        import asyncio as _asyncio
+        _asyncio.create_task(_dl_backfill_boot(delay_seconds=300))
+        # Also add the Mongo text index (idempotent) so `.132hg`
+        # search doesn't wait on index build.
+        try:
+            await _mongo_db.doc_files.create_index(
+                [("extracted_text", "text"),
+                 ("filename", "text"),
+                 ("ai_tags", "text")],
+                name="doc_files_fulltext",
+                default_language="english",
+                weights={"filename": 10, "ai_tags": 5, "extracted_text": 1},
+            )
+        except Exception as _ei:
+            log.warning("doc_files text index create failed: %s", _ei)
+    except Exception as e:  # noqa: BLE001
+        log.warning("doc_files extracted_text backfill boot failed: %s", e)
     await session_history_ensure_indexes()
     # v58.13.132ab — daily_job_assignments (org_id, worker_id, date) compound.
     try:
