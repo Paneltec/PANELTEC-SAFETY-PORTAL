@@ -1155,11 +1155,35 @@ async def search(
       · Returns `folder_path` (breadcrumb) + `match_field` for each
         hit so the UI can annotate the reason a row matched.
 
+    v58.13.132hb — Separator-agnostic matching.
+      Underscore / hyphen / whitespace are treated as interchangeable
+      in BOTH the DB regex and the client-side `match_field` scoring.
+      So `SF_22`, `SF-22`, `SF 22`, `SF22` all resolve to the same
+      hit `2025_SF-22_Bomb_Threat_Report V10.0.docx`. Fixes a
+      recurring UX papercut where Stephen's memory of a code (`SF_22`)
+      doesn't match the source-of-truth punctuation (`SF-22`).
+
     Case-insensitive substring match. Returns up to 60 rows sorted
     by upload date desc.
     """
-    pattern = re.escape(q.strip())
     org_id = user["org_id"]
+    raw = q.strip()
+
+    # v58.13.132hb — Build a separator-agnostic pattern.
+    # Strip all separator characters (space / _ / -) from the query
+    # to get the meaningful "core" characters, then interleave the
+    # separator group `[ _-]*` between them. So `SF_22`, `SF-22`,
+    # `SF 22`, and `SF22` all normalise to `S[ _-]*F[ _-]*2[ _-]*2`
+    # which matches every punctuation variant in the DB.
+    def _normalised_pattern(needle: str) -> str:
+        seps = set(" _-")
+        core = [ch for ch in needle if ch not in seps]
+        if not core:
+            return re.escape(needle)
+        return "[ _-]*".join(re.escape(c) for c in core)
+
+    pattern = _normalised_pattern(raw)
+
     query: dict = {
         "org_id": org_id,
         "deleted_at": None,
@@ -1248,15 +1272,20 @@ async def search(
         return path
 
     def _match_field(doc: dict) -> str:
-        needle = q.strip().lower()
-        fname = (doc.get("filename") or "").lower()
-        if needle in fname:
+        # v58.13.132hb — Mirror the DB-side separator normalisation
+        # here so the UI label agrees with the actual hit. Both the
+        # haystack (filename / tag / uploader) and the needle collapse
+        # separator characters to nothing before the substring check.
+        def _strip_seps(s: str) -> str:
+            return "".join(c for c in (s or "").lower() if c not in " _-")
+
+        needle = _strip_seps(q)
+        if needle and needle in _strip_seps(doc.get("filename") or ""):
             return "filename"
         for t in (doc.get("ai_tags") or []):
-            if needle in (t or "").lower():
+            if needle and needle in _strip_seps(t):
                 return "tags"
-        uploader = (doc.get("uploaded_by_name") or "").lower()
-        if needle in uploader:
+        if needle and needle in _strip_seps(doc.get("uploaded_by_name") or ""):
             return "uploader"
         return "filename"
 
