@@ -559,6 +559,65 @@ async def reorganise(
     return await _apply_reorganise(user["org_id"], user["id"])
 
 
+@router.get("/counts")
+async def library_counts(user: dict = Depends(get_current_user)):
+    """v58.13.132ha — Self-serve counts pill on the Document Library
+    header. Returns totals so admins can answer "how many folders /
+    files do we have?" at a glance, without eyeballing every subtree.
+
+    · `folders_active` — non-deleted folders (any depth, includes
+      per-worker leaves).
+    · `folders_deleted` — soft-deleted folders (informational).
+    · `files_active` — non-deleted files (any folder).
+    · `files_deleted` — soft-deleted files.
+    · `files_missing_binary` — active doc_files rows whose file_url
+      does not resolve to a GridFS blob or a legacy-disk file.
+      Cheap to compute: single aggregate joining metadata.key on
+      upload_storage.files.
+    """
+    org_id = user["org_id"]
+    folders_active = await db.doc_folders.count_documents(
+        {"org_id": org_id, "deleted_at": None},
+    )
+    folders_deleted = await db.doc_folders.count_documents(
+        {"org_id": org_id, "deleted_at": {"$ne": None}},
+    )
+    files_active = await db.doc_files.count_documents(
+        {"org_id": org_id, "deleted_at": None},
+    )
+    files_deleted = await db.doc_files.count_documents(
+        {"org_id": org_id, "deleted_at": {"$ne": None}},
+    )
+    # Missing-binary probe: pull the list of active file_url values,
+    # extract each metadata.key ("document_library/<folder>/<hash>.ext"),
+    # then count how many are absent from upload_storage.files. Batch
+    # in one aggregate — cheap enough at Stephen-scale (~700 rows).
+    keys: list[str] = []
+    async for r in db.doc_files.find(
+        {"org_id": org_id, "deleted_at": None, "file_url": {"$ne": None}},
+        {"_id": 0, "file_url": 1},
+    ):
+        url = r.get("file_url") or ""
+        if url.startswith("/api/files/"):
+            keys.append(url[len("/api/files/"):])
+    files_missing_binary = 0
+    if keys:
+        present = set()
+        async for row in db["upload_storage.files"].find(
+            {"metadata.key": {"$in": keys}},
+            {"_id": 0, "metadata.key": 1},
+        ):
+            present.add((row.get("metadata") or {}).get("key"))
+        files_missing_binary = sum(1 for k in keys if k not in present)
+    return {
+        "folders_active": folders_active,
+        "folders_deleted": folders_deleted,
+        "files_active": files_active,
+        "files_deleted": files_deleted,
+        "files_missing_binary": files_missing_binary,
+    }
+
+
 @router.get("/folders/all")
 async def list_all_folders(user: dict = Depends(get_current_user)):
     """v58.13.132gy — Flat list of every non-deleted folder in the

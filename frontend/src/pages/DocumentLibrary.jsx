@@ -258,6 +258,71 @@ function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
 
 const IMS_PREFIX_RE = /IMS-(\d{1,3})(?:\.\d+[a-z]?)?/i;
 
+// v58.13.132ha — Self-serve counts pill. Reads the new
+// `/document-library/counts` endpoint on mount and renders folder +
+// file totals in a subtle header pill so the "how many files do we
+// have?" question is answered at a glance. Soft-deleted totals sit
+// as a secondary muted metric. Missing-binary count only surfaces
+// when non-zero (legacy .132gh migration tail).
+function CountsPill() {
+  const [counts, setCounts] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    api.get('/document-library/counts')
+      .then((r) => { if (!cancelled) setCounts(r.data || null); })
+      .catch(() => { /* silent — pill just doesn't render */ });
+    return () => { cancelled = true; };
+  }, []);
+  if (!counts) return null;
+  const {
+    folders_active: fA = 0,
+    folders_deleted: fD = 0,
+    files_active: dA = 0,
+    files_deleted: dD = 0,
+    files_missing_binary: mB = 0,
+  } = counts;
+  return (
+    <div
+      data-testid="doclib-counts-pill"
+      className="-mt-2 mb-6 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 shadow-sm"
+    >
+      <span data-testid="doclib-counts-folders">
+        <span className="font-semibold tabular-nums text-slate-900">{fA}</span>{' '}
+        {fA === 1 ? 'folder' : 'folders'}
+      </span>
+      <span className="text-slate-300" aria-hidden>·</span>
+      <span data-testid="doclib-counts-files">
+        <span className="font-semibold tabular-nums text-slate-900">{dA}</span>{' '}
+        {dA === 1 ? 'file' : 'files'}
+      </span>
+      {(fD > 0 || dD > 0) ? (
+        <>
+          <span className="text-slate-300" aria-hidden>·</span>
+          <span
+            data-testid="doclib-counts-deleted"
+            className="text-slate-400"
+            title="Soft-deleted rows retained for audit"
+          >
+            <span className="tabular-nums">{fD + dD}</span> archived
+          </span>
+        </>
+      ) : null}
+      {mB > 0 ? (
+        <>
+          <span className="text-slate-300" aria-hidden>·</span>
+          <span
+            data-testid="doclib-counts-missing"
+            className="text-amber-700"
+            title="Files with a database row but no binary in storage. Legacy migration tail; contact admin to reconcile."
+          >
+            <span className="tabular-nums">{mB}</span> missing binary
+          </span>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function _mimeBucket(mime) {
   const m = String(mime || '').toLowerCase();
   if (m.includes('pdf')) return 'pdf';
@@ -602,6 +667,8 @@ export default function DocumentLibrary() {
         title="Document Library"
         subtitle="All your Risk & Compliance documents, organised and AI-tagged."
       />
+
+      <CountsPill />
 
       {/* AI Smart Search panel */}
       <form onSubmit={runSearch}
