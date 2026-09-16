@@ -21,6 +21,12 @@ import {
 } from '../components/capture/Ui';
 import PdfPreviewModal, { isPdfPreviewable } from '../components/PdfPreviewModal';
 import FilePreviewModal from '../components/FilePreviewModal';
+import FolderTreeView, {
+  loadExpandedFromStorage as _loadExpandedFromStorage,
+  saveExpandedToStorage as _saveExpandedToStorage,
+  buildFolderIndex,
+  computeDefaultExpanded,
+} from './DocumentLibraryTree';
 // v160.3.7p — Single source of truth for the Doc Library colour taxonomy.
 // Ships the semantic labels ("Health & Hazards", "SWMS & Competencies", …)
 // that replace the old cosmetic pastel names.
@@ -245,6 +251,11 @@ function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
 // tag families requires zero code changes — they slot into the
 // rotation automatically.
 
+// v58.13.132gz — Tree view components lifted to a sibling module
+// (`DocumentLibraryTree.jsx`). Same behaviour, cleaner AST — the
+// combined file exceeded babel-loader traverse capacity.
+
+
 const IMS_PREFIX_RE = /IMS-(\d{1,3})(?:\.\d+[a-z]?)?/i;
 
 function _mimeBucket(mime) {
@@ -324,10 +335,11 @@ export default function DocumentLibrary() {
   // v58.13.132gy — Full flat folder list (roots + sub-parents) for
   // the parent-picker dropdown on the create form. Lazy-loaded on
   // first open so we don't slow the initial page render.
+  // v58.13.132gz — Same endpoint now also powers the tree view, so
+  // we load it eagerly on mount (was lazy on first create-form open).
   const [allFolders, setAllFolders] = useState([]);
   const [allFoldersLoaded, setAllFoldersLoaded] = useState(false);
   const loadAllFolders = useCallback(async () => {
-    if (allFoldersLoaded) return;
     try {
       const { data } = await api.get('/document-library/folders/all');
       setAllFolders(Array.isArray(data) ? data : []);
@@ -336,7 +348,13 @@ export default function DocumentLibrary() {
       setAllFolders([]);
       setAllFoldersLoaded(true);
     }
-  }, [allFoldersLoaded]);
+  }, []);
+  // v58.13.132gz — Tree state: expanded map + drag state. Expanded
+  // map persists per user via localStorage; drag state is transient
+  // per drag interaction.
+  const [treeExpanded, setTreeExpanded] = useState(() => _loadExpandedFromStorage(user?.id) || null);
+  const [treeDefaultsSeeded, setTreeDefaultsSeeded] = useState(false);
+  const [dragState, setDragState] = useState({ draggingId: null, overId: null, invalid: false });
   const [renamingId, setRenamingId] = useState(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -358,12 +376,63 @@ export default function DocumentLibrary() {
 
   const load = () => {
     setLoading(true);
-    api.get('/document-library/folders')
-      .then((r) => setFolders(r.data || []))
+    Promise.all([
+      api.get('/document-library/folders').then((r) => setFolders(r.data || [])),
+      loadAllFolders(),
+    ])
       .catch((e) => toast.error(apiError(e)))
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  // v58.13.132gz — Seed default tree expand state on first load.
+  // Uncategorised + top-2 root folders by direct file_count.
+  // Runs exactly once per session, only when no persisted state.
+  useEffect(() => {
+    if (treeDefaultsSeeded || !allFoldersLoaded || allFolders.length === 0) return;
+    if (treeExpanded === null) {
+      const idx = buildFolderIndex(allFolders);
+      const defaults = computeDefaultExpanded(idx);
+      setTreeExpanded(defaults);
+      _saveExpandedToStorage(user?.id, defaults);
+    }
+    setTreeDefaultsSeeded(true);
+  }, [allFoldersLoaded, allFolders, treeExpanded, treeDefaultsSeeded, user?.id]);
+
+  const toggleTreeExpand = useCallback((id) => {
+    setTreeExpanded((prev) => {
+      const cur = prev || {};
+      const next = { ...cur };
+      if (next[id]) delete next[id]; else next[id] = true;
+      _saveExpandedToStorage(user?.id, next);
+      return next;
+    });
+  }, [user?.id]);
+
+  const reparentFolder = useCallback(async (folderId, newParentId) => {
+    const src = allFolders.find((f) => f.id === folderId);
+    const tgt = allFolders.find((f) => f.id === newParentId);
+    if (!src || !tgt) return;
+    // Optimistic update — flip parent locally, roll back on error.
+    const prevParent = src.parent_folder_id;
+    setAllFolders((rs) => rs.map((r) => (r.id === folderId ? { ...r, parent_folder_id: newParentId } : r)));
+    // Auto-expand the new parent so the moved row is visible.
+    setTreeExpanded((prev) => {
+      const cur = prev || {};
+      if (cur[newParentId]) return cur;
+      const next = { ...cur, [newParentId]: true };
+      _saveExpandedToStorage(user?.id, next);
+      return next;
+    });
+    try {
+      await api.patch(`/document-library/folders/${folderId}`, { parent_folder_id: newParentId });
+      toast.success(`Moved “${src.name}” into “${tgt.name}”.`);
+      await load();
+    } catch (e) {
+      toast.error(apiError(e));
+      setAllFolders((rs) => rs.map((r) => (r.id === folderId ? { ...r, parent_folder_id: prevParent } : r)));
+    }
+  }, [allFolders, user?.id]);
 
   // v160.3.6m — Colour-filter state for the pastel legend. Multi-select
   // Set — clicking a swatch toggles that colour on/off; empty Set = "all
@@ -744,6 +813,33 @@ export default function DocumentLibrary() {
 
       {loading ? (
         <div className="text-sm text-slate-500 inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading folders…</div>
+      ) : (!filter && colorFilter.size === 0) ? (
+        // v58.13.132gz — Tree view (default). Falls through to the
+        // flat grid when the user activates a text or colour filter
+        // — the two mental models are kept separate: tree =
+        // navigation, filter = search.
+        <FolderTreeView
+          allFolders={allFolders}
+          expanded={treeExpanded || {}}
+          onToggle={toggleTreeExpand}
+          canEdit={canEdit}
+          canDelete={canDeleteFolder}
+          navigate={navigate}
+          dragState={dragState}
+          setDragState={setDragState}
+          reparent={reparentFolder}
+          onRename={startRename}
+          onDelete={setConfirmDeleteTarget}
+          renamingId={renamingId}
+          renameValue={newName}
+          setRenameValue={setNewName}
+          onSaveRename={saveRename}
+          onCancelRename={cancelEdit}
+          busy={busy}
+          PASTEL_DOT={PASTEL_DOT}
+          PASTEL_LABEL={PASTEL_LABEL}
+          onCreateEmpty={startCreate}
+        />
       ) : filtered.length === 0 ? (
         <EmptyState title="No folders match that filter"
           body={filter ? `Try a different keyword — there are ${folders.length} folders in total.` : 'Create your first document folder to get started.'}

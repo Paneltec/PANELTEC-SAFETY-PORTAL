@@ -566,15 +566,23 @@ async def list_all_folders(user: dict = Depends(get_current_user)):
     Powers the admin "Parent" dropdown on the folder-create form so
     admins can nest new folders under any sub-parent like `WHS
     Framework` or `Risk & Hazard`. Kept lightweight — only id,
-    name, parent_folder_id, is_system."""
+    name, parent_folder_id, is_system.
+
+    v58.13.132gz — Extended with `file_count`, `color_key`,
+    `sort_order` so the frontend tree view can render the whole
+    hierarchy from a single fetch and compute recursive rollups
+    client-side without an N+1 subfolders walk. Per-worker folders
+    are still excluded — they're not tree nodes."""
     await _seed_default_folders(user["org_id"], user["id"])
     await _ensure_tree_structure(user["org_id"], user["id"])
+    counts = await _file_counts(user["org_id"])
     out: list = []
     async for f in db.doc_folders.find(
         {"org_id": user["org_id"], "deleted_at": None},
         {"_id": 0, "id": 1, "name": 1, "parent_folder_id": 1,
-         "is_system": 1, "worker_id": 1},
-    ).sort([("name", 1)]):
+         "is_system": 1, "worker_id": 1, "color_key": 1,
+         "sort_order": 1},
+    ).sort([("sort_order", 1), ("name", 1)]):
         # Skip per-worker folders — they're not meaningful parents
         # for user-created top-level or sub-folders.
         if f.get("worker_id"):
@@ -584,6 +592,9 @@ async def list_all_folders(user: dict = Depends(get_current_user)):
             "name": f["name"],
             "parent_folder_id": f.get("parent_folder_id"),
             "is_system": bool(f.get("is_system")),
+            "file_count": counts.get(f["id"], 0),
+            "color_key": f.get("color_key") or "sky",
+            "sort_order": f.get("sort_order", 0),
         })
     return out
 

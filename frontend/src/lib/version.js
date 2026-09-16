@@ -13003,7 +13003,89 @@
 //   CACHE all bumped `.132fm` → `.132fn` so any stale service-worker
 //   bundle on Stephen's device is invalidated on next tab focus. Mobile
 //   bundle intentionally untouched.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132gy';
+//
+// v58.13.132gz — Document Library FE tree view.
+//   Ships the collapsible-tree replacement for the flat folder grid.
+//   Backend `.132gy` restructured the 51 flat seed folders into 9 WHS
+//   top-level parents (Compliance & Safety, Training & Competency,
+//   Administration, etc.) via `_ensure_tree_structure`. `.132gz` is
+//   the visual half: users can now expand / collapse each parent,
+//   see per-parent DIRECT (RECURSIVE_TOTAL) file counts, and admins
+//   can drag rows to reparent onto any other folder or to a "detach
+//   to root" drop zone at the top of the tree.
+//
+//   Files touched:
+//     · backend/document_library.py — `/folders/all` response
+//       extended with `file_count`, `color_key`, `sort_order` so
+//       the FE builds the whole tree from one fetch (was: only id +
+//       name + parent_folder_id + is_system).
+//     · frontend/src/pages/DocumentLibrary.jsx — three new helpers
+//       (`_treeStorageKey`, `_loadExpandedFromStorage`,
+//       `_saveExpandedToStorage`, `buildFolderIndex`,
+//       `computeDefaultExpanded`, `isDescendantOrSelf`) plus three
+//       new components (`TreeRow`, `TreeSubtree`, `FolderTreeView`).
+//       Primary render replaced the flat grid with the tree when no
+//       text/colour filter is active. Filter-mode still renders the
+//       existing pastel grid so search hits stay visible flat.
+//     · frontend/src/lib/version.js + public/service-worker.js —
+//       version bump `.132gy` → `.132gz` in lockstep.
+//
+//   User-facing behaviour:
+//     · Default expand: Uncategorised (system folder) + top-2 root
+//       folders by direct file_count on first load per user.
+//     · Persistence: `localStorage.paneltec_doclib_tree_expanded_v1_
+//       <user_id>` — expanded state survives reloads AND is per user
+//       so shared browsers don't override each other.
+//     · Counts: leaf rows show a single count (direct files). Parent
+//       rows with children show `4 (127)` — 4 direct files, 127
+//       recursive total including descendants. Cycle-safe.
+//     · DnD: admins only. Row drag → drop onto another row reparents
+//       via `PATCH /folders/{id}` with `parent_folder_id=<target>`.
+//       Root drop zone appears at the top when a folder with a
+//       parent is being dragged; drop uses the "-" sentinel to
+//       detach to root. Backend cycle-check is duplicated
+//       client-side (`isDescendantOrSelf`) so invalid targets show
+//       a rose ring + `dropEffect=none` instead of round-tripping.
+//     · Rename / delete: inline rename input + existing page-level
+//       delete-confirm modal are reused verbatim — no new modals.
+//
+//   NOT in this ship (deferred to `.132ha` per user directive):
+//     · File drag-and-drop between folders. Folders only for now.
+//     · Breadcrumb rail at the top of the tree. Clicking a row
+//       still navigates to the folder's dedicated detail page which
+//       already carries a `<PageHeader>` crumb — deferred until user
+//       asks for a rail inline.
+//     · Tree row recolour. Users can still recolour via the flat
+//       grid view (activate any filter or clear the tree to grid).
+//
+//   Testids (locked, ready for Playwright):
+//     · folder-tree                      — outer container
+//     · tree-root-drop-zone              — root drop zone (appears
+//       only while dragging a non-root folder)
+//     · tree-row-<folder_id>             — every tree row
+//     · tree-chevron-<folder_id>         — expand/collapse toggle
+//     · tree-open-<folder_id>            — navigation trigger
+//     · tree-count-<folder_id>           — count cell
+//     · tree-actions-<folder_id>         — hover-revealed actions
+//     · tree-rename-<folder_id>          — rename action button
+//     · tree-delete-<folder_id>          — delete action button
+//     · tree-rename-row-<folder_id>      — inline rename swap
+//     · tree-rename-input-<folder_id>    — rename input
+//     · tree-rename-save-<folder_id>     — rename save button
+//
+//   Pytests (`backend/tests/test_v58_13_132gz_doclib_tree.py`):
+//     Endpoint contract:
+//       · `/folders/all` payload carries `file_count` + `color_key`
+//         + `sort_order` for every non-worker folder.
+//     Source pins on `DocumentLibrary.jsx`:
+//       · `FolderTreeView`, `TreeRow`, `TreeSubtree` present.
+//       · Tree renders when filter is empty, grid renders otherwise.
+//       · localStorage key `paneltec_doclib_tree_expanded_v1_` used.
+//       · Reparent handler PATCHes `/folders/<id>` with
+//         `parent_folder_id` payload.
+//       · Testid patterns present.
+//     Version pin `.132gz` on version.js + service-worker.js.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132gz';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13024,7 +13106,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132gy';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132gy';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132gz';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
