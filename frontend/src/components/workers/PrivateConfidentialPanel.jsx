@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import useClipboardPaste from '../../lib/useClipboardPaste';
+import OpenAsPdfButton from '../OpenAsPdfButton';
 
 const MAX_MB = 50;
 
@@ -96,7 +97,8 @@ export default function PrivateConfidentialPanel({ workerId }) {
     } catch (e) { toast.error(apiError(e)); }
   };
 
-  const download = async (row) => {
+  const downloadOriginal = async (row) => {
+    // v58.13.132hk fallback for unsupported source formats.
     try {
       const u = await filesUrl(`/workers/${workerId}/hr-documents/${row.id}/file`);
       window.open(u, '_blank', 'noopener,noreferrer');
@@ -199,9 +201,19 @@ export default function PrivateConfidentialPanel({ workerId }) {
                     )}
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <button type="button" onClick={() => download(r)}
+                    <OpenAsPdfButton
+                      source="hr_document"
+                      refObj={{ worker_id: workerId, doc_id: r.id }}
+                      filename={r.filename}
+                      mime={r.mime}
+                      onDownloadOriginal={() => downloadOriginal(r)}
+                      variant="icon"
+                      data-testid={`pnc-open-${r.id}`}
+                      className="mr-1"
+                    />
+                    <button type="button" onClick={() => downloadOriginal(r)}
                       data-testid={`pnc-download-${r.id}`}
-                      title="Download"
+                      title="Download original"
                       className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 mr-1">
                       <Download size={12} />
                     </button>

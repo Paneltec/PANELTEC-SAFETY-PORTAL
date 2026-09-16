@@ -6,6 +6,7 @@ import { useCan } from '../lib/permissions';
 import { PageHeader, PrimaryButton, Field, inputClass } from '../components/capture/Ui';
 import ArchiveRulesSection from '../components/ArchiveRulesSection';  // v58.13.132ed
 import QuickLinksSection from '../components/QuickLinksSection';  // v58.13.132eo
+import OpenAsPdfButton from '../components/OpenAsPdfButton';
 
 // v58.13.132dp — Organisation Settings expansion (5 items).
 // v58.13.132dq — Adds: (a) 3rd insurance slot "General Cover",
@@ -782,15 +783,19 @@ function InsuranceBlock({ kind, label, form, doc, isAdmin, setInsurance, uploadF
                  onChange={(e) => uploadFile(`/org/insurance/${kind}/upload`, e.target.files?.[0], kind)} />
         </label>
         {block.certificate_id && (
-          <a
-            href={`${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}/api/org/insurance/${kind}/download`}
-            target="_blank"
-            rel="noreferrer noopener"
+          <OpenAsPdfButton
+            source="insurance_cert"
+            refObj={{ policy_type: kind }}
+            filename={block.certificate_filename || 'certificate.pdf'}
+            mime="application/pdf"
+            onDownloadOriginal={() => window.open(
+              `${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}/api/org/insurance/${kind}/download`,
+              '_blank', 'noopener',
+            )}
+            variant="button"
+            label={block.certificate_filename || 'View PDF'}
             data-testid={`org-insurance-download-${kind}`}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 font-semibold border border-slate-300 rounded-lg bg-white hover:bg-slate-50 text-slate-700"
-          >
-            <Download size={12} /> {block.certificate_filename || 'View PDF'}
-          </a>
+          />
         )}
       </div>
       {/* v58.13.132dq — Past certificates archive. Collapsible so the
@@ -879,15 +884,19 @@ function InsuranceBlock({ kind, label, form, doc, isAdmin, setInsurance, uploadF
                       </td>
                       <td className="px-2 py-1.5 text-right">
                         <div className="inline-flex items-center gap-2">
-                          <a
-                            href={`${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}/api/org/insurance/${kind}/history/${row.certificate_id}/download`}
-                            target="_blank"
-                            rel="noreferrer noopener"
+                          <OpenAsPdfButton
+                            source="insurance_cert"
+                            refObj={{ policy_type: kind, cert_id: row.certificate_id }}
+                            filename={row.certificate_filename || 'certificate.pdf'}
+                            mime="application/pdf"
+                            onDownloadOriginal={() => window.open(
+                              `${(process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '')}/api/org/insurance/${kind}/history/${row.certificate_id}/download`,
+                              '_blank', 'noopener',
+                            )}
+                            label="Download"
+                            className="!text-emerald-700 hover:!text-emerald-900"
                             data-testid={`org-insurance-history-download-${row.certificate_id}`}
-                            className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900"
-                          >
-                            <Download size={11} /> Download
-                          </a>
+                          />
                           {isAdmin && !deleted && (
                             <button
                               type="button"

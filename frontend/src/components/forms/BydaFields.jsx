@@ -24,6 +24,7 @@ import {
   Trash2, Plus, FileText, Download, Loader2, AlertCircle, X, RefreshCw,
 } from 'lucide-react';
 import api from '../../lib/api';
+import OpenAsPdfButton from '../OpenAsPdfButton';
 
 // Pure helper — exported for jsdom tests.
 // Returns { ok: true } or { ok: false, error: string } per the client
@@ -148,6 +149,11 @@ export function AttachmentField({
   apiBasePath = '/forms/submissions',
   apiDeletePath,
   onServerFileDeleted,
+  // v58.13.132hk — Optional: `(att) => ({source, ref})` mapping so
+  // this shared field can render a universal "Open as PDF" button
+  // for callers that opt in. Absent → download-only, matches the
+  // pre-.132hk UI.
+  previewSourceFor,
 }) {
   const cfg = field.config || {};
   const allowMultiple = cfg.allow_multiple !== false;
@@ -420,7 +426,9 @@ export function AttachmentField({
         );
       })}
 
-      {liveServer.map((f) => (
+      {liveServer.map((f) => {
+        const preview = previewSourceFor ? previewSourceFor(f) : null;
+        return (
         <div key={f.file_id || f.stored_name}
              data-testid={`attachment-row-${f.file_id || f.stored_name}`}
              className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 bg-white">
@@ -432,6 +440,18 @@ export function AttachmentField({
               {f.mime} · {f.size ? `${Math.round(f.size / 1024)} KB` : ''}
             </div>
           </div>
+          {preview && (
+            <OpenAsPdfButton
+              source={preview.source}
+              refObj={preview.ref}
+              filename={f.name || f.stored_name}
+              mime={f.mime}
+              onDownloadOriginal={() => download(f)}
+              label="Open"
+              variant="link"
+              data-testid={`attachment-open-${f.file_id || f.stored_name}`}
+            />
+          )}
           <button type="button" onClick={() => download(f)}
                   data-testid={`attachment-download-${f.file_id || f.stored_name}`}
                   className="inline-flex items-center gap-1 text-xs text-brand-blue hover:underline">
@@ -450,7 +470,8 @@ export function AttachmentField({
             <Trash2 size={14} />
           </button>
         </div>
-      ))}
+        );
+      })}
 
       {liveServer.length === 0 && pending.length === 0 && readOnly && (
         <div className="text-xs text-slate-400 italic">No attachments.</div>

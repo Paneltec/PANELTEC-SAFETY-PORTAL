@@ -948,6 +948,10 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
                       submissionId={initial.id}
                       apiBasePath={`/assets/${asset.id}/schedules`}
                       apiDeletePath={`/assets/${asset.id}/schedules`}
+                      previewSourceFor={(att) => ({
+                        source: 'schedule_attachment',
+                        ref: { asset_id: asset.id, schedule_id: initial.id, stored_name: att.stored_name },
+                      })}
                       onServerFileDeleted={(att) => {
                         setForm((f) => ({
                           ...f,

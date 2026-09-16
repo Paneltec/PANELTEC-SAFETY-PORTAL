@@ -8,6 +8,7 @@ import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import { summariseCertifications, personalFilledCount } from '../../lib/workerSectionSummary';
 import { useCan } from '../../lib/permissions';
+import OpenAsPdfButton from '../OpenAsPdfButton';
 // v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
 import useLockBodyScroll from '../../lib/useLockBodyScroll';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
@@ -288,7 +289,8 @@ function CertRow({ cert, workerId }) {
     missing_file:  { bg: 'bg-slate-100', ink: 'text-slate-600', border: 'border-slate-200' },
   };
   const style = map[key] || map.no_expiry;
-  const openFile = async () => {
+  const downloadOriginal = async () => {
+    // v58.13.132hk — invoked by PdfPreviewModal on 415 (unsupported format).
     if (!cert.doc_file_id) return;
     try {
       const u = await filesUrl(`/workers/${workerId}/certifications/${cert.id}/file`);
@@ -329,15 +331,15 @@ function CertRow({ cert, workerId }) {
       </td>
       <td className="px-3 py-2 text-center whitespace-nowrap">
         {cert.doc_file_id ? (
-          <button
-            type="button"
-            onClick={openFile}
+          <OpenAsPdfButton
+            source="cert_file"
+            refObj={{ worker_id: workerId, cert_id: cert.id }}
+            filename={cert.name || 'certificate'}
+            onDownloadOriginal={downloadOriginal}
+            variant="icon"
             data-testid={`view-cert-open-${cert.id}`}
-            title="Open file"
-            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"
-          >
-            <FileText size={12} />
-          </button>
+            className="!bg-[#e6eff9] !text-[#1e4a8c] hover:!bg-[#d8e6f4]"
+          />
         ) : (
           <span className="text-[10px] text-slate-400 italic" title="no file">—</span>
         )}
@@ -925,19 +927,20 @@ function UnmatchedDocsTab({ workerId, onChange }) {
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <div className="inline-flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={async () => {
+                    <OpenAsPdfButton
+                      source="unmatched_document"
+                      refObj={{ worker_id: workerId, doc_id: d.id }}
+                      filename={d.filename || 'document'}
+                      onDownloadOriginal={async () => {
                         try {
                           const u = await filesUrl(`/workers/${workerId}/unmatched-documents/${d.id}/file`);
                           window.open(u, '_blank', 'noopener,noreferrer');
                         } catch (_e) { toast.error('Unable to open file'); }
                       }}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                      variant="button"
+                      label="View"
                       data-testid={`unmatched-preview-${d.id}`}
-                    >
-                      <ExternalLink size={11} /> View
-                    </button>
+                    />
                     <button
                       type="button"
                       onClick={() => { setReclassifyDoc(d); setReclassifySlug(''); }}

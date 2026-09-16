@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
 import useClipboardPaste from '@/lib/useClipboardPaste';
 import { getUser } from '@/lib/auth';
+import OpenAsPdfButton from '@/components/OpenAsPdfButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -380,12 +381,12 @@ function EquipmentModal({ initial, categories, onClose, onSaved, onCertsChanged 
                       className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-slate-50 border border-slate-200"
                       data-testid={`equipment-doc-row-${d.id}`}>
                     <FileText size={12} className="text-slate-500 shrink-0" />
-                    <a
-                      href={`/api/equipment/${initial.id}/documents/${d.id}`}
-                      target="_blank" rel="noreferrer"
-                      className="flex-1 truncate text-slate-700 hover:underline"
-                      onClick={async (e) => {
-                        e.preventDefault();
+                    <OpenAsPdfButton
+                      source="equipment_document"
+                      refObj={{ equipment_id: initial.id, doc_id: d.id }}
+                      filename={d.filename}
+                      mime={d.mime}
+                      onDownloadOriginal={async () => {
                         try {
                           const r = await api.get(`/equipment/${initial.id}/documents/${d.id}`,
                             { responseType: 'blob' });
@@ -394,9 +395,10 @@ function EquipmentModal({ initial, categories, onClose, onSaved, onCertsChanged 
                           setTimeout(() => URL.revokeObjectURL(url), 60_000);
                         } catch (err) { toast.error(apiError(err)); }
                       }}
-                    >
-                      {d.filename}
-                    </a>
+                      label={d.filename}
+                      className="flex-1 truncate !text-slate-700"
+                      data-testid={`equipment-doc-open-${d.id}`}
+                    />
                     {d.label && <span className="text-slate-400">· {d.label}</span>}
                     <button
                       onClick={() => removeDocument(d.id)}

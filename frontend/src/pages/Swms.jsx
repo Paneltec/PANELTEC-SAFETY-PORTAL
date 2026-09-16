@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
+import PdfPreviewModal from '../components/PdfPreviewModal';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser, getToken } from '../lib/auth';
 import { useCan } from '../lib/permissions';
@@ -850,6 +851,7 @@ function SwmsVersionBanner({ doc }) {
 
 function SwmsDownloadButton({ doc }) {
   const [open, setOpen] = useState(false);
+  const [previewOriginal, setPreviewOriginal] = useState(false);
   const hasOriginal = !!(doc.source_file?.url);
 
   const downloadCivil = async () => {
@@ -862,8 +864,16 @@ function SwmsDownloadButton({ doc }) {
     } catch (e) { toast.error(apiError(e)); }
   };
 
-  const downloadOriginal = () => {
+  const openOriginalAsPdf = () => {
     setOpen(false);
+    if (!hasOriginal) return;
+    // v58.13.132hk — Route the SWMS source .docx through the
+    // universal preview modal. The `swms_source` adapter fetches
+    // the external URL server-side and renders it as PDF.
+    setPreviewOriginal(true);
+  };
+
+  const downloadOriginalRaw = () => {
     if (!hasOriginal) return;
     window.open(doc.source_file.url, '_blank');
   };
@@ -890,7 +900,7 @@ function SwmsDownloadButton({ doc }) {
             <div className="font-medium text-slate-900">Civil PDF</div>
             <div className="text-[11px] text-slate-500">AI-rendered, branded layout</div>
           </button>
-          <button onClick={downloadOriginal} disabled={!hasOriginal}
+          <button onClick={openOriginalAsPdf} disabled={!hasOriginal}
             data-testid="swms-download-original"
             className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed border-t border-slate-100">
             <div className="font-medium text-slate-900">Original document</div>
@@ -899,6 +909,15 @@ function SwmsDownloadButton({ doc }) {
             </div>
           </button>
         </div>
+      )}
+      {previewOriginal && (
+        <PdfPreviewModal
+          file={{ filename: doc.source_file?.filename || `${doc.code || 'swms'}.docx`,
+                  mime: doc.source_file?.content_type }}
+          previewSource={{ source: 'swms_source', ref: { swms_id: doc.id } }}
+          onDownloadOriginal={downloadOriginalRaw}
+          onClose={() => setPreviewOriginal(false)}
+        />
       )}
     </div>
   );

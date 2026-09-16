@@ -63,7 +63,11 @@ function FieldValue({ field, submissionId }) {
   }
   if (type === 'attachment') {
     const { AttachmentField } = require('./forms/BydaFields');
-    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly />;
+    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly
+      previewSourceFor={(att) => ({
+        source: 'submission_attachment',
+        ref: { submission_id: submissionId, stored_name: att.stored_name },
+      })} />;
   }
   if (type === 'actions') {
     const { ActionsField } = require('./forms/BydaFields');

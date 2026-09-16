@@ -8,10 +8,11 @@
  * intentionally a READ-ONLY view surface for discoverability.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { IdCard, Loader2, ExternalLink } from 'lucide-react';
+import { IdCard, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
+import OpenAsPdfButton from '../OpenAsPdfButton';
 
 // Kept in sync with backend/cert_kinds.py — licence-family slugs.
 const LICENCE_SLUGS = new Set([
@@ -82,7 +83,9 @@ export default function LicencesPanel({ workerId }) {
     return s;
   }, [rows]);
 
-  const openFile = async (r) => {
+  const openOriginal = async (r) => {
+    // v58.13.132hk fallback — the modal invokes this if the PDF
+    // pipeline can't render the source file (e.g. .dwg).
     if (!r.doc_file_id) return;
     try {
       const u = await filesUrl(`/workers/${workerId}/certifications/${r.id}/file`);
@@ -165,11 +168,13 @@ export default function LicencesPanel({ workerId }) {
                     </td>
                     <td className="px-3 py-2 text-right">
                       {r.doc_file_id ? (
-                        <button type="button" onClick={() => openFile(r)}
+                        <OpenAsPdfButton
+                          source="cert_file"
+                          refObj={{ worker_id: workerId, cert_id: r.id }}
+                          filename={r.name || 'certificate'}
+                          onDownloadOriginal={() => openOriginal(r)}
                           data-testid={`licence-file-${r.id}`}
-                          className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 hover:underline">
-                          <ExternalLink size={12} /> Open
-                        </button>
+                        />
                       ) : (
                         <span className="text-slate-400 text-xs">—</span>
                       )}

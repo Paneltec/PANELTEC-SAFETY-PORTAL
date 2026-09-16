@@ -410,7 +410,11 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
   }
   if (field.type === 'attachment') {
     const { AttachmentField } = require('../components/forms/BydaFields');
-    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly={readOnly} onStageChange={onStageChange} />;
+    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly={readOnly} onStageChange={onStageChange}
+      previewSourceFor={(att) => ({
+        source: 'submission_attachment',
+        ref: { submission_id: submissionId, stored_name: att.stored_name },
+      })} />;
   }
   if (field.type === 'actions') {
     const { ActionsField } = require('../components/forms/BydaFields');

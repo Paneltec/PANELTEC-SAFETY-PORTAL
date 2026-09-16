@@ -41,9 +41,9 @@ const PDF_OK = (mime, name) => {
 
 export const isPdfPreviewable = PDF_OK;
 
-export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras, footerExtras, onClose }) {
+export default function PdfPreviewModal({ file, blobUrl, directUrl, previewSource, onDownloadOriginal, headerExtras, footerExtras, onClose }) {
   useLockBodyScroll();
-  // Three modes:
+  // Four modes:
   //   1. file={id, filename}            → mint a signed token, build iframe src.
   //   2. directUrl + file={filename}    → caller already has a same-origin
   //                                       HTTPS URL the iframe can render
@@ -55,6 +55,19 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
   //                                       but routinely blocked by ad
   //                                       blockers (ERR_BLOCKED_BY_CLIENT).
   //                                       The blocked-fallback UI applies.
+  //   4. previewSource={source, ref}    → v58.13.132hk — universal preview
+  //                                       source path. Mints a token via
+  //                                       POST /preview/{source}/token and
+  //                                       streams from /preview/{source}/pdf.
+  //                                       Works against worker cert files,
+  //                                       HR docs, equipment attachments,
+  //                                       form submission attachments, etc.
+  //                                       The optional `onDownloadOriginal`
+  //                                       callback is invoked when the modal
+  //                                       hits a 415 (unsupported source
+  //                                       format) so the caller can trigger
+  //                                       a raw-file download of the
+  //                                       original bytes.
   // Iframes can't carry the Authorization header, so we mint a short-lived
   // signed token via POST /files/{id}/preview-token and put it on the iframe
   // src as `?t=`. This sidesteps Chrome's iframe-cookie / cross-origin auth
@@ -104,6 +117,36 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
       setSrc(blobUrl);
       return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
     }
+    // Mode 4 — v58.13.132hk universal preview source. Mint a signed
+    // token bound to (source, ref), then build the streaming URL.
+    if (previewSource && previewSource.source && previewSource.ref) {
+      (async () => {
+        try {
+          const r = await api.post(
+            `/preview/${previewSource.source}/token`,
+            { ref: previewSource.ref },
+          );
+          if (!alive) return;
+          const t = r.data?.token;
+          const refB64 = r.data?.ref_b64;
+          const base = process.env.REACT_APP_BACKEND_URL;
+          setSrc(`${base}/api/preview/${previewSource.source}/pdf?t=${encodeURIComponent(t)}&ref=${encodeURIComponent(refB64)}`);
+          // Parallel bearer fetch just to grab the X-Pipeline header
+          // (same trick as mode 1 — the iframe src can't return
+          // headers to JS).
+          api.get(`/preview/${previewSource.source}/pdf`, {
+            params: { ref: refB64 }, responseType: 'blob',
+          }).then((rr) => {
+            if (!alive) return;
+            setPipeline(rr.headers?.['x-pipeline'] || null);
+            setIframeLoaded(true);
+          }).catch(() => {});
+        } catch (e) {
+          if (alive) setErr(apiError(e));
+        }
+      })();
+      return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
+    }
     // Mode 1 — fetch a signed preview token.
     // v150 — skip if the caller hasn't provided a real file id. This
     // happens when a wrapper (SitePrintModal / SupplierPrintModal)
@@ -138,7 +181,7 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
       }
     })();
     return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
-  }, [file, blobUrl, directUrl, isBlobMode]);
+  }, [file, blobUrl, directUrl, isBlobMode, previewSource]);
 
   // v151 — pdfjs render effect. Whenever `src` changes we fetch the bytes
   // and load them into pdfjs. Canvas render is then handled inside
@@ -215,11 +258,40 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
     // stubbed / truncated upload), fall back to the raw original-file
     // download so Stephen at least gets the bytes off the server.
     if (err) {
+      // v58.13.132hk — preview-source mode: caller supplies its own
+      // raw-download callback (each source has its own /file endpoint).
+      if (previewSource && onDownloadOriginal) {
+        try { await onDownloadOriginal(); }
+        catch (e) { toast.error(apiError(e)); }
+        return;
+      }
       try {
         const r = await api.get(`/document-library/files/${file.id}/download`, {
           params: { download: 1 }, responseType: 'blob',
         });
         const filename = file.filename || 'document';
+        const { src: stashSrc } = await stashInlinePdf(r.data, filename);
+        const a = document.createElement('a');
+        a.href = stashSrc;
+        a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) { toast.error(apiError(e)); }
+      return;
+    }
+    // v58.13.132hk — preview-source PDF download path.
+    if (previewSource && previewSource.source && previewSource.ref) {
+      try {
+        // Mint fresh so we have `ref_b64` in-hand.
+        const mint = await api.post(
+          `/preview/${previewSource.source}/token`,
+          { ref: previewSource.ref },
+        );
+        const refB64 = mint.data?.ref_b64;
+        const r = await api.get(
+          `/preview/${previewSource.source}/pdf`,
+          { params: { ref: refB64, dl: 1 }, responseType: 'blob' },
+        );
+        const filename = (file?.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
         const { src: stashSrc } = await stashInlinePdf(r.data, filename);
         const a = document.createElement('a');
         a.href = stashSrc;
