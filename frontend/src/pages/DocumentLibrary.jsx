@@ -1964,8 +1964,15 @@ export function DocumentLibraryFolder() {
             ? "Upload your first file with the picker above, or paste from your clipboard."
             : "Files will appear here once an admin uploads them."} />
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
+        // v58.13.132hh — Fix for horizontal-overflow "actions missing"
+        // bug (SDS/Licences/etc. rows with many AI tag chips pushed
+        // the Actions column past the container edge and clipped it).
+        // Wrapper now scrolls horizontally as a last-resort safety
+        // net, and the Actions column is sticky-right so it's always
+        // visible regardless of row width. AI tags are capped at 3
+        // visible chips + a "+N" pill.
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
+          <table className="w-full text-sm" data-testid="folder-files-table">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
                 <th className="text-left px-4 py-3">Filename</th>
@@ -1974,7 +1981,10 @@ export function DocumentLibraryFolder() {
                 <th className="text-left px-4 py-3 hidden lg:table-cell">Uploaded</th>
                 <th className="text-left px-4 py-3">Expiry</th>
                 <th className="text-left px-4 py-3 hidden xl:table-cell">AI tags</th>
-                <th className="text-right px-4 py-3">Actions</th>
+                <th
+                  className="text-right px-4 py-3 sticky right-0 bg-slate-50 shadow-[inset_1px_0_0_rgba(226,232,240,1)]"
+                  data-testid="folder-files-th-actions"
+                >Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -2031,7 +2041,7 @@ export function DocumentLibraryFolder() {
                       return (
                       <tr
                         key={f.id}
-                        className={`border-t border-slate-100 hover:bg-slate-50 ${rowBg} ${
+                        className={`group border-t border-slate-100 hover:bg-slate-50 ${rowBg} ${
                           highlightActive === f.id ? 'g132gb-highlight-row' : ''
                         } ${draggingFileId === f.id ? 'opacity-40' : ''}`}
                         data-testid={`file-row-${f.id}`}
@@ -2104,13 +2114,25 @@ export function DocumentLibraryFolder() {
                           )}
                         </td>
                         <td className="px-4 py-3 hidden xl:table-cell">
-                          <div className="flex flex-wrap gap-1">
-                            {(f.ai_tags || []).slice(0, 4).map((t) => (
+                          <div className="flex flex-wrap gap-1 max-w-[220px]">
+                            {(f.ai_tags || []).slice(0, 3).map((t) => (
                               <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#ece6f4] text-[#4f3a8c] uppercase tracking-wider font-semibold">{t}</span>
                             ))}
+                            {(f.ai_tags || []).length > 3 && (
+                              <span
+                                title={(f.ai_tags || []).slice(3).join(', ')}
+                                data-testid={`ai-tags-overflow-${f.id}`}
+                                className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wider font-semibold"
+                              >
+                                +{(f.ai_tags || []).length - 3}
+                              </span>
+                            )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td
+                          className="px-4 py-3 text-right sticky right-0 bg-white group-hover:bg-slate-50 shadow-[inset_1px_0_0_rgba(226,232,240,1)]"
+                          data-testid={`file-actions-cell-${f.id}`}
+                        >
                           <div className="inline-flex gap-1">
                             {(() => {
                               const ok = isPdfPreviewable(f.mime, f.filename);
