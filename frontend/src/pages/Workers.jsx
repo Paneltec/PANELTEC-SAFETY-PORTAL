@@ -37,6 +37,7 @@ import ImageLightbox from '../components/ImageLightbox';
 // names so existing JSX call sites don't need to change.
 import {
   Add20Regular as Plus,
+  Archive20Regular as ArchiveIcon,
   ArrowDownload20Regular as Download,
   ArrowSync20Regular as RefreshCw,
   ArrowUpload20Regular as Upload,
@@ -106,7 +107,11 @@ function StatusBadge({ active }) {
   if (active) {
     return <span data-testid="worker-active" className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider border bg-[#d8ecdd] text-[#1f7a3f] border-[#b6dcbf]">Active</span>;
   }
-  return <span data-testid="worker-inactive" className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider border bg-slate-100 text-slate-600 border-slate-200">Inactive</span>;
+  // v58.13.132gu Phase 2.5 — "Inactive" chip relabelled to
+  // "Archived" for the Workers module rename. The testid
+  // `worker-inactive` is kept stable so downstream selectors +
+  // audit tooling don't break; only the display copy changes.
+  return <span data-testid="worker-inactive" className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider border bg-slate-100 text-slate-600 border-slate-200">Archived</span>;
 }
 
 function CompanyChip({ label }) {
@@ -2094,7 +2099,7 @@ export default function Workers() {
   const remove = async (w) => {
     try {
       await api.delete(`/workers/${w.id}`);
-      toast.success(`${fullName(w)} removed`);
+      toast.success(`${fullName(w)} archived`);
       setConfirmDelete(null);
       await load();
     } catch (e) { toast.error(apiError(e)); }
@@ -2361,7 +2366,11 @@ export default function Workers() {
         {/* v58.13.132fy — "Show inactive" toggle. Admin-only. Flips
             the list request to `?include_inactive=true` so
             soft-deleted / deactivated workers appear with a Restore
-            action alongside the active roster. */}
+            action alongside the active roster.
+            .132gu Phase 2.5 — Display label + tooltip relabelled
+            to "Show archived" for the Workers rename. testid
+            `show-inactive-toggle` retained for stable selectors +
+            existing test scripts. */}
         {isAdmin && (
           <label
             data-testid="show-inactive-toggle"
@@ -2371,7 +2380,7 @@ export default function Workers() {
                 ? 'border-[#1e4a8c] bg-[#e6eff9] text-[#1e4a8c]'
                 : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
             ].join(' ')}
-            title="Include soft-deleted / deactivated workers"
+            title="Include archived workers"
           >
             <input
               type="checkbox"
@@ -2380,7 +2389,7 @@ export default function Workers() {
               data-testid="show-inactive-checkbox"
               className="w-3.5 h-3.5 cursor-pointer"
             />
-            Show inactive
+            Show archived
           </label>
         )}
         {/* v58.13.132ad — Bulk onboarding cards (admin only). Prints a
@@ -2627,7 +2636,7 @@ export default function Workers() {
                       <span
                         data-testid={`worker-archived-${w.id}`}
                         className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border bg-[#fbe4e7] text-[#7a1f33] border-[#f4c7cd]"
-                        title={w.deleted_at ? `Soft-deleted ${w.deleted_at}` : 'Deactivated'}
+                        title={w.deleted_at ? `Archived ${w.deleted_at}` : 'Archived'}
                       >
                         Archived
                       </span>
@@ -2724,14 +2733,21 @@ export default function Workers() {
                           data-testid={`edit-${w.id}`}
                           data-worker-name={fullName(w)}
                           className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4] shrink-0"><Edit3 /></button>
-                        <button onClick={() => setConfirmDelete(w.id)} title="Delete" data-testid={`delete-${w.id}`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd] shrink-0"><Trash2 /></button>
+                        {/* v58.13.132gu Phase 2.5 — Row-action tooltip
+                            + icon relabelled from destructive "Delete"
+                            to non-destructive "Archive". testid
+                            `delete-<id>` retained for existing scripts;
+                            background switched from rose (destructive)
+                            to amber (archive) to match the new
+                            semantics. */}
+                        <button onClick={() => setConfirmDelete(w.id)} title="Archive" data-testid={`delete-${w.id}`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-amber-50 text-amber-800 hover:bg-amber-100 shrink-0"><ArchiveIcon /></button>
                       </div>
                     )}
                     {canEdit && confirmDelete === w.id && (
-                      <span className="inline-flex items-center gap-1 bg-[#fbe4e7] border border-[#e69aa3] rounded px-2 py-1">
-                        <span className="text-[10px] font-semibold text-[#7a1f33] uppercase tracking-wider">Delete?</span>
-                        <button onClick={() => remove(w)} data-testid={`delete-confirm-${w.id}`} className="text-[10px] font-semibold text-[#7a1f33] hover:underline">Yes</button>
+                      <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-300 rounded px-2 py-1">
+                        <span className="text-[10px] font-semibold text-amber-900 uppercase tracking-wider">Archive?</span>
+                        <button onClick={() => remove(w)} data-testid={`delete-confirm-${w.id}`} className="text-[10px] font-semibold text-amber-900 hover:underline">Yes</button>
                         <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-slate-500 hover:underline">No</button>
                       </span>
                     )}
