@@ -236,6 +236,12 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // v58.13.132gx Phase 4 — Backend now returns `status:
+  // "navixy_disconnected"` with an actionable `message` when the
+  // Navixy hash has expired + can't auto-refresh. Surface as an
+  // amber banner instead of a red error so workers see it as a
+  // "contact your admin" hint rather than a broken form.
+  const [disconnectedMsg, setDisconnectedMsg] = useState(null);
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState(value?.navixy_id === null && value?.registration ? 'manual' : 'list');
   const [manualReg, setManualReg] = useState(value?.registration || '');
@@ -245,7 +251,17 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
     if (readOnly) return;
     setLoading(true);
     api.get('/forms/fleet/vehicles')
-      .then((r) => setVehicles(r.data?.vehicles || []))
+      .then((r) => {
+        setVehicles(r.data?.vehicles || []);
+        if (r.data?.status === 'navixy_disconnected') {
+          setDisconnectedMsg(r.data?.message || 'Fleet integration needs reconnecting.');
+          // Nudge worker into manual-entry mode so the form isn't
+          // blocked while an admin fixes the integration.
+          setMode('manual');
+        } else {
+          setDisconnectedMsg(null);
+        }
+      })
       .catch((e) => setError(apiError(e)))
       .finally(() => setLoading(false));
   }, [readOnly]);
@@ -340,6 +356,15 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
             placeholder="Search by label or rego…"
             data-testid={`vehicle-search-${field.id}`}
             className="w-full px-3 py-2 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white" />
+          {/* v58.13.132gx Phase 4 — Navixy-disconnected soft-response. */}
+          {disconnectedMsg && (
+            <div
+              className="text-xs text-amber-900 bg-amber-50 border border-amber-300 px-2.5 py-1.5 rounded-lg flex items-start gap-2"
+              data-testid={`vehicle-navixy-disconnected-${field.id}`}
+            >
+              <span>⚠️ {disconnectedMsg} You can still enter the rego manually below.</span>
+            </div>
+          )}
           {error && <div className="text-xs text-rose-600">{error}</div>}
           {!error && (
             <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">

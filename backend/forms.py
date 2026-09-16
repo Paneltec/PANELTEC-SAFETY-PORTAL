@@ -226,12 +226,120 @@ async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
     """Lightweight proxy to the Navixy fleet list — any authenticated user
     (including workers) can list vehicles for use in vehicle_navixy form
     fields. Annotates each vehicle with a derived `vehicle_type` slug used to
-    filter the picker by a sibling "Vehicle Type" select."""
-    from integrations import navixy_vehicles
+    filter the picker by a sibling "Vehicle Type" select.
+
+    v58.13.132gx Phase 4 — Bug 1 (Pre-start Select-Vehicle dropdown empty).
+    Root cause: the stored Navixy `session_hash` expires periodically and
+    the endpoint returned `HTTP 400 "Hash invalid — refresh in Settings →
+    Integrations → Navixy"`. Workers can't reach that admin surface, so
+    the dropdown surfaced the error but was effectively unusable. Fix:
+    on the specific hash-invalid failure, attempt one auto-refresh using
+    the stored Navixy credentials (mirrors `POST /navixy/get-hash`), save
+    the new hash encrypted, and retry the fleet fetch. If auto-refresh
+    also fails (missing creds / Navixy unreachable / auth rejected), degrade
+    to a soft `{"vehicles": [], "status": "navixy_disconnected",
+    "message": "..."}` with HTTP 200 so the FE can render a
+    reconnect-needed banner AND fall back to manual-entry mode instead
+    of a broken dropdown.
+    """
+    from integrations import (
+        navixy_vehicles, hydrate_integration_config,
+        _encrypt_integration_secret,
+    )
+    import httpx as _httpx
+
+    async def _try_navixy_call():
+        return await navixy_vehicles(tag_ids=None, user=user)
+
+    async def _auto_refresh_hash() -> bool:
+        """One-shot re-auth against Navixy. Returns True on success —
+        the new hash is persisted encrypted on integration_configs so
+        the retry + all subsequent requests pick it up."""
+        cfg_doc = await db.integration_configs.find_one(
+            {"org_id": user["org_id"], "kind": "navixy"},
+        )
+        if not cfg_doc:
+            return False
+        cfg = hydrate_integration_config(cfg_doc)
+        email = cfg.get("email")
+        password = cfg.get("password")
+        base = (cfg.get("api_base_url") or "").rstrip("/")
+        if not email or not password or not base:
+            return False
+        try:
+            async with _httpx.AsyncClient(timeout=15) as c:
+                r = await c.post(
+                    f"{base}/v2/user/auth",
+                    json={"login": email, "password": password},
+                )
+        except Exception:
+            return False
+        data = r.json() if r.headers.get(
+            "content-type", "").startswith("application/json") else {}
+        if not data.get("success") or not data.get("hash"):
+            return False
+        new_hash = data["hash"]
+        await db.integration_configs.update_one(
+            {"org_id": user["org_id"], "kind": "navixy"},
+            {
+                "$set": {
+                    "config.session_hash_encrypted":
+                        _encrypt_integration_secret(new_hash),
+                    "status": "connected",
+                    "last_error": None,
+                    "updated_at": now_iso(),
+                },
+                "$unset": {"config.session_hash": ""},
+            },
+        )
+        return True
+
     try:
-        raw = await navixy_vehicles(tag_ids=None, user=user)
-    except HTTPException:
-        raise
+        raw = await _try_navixy_call()
+    except HTTPException as e:
+        # Auto-refresh on hash-invalid OR the stale-status flip that
+        # `navixy_vehicles` triggers on the next call after a failed
+        # refresh. Both are soft-recoverable from the FE's POV — user
+        # just needs an admin to reconnect Navixy in Settings.
+        detail = str(getattr(e, "detail", "") or "")
+        soft = e.status_code == 400 and (
+            "Hash invalid" in detail
+            or "Navixy not connected" in detail
+        )
+        if soft:
+            refreshed = await _auto_refresh_hash()
+            if refreshed:
+                try:
+                    raw = await _try_navixy_call()
+                except HTTPException:
+                    # Even the retry failed — soft-return but DON'T
+                    # flip DB status (that just creates a different
+                    # error message on the next call). Leaving the
+                    # config alone lets each new request re-attempt
+                    # the auto-refresh so recovery is automatic
+                    # once Navixy is reachable again.
+                    return {
+                        "vehicles": [],
+                        "status": "navixy_disconnected",
+                        "message": (
+                            "Fleet integration needs reconnecting. Ask "
+                            "your admin to open Settings → Integrations "
+                            "→ Navixy and click Get Hash."
+                        ),
+                    }
+            else:
+                # Auto-refresh unavailable (missing creds / unreachable).
+                return {
+                    "vehicles": [],
+                    "status": "navixy_disconnected",
+                    "message": (
+                        "Fleet integration needs reconnecting. Ask your "
+                        "admin to open Settings → Integrations → Navixy "
+                        "and click Get Hash."
+                    ),
+                }
+        else:
+            raise
     except Exception as e:
         raise HTTPException(502, f"Navixy fleet unavailable: {e}")
 
@@ -256,7 +364,7 @@ async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
             or _classify_vehicle_type(v.get("label") or "", tag_names)
         )
         out.append({**v, "vehicle_type": vt, "registration": v.get("plate")})
-    return {**raw, "vehicles": out}
+    return {**raw, "vehicles": out, "status": "ok"}
 
 
 # ──────────────── Asset Scan helpers (Phase 2) ────────────────

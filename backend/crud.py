@@ -95,7 +95,8 @@ def _strip(doc: dict) -> dict:
 
 def build_router(prefix: str, collection: str, model: Type[BaseModel], resource: str,
                  module_id: Optional[str] = None,
-                 mirror_categories: Optional[list[str]] = None) -> APIRouter:
+                 mirror_categories: Optional[list[str]] = None,
+                 exclude_name_regex: Optional[str] = None) -> APIRouter:
     # v160.0.9 — router-level `require_module()` gate. When `module_id`
     # is set, every route on this router is subject to the mobile
     # module toggle for the caller's role. Web callers bypass (no
@@ -246,7 +247,23 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         if bulk_import_id or needs_review:
             docs = []
         else:
-            docs = await db[collection].find(q, {"_id": 0}).sort(
+            # v58.13.132gx Phase 4 — Bug 2 SSRA-exclusion on the
+            # native list. Applies the same regex as mirror rows so
+            # legacy `risk_assessments` docs whose `title` matches
+            # ("Drain Cleaning SSRA", "Site Specific Risk Assessment
+            # …") don't leak into the generic RA list either.
+            native_q = q
+            if exclude_name_regex:
+                native_q = {
+                    **q,
+                    "$nor": [
+                        {"title": {"$regex": exclude_name_regex, "$options": "i"}},
+                        {"name": {"$regex": exclude_name_regex, "$options": "i"}},
+                        {"template_name_snapshot": {"$regex": exclude_name_regex,
+                                                     "$options": "i"}},
+                    ],
+                }
+            docs = await db[collection].find(native_q, {"_id": 0}).sort(
                 "created_at", -1).skip(offset).limit(limit).to_list(limit)
 
         # v160.2.5a — union in matching `form_submissions` (phone-filled
@@ -268,6 +285,15 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                 "org_id": user["org_id"], "deleted_at": None,
                 "template_category_snapshot": {"$in": mirror_categories},
             }
+            # v58.13.132gx Phase 4 — Bug 2 (SSRAs incorrectly in
+            # Risk Assessments). Reject mirror rows whose stored
+            # template name matches the exclusion regex. Used by
+            # risk_assessments_router to keep SSRA submissions off
+            # the generic Risk Assessments list.
+            if exclude_name_regex:
+                mq["template_name_snapshot"] = {
+                    "$not": {"$regex": exclude_name_regex, "$options": "i"},
+                }
             # v58.13.132ec — Mirror the archive filter onto mirrored rows.
             if not include_archived:
                 mq["archived_at"] = None
@@ -392,6 +418,11 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                     "template_category_snapshot": {"$in": mirror_categories},
                     "archived_at": {"$ne": None},
                 }
+                # v58.13.132gx — mirror the SSRA-exclusion regex.
+                if exclude_name_regex:
+                    mq_a["template_name_snapshot"] = {
+                        "$not": {"$regex": exclude_name_regex, "$options": "i"},
+                    }
                 if workspace_id:
                     mq_a["workspace_id"] = workspace_id
                 if own_only is not None:
@@ -411,7 +442,21 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         total_count = 0
         try:
             if not (bulk_import_id or needs_review):
-                total_count = await db[collection].count_documents(q)
+                # v58.13.132gx — mirror the SSRA exclusion into the
+                # native count too so the FE TotalCountChip agrees
+                # with the visible list.
+                total_native_q = q
+                if exclude_name_regex:
+                    total_native_q = {
+                        **q,
+                        "$nor": [
+                            {"title": {"$regex": exclude_name_regex, "$options": "i"}},
+                            {"name": {"$regex": exclude_name_regex, "$options": "i"}},
+                            {"template_name_snapshot": {"$regex": exclude_name_regex,
+                                                         "$options": "i"}},
+                        ],
+                    }
+                total_count = await db[collection].count_documents(total_native_q)
             if mirror_categories and not status:
                 mq_t: Dict[str, Any] = {
                     "org_id": user["org_id"], "deleted_at": None,
@@ -419,6 +464,11 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                 }
                 if not include_archived:
                     mq_t["archived_at"] = None
+                # v58.13.132gx — mirror the SSRA-exclusion regex.
+                if exclude_name_regex:
+                    mq_t["template_name_snapshot"] = {
+                        "$not": {"$regex": exclude_name_regex, "$options": "i"},
+                    }
                 if workspace_id:
                     mq_t["workspace_id"] = workspace_id
                 if own_only is not None:
@@ -806,10 +856,17 @@ inspections_router = build_router("inspections", "inspections",         Inspecti
 # v160.3.0-adjust-13 — Risk Assessments Capture bucket. Reads submissions
 # via mirror-projection on templates with category === "risk_assessment".
 # Uses its own collection so any future native writes stay isolated.
+#
+# v58.13.132gx Phase 4 — Bug 2. Explicitly exclude submissions whose
+# template name reads as SSRA / Site Specific Risk Assessment so
+# they don't leak into the generic Risk Assessments tab. SSRAs live
+# on their own tab (see `bulk_import_template_inference.py`).
+_SSRA_EXCLUDE_REGEX = r"\bssra\b|site\s*specific\s*risk"
 risk_assessments_router = build_router(
     "risk-assessments", "risk_assessments", RiskAssessmentIn,
     "risk_assessments", "risk_assessment",
     mirror_categories=["risk_assessment"],
+    exclude_name_regex=_SSRA_EXCLUDE_REGEX,
 )
 
 
