@@ -264,15 +264,22 @@ const IMS_PREFIX_RE = /IMS-(\d{1,3})(?:\.\d+[a-z]?)?/i;
 // have?" question is answered at a glance. Soft-deleted totals sit
 // as a secondary muted metric. Missing-binary count only surfaces
 // when non-zero (legacy .132gh migration tail).
+//
+// v58.13.132hd — The amber "missing binary" chip is now a button
+// that opens the MissingBinaryModal drill-down. Admins can
+// re-upload replacements per row or mark an orphan as permanently
+// gone, and CSV-export the full list.
 function CountsPill() {
   const [counts, setCounts] = React.useState(null);
-  React.useEffect(() => {
-    let cancelled = false;
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const user = getUser();
+  const canManage = (user?.role === 'admin');
+  const refresh = React.useCallback(() => {
     api.get('/document-library/counts')
-      .then((r) => { if (!cancelled) setCounts(r.data || null); })
-      .catch(() => { /* silent — pill just doesn't render */ });
-    return () => { cancelled = true; };
+      .then((r) => setCounts(r.data || null))
+      .catch(() => { /* silent */ });
   }, []);
+  React.useEffect(() => { refresh(); }, [refresh]);
   if (!counts) return null;
   const {
     folders_active: fA = 0,
@@ -281,45 +288,244 @@ function CountsPill() {
     files_deleted: dD = 0,
     files_missing_binary: mB = 0,
   } = counts;
+  const missingChipProps = canManage && mB > 0
+    ? { role: 'button', tabIndex: 0, onClick: () => setModalOpen(true),
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalOpen(true); } },
+        className: 'text-amber-700 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-amber-800',
+        title: 'Click to open drill-down' }
+    : { className: 'text-amber-700',
+        title: 'Files with a database row but no binary in storage. Legacy migration tail; contact admin to reconcile.' };
+  return (
+    <>
+      <div
+        data-testid="doclib-counts-pill"
+        className="-mt-2 mb-6 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 shadow-sm"
+      >
+        <span data-testid="doclib-counts-folders">
+          <span className="font-semibold tabular-nums text-slate-900">{fA}</span>{' '}
+          {fA === 1 ? 'folder' : 'folders'}
+        </span>
+        <span className="text-slate-300" aria-hidden>·</span>
+        <span data-testid="doclib-counts-files">
+          <span className="font-semibold tabular-nums text-slate-900">{dA}</span>{' '}
+          {dA === 1 ? 'file' : 'files'}
+        </span>
+        {(fD > 0 || dD > 0) ? (
+          <>
+            <span className="text-slate-300" aria-hidden>·</span>
+            <span
+              data-testid="doclib-counts-deleted"
+              className="text-slate-400"
+              title="Soft-deleted rows retained for audit"
+            >
+              <span className="tabular-nums">{fD + dD}</span> archived
+            </span>
+          </>
+        ) : null}
+        {mB > 0 ? (
+          <>
+            <span className="text-slate-300" aria-hidden>·</span>
+            <span data-testid="doclib-counts-missing" {...missingChipProps}>
+              <span className="tabular-nums">{mB}</span> missing binary
+            </span>
+          </>
+        ) : null}
+      </div>
+      {modalOpen ? (
+        <MissingBinaryModal onClose={() => { setModalOpen(false); refresh(); }} />
+      ) : null}
+    </>
+  );
+}
+
+// v58.13.132hd — Drill-down modal for the 18 missing-binary
+// orphans. Admin-only surface. Per-row actions: replace binary
+// (opens file picker, PATCHes GridFS under the same key so the
+// existing file_url stays valid) or mark permanently gone (soft-
+// deletes with `permanently_gone_missing_binary` reason). CSV
+// export button downloads the full orphan list for offline
+// recovery hand-off.
+function MissingBinaryModal({ onClose }) {
+  const [rows, setRows] = React.useState(null);
+  const [busyId, setBusyId] = React.useState(null);
+  const load = React.useCallback(() => {
+    setRows(null);
+    api.get('/document-library/counts/missing-binary')
+      .then((r) => setRows(Array.isArray(r.data?.orphans) ? r.data.orphans : []))
+      .catch((e) => { toast.error(apiError(e)); setRows([]); });
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const doReplace = async (row, file) => {
+    if (!file) return;
+    setBusyId(row.id);
+    try {
+      const fd = new FormData();
+      fd.append('replacement', file);
+      await api.post(`/document-library/files/${row.id}/replace-binary`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success(`Replacement uploaded for "${row.filename}".`);
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusyId(null); }
+  };
+  const doMarkGone = async (row) => {
+    if (!window.confirm(`Mark "${row.filename}" as permanently gone? This soft-deletes the record (recoverable from Archive) and stamps an audit entry.`)) return;
+    setBusyId(row.id);
+    try {
+      await api.post(`/document-library/files/${row.id}/mark-gone`);
+      toast.success(`"${row.filename}" archived as permanently gone.`);
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusyId(null); }
+  };
+
+  const exportCSV = () => {
+    if (!rows || rows.length === 0) return;
+    const header = ['filename', 'folder_path', 'size_bytes', 'mime', 'uploaded_at', 'uploaded_by_name'];
+    const esc = (v) => {
+      const s = (v == null ? '' : String(v));
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const body = rows.map((r) => header.map((h) => esc(r[h])).join(',')).join('\n');
+    const blob = new Blob([header.join(',') + '\n' + body], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `paneltec-missing-binaries-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const humanSize = (n) => {
+    if (!n) return '—';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  };
+
   return (
     <div
-      data-testid="doclib-counts-pill"
-      className="-mt-2 mb-6 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 shadow-sm"
+      className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+      data-testid="missing-binary-modal"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <span data-testid="doclib-counts-folders">
-        <span className="font-semibold tabular-nums text-slate-900">{fA}</span>{' '}
-        {fA === 1 ? 'folder' : 'folders'}
-      </span>
-      <span className="text-slate-300" aria-hidden>·</span>
-      <span data-testid="doclib-counts-files">
-        <span className="font-semibold tabular-nums text-slate-900">{dA}</span>{' '}
-        {dA === 1 ? 'file' : 'files'}
-      </span>
-      {(fD > 0 || dD > 0) ? (
-        <>
-          <span className="text-slate-300" aria-hidden>·</span>
-          <span
-            data-testid="doclib-counts-deleted"
-            className="text-slate-400"
-            title="Soft-deleted rows retained for audit"
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-xl font-semibold text-slate-900">Files with missing binary</h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Database rows whose file blob is no longer in storage — legacy migration tail.
+              Re-upload a replacement or mark as permanently gone.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            data-testid="missing-binary-close"
+            className="text-slate-400 hover:text-slate-700 p-1.5 rounded hover:bg-slate-100"
+            aria-label="Close"
           >
-            <span className="tabular-nums">{fD + dD}</span> archived
-          </span>
-        </>
-      ) : null}
-      {mB > 0 ? (
-        <>
-          <span className="text-slate-300" aria-hidden>·</span>
-          <span
-            data-testid="doclib-counts-missing"
-            className="text-amber-700"
-            title="Files with a database row but no binary in storage. Legacy migration tail; contact admin to reconcile."
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div className="text-sm text-slate-600" data-testid="missing-binary-count">
+            {rows == null ? 'Loading…' : `${rows.length} file${rows.length === 1 ? '' : 's'}`}
+          </div>
+          <button
+            onClick={exportCSV}
+            disabled={!rows || rows.length === 0}
+            data-testid="missing-binary-export-csv"
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
           >
-            <span className="tabular-nums">{mB}</span> missing binary
-          </span>
-        </>
-      ) : null}
+            Export CSV
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {rows == null ? (
+            <div className="p-8 text-center text-sm text-slate-500 inline-flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin" /> Loading orphans…
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">All binaries are healthy. Nothing to reconcile.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Filename</th>
+                  <th className="text-left px-4 py-2 font-medium">Location</th>
+                  <th className="text-right px-4 py-2 font-medium">Size</th>
+                  <th className="text-left px-4 py-2 font-medium">Uploaded</th>
+                  <th className="text-right px-4 py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <MissingBinaryRow
+                    key={r.id}
+                    row={r}
+                    busy={busyId === r.id}
+                    onReplace={(f) => doReplace(r, f)}
+                    onMarkGone={() => doMarkGone(r)}
+                    humanSize={humanSize}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function MissingBinaryRow({ row, busy, onReplace, onMarkGone, humanSize }) {
+  const inputRef = React.useRef(null);
+  return (
+    <tr className="border-t border-slate-100" data-testid={`missing-binary-row-${row.id}`}>
+      <td className="px-4 py-2.5 max-w-[280px]">
+        <div className="truncate text-slate-900 font-medium" title={row.filename}>{row.filename}</div>
+        <div className="text-xs text-slate-400">{row.mime || '—'}</div>
+      </td>
+      <td className="px-4 py-2.5 text-slate-600 max-w-[240px]">
+        <div className="truncate" title={row.folder_path}>{row.folder_path || '(root)'}</div>
+      </td>
+      <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{humanSize(row.size)}</td>
+      <td className="px-4 py-2.5 text-slate-600">
+        <div className="text-xs">{(row.uploaded_at || '').slice(0, 10)}</div>
+        <div className="text-[11px] text-slate-400 truncate max-w-[160px]" title={row.uploaded_by_name || ''}>
+          {row.uploaded_by_name || '—'}
+        </div>
+      </td>
+      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          data-testid={`missing-binary-replace-input-${row.id}`}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onReplace(f); e.target.value = ''; }}
+        />
+        <button
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          data-testid={`missing-binary-replace-${row.id}`}
+          className="text-xs px-2.5 py-1 rounded border border-brand-blue/30 text-brand-blue bg-brand-blue-soft/30 hover:bg-brand-blue-soft/50 disabled:opacity-40 mr-1.5"
+        >
+          {busy ? <Loader2 size={11} className="animate-spin inline" /> : 'Re-upload'}
+        </button>
+        <button
+          onClick={onMarkGone}
+          disabled={busy}
+          data-testid={`missing-binary-mark-gone-${row.id}`}
+          className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-40"
+        >
+          Mark gone
+        </button>
+      </td>
+    </tr>
   );
 }
 

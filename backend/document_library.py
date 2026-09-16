@@ -618,6 +618,207 @@ async def library_counts(user: dict = Depends(get_current_user)):
     }
 
 
+@router.get("/counts/missing-binary")
+async def list_missing_binary(
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132hd — Admin drill-down for the amber "missing binary"
+    chip on the counts pill. Returns each doc_files row whose
+    `file_url` doesn't resolve to a GridFS blob — the pre-`.132gh`
+    migration tail. Payload is intentionally CSV-friendly so admins
+    can export and hand off for original-recovery.
+
+    Admin-only (documents.edit). Includes folder_path (breadcrumb)
+    so Stephen can see where each orphan lived without a second
+    call.
+    """
+    _require(user, {"admin"}, action="missing-binary")
+    org_id = user["org_id"]
+
+    # Collect every active row + build a folder_id -> folder map for
+    # cheap folder_path resolution (walked once per unique folder).
+    files: list = []
+    async for r in db.doc_files.find(
+        {"org_id": org_id, "deleted_at": None, "file_url": {"$ne": None}},
+        {"_id": 0},
+    ):
+        files.append(r)
+
+    keys_needed: list = []
+    for f in files:
+        url = f.get("file_url") or ""
+        if url.startswith("/api/files/"):
+            keys_needed.append(url[len("/api/files/"):])
+
+    present: set = set()
+    if keys_needed:
+        async for row in db["upload_storage.files"].find(
+            {"metadata.key": {"$in": keys_needed}},
+            {"_id": 0, "metadata.key": 1},
+        ):
+            present.add((row.get("metadata") or {}).get("key"))
+
+    # Folder map for breadcrumb resolution.
+    folder_map: dict = {}
+    folder_ids = list({f.get("folder_id") for f in files if f.get("folder_id")})
+    if folder_ids:
+        async for fd in db.doc_folders.find(
+            {"org_id": org_id, "id": {"$in": folder_ids}},
+            {"_id": 0, "id": 1, "name": 1, "parent_folder_id": 1},
+        ):
+            folder_map[fd["id"]] = fd
+
+    async def _path_for(folder_id: str) -> str:
+        parts: list = []
+        cur = folder_map.get(folder_id)
+        seen: set = set()
+        while cur and cur["id"] not in seen and len(parts) < 8:
+            seen.add(cur["id"])
+            parts.append(cur["name"])
+            parent_id = cur.get("parent_folder_id")
+            if not parent_id:
+                break
+            cur = folder_map.get(parent_id)
+            if cur is None:
+                nxt = await db.doc_folders.find_one(
+                    {"org_id": org_id, "id": parent_id},
+                    {"_id": 0, "id": 1, "name": 1, "parent_folder_id": 1},
+                )
+                if nxt:
+                    folder_map[parent_id] = nxt
+                    cur = nxt
+                else:
+                    cur = None
+        return " / ".join(reversed(parts))
+
+    orphans: list = []
+    for f in files:
+        url = f.get("file_url") or ""
+        if not url.startswith("/api/files/"):
+            continue
+        key = url[len("/api/files/"):]
+        if key in present:
+            continue
+        orphans.append({
+            "id": f["id"],
+            "filename": f.get("filename"),
+            "folder_id": f.get("folder_id"),
+            "folder_path": await _path_for(f.get("folder_id") or ""),
+            "size": f.get("size", 0),
+            "mime": f.get("mime"),
+            "uploaded_at": f.get("uploaded_at"),
+            "uploaded_by": f.get("uploaded_by"),
+            "uploaded_by_name": f.get("uploaded_by_name"),
+            "file_url": url,
+        })
+    orphans.sort(key=lambda x: x.get("uploaded_at") or "")
+    return {"count": len(orphans), "orphans": orphans}
+
+
+@router.post("/files/{file_id}/replace-binary")
+async def replace_missing_binary(
+    file_id: str,
+    replacement: UploadFile = File(...),
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132hd — Re-upload a replacement binary for a missing
+    orphan. Writes to the SAME `metadata.key` so the existing
+    `file_url` continues to resolve — no doc_files fields change
+    besides `size`, `mime`, and `updated_at`. Admin-only.
+    """
+    _require(user, {"admin"}, action="replace-binary")
+    org_id = user["org_id"]
+    doc = await db.doc_files.find_one(
+        {"id": file_id, "org_id": org_id, "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "File not found")
+    url = doc.get("file_url") or ""
+    if not url.startswith("/api/files/"):
+        raise HTTPException(400, "File has no restorable path")
+    key = url[len("/api/files/"):]
+    parts = key.split("/")
+    if len(parts) < 2:
+        raise HTTPException(400, "File path is malformed")
+    subdir = parts[0]
+
+    buf = bytearray()
+    while True:
+        chunk = await replacement.read(1024 * 1024)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > MAX_FILE_BYTES:
+            raise HTTPException(413, "Replacement exceeds 50 MB limit")
+    data = bytes(buf)
+    from uploads_storage import save_upload  # noqa: WPS433 — lazy
+    await save_upload(
+        subdir, parts[1:], data,
+        module="document_library",
+        org_id=org_id,
+        mime=replacement.content_type or doc.get("mime"),
+        orig_filename=doc.get("filename"),
+    )
+    await db.doc_files.update_one(
+        {"id": file_id, "org_id": org_id},
+        {"$set": {
+            "size": len(data),
+            "mime": replacement.content_type or doc.get("mime") or "application/octet-stream",
+            "updated_at": now_iso(),
+        }},
+    )
+    await db.doc_files_audit.insert_one({
+        "id": new_id(),
+        "org_id": org_id,
+        "file_id": file_id,
+        "action": "binary_replaced",
+        "actor_id": user["id"],
+        "actor_name": user.get("name") or user.get("email"),
+        "size": len(data),
+        "created_at": now_iso(),
+    })
+    return {"ok": True, "size": len(data)}
+
+
+@router.post("/files/{file_id}/mark-gone")
+async def mark_binary_gone(
+    file_id: str,
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132hd — Soft-delete an orphan whose binary is
+    unrecoverable, with an audit trail. Row is set to `deleted_at`
+    (moves to Archive alongside normal soft-deletes) and the audit
+    reason is stamped `permanently_gone`. Admin-only.
+    """
+    _require(user, {"admin"}, action="mark-gone")
+    org_id = user["org_id"]
+    doc = await db.doc_files.find_one(
+        {"id": file_id, "org_id": org_id, "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "File not found or already archived")
+    await db.doc_files.update_one(
+        {"id": file_id, "org_id": org_id},
+        {"$set": {
+            "deleted_at": now_iso(),
+            "deleted_by": user["id"],
+            "deleted_reason": "permanently_gone_missing_binary",
+            "updated_at": now_iso(),
+        }},
+    )
+    await db.doc_files_audit.insert_one({
+        "id": new_id(),
+        "org_id": org_id,
+        "file_id": file_id,
+        "action": "marked_permanently_gone",
+        "actor_id": user["id"],
+        "actor_name": user.get("name") or user.get("email"),
+        "filename": doc.get("filename"),
+        "created_at": now_iso(),
+    })
+    return {"ok": True}
+
+
 @router.get("/folders/all")
 async def list_all_folders(user: dict = Depends(get_current_user)):
     """v58.13.132gy — Flat list of every non-deleted folder in the
