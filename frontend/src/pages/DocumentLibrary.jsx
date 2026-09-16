@@ -913,6 +913,9 @@ export default function DocumentLibrary() {
         <div className="flex items-center gap-2 mb-2 text-[11px] uppercase tracking-[0.16em] font-semibold text-[#8c6a1a]">
           <Sparkles size={12} /> AI Smart Search
         </div>
+        <div className="text-[11px] text-[#8c6a1a] mb-2 -mt-1">
+          Searches filenames, tags, uploader and inside document contents.
+        </div>
         <div className="flex gap-2 items-stretch">
           <input
             value={searchQ}
@@ -962,11 +965,25 @@ export default function DocumentLibrary() {
                               {r.filename}
                               <span
                                 data-testid={`smart-search-match-field-${r.file_id || r.id}`}
-                                className="text-[9px] uppercase tracking-widest font-semibold text-[#8c6a1a] bg-[#fbf3df] border border-[#f0e6c6] rounded px-1.5 py-0.5">
+                                className={
+                                  r.match_field === 'content'
+                                    ? 'text-[9px] uppercase tracking-widest font-semibold text-brand-blue bg-brand-blue-soft border border-brand-blue/20 rounded px-1.5 py-0.5'
+                                    : 'text-[9px] uppercase tracking-widest font-semibold text-[#8c6a1a] bg-[#fbf3df] border border-[#f0e6c6] rounded px-1.5 py-0.5'
+                                }>
                                 {r.match_field || 'match'}
                               </span>
                             </div>
-                            <div className="text-xs text-slate-500 truncate">
+                            {/* v58.13.132hg — Content-match snippet strip */}
+                            {r.match_field === 'content' && r.snippet ? (
+                              <div
+                                data-testid={`smart-search-snippet-${r.file_id || r.id}`}
+                                className="mt-1 text-[11px] text-slate-600 leading-relaxed line-clamp-2"
+                                title={r.snippet}
+                              >
+                                {r.snippet}
+                              </div>
+                            ) : null}
+                            <div className="text-xs text-slate-500 truncate mt-0.5">
                               {humanSize(r.size)}{r.uploaded_by_name ? ` · uploaded by ${r.uploaded_by_name}` : ''}
                             </div>
                           </div>
@@ -2097,7 +2114,9 @@ export function DocumentLibraryFolder() {
                           <div className="inline-flex gap-1">
                             {(() => {
                               const ok = isPdfPreviewable(f.mime, f.filename);
-                              const tip = ok ? 'View as PDF' : 'PDF preview not available for this format';
+                              const tip = ok
+                                ? 'View as PDF'
+                                : 'Preview not available for this file type — use the ⬇ Download icon to open the original';
                               return (
                                 <button onClick={() => ok && setPreviewFile(f)} disabled={!ok}
                                   data-testid={`file-view-pdf-${f.id}`} title={tip}
@@ -2110,7 +2129,9 @@ export function DocumentLibraryFolder() {
                             })()}
                             {(() => {
                               const ok = isPdfPreviewable(f.mime, f.filename);
-                              const tip = ok ? 'Download as PDF' : 'PDF preview not available for this format';
+                              const tip = ok
+                                ? 'Download as PDF'
+                                : 'PDF conversion not available for this file type — use the ⬇ Download icon to fetch the original';
                               const onClick = async () => {
                                 if (!ok) return;
                                 try {
@@ -2152,6 +2173,26 @@ export function DocumentLibraryFolder() {
                                 </button>
                               );
                             })()}
+                            {canEdit && f.extraction_status === 'failed' && f.extraction_engine !== 'missing-binary' && (
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`Retry text extraction on "${f.filename}" with Claude Vision AI?\n\nCost estimate: ~$0.01 (higher for multi-page PDFs).\nThe file's contents will be sent to Anthropic via the Emergent LLM key.`)) return;
+                                  const t = toast.loading('AI extraction running…');
+                                  try {
+                                    const { data } = await api.post(`/document-library/files/${f.id}/retry-extract-ai`);
+                                    toast.success(`AI extracted ${data.chars} chars from ${data.pages} page${data.pages === 1 ? '' : 's'}.`, { id: t });
+                                    await loadFiles();
+                                  } catch (e) {
+                                    toast.error(apiError(e), { id: t });
+                                  }
+                                }}
+                                data-testid={`file-retry-ai-${f.id}`}
+                                className="p-1.5 rounded text-brand-violet hover:bg-brand-violet-soft"
+                                title="Extraction failed — retry with Claude Vision AI (~$0.01)"
+                              >
+                                <Sparkles size={12} />
+                              </button>
+                            )}
                             {canEdit && (
                               <button onClick={() => setEditFile(f)} data-testid={`file-edit-${f.id}`}
                                 className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Rename / set expiry">

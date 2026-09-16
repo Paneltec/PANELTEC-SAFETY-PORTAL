@@ -1398,6 +1398,135 @@ async def cancel_backfill(
     _BACKFILL_STATE["cancel_requested"] = True
     return {"cancel_requested": True}
 
+@router.post("/files/{file_id}/retry-extract-ai")
+async def retry_extract_ai(
+    file_id: str,
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    """v58.13.132hg — On-demand Claude Vision retry for a single
+    file whose local extraction failed. Per user PII posture:
+    user-triggered per file only, never automatic, never batch.
+    Uses `emergentintegrations` + Claude Sonnet 4.5 via the
+    Emergent LLM key. Cost estimate: ~$0.01 per file (multi-page
+    PDFs may run a little higher).
+    """
+    _require(user, {"admin"}, action="retry-extract-ai")
+    org_id = user["org_id"]
+    doc = await db.doc_files.find_one(
+        {"id": file_id, "org_id": org_id, "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "File not found")
+    data = await _load_binary_for_file(doc)
+    if data is None:
+        raise HTTPException(410, "Binary not available in storage")
+
+    import base64
+    import asyncio as _asyncio
+    mime_l = (doc.get("mime") or "").lower()
+    filename = doc.get("filename") or ""
+
+    def _to_images() -> list:
+        from PIL import Image
+        import io as _io
+        images: list = []
+        if mime_l == "application/pdf" or filename.lower().endswith(".pdf"):
+            from pdf2image import convert_from_bytes
+            pages = convert_from_bytes(data, dpi=180, first_page=1, last_page=8, fmt="jpeg")
+            for img in pages:
+                buf = _io.BytesIO(); img.save(buf, "JPEG", quality=75)
+                images.append(base64.b64encode(buf.getvalue()).decode())
+        elif mime_l.startswith("image/"):
+            img = Image.open(_io.BytesIO(data))
+            if img.mode not in ("L", "RGB"): img = img.convert("RGB")
+            buf = _io.BytesIO(); img.save(buf, "JPEG", quality=80)
+            images.append(base64.b64encode(buf.getvalue()).decode())
+        else:
+            import subprocess, tempfile, os as _os
+            with tempfile.TemporaryDirectory() as tmp:
+                src = _os.path.join(tmp, filename or "doc.bin")
+                with open(src, "wb") as f: f.write(data)
+                r = subprocess.run(
+                    ["libreoffice", "--headless", "--convert-to", "pdf",
+                     "--outdir", tmp, src],
+                    capture_output=True, timeout=60,
+                )
+                if r.returncode != 0:
+                    raise HTTPException(415, "AI retry: LibreOffice conversion failed")
+                pdf_path = _os.path.join(tmp, _os.path.splitext(_os.path.basename(src))[0] + ".pdf")
+                if not _os.path.exists(pdf_path):
+                    raise HTTPException(415, "AI retry: no PDF produced")
+                from pdf2image import convert_from_path
+                for img in convert_from_path(pdf_path, dpi=180, first_page=1, last_page=8, fmt="jpeg"):
+                    buf = _io.BytesIO(); img.save(buf, "JPEG", quality=75)
+                    images.append(base64.b64encode(buf.getvalue()).decode())
+        return images
+
+    try:
+        images_b64 = await _asyncio.to_thread(_to_images)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(415, f"AI retry rasterisation failed: {e}") from e
+    if not images_b64:
+        raise HTTPException(415, "AI retry: no pages")
+
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    import os as _os2
+    import uuid as _uuid
+    key = _os2.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(503, "Emergent LLM key not configured")
+    chat = LlmChat(
+        api_key=key, session_id=str(_uuid.uuid4()),
+        system_message=(
+            "You are a text extraction assistant. Return ONLY the plain "
+            "text content of the document image(s). No commentary, no "
+            "markdown. Preserve paragraph structure faithfully. If a "
+            "page is unreadable, output '[unreadable]'."
+        ),
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    msg = UserMessage(
+        text="Extract every readable text token from these document images verbatim.",
+        file_contents=[ImageContent(image_base64=b) for b in images_b64],
+    )
+    try:
+        reply = await chat.send_message(msg)
+    except Exception as e:
+        raise HTTPException(503, f"AI extract failed: {e}") from e
+    text = reply if isinstance(reply, str) else getattr(reply, "content", str(reply))
+    text = (text or "").strip()
+    if not text:
+        raise HTTPException(422, "AI returned no text")
+    from text_extraction import MAX_EXTRACTED_CHARS
+    if len(text) > MAX_EXTRACTED_CHARS:
+        text = text[:MAX_EXTRACTED_CHARS] + "…[truncated]"
+    await db.doc_files.update_one(
+        {"id": file_id, "org_id": org_id},
+        {"$set": {
+            "extracted_text": text,
+            "extracted_text_at": now_iso(),
+            "extraction_engine": "claude",
+            "extraction_status": "ok",
+            "extracted_chars": len(text),
+        },
+         "$unset": {"extraction_failed_count": ""}},
+    )
+    await db.doc_files_audit.insert_one({
+        "id": new_id(),
+        "org_id": org_id,
+        "file_id": file_id,
+        "action": "extract_ai_retry",
+        "actor_id": user["id"],
+        "actor_name": user.get("name") or user.get("email"),
+        "pages": len(images_b64),
+        "chars": len(text),
+        "created_at": now_iso(),
+    })
+    return {"ok": True, "engine": "claude", "pages": len(images_b64), "chars": len(text)}
+
+
+
 
 async def schedule_boot_backfill(delay_seconds: int = 300) -> None:
     """v58.13.132hf — Server-boot hook. Waits `delay_seconds` (so
@@ -1667,6 +1796,17 @@ async def search(
             {"uploaded_by_name": {"$regex": pattern, "$options": "i"}},
         ],
     }
+    # v58.13.132hg — Content-search additive branch. If the query is
+    # long enough to be meaningful (>= 2 chars), also match against
+    # `extracted_text` via a case-insensitive regex on the SAME
+    # separator-agnostic pattern. Regex hits above filename are
+    # already covered by the top $or; this branch surfaces files
+    # whose CONTENTS mention the query even when the filename does
+    # not (e.g. "harness" hitting a SWMS page).
+    if len(raw) >= 2:
+        query["$or"].append(
+            {"extracted_text": {"$regex": pattern, "$options": "i"}},
+        )
     # v58.13.132gb — Folder scope with optional recursive descent.
     # When `folder_id` is provided we resolve every descendant folder
     # (BFS) so a search from "Alcohol & Drug Screening" also finds
@@ -1750,6 +1890,8 @@ async def search(
         # here so the UI label agrees with the actual hit. Both the
         # haystack (filename / tag / uploader) and the needle collapse
         # separator characters to nothing before the substring check.
+        # v58.13.132hg — Content match returns `content` and drives
+        # snippet rendering downstream.
         def _strip_seps(s: str) -> str:
             return "".join(c for c in (s or "").lower() if c not in " _-")
 
@@ -1761,17 +1903,49 @@ async def search(
                 return "tags"
         if needle and needle in _strip_seps(doc.get("uploaded_by_name") or ""):
             return "uploader"
+        if needle and needle in _strip_seps(doc.get("extracted_text") or ""):
+            return "content"
         return "filename"
+
+    def _content_snippet(doc: dict) -> Optional[str]:
+        """v58.13.132hg — 120-char window around the first content
+        match. Returns None when this row is not a content hit."""
+        text = doc.get("extracted_text") or ""
+        if not text:
+            return None
+        # Use the same normalised pattern so hyphen/underscore/space
+        # queries all resolve. Compile case-insensitive.
+        try:
+            match = re.search(pattern, text, re.I)
+        except re.error:
+            return None
+        if not match:
+            return None
+        start = max(0, match.start() - 60)
+        end = min(len(text), match.end() + 60)
+        prefix = "…" if start > 0 else ""
+        suffix = "…" if end < len(text) else ""
+        snippet = text[start:end].replace("\n", " ").replace("  ", " ")
+        return prefix + snippet.strip() + suffix
 
     results = []
     for f in files:
-        results.append({
+        mf = _match_field(f)
+        entry = {
             **_serialise_file(f),
             "file_id": f["id"],
             "folder": folder_map.get(f["folder_id"]),
             "folder_path": await _folder_path(f["folder_id"]),
-            "match_field": _match_field(f),
-        })
+            "match_field": mf,
+        }
+        if mf == "content":
+            entry["snippet"] = _content_snippet(f)
+        results.append(entry)
+    # v58.13.132hg — Rank filename/tags/uploader ABOVE content hits
+    # so exact-name lookups (`SF-22`, uploader "Stephen") keep top
+    # slots. Within each tier, preserve the DB's uploaded-desc sort.
+    rank = {"filename": 0, "tags": 1, "uploader": 2, "content": 3}
+    results.sort(key=lambda r: rank.get(r.get("match_field") or "filename", 4))
     return {"query": q, "count": len(results), "results": results,
               "folder_id": folder_id, "recursive": bool(recursive)}
 
