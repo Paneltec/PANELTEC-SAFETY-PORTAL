@@ -51,7 +51,7 @@ def test_module_imports_and_registry_shape():
     from preview_sources import PREVIEW_SOURCES
     expected = {
         "doc_file", "cert_file", "hr_document", "unmatched_document",
-        "equipment_document", "schedule_attachment",
+        "equipment_document", "equipment_cert", "schedule_attachment",
         "submission_attachment", "swms_source", "insurance_cert",
     }
     assert set(PREVIEW_SOURCES.keys()) == expected, \

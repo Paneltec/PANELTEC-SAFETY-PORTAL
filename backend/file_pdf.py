@@ -177,7 +177,13 @@ def _is_pdf(blob: bytes) -> bool:
     return blob[:5] == b"%PDF-"
 
 
-async def _resolve_file(file_id: str, user: dict) -> tuple[dict, Path]:
+async def _resolve_file(file_id: str, user: dict) -> tuple[dict, bytes]:
+    """Return `(doc, blob_bytes)`. Bytes come from the local disk if
+    the pre-.132gf copy is still there, otherwise from the shared
+    `upload_storage` GridFS bucket (v58.13.132hl — matches the fall-
+    through the `/document-library/files/{id}/download` endpoint
+    already does). Raises the standard `missing_file_response()` 410
+    only when neither source has the bytes."""
     doc = await db.doc_files.find_one(
         {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
         {"_id": 0},
@@ -185,9 +191,18 @@ async def _resolve_file(file_id: str, user: dict) -> tuple[dict, Path]:
     if not doc:
         raise HTTPException(404, "File not found")
     path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
-    if not path.exists():
-        raise missing_file_response()
-    return doc, path
+    if path.exists():
+        return doc, path.read_bytes()
+    # v58.13.132hl — GridFS fallback. Fixes an entire class of files
+    # whose disk copy was pruned after the `.132gf` GridFS migration
+    # but whose bytes remain intact in `upload_storage`.
+    from uploads_storage import read_upload  # noqa: WPS433 — lazy
+    hit = await read_upload("document_library",
+                             [doc["folder_id"], doc["stored_name"]])
+    if hit is not None:
+        blob, _mime = hit
+        return doc, blob
+    raise missing_file_response()
 
 
 def _pipeline_for(mime: str, name: str) -> str:
@@ -405,8 +420,11 @@ async def _cache_store(file_id: str, sha1: str, pipeline: str, pdf: bytes) -> No
     )
 
 
-async def _convert(doc: dict, path: Path) -> tuple[bytes, str]:
-    sha1 = _sha1_file(path)
+async def _convert(doc: dict, blob: bytes) -> tuple[bytes, str]:
+    """v58.13.132hl — takes raw bytes (was: `Path`). Callers now
+    fetch the bytes themselves (disk OR GridFS) via `_resolve_file`
+    and pass them in, so the conversion pipeline is source-agnostic."""
+    sha1 = _sha1_bytes(blob)
     pipeline = _pipeline_for(doc.get("mime"), doc.get("filename") or "")
     if not pipeline:
         ctype = doc.get("mime") or "application/octet-stream"
@@ -417,7 +435,8 @@ async def _convert(doc: dict, path: Path) -> tuple[bytes, str]:
     cached = await _cache_lookup(doc["id"], sha1, pipeline)
     if cached:
         return cached, pipeline
-    blob = path.read_bytes()
+    # v58.13.132hl — bytes are now passed in by the caller; no more
+    # `path.read_bytes()` here.
     # v58.13.111 — magic-byte sniff. Trust the file's real content over
     # the stored `mime` when they disagree. Common case: a JPEG uploaded
     # with a `.pdf` extension (or vice-versa) — the pipeline picked
@@ -541,8 +560,8 @@ async def file_pdf(file_id: str, request: Request,
         user = u
     else:
         user = await get_current_user(request, creds=None)
-    doc, path = await _resolve_file(file_id, user)
-    pdf, pipeline = await _convert(doc, path)
+    doc, blob = await _resolve_file(file_id, user)
+    pdf, pipeline = await _convert(doc, blob)
     # Spool the OCR + index step into the background. We persist the PDF to a
     # short-lived temp file so `ocr_pdf_to_text` (which expects a Path) can
     # read it without re-converting. The doc id keeps us idempotent — see the
@@ -689,8 +708,8 @@ async def file_pdf_bundle(body: BundleIn, user: dict = Depends(get_current_user)
     converted = 0; skipped: list[dict] = []
     for fid in body.file_ids:
         try:
-            doc, path = await _resolve_file(fid, user)
-            pdf, _ = await _convert(doc, path)
+            doc, blob = await _resolve_file(fid, user)
+            pdf, _ = await _convert(doc, blob)
             merger.append(io.BytesIO(pdf))
             converted += 1
         except HTTPException as e:

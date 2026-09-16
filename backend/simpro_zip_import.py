@@ -1082,17 +1082,33 @@ async def stream_cert_file(
     if not df:
         raise HTTPException(404, "File not found")
     from pathlib import Path as _Path
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
     from document_library import UPLOAD_DIR as _DOC_UPLOAD_DIR
     path = _Path(_DOC_UPLOAD_DIR) / df["folder_id"] / df["stored_name"]
-    if not path.exists():
-        raise missing_file_response()
-    return FileResponse(
-        str(path),
-        media_type=df.get("mime") or "application/octet-stream",
-        filename=df.get("filename"),
-        content_disposition_type="attachment" if download else "inline",
+    if path.exists():
+        return FileResponse(
+            str(path),
+            media_type=df.get("mime") or "application/octet-stream",
+            filename=df.get("filename"),
+            content_disposition_type="attachment" if download else "inline",
+        )
+    # v58.13.132hl — GridFS fallback. Matches the DocLib download
+    # endpoint. Fixes the "file_missing_on_disk" 410 Antony's cert
+    # icon hit even though bytes live in `upload_storage`.
+    from uploads_storage import read_upload  # noqa: WPS433 — lazy
+    hit = await read_upload(
+        "document_library", [df["folder_id"], df["stored_name"]],
     )
+    if hit is not None:
+        data, _mime = hit
+        disp = "attachment" if download else "inline"
+        return Response(
+            content=data,
+            media_type=df.get("mime") or _mime or "application/octet-stream",
+            headers={"Content-Disposition":
+                     f'{disp}; filename="{df.get("filename") or df.get("stored_name")}"'},
+        )
+    raise missing_file_response()
 
 
 @router.get("/{worker_id}/hr-documents/{doc_id}/file")

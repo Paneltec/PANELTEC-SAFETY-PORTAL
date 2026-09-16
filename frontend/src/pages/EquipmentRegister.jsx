@@ -647,11 +647,24 @@ export default function EquipmentRegister() {
                       {activeCerts.length === 0 ? <span className="text-slate-400 text-xs">None</span> : (
                         <div className="flex flex-wrap gap-1">
                           {activeCerts.map((c) => (
-                            <button key={c.id} type="button" onClick={() => openCert(r, c)}
-                              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200"
-                              data-testid={`equipment-cert-${c.id}`}>
-                              <FileText size={11} /> {c.filename}
-                            </button>
+                            <OpenAsPdfButton key={c.id}
+                              source="equipment_cert"
+                              refObj={{ equipment_id: r.id, cert_id: c.id }}
+                              filename={c.filename}
+                              mime={c.mime}
+                              onDownloadOriginal={async () => {
+                                try {
+                                  const rr = await api.get(`/equipment/${r.id}/certs/${c.id}`,
+                                    { responseType: 'blob' });
+                                  const url = URL.createObjectURL(rr.data);
+                                  window.open(url, '_blank');
+                                  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                                } catch (e) { toast.error(apiError(e)); }
+                              }}
+                              label={c.filename}
+                              className="!bg-slate-100 hover:!bg-slate-200 !text-slate-700 !no-underline"
+                              data-testid={`equipment-cert-${c.id}`}
+                            />
                           ))}
                         </div>
                       )}

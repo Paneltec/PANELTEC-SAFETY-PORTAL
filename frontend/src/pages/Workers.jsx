@@ -26,6 +26,7 @@ import WorkerInductionsCard from '../components/WorkerInductionsCard';
 // v58.13.132fi — Section D panels (Private & Confidential + Licences).
 import PrivateConfidentialPanel from '../components/workers/PrivateConfidentialPanel';
 import LicencesPanel from '../components/workers/LicencesPanel';
+import OpenAsPdfButton from '../components/OpenAsPdfButton';
 // Phase 4.7.1 — surface password/access controls on the Workers list.
 import AccessKebab from '../components/auth/AccessKebab';
 // v160.2.2 — Read-only worker profile drawer (eye icon).
@@ -896,18 +897,20 @@ function CertificationsPanel({ workerId, canEdit }) {
                           <td className="px-3 py-2 whitespace-nowrap"><StatusBadgeCert status={c.status} /></td>
                           <td className="px-3 py-2 text-center">
                             {c.doc_file_id ? (
-                              <button type="button"
-                                 onClick={async () => {
-                                   try {
-                                     const u = await filesUrl(`/workers/${workerId}/certifications/${c.id}/file`);
-                                     window.open(u, '_blank', 'noopener,noreferrer');
-                                   } catch (_e) { toast.error('Unable to open file'); }
-                                 }}
-                                 title="View file"
-                                 data-testid={`cert-file-${c.id}`}
-                                 className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
-                                <FileText size={11} />
-                              </button>
+                              <OpenAsPdfButton
+                                source="cert_file"
+                                refObj={{ worker_id: workerId, cert_id: c.id }}
+                                filename={c.name || 'certificate'}
+                                onDownloadOriginal={async () => {
+                                  try {
+                                    const u = await filesUrl(`/workers/${workerId}/certifications/${c.id}/file`);
+                                    window.open(u, '_blank', 'noopener,noreferrer');
+                                  } catch (_e) { toast.error('Unable to open file'); }
+                                }}
+                                variant="icon"
+                                data-testid={`cert-file-${c.id}`}
+                                className="!bg-[#e6eff9] !text-[#1e4a8c] hover:!bg-[#d8e6f4] !w-6 !h-6"
+                              />
                             ) : canEdit ? (
                               // v58.13.79 — Empty-file row now offers an
                               // inline "attach image/file" button that

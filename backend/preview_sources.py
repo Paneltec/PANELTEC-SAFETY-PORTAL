@@ -169,10 +169,21 @@ async def _resolve_doc_file(ref: dict, user: dict) -> ResolvedFile:
     from pathlib import Path as _P
     from file_pdf import UPLOAD_DIR
     path = _P(UPLOAD_DIR) / doc["folder_id"] / doc["stored_name"]
-    if not path.exists():
-        raise missing_file_response()
+    if path.exists():
+        blob = path.read_bytes()
+    else:
+        # v58.13.132hl — GridFS fallback. Matches file_pdf._resolve_file
+        # and the DocLib /download endpoint. Fixes preview for records
+        # whose disk copy was pruned but whose upload_storage blob is
+        # intact (a whole class of SDS + bulk-imported files).
+        hit = await read_upload(
+            "document_library", [doc["folder_id"], doc["stored_name"]],
+        )
+        if hit is None:
+            raise missing_file_response()
+        blob, _mime = hit
     return ResolvedFile(
-        blob=path.read_bytes(),
+        blob=blob,
         mime=doc.get("mime") or "application/octet-stream",
         filename=doc.get("filename") or file_id,
         cache_key=f"doc_file:{file_id}",
@@ -288,6 +299,38 @@ async def _resolve_equipment_document(ref: dict, user: dict) -> ResolvedFile:
                         mime=rec.get("mime") or mime or _mime_from_ext(filename),
                         filename=filename,
                         cache_key=f"equipment_document:{doc_id}")
+
+
+async def _resolve_equipment_cert(ref: dict, user: dict) -> ResolvedFile:
+    """Equipment Register attached CERT (calibration reports, service
+    certs, etc). Native endpoint (`GET /equipment/{eid}/certs/{cid}`)
+    is admin-only via `_require_admin`. Same GridFS-only storage as
+    equipment documents."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    eid = ref.get("equipment_id")
+    cert_id = ref.get("cert_id")
+    if not (eid and cert_id):
+        raise HTTPException(400,
+            "equipment_cert ref missing equipment_id / cert_id")
+    eq = await db.equipment_register.find_one(
+        {"id": eid, "org_id": user["org_id"], "deleted_at": None},
+    )
+    if not eq:
+        raise HTTPException(404, "Equipment not found")
+    rec = next((c for c in (eq.get("certs") or [])
+                if c.get("id") == cert_id and c.get("deleted_at") is None), None)
+    if not rec:
+        raise HTTPException(404, "Cert not found")
+    hit = await read_upload("equipment_certs", [eid, rec["stored_name"]])
+    if hit is None:
+        raise HTTPException(410, "Cert bytes missing")
+    data, mime = hit
+    filename = rec.get("filename") or rec.get("stored_name") or "cert"
+    return ResolvedFile(blob=data,
+                        mime=rec.get("mime") or mime or _mime_from_ext(filename),
+                        filename=filename,
+                        cache_key=f"equipment_cert:{cert_id}")
 
 
 async def _resolve_schedule_attachment(ref: dict, user: dict) -> ResolvedFile:
@@ -444,6 +487,7 @@ PREVIEW_SOURCES: dict[str, _Adapter] = {
     "hr_document": _resolve_hr_document,
     "unmatched_document": _resolve_unmatched_document,
     "equipment_document": _resolve_equipment_document,
+    "equipment_cert": _resolve_equipment_cert,
     "schedule_attachment": _resolve_schedule_attachment,
     "submission_attachment": _resolve_submission_attachment,
     "swms_source": _resolve_swms_source,
