@@ -150,6 +150,11 @@ def _serialise_file(doc: dict) -> dict:
         "uploaded_by_name": doc.get("uploaded_by_name"),
         "uploaded_at": doc.get("uploaded_at"),
         "ai_tags": doc.get("ai_tags") or [],
+        # v58.13.132gt Phase 2 — SDS module enhancements: expose the
+        # optional expiry_date + updated_at so the FE can render
+        # tinted rows, sort by expiry, and show "Renamed by" hints.
+        "expiry_date": doc.get("expiry_date"),
+        "updated_at": doc.get("updated_at"),
     }
 
 
@@ -467,6 +472,80 @@ async def upload_files(
         saved.append(_serialise_file(doc))
 
     return {"saved": saved, "rejected": rejected}
+
+
+# v58.13.132gt Phase 2 — SDS module enhancements. File rename +
+# expiry_date. `filename` extension is preserved: renames that
+# change the extension are rejected (defence against .exe /
+# script uploads slipping through the display).
+class FilePatch(BaseModel):
+    filename: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    expiry_date: Optional[str] = Field(default=None, max_length=32)
+    clear_expiry: bool = Field(default=False)
+
+
+@router.patch("/files/{file_id}")
+async def rename_or_update_file(
+    file_id: str,
+    body: FilePatch,
+    user: dict = Depends(require_permission("documents", "edit")),
+):
+    _require(user, WRITE_ROLES, action="edit")
+    existing = await db.doc_files.find_one(
+        {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
+    )
+    if not existing:
+        raise HTTPException(404, "File not found")
+
+    patch: dict = {}
+    if body.filename is not None:
+        new_name = body.filename.strip()
+        if not new_name:
+            raise HTTPException(400, "Filename cannot be empty")
+        old_ext = _safe_ext(existing.get("filename"))
+        new_ext = _safe_ext(new_name)
+        # v58.13.132gt Phase 2 — Guard rename against extension drift
+        # AND against non-allow-listed extensions in the incoming name.
+        # `_safe_ext` returns "" for anything not in ALLOWED_EXTS, so a
+        # rename to `foo.exe` collapses to `new_ext=""` — we detect that
+        # by re-parsing the raw suffix and rejecting when it doesn't
+        # match the file's current extension.
+        raw_new_suffix = Path(new_name).suffix.lower()
+        if raw_new_suffix and raw_new_suffix != old_ext:
+            raise HTTPException(400, "Cannot change file extension")
+        if old_ext and new_ext and old_ext != new_ext:
+            raise HTTPException(400, "Cannot change file extension")
+        # If the user typed a name without an extension, auto-append
+        # the original one so downstream MIME + inline-preview logic
+        # continues to work.
+        if old_ext and not raw_new_suffix:
+            new_name = f"{new_name}{old_ext}"
+        patch["filename"] = new_name
+
+    if body.clear_expiry:
+        patch["expiry_date"] = None
+    elif body.expiry_date is not None:
+        # Validate ISO-8601 YYYY-MM-DD (or full ISO datetime).
+        import re as _re
+        raw = body.expiry_date.strip()
+        if not _re.match(r"^\d{4}-\d{2}-\d{2}", raw):
+            raise HTTPException(400, "expiry_date must be ISO-8601 (YYYY-MM-DD)")
+        patch["expiry_date"] = raw[:10]
+
+    if not patch:
+        raise HTTPException(400, "Nothing to update")
+
+    patch["updated_at"] = now_iso()
+    patch["updated_by"] = user["id"]
+
+    r = await db.doc_files.find_one_and_update(
+        {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": patch},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not r:
+        raise HTTPException(404, "File not found")
+    return _serialise_file(r)
 
 
 @router.delete("/files/{file_id}", status_code=204)

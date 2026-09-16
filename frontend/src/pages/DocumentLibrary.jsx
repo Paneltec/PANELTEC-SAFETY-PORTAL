@@ -47,6 +47,75 @@ import {
 // Authoritative gates via useCan('documents', 'edit') /
 // useCan('documents', 'delete') below.
 
+// v58.13.132gt Phase 2 — SDS module enhancements.
+// Small helpers reused by the folder-detail view for expiry chip
+// tinting + client-side sort/filter. Kept module-scope so the
+// tests can grep them and the render helpers stay tidy.
+function docDaysUntil(iso) {
+  if (!iso) return null;
+  const target = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((target - today) / 86400000);
+}
+
+function docExpiryTint(iso) {
+  const d = docDaysUntil(iso);
+  if (d === null) return null;
+  if (d < 0) return 'rose';
+  if (d <= 30) return 'amber';
+  return null;
+}
+
+const DOC_SORT_OPTIONS = [
+  { key: 'uploaded_desc', label: 'Uploaded (newest first)' },
+  { key: 'uploaded_asc', label: 'Uploaded (oldest first)' },
+  { key: 'name_asc', label: 'Name (A→Z)' },
+  { key: 'name_desc', label: 'Name (Z→A)' },
+  { key: 'expiry_asc', label: 'Expiry (soonest first)' },
+  { key: 'expiry_desc', label: 'Expiry (latest first)' },
+];
+
+const DOC_EXPIRY_FILTERS = [
+  { key: 'all', label: 'All files' },
+  { key: 'expired', label: 'Expired' },
+  { key: 'expiring_30d', label: 'Expiring ≤30 days' },
+  { key: 'has_expiry', label: 'Has expiry' },
+  { key: 'no_expiry', label: 'No expiry' },
+];
+
+function applyDocSortFilter(files, { sortKey, expiryFilter }) {
+  let out = files.slice();
+  if (expiryFilter && expiryFilter !== 'all') {
+    out = out.filter((f) => {
+      const d = docDaysUntil(f.expiry_date);
+      if (expiryFilter === 'expired') return d !== null && d < 0;
+      if (expiryFilter === 'expiring_30d') return d !== null && d >= 0 && d <= 30;
+      if (expiryFilter === 'has_expiry') return !!f.expiry_date;
+      if (expiryFilter === 'no_expiry') return !f.expiry_date;
+      return true;
+    });
+  }
+  const cmp = (a, b, k, dir = 1) => {
+    const av = a[k] ? String(a[k]) : '';
+    const bv = b[k] ? String(b[k]) : '';
+    if (!av && bv) return 1; // empties last
+    if (av && !bv) return -1;
+    return dir * av.localeCompare(bv);
+  };
+  switch (sortKey) {
+    case 'uploaded_asc': out.sort((a, b) => cmp(a, b, 'uploaded_at', 1)); break;
+    case 'name_asc': out.sort((a, b) => String(a.filename || '').localeCompare(String(b.filename || ''))); break;
+    case 'name_desc': out.sort((a, b) => String(b.filename || '').localeCompare(String(a.filename || ''))); break;
+    case 'expiry_asc': out.sort((a, b) => cmp(a, b, 'expiry_date', 1)); break;
+    case 'expiry_desc': out.sort((a, b) => cmp(b, a, 'expiry_date', 1)); break;
+    case 'uploaded_desc':
+    default:
+      out.sort((a, b) => String(b.uploaded_at || '').localeCompare(String(a.uploaded_at || '')));
+  }
+  return out;
+}
+
 const PASTEL_BG = {
   mint: 'bg-[#e8f3eb]', sky: 'bg-[#e6eff9]', peach: 'bg-[#fbeadf]',
   blush: 'bg-[#fbe4e7]', lavender: 'bg-[#ece6f4]', butter: 'bg-[#fbf3df]',
@@ -812,6 +881,120 @@ export default function DocumentLibrary() {
 
 // ────────────────────── Folder detail page ──────────────────────
 
+// v58.13.132gt Phase 2 — SDS/file rename + expiry-date modal.
+// Keeps extension validation on the client so users see the error
+// immediately; backend re-validates on PATCH.
+function FileEditModal({ file, onClose, onSaved }) {
+  const [name, setName] = useState(file.filename || '');
+  const [expiry, setExpiry] = useState((file.expiry_date || '').slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  const originalExt = useMemo(() => {
+    const idx = String(file.filename || '').lastIndexOf('.');
+    return idx >= 0 ? file.filename.slice(idx).toLowerCase() : '';
+  }, [file.filename]);
+
+  const save = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) { toast.error('Filename cannot be empty'); return; }
+    // Client-side extension guard mirrors the backend.
+    const newIdx = trimmed.lastIndexOf('.');
+    const newExt = newIdx >= 0 ? trimmed.slice(newIdx).toLowerCase() : '';
+    if (originalExt && newExt && newExt !== originalExt) {
+      toast.error(`Extension must stay as ${originalExt}`);
+      return;
+    }
+    const body = {};
+    if (trimmed !== file.filename) body.filename = trimmed;
+    const prev = (file.expiry_date || '').slice(0, 10);
+    if (expiry !== prev) {
+      if (expiry) body.expiry_date = expiry;
+      else body.clear_expiry = true;
+    }
+    if (Object.keys(body).length === 0) { onClose(); return; }
+    setBusy(true);
+    try {
+      const { data } = await api.patch(`/document-library/files/${file.id}`, body);
+      toast.success('File updated');
+      onSaved(data);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  const clearExpiry = () => setExpiry('');
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4"
+      onClick={onClose}
+      data-testid="file-edit-modal"
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-display font-bold text-slate-900 text-lg mb-4">
+          Edit file
+        </h3>
+        <label className="block text-xs text-slate-600 mb-3">
+          <span className="block mb-1 font-medium">Filename</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+            data-testid="file-edit-name-input"
+            disabled={busy}
+          />
+          {originalExt && (
+            <span className="text-[10px] text-slate-400">
+              Extension {originalExt} is preserved.
+            </span>
+          )}
+        </label>
+        <label className="block text-xs text-slate-600 mb-1">
+          <span className="block mb-1 font-medium">Expiry date</span>
+          <input
+            type="date"
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+            data-testid="file-edit-expiry-input"
+            disabled={busy}
+          />
+        </label>
+        {expiry && (
+          <button
+            type="button"
+            onClick={clearExpiry}
+            className="text-xs text-slate-500 hover:text-rose-600 underline"
+            data-testid="file-edit-clear-expiry"
+            disabled={busy}
+          >
+            Clear expiry
+          </button>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            data-testid="file-edit-cancel"
+            className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
+            disabled={busy}
+          >Cancel</button>
+          <button
+            onClick={save}
+            disabled={busy}
+            data-testid="file-edit-save"
+            className="px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-semibold hover:bg-blue-600 inline-flex items-center gap-1.5 disabled:opacity-60"
+          >
+            {busy && <Loader2 size={12} className="animate-spin" />}
+            Save changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export function DocumentLibraryFolder() {
   const { folderId } = useParams();
   const navigate = useNavigate();
@@ -849,6 +1032,10 @@ export function DocumentLibraryFolder() {
   const [dragOver, setDragOver] = useState(false);
   // v58.13.132fj — File-level soft-delete confirmation modal.
   const [confirmDeleteFile, setConfirmDeleteFile] = useState(null);
+  // v58.13.132gt Phase 2 — File edit modal (rename + expiry) + sort/filter.
+  const [editFile, setEditFile] = useState(null);
+  const [sortKey, setSortKey] = useState('uploaded_desc');
+  const [expiryFilter, setExpiryFilter] = useState('all');
   const confirmDeleteFileNow = async () => {
     if (!confirmDeleteFile) return;
     const f = confirmDeleteFile;
@@ -1100,8 +1287,33 @@ export function DocumentLibraryFolder() {
       {/* v58.13.132gb — Per-folder search. Live-filters the file
           list below as you type. Recursive against subfolders so
           per-worker cert uploads / supplier docs surface too. */}
-      <div className="mb-5 flex items-center gap-2"
+      <div className="mb-5 flex items-center gap-2 flex-wrap"
         data-testid="folder-search-bar">
+        {/* v58.13.132gt Phase 2 — sort + expiry filter toolbar. */}
+        <div className="flex items-center gap-2" data-testid="folder-sort-filter-toolbar">
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="text-xs px-2.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
+            data-testid="folder-sort-select"
+            title="Sort files"
+          >
+            {DOC_SORT_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>Sort · {o.label}</option>
+            ))}
+          </select>
+          <select
+            value={expiryFilter}
+            onChange={(e) => setExpiryFilter(e.target.value)}
+            className="text-xs px-2.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
+            data-testid="folder-expiry-filter-select"
+            title="Filter by expiry"
+          >
+            {DOC_EXPIRY_FILTERS.map((o) => (
+              <option key={o.key} value={o.key}>Show · {o.label}</option>
+            ))}
+          </select>
+        </div>
         <div className="relative flex-1 max-w-md ml-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -1187,6 +1399,7 @@ export function DocumentLibraryFolder() {
                 <th className="text-left px-4 py-3 hidden md:table-cell">Size</th>
                 <th className="text-left px-4 py-3 hidden lg:table-cell">Uploaded by</th>
                 <th className="text-left px-4 py-3 hidden lg:table-cell">Uploaded</th>
+                <th className="text-left px-4 py-3">Expiry</th>
                 <th className="text-left px-4 py-3 hidden xl:table-cell">AI tags</th>
                 <th className="text-right px-4 py-3">Actions</th>
               </tr>
@@ -1209,7 +1422,7 @@ export function DocumentLibraryFolder() {
                     _search_folder_path: r.folder_path,
                     _search_folder_name: r.folder?.name,
                   }))]]
-                : groupFilesForDisplay(files)
+                : groupFilesForDisplay(applyDocSortFilter(files, { sortKey, expiryFilter }))
               ).map(([groupKey, groupFiles]) => {
                 const palette = resolveGroupPalette({ groupKey, page: 'document-library' });
                 return (
@@ -1218,7 +1431,7 @@ export function DocumentLibraryFolder() {
                       data-testid={`doc-library-group-${groupKey}`}
                       style={{ backgroundColor: palette.tint, borderLeft: `3px solid ${palette.hex}` }}
                     >
-                      <td colSpan={6} className="px-4 py-2">
+                      <td colSpan={7} className="px-4 py-2">
                         <span
                           className="text-[10px] uppercase tracking-[0.16em] font-semibold"
                           style={{ color: palette.text }}
@@ -1229,14 +1442,27 @@ export function DocumentLibraryFolder() {
                         </span>
                       </td>
                     </tr>
-                    {groupFiles.map((f) => (
+                    {groupFiles.map((f) => {
+                      // v58.13.132gt Phase 2 — Expiry-based left-border
+                      // override + tint chip. Rose (expired) or amber
+                      // (≤30d) overrides the group palette stripe so
+                      // urgent SDS/cert docs stand out visually.
+                      const expiryTint = docExpiryTint(f.expiry_date);
+                      const daysLeft = docDaysUntil(f.expiry_date);
+                      const borderColor = expiryTint === 'rose' ? '#e11d48'
+                        : expiryTint === 'amber' ? '#d97706'
+                        : palette.hex;
+                      const rowBg = expiryTint === 'rose' ? 'bg-rose-50/60'
+                        : expiryTint === 'amber' ? 'bg-amber-50/60'
+                        : '';
+                      return (
                       <tr
                         key={f.id}
-                        className={`border-t border-slate-100 hover:bg-slate-50 ${
+                        className={`border-t border-slate-100 hover:bg-slate-50 ${rowBg} ${
                           highlightActive === f.id ? 'g132gb-highlight-row' : ''
                         }`}
                         data-testid={`file-row-${f.id}`}
-                        style={{ borderLeft: `4px solid ${palette.hex}` }}
+                        style={{ borderLeft: `4px solid ${borderColor}` }}
                       >
                         <td className="px-4 py-3">
                           <div className="inline-flex items-center gap-2">
@@ -1266,6 +1492,36 @@ export function DocumentLibraryFolder() {
                         <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{humanSize(f.size)}</td>
                         <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{f.uploaded_by_name || '—'}</td>
                         <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{(f.uploaded_at || '').slice(0, 10)}</td>
+                        <td className="px-4 py-3" data-testid={`file-expiry-cell-${f.id}`}>
+                          {f.expiry_date ? (
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-semibold ${
+                                expiryTint === 'rose'
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                  : expiryTint === 'amber'
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                              data-testid={`file-expiry-chip-${f.id}`}
+                              title={
+                                daysLeft === null ? f.expiry_date
+                                : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago`
+                                : daysLeft === 0 ? 'Expires today'
+                                : `${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining`
+                              }
+                            >
+                              {f.expiry_date.slice(0, 10)}
+                              {daysLeft !== null && (
+                                <span className="opacity-80">
+                                  {daysLeft < 0 ? `· −${Math.abs(daysLeft)}d`
+                                    : daysLeft <= 30 ? ` · ${daysLeft}d` : ''}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 hidden xl:table-cell">
                           <div className="flex flex-wrap gap-1">
                             {(f.ai_tags || []).slice(0, 4).map((t) => (
@@ -1333,6 +1589,12 @@ export function DocumentLibraryFolder() {
                               );
                             })()}
                             {canEdit && (
+                              <button onClick={() => setEditFile(f)} data-testid={`file-edit-${f.id}`}
+                                className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Rename / set expiry">
+                                <Pencil />
+                              </button>
+                            )}
+                            {canEdit && (
                               <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
                                 className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete">
                                 <Trash2 />
@@ -1341,7 +1603,8 @@ export function DocumentLibraryFolder() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </React.Fragment>
                 );
               })}
@@ -1354,6 +1617,17 @@ export function DocumentLibraryFolder() {
       )}
       {inlinePreviewFile && (
         <FilePreviewModal file={inlinePreviewFile} onClose={() => setInlinePreviewFile(null)} />
+      )}
+      {/* v58.13.132gt Phase 2 — SDS/file rename + expiry modal. */}
+      {editFile && (
+        <FileEditModal
+          file={editFile}
+          onClose={() => setEditFile(null)}
+          onSaved={(updated) => {
+            setFiles((prev) => prev.map((x) => x.id === updated.id ? { ...x, ...updated } : x));
+            setEditFile(null);
+          }}
+        />
       )}
       {/* v58.13.132fj — Standard file-delete confirmation. */}
       {confirmDeleteFile && (
