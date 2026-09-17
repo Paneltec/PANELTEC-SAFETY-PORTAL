@@ -1,0 +1,23 @@
+# v58.13.132hpa — Rotate supervisor stdout/stderr logs on the shared / volume.
+# Backend, frontend, mobile, supervisord itself. Same shape as
+# /etc/logrotate.d/paneltec-disk-hygiene from .132hma. Not on /app,
+# but keeps the wider pod healthy — backend.err was measured
+# growing at ~2MB/h during .132hp compile churn.
+/var/log/supervisor/backend.err.log
+/var/log/supervisor/backend.out.log
+/var/log/supervisor/frontend.err.log
+/var/log/supervisor/frontend.out.log
+/var/log/supervisor/mobile.err.log
+/var/log/supervisor/mobile.out.log
+/var/log/supervisor/supervisord.log
+{
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    size 10M
+    create 0644 root root
+}
