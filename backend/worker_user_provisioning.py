@@ -198,13 +198,32 @@ async def provision_user_for_worker(worker: dict, actor: dict) -> dict:
     if worker.get("workspace_id"):
         workspace_ids = [worker["workspace_id"]]
 
+    # v58.13.132hv — Default role derivation. `.132hs` shipped with
+    # `role="viewer"` — a slug that was hard-removed from the platform's
+    # 4-role catalogue during the .132s cleanup and doesn't exist in
+    # `db.roles` any more. The FE role dropdown filtered any user on
+    # a non-existent role into a placeholder "Select role" state
+    # (Glen — Walker Designs reproduction on 2026-09-17), and RBAC
+    # gates silently denied. Derive a real role from the worker's
+    # `simpro_company_id`:
+    #   · "2"   → `paneltec_civil`     (Paneltec's Simpro tenant)
+    #   · "3"   → `viatec_traffic`     (Viatec's Simpro tenant)
+    #   · else  → `external_contractor` (subcontractor default)
+    _cid = str(worker.get("simpro_company_id") or "")
+    if _cid == "2":
+        default_role = "paneltec_civil"
+    elif _cid == "3":
+        default_role = "viatec_traffic"
+    else:
+        default_role = "external_contractor"
+
     throwaway_pwd = secrets.token_hex(32)
     user_id = new_id()
     user_doc = {
         "id":              user_id,
         "email":           email,
         "name":            _worker_full_name(worker),
-        "role":            "viewer",
+        "role":            default_role,
         "org_id":          org_id,
         "workspace_ids":   workspace_ids,
         "password_hash":   hash_password(throwaway_pwd),

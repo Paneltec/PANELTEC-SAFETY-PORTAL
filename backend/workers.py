@@ -67,12 +67,9 @@ def _serialise(doc: dict, viewer: Optional[dict] = None) -> dict:
         _psf = 1.0
     out["photo_scale"] = max(0.5, min(2.5, _psf))
     cid = doc.get("simpro_company_id")
-    if doc.get("worker_company_name"):
-        # v58.13.132hq — Explicit worker_company snapshot wins.
-        # Falls back to the Simpro-derived label below if unset,
-        # which keeps legacy pre-.132hq rows rendering correctly.
-        out["company_label"] = doc["worker_company_name"]
-    elif doc.get("source") == "manual":
+    # v58.13.132hv — worker_company feature purged. company_label
+    # now derives purely from simpro_company_id + source flags.
+    if doc.get("source") == "manual":
         out["company_label"] = "Manual"
     elif cid == "2":
         out["company_label"] = "Paneltec"
@@ -187,8 +184,7 @@ class WorkerIn(BaseModel):
     emergency_contact_name: Optional[str] = Field(default=None, max_length=120)
     emergency_contact_phone: Optional[str] = Field(default=None, max_length=40)
     # v58.13.132hq — Worker company (editable dropdown).
-    worker_company_id: Optional[str] = Field(default=None, max_length=40)
-    worker_company_name: Optional[str] = Field(default=None, max_length=120)
+    # v58.13.132hv — REMOVED. Feature purged.
 
 
 # v58.13.131o — SmartFill card assignment entry.
@@ -263,10 +259,7 @@ class WorkerPatch(BaseModel):
     emergency_contact_name: Optional[str] = Field(default=None, max_length=120)
     emergency_contact_phone: Optional[str] = Field(default=None, max_length=40)
     # v58.13.132hq — Worker company (editable dropdown).
-    # `worker_company_id` references a `worker_companies` row;
-    # `worker_company_name` is a snapshot so renames don't cascade.
-    worker_company_id: Optional[str] = Field(default=None, max_length=40)
-    worker_company_name: Optional[str] = Field(default=None, max_length=120)
+    # v58.13.132hv — REMOVED. Feature purged.
     # v58.13.56 — HR-merge lite. Four flags migrated off `hr_employees`
     # so the Worker detail view can carry the HR context without a
     # separate register. Gate is `hr_employees.view` (see `_serialise`

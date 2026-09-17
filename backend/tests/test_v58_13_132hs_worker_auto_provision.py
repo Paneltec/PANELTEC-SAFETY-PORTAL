@@ -120,7 +120,11 @@ def test_provision_single_happy_path(_mongo, ephemeral_admin, ephemeral_org_id):
 
         u = _mongo.users.find_one({"id": body["user_id"]}, {"_id": 0})
         assert u
-        assert u["role"] == "viewer"
+        # v58.13.132hv — Provisioner default role now derives from
+        # simpro_company_id (viewer was removed in .132s cleanup).
+        # Test worker has no simpro_company_id, so default falls
+        # through to `external_contractor`.
+        assert u["role"] == "external_contractor"
         assert u["status"] == "invited"
         assert u["worker_id"] == worker["id"]
         assert u["email"] == email

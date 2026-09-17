@@ -669,8 +669,9 @@ api.include_router(equipment_register_router)
 from induction_types import router as induction_types_router  # noqa: E402
 api.include_router(induction_types_router)
 # v58.13.132hq — worker_companies CRUD (editable dropdown).
-from worker_companies import router as worker_companies_router  # noqa: E402
-api.include_router(worker_companies_router)
+# v58.13.132hv — REMOVED. Feature purged: collection dropped,
+# router unmounted, workers.worker_company_* fields unset, code
+# module deleted. See memory/v58_13_132hv_ship memo.
 # v58.13.132hs — Worker → user auto-provisioning (single, backfill, link).
 from worker_user_provisioning_routes import router as worker_user_provisioning_router  # noqa: E402
 api.include_router(worker_user_provisioning_router)
@@ -1112,12 +1113,7 @@ async def on_startup():
         except Exception as e:
             log.warning("Import matcher template seed failed: %s", e)
         # v58.13.132hq — Backfill worker_company_id on existing rows.
-        # Idempotent — only touches workers WITHOUT a company set.
-        try:
-            from worker_companies import backfill_worker_company_ids_on_startup
-            await backfill_worker_company_ids_on_startup()
-        except Exception as e:
-            log.warning("worker_companies backfill failed: %s", e)
+        # v58.13.132hv — REMOVED. worker_companies feature purged.
         # v160.3.3 — HR docs dedup index.
         try:
             await ensure_hr_dedup_index()

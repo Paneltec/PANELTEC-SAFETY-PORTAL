@@ -13085,21 +13085,29 @@
 //         `parent_folder_id` payload.
 //       · Testid patterns present.
 //     Version pin `.132gz` on version.js + service-worker.js.
-// v58.13.132hu — Auto-link fix for worker-user provisioning.
-//   Prior `.132hs` implementation flagged every email match as an
-//   `email_conflict` requiring admin review. Stephen's actual data
-//   put 63/70 workers into the conflict bucket — because the
-//   matching user was actually the correct target, we just hadn't
-//   attached `worker.user_id ↔ user.worker_id`. Refined the policy:
-//     · Email match, user has no worker_id → auto-link (linked).
-//     · Email match, user already linked to a different worker →
-//       genuine `email_conflict` (kept as-is).
-//     · Idempotent when re-linking the same worker.
-//   Backfill endpoint reuses the same service, so running
-//   `POST /workers/backfill-user-provision` on an existing org
-//   heals every stale `email_conflict` where the collision is a
-//   two-way mirror.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hu';
+// v58.13.132hv — Three items bundled.
+//   1. Amanda Guy duplicate archived. Evidence-based pick: kept
+//      simpro=50 record (13 certs + linked user + populated
+//      Office Manager position); soft-deleted simpro=1086 (0 certs,
+//      empty position). Historical data preserved. Audit trail
+//      written. mirror-status conflict now 0.
+//   2. worker_companies feature fully purged (Stephen picked purge
+//      over keep-dormant). Collection dropped, workers.worker_company_*
+//      fields unset (70 rows), router unmounted, startup backfill
+//      hook removed, `_serialise` override deleted, model fields
+//      dropped, `worker_companies.py` deleted.
+//   3. Role catalogue fix. `.132hs` provisioner defaulted new
+//      users to `role="viewer"` — a slug the .132s cleanup
+//      hard-removed. Glen — Walker Designs reproduction: his row's
+//      role dropdown appeared empty because "viewer" doesn't
+//      exist in db.roles and the FE dropdown filters unknown
+//      role_ids into a placeholder. Provisioner now derives the
+//      default from worker.simpro_company_id (2 → paneltec_civil,
+//      3 → viatec_traffic, else external_contractor). Retro-fixed
+//      Glen (worker → paneltec_civil) and MELINDA LINFORD
+//      (viewer → paneltec_civil, auto-provisioned row only —
+//      accidental role change on the ADMIN Melinda reverted).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hv';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13120,7 +13128,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hu';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hu';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hv';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
