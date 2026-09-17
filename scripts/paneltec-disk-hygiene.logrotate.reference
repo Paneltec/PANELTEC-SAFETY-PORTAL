@@ -1,0 +1,11 @@
+# v58.13.132hma — Rotate the disk-hygiene log daily; keep 7 days.
+/var/log/paneltec-disk-hygiene.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0644 root root
+}

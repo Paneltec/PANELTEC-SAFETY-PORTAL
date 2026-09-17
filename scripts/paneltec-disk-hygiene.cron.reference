@@ -1,0 +1,7 @@
+# v58.13.132hma — Paneltec /app disk hygiene cron.
+# Runs every 5 minutes; the guard script itself is a no-op when
+# /app usage < 85%. See /app/scripts/purge_webpack_cache_if_full.sh.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * root /app/scripts/purge_webpack_cache_if_full.sh >/dev/null 2>&1

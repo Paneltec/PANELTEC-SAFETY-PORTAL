@@ -221,6 +221,11 @@ async def health():
         critical_fail = True
 
     # 3. Disk headroom — critical if < 500 MB, warn below 2 GB.
+    #    Probes BOTH `/` (the container-shared 95GB volume) and `/app`
+    #    (the 10GB per-pod volume where the login-outage on 2026-02-19
+    #    hit 100%). `.132hma` — health returns `disk_low_app` in the
+    #    `degraded` list when `/app` free-pct < 15%, observability only,
+    #    does NOT flip the endpoint to 503.
     try:
         usage = shutil.disk_usage("/")
         free_gb = round(usage.free / (1024**3), 2)
@@ -239,6 +244,27 @@ async def health():
         checks["disk"] = {"ok": False, "error": str(exc)[:120]}
         # Don't flip critical_fail — a disk_usage() failure is rare and
         # unlikely to be a real outage signal.
+
+    # 3b. /app volume — added `.132hma` after the disk-full outage.
+    #     Same disk_usage() call, different mount. Observability warn
+    #     at <15% free (never critical here — the / volume above owns
+    #     the 503 gate).
+    try:
+        u_app = shutil.disk_usage("/app")
+        app_free_gb = round(u_app.free / (1024**3), 2)
+        app_total_gb = round(u_app.total / (1024**3), 2)
+        app_free_pct = round((u_app.free / u_app.total) * 100, 1) if u_app.total else 0.0
+        checks["disk_app"] = {
+            "ok": True,
+            "free_gb": app_free_gb,
+            "total_gb": app_total_gb,
+            "free_pct": app_free_pct,
+            "warn_below_pct": 15.0,
+        }
+        if app_free_pct < 15.0:
+            degraded.append("disk_low_app")
+    except Exception as exc:  # noqa: BLE001
+        checks["disk_app"] = {"ok": False, "error": str(exc)[:120]}
 
     # 4-6. Soft deps — presence check only (cheap).
     for name, cmd in (("libreoffice", "soffice"), ("tesseract", "tesseract"), ("poppler", "pdftotext")):
