@@ -341,7 +341,24 @@ async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
         else:
             raise
     except Exception as e:
-        raise HTTPException(502, f"Navixy fleet unavailable: {e}")
+        # v58.13.132ho — Extend `.132gx`'s soft-response envelope to
+        # cover the "Navixy reachable but returned a non-HTTPException"
+        # class (5xx from Navixy, DNS blip, connection reset, decode
+        # error). Previously raised HTTP 502 which the FE surfaced as
+        # a red banner with no manual-entry fallback — that stranded
+        # SSRA / pre-start submitters whenever Navixy hiccuped.
+        # Now returns HTTP 200 with `status: navixy_unavailable` +
+        # actionable message so the FE can flip to manual mode via
+        # the same code path it uses for `navixy_disconnected`.
+        return {
+            "vehicles": [],
+            "status": "navixy_unavailable",
+            "message": (
+                f"Fleet integration is temporarily unavailable "
+                f"({str(e)[:80]}). You can still enter the rego "
+                f"manually below."
+            ),
+        }
 
     # Load admin overrides once.
     overrides_by_id: dict = {}

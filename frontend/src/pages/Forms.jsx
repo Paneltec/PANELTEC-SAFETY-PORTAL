@@ -253,7 +253,16 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
     api.get('/forms/fleet/vehicles')
       .then((r) => {
         setVehicles(r.data?.vehicles || []);
-        if (r.data?.status === 'navixy_disconnected') {
+        // v58.13.132ho — Treat `navixy_disconnected` AND
+        // `navixy_unavailable` as the same soft-response class.
+        // Both flip the picker into manual-entry mode with an
+        // amber banner. `navixy_unavailable` is the new
+        // transient-fault status added in `.132ho`; `navixy_disconnected`
+        // is the hash-invalid path from `.132gx`. Extends coverage
+        // to SSRAs where a 502 previously stranded the worker.
+        const soft = r.data?.status === 'navixy_disconnected'
+          || r.data?.status === 'navixy_unavailable';
+        if (soft) {
           setDisconnectedMsg(r.data?.message || 'Fleet integration needs reconnecting.');
           // Nudge worker into manual-entry mode so the form isn't
           // blocked while an admin fixes the integration.
@@ -262,7 +271,22 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
           setDisconnectedMsg(null);
         }
       })
-      .catch((e) => setError(apiError(e)))
+      .catch((e) => {
+        // v58.13.132ho — Network / 5xx from our own API layer
+        // (rare after the backend soft-response, but keep the
+        // belt): also degrade to manual-entry with an amber
+        // banner so the worker can still submit. Never leaves
+        // the picker in a red-error dead-end.
+        setDisconnectedMsg(
+          'Fleet integration is temporarily unreachable. You can still enter the rego manually below.',
+        );
+        setMode('manual');
+        setError(null);
+        // Log the raw error to help the admin trace the incident
+        // without surfacing it to the worker.
+        // eslint-disable-next-line no-console
+        console.warn('[vehicle_navixy] fleet fetch failed:', apiError(e));
+      })
       .finally(() => setLoading(false));
   }, [readOnly]);
 
