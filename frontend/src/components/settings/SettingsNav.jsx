@@ -11,6 +11,7 @@
 // per folder — dragging BETWEEN scopes uses `onDragOver` to move the
 // item into the destination scope.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -513,7 +514,13 @@ function SortableFolder({
           <button type="button" onClick={onDelete}
             data-testid={`settings-nav-folder-${folder.id}-delete`}
             title="Delete folder"
-            className="opacity-0 group-hover/folder:opacity-100 text-slate-400 hover:text-rose-600 px-1 self-center"
+            /* v58.13.132ht — Always visible (opacity-60 idle,
+               brightens on hover / focus-within). The old
+               `opacity-0 group-hover/folder:opacity-100` was
+               invisible on iPad — Stephen's primary device — so
+               admins had no discoverable way to delete orphan
+               "New folder" entries in the settings sidebar. */
+            className="opacity-60 group-hover/folder:opacity-100 focus-within:opacity-100 text-slate-400 hover:text-rose-600 px-1 self-center transition-opacity"
           >
             <Delete20Regular style={{ width: 12, height: 12 }} />
           </button>
@@ -576,9 +583,19 @@ function FolderBody({ folderId, navCollapsed, kids, isAdmin, onItemClick }) {
 function DeleteFolderModal({ folder, onCancel, onConfirm }) {
   useLockBodyScroll(true);
   const childCount = (folder.children || []).length;
-  return (
+  /* v58.13.132ht — Render via React Portal into document.body.
+     The prior in-place render was trapped inside the AppShell
+     sidebar's stacking context (dnd-kit's DragOverlay applies a
+     `transform` to an ancestor, which creates a local stack no
+     `z-index` can escape). That's why even at z-[100] the Users
+     page's <TH> "Role" header was rendering ON TOP of the Confirm
+     button — Stephen's clicks were landing on the table header,
+     not on Confirm, so the folder never deleted and the modal
+     looked "stuck". Portal escapes to <body> where our z-[100]
+     is authoritative. */
+  const body = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4"
       onClick={onCancel}
       data-testid={`settings-nav-folder-${folder.id}-delete-modal`}
     >
@@ -619,4 +636,5 @@ function DeleteFolderModal({ folder, onCancel, onConfirm }) {
       </div>
     </div>
   );
+  return typeof document !== 'undefined' ? createPortal(body, document.body) : body;
 }

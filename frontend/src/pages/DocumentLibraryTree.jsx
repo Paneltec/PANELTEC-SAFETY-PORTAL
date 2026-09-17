@@ -262,7 +262,17 @@ function TreeRow(props) {
         )}
       </span>
       {canEdit && !node.is_system ? (
-        <span className="hidden group-hover:inline-flex items-center gap-0.5" data-testid={'tree-actions-' + node.id}>
+        <span
+          className="inline-flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+          data-testid={'tree-actions-' + node.id}
+        >
+          {/* v58.13.132ht — Always-visible action pill (opacity-40 idle,
+              full on hover / focus-within). The prior `hidden
+              group-hover:inline-flex` guard silently hid the delete +
+              rename affordances on touch devices (iPad in the field —
+              Stephen's primary form factor), leaving admins with no
+              way to remove folders from the tree. Desktop hover still
+              gets the crisp brighten treatment. */}
           <button
             type="button"
             onClick={function (e) { e.stopPropagation(); onRename(node); }}

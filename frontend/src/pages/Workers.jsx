@@ -2112,16 +2112,13 @@ export default function Workers() {
   // Phase 4.7.1 — map of email → { id, status } so we can render the
   // AccessKebab on linked rows or a "Create login" button otherwise.
   const [userByEmail, setUserByEmail] = useState({});
-  // v58.13.132hq — Worker company multi-select filter chips. `null` /
-  // empty Set = show all. Loaded from GET /worker-companies which
-  // seeds the defaults on first call.
-  const [workerCompanies, setWorkerCompanies] = useState([]);
-  const [companyFilter, setCompanyFilter] = useState(new Set());
-  useEffect(() => {
-    api.get('/worker-companies')
-      .then(({ data }) => setWorkerCompanies(data?.items || []))
-      .catch(() => { /* silent — dropdown falls back to no chips */ });
-  }, []);
+  // v58.13.132hq — Worker company multi-select filter chips.
+  // v58.13.132ht — Toolbar UI rolled back. User feedback: chip row
+  // was pushing search + Export CSV + Show archived off the edge on
+  // narrow viewports and adding noise. Backend `worker_companies`
+  // collection, CRUD endpoints, and `worker.company` field are
+  // intentionally kept (data is dormant, not purged — see the
+  // .132ht ship memo for the "purge or not" open question).
 
   const loadUsers = async () => {
     if (!canEdit) return; // worker-role view doesn't need this
@@ -2216,11 +2213,7 @@ export default function Workers() {
       });
     }
     // v58.13.132hq — Company chip filter (multi-select).
-    if (companyFilter.size > 0) {
-      const norm = (s) => (s || '').toLowerCase().trim();
-      const selected = new Set([...companyFilter].map(norm));
-      list = list.filter((r) => selected.has(norm(r.worker_company_name || r.company_label)));
-    }
+    // v58.13.132ht — Chip UI removed; filter block deleted.
     // Apply sort AFTER filtering — searching + sorting compose.
     const dir = sortDir === 'desc' ? -1 : 1;
     const key = sortKey;
@@ -2239,7 +2232,7 @@ export default function Workers() {
     });
     return sorted;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, search, sortKey, sortDir, zipStatusByWorker, userByEmail, companyFilter]);
+  }, [rows, search, sortKey, sortDir, zipStatusByWorker, userByEmail]);
 
   const sync = async (company) => {
     setSyncOpen(false);
@@ -2533,39 +2526,10 @@ export default function Workers() {
           <Download /> Export CSV
         </button>
         {/* v58.13.132hq — Company multi-select chips. Empty selection =
-            show all. Click toggles a company in/out of the filter. */}
-        {workerCompanies.length > 0 && (
-          <div className="inline-flex items-center gap-1.5 pl-1 border-l border-slate-200 ml-1" data-testid="worker-company-filter">
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mr-1">Company</span>
-            {workerCompanies.map((c) => {
-              const on = companyFilter.has(c.name);
-              return (
-                <button key={c.id} type="button"
-                  onClick={() => setCompanyFilter((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(c.name)) next.delete(c.name); else next.add(c.name);
-                    return next;
-                  })}
-                  data-testid={`worker-company-chip-${c.name.toLowerCase().replace(/\s+/g,'-')}`}
-                  data-active={on ? '1' : '0'}
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition ${
-                    on
-                      ? 'bg-[#1e4a8c] text-white border-[#1e4a8c]'
-                      : 'bg-white text-slate-700 border-slate-300 hover:border-[#1e4a8c] hover:text-[#1e4a8c]'
-                  }`}>
-                  {c.name}
-                </button>
-              );
-            })}
-            {companyFilter.size > 0 && (
-              <button type="button" onClick={() => setCompanyFilter(new Set())}
-                data-testid="worker-company-clear"
-                className="text-[11px] text-slate-500 hover:text-slate-800 underline ml-1">
-                Clear
-              </button>
-            )}
-          </div>
-        )}
+            show all. Click toggles a company in/out of the filter.
+            v58.13.132ht — Removed. See ship memo — data preserved,
+            UI rolled back to keep the toolbar single-line + the
+            search field in its original position. */}
         {/* v58.13.132fy — "Show inactive" toggle. Admin-only. Flips
             the list request to `?include_inactive=true` so
             soft-deleted / deactivated workers appear with a Restore
