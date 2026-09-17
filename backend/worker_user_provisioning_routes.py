@@ -86,3 +86,53 @@ async def backfill(
 ):
     counts = await backfill_provisioning(actor)
     return counts
+
+
+# ── Mirror-status summary ───────────────────────────────────────────
+
+@router.get("/worker-user-mirror-status")
+async def mirror_status(
+    actor: dict = Depends(require_permission("users", "edit")),
+):
+    """v58.13.132hu — Compact summary powering the Settings > Users
+    "mirror status" toolbar pill.
+
+    Returns:
+        {
+          "workers_total":    <undeleted worker count in the org>,
+          "linked":           <linked or already_linked>,
+          "invited_pending":  <status = invited_pending_send>,
+          "invite_sent":      <status = invite_sent>,
+          "email_conflict":   <ambiguous — needs admin resolve>,
+          "no_email":         <worker has no email, provision skipped>,
+          "unset":            <status field missing — needs backfill>,
+        }
+    """
+    from db import db as _db
+    org_id = actor["org_id"]
+    q = {"org_id": org_id,
+         "$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]}
+    workers_total = await _db.workers.count_documents(q)
+    counts = {
+        "linked":          0,
+        "invited_pending": 0,
+        "invite_sent":     0,
+        "email_conflict":  0,
+        "no_email":        0,
+        "unset":           0,
+    }
+    async for w in _db.workers.find(q, {"_id": 0, "user_link_status": 1}):
+        s = (w or {}).get("user_link_status")
+        if s == "linked":
+            counts["linked"] += 1
+        elif s == "invited_pending_send":
+            counts["invited_pending"] += 1
+        elif s == "invite_sent":
+            counts["invite_sent"] += 1
+        elif s == "email_conflict":
+            counts["email_conflict"] += 1
+        elif s == "no_email":
+            counts["no_email"] += 1
+        else:
+            counts["unset"] += 1
+    return {"workers_total": workers_total, **counts}

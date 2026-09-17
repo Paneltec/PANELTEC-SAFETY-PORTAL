@@ -13085,29 +13085,21 @@
 //         `parent_folder_id` payload.
 //       · Testid patterns present.
 //     Version pin `.132gz` on version.js + service-worker.js.
-// v58.13.132ht — Three UI fixes bundled in one ship.
-//   1. Settings sidebar folder delete (the actual bug Stephen hit).
-//      `SettingsNav.DeleteFolderModal` was trapped inside the
-//      AppShell sidebar's stacking context (dnd-kit DragOverlay
-//      applies a `transform` which anchors a local stack); even at
-//      z-[100] the Users page <TH> "Role" rendered ON TOP of
-//      Confirm. Live reproduction: `document.elementFromPoint(cx,cy)`
-//      returned `<TH>Role</TH>` at the button center — tap missed
-//      the button, folder never deleted, modal looked "stuck".
-//      Ported the modal via `createPortal(body, document.body)` so
-//      z-[100] is authoritative. Also promoted the trash icon from
-//      `opacity-0 group-hover/folder:opacity-100` to `opacity-60`
-//      idle / `opacity-100` on hover-or-focus so admins on iPad can
-//      actually see it.
-//   2. Doc Library tree action pill (`DocumentLibraryTree.jsx`) —
-//      same hover-only visibility guard replaced with an
-//      always-visible opacity treatment.
-//   3. Workers toolbar rollback of the .132hq worker-company chip
-//      filter — chip row displaced the search input on narrow
-//      viewports. Backend `worker_companies` collection, CRUD
-//      endpoints and `worker.company` field are intentionally
-//      preserved (data is dormant, full purge is an open follow-up).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ht';
+// v58.13.132hu — Auto-link fix for worker-user provisioning.
+//   Prior `.132hs` implementation flagged every email match as an
+//   `email_conflict` requiring admin review. Stephen's actual data
+//   put 63/70 workers into the conflict bucket — because the
+//   matching user was actually the correct target, we just hadn't
+//   attached `worker.user_id ↔ user.worker_id`. Refined the policy:
+//     · Email match, user has no worker_id → auto-link (linked).
+//     · Email match, user already linked to a different worker →
+//       genuine `email_conflict` (kept as-is).
+//     · Idempotent when re-linking the same worker.
+//   Backfill endpoint reuses the same service, so running
+//   `POST /workers/backfill-user-provision` on an existing org
+//   heals every stale `email_conflict` where the collision is a
+//   two-way mirror.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hu';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13128,7 +13120,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ht';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ht';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hu';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

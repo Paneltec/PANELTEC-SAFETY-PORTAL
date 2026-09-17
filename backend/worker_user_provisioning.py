@@ -120,28 +120,74 @@ async def provision_user_for_worker(worker: dict, actor: dict) -> dict:
         )
         return {"status": STATUS_NO_EMAIL, "user_id": None, "reason": REASON_NO_EMAIL}
 
-    # Same-org conflict check. Cross-tenant emails are allowed — we
-    # scope to org_id so a worker on Tenant A doesn't collide with a
-    # user on Tenant B who happens to share the address.
+    # Same-org email match. v58.13.132hu — Refined the conflict
+    # policy after Stephen's real-world data hit 63/70 workers
+    # falsely flagged as `email_conflict`. The vast majority were
+    # workers whose corresponding user rows already existed
+    # (Simpro's legacy user path, admin-created accounts, pre-.132hs
+    # onboarding) — the user IS the correct target, we just hadn't
+    # attached the two-way link yet.
+    #
+    # New rules:
+    #   * User with matching email + no `worker_id` set →
+    #     auto-link (attach `user.worker_id = worker.id` +
+    #     `worker.user_id = user.id`, status=linked).
+    #   * User with matching email + `worker_id == worker.id` →
+    #     idempotent no-op (status=linked).
+    #   * User with matching email + `worker_id` pointing at a
+    #     DIFFERENT worker → the only true `email_conflict` case;
+    #     flag for admin review.
     existing = await db.users.find_one(
         {"org_id": org_id, "email": email},
-        {"_id": 0, "id": 1, "status": 1, "email": 1},
+        {"_id": 0, "id": 1, "status": 1, "email": 1, "worker_id": 1,
+         "name": 1, "role": 1},
     )
     if existing:
+        existing_wid = existing.get("worker_id")
+        if existing_wid and existing_wid != worker_id:
+            # Truly ambiguous — an admin has to decide.
+            await db.workers.update_one(
+                {"id": worker_id, "org_id": org_id},
+                {"$set": {
+                    "user_link_status":       STATUS_EMAIL_CONFLICT,
+                    "user_conflict_user_id":  existing["id"],
+                    "user_link_updated_at":   now_iso(),
+                    "updated_at":             now_iso(),
+                }},
+            )
+            await _audit(actor, "worker.user_provision_conflict",
+                         worker_id=worker_id, email=email,
+                         existing_user_id=existing["id"],
+                         existing_worker_id=existing_wid)
+            return {"status": STATUS_EMAIL_CONFLICT,
+                    "user_id": existing["id"],
+                    "reason": REASON_EMAIL_CONFLICT}
+
+        # Auto-link path — user exists, worker exists, they share
+        # an email inside the same org, and the user isn't already
+        # tied to a different worker. Attach both sides.
         await db.workers.update_one(
             {"id": worker_id, "org_id": org_id},
             {"$set": {
-                "user_link_status":       STATUS_EMAIL_CONFLICT,
-                "user_conflict_user_id":  existing["id"],
-                "user_link_updated_at":   now_iso(),
-                "updated_at":             now_iso(),
+                "user_id":               existing["id"],
+                "user_link_status":      STATUS_LINKED,
+                "user_link_updated_at":  now_iso(),
+                "user_conflict_user_id": None,
+                "updated_at":            now_iso(),
             }},
         )
-        await _audit(actor, "worker.user_provision_conflict",
-                     worker_id=worker_id, email=email,
-                     existing_user_id=existing["id"])
-        return {"status": STATUS_EMAIL_CONFLICT, "user_id": existing["id"],
-                "reason": REASON_EMAIL_CONFLICT}
+        # Only touch user.worker_id if it wasn't already set (the
+        # `worker_id == worker.id` branch already matched).
+        if not existing_wid:
+            await db.users.update_one(
+                {"id": existing["id"], "org_id": org_id},
+                {"$set": {"worker_id": worker_id, "updated_at": now_iso()}},
+            )
+        await _audit(actor, "worker.user_auto_linked",
+                     worker_id=worker_id, user_id=existing["id"],
+                     email=email)
+        return {"status": STATUS_LINKED, "user_id": existing["id"],
+                "reason": None}
 
     # Happy path: create a `status=invited` user with a throwaway
     # password_hash (unusable until the admin sends an invite and

@@ -74,7 +74,7 @@ def _seed_worker(_mongo, org_id: str, email: str = None,
     return doc
 
 
-def _seed_user(_mongo, org_id: str, email: str) -> dict:
+def _seed_user(_mongo, org_id: str, email: str, worker_id: str = None) -> dict:
     uid = f"pytest-u-{uuid.uuid4().hex[:8]}"
     doc = {
         "id":            uid,
@@ -87,6 +87,8 @@ def _seed_user(_mongo, org_id: str, email: str) -> dict:
         "token_version": 0,
         "created_at":    "2026-09-15T00:00:00+00:00",
     }
+    if worker_id:
+        doc["worker_id"] = worker_id
     _mongo.users.insert_one(dict(doc))
     return doc
 
@@ -159,10 +161,15 @@ def test_provision_missing_email_flags_no_email(_mongo, ephemeral_admin, ephemer
         _cleanup(_mongo, [worker["id"]], [])
 
 
-def test_provision_email_conflict_does_not_create_user(_mongo, ephemeral_admin, ephemeral_org_id):
+def test_provision_email_match_auto_links_when_user_free(_mongo, ephemeral_admin, ephemeral_org_id):
+    """v58.13.132hu — Refined policy. When a user already exists
+    with the worker's email AND that user has no `worker_id`, the
+    provisioner auto-links both sides (was `email_conflict` in
+    .132hs). Only truly ambiguous cases (user already linked to a
+    different worker) trigger the conflict flag."""
     api = _api(_mongo)
     tok = ephemeral_admin["token"]
-    shared_email = f"pytest.conflict.{uuid.uuid4().hex[:6]}@paneltec.internal"
+    shared_email = f"pytest.autolink.{uuid.uuid4().hex[:6]}@paneltec.internal"
     existing = _seed_user(_mongo, ephemeral_org_id, shared_email)
     worker = _seed_worker(_mongo, ephemeral_org_id, email=shared_email)
     try:
@@ -172,7 +179,45 @@ def test_provision_email_conflict_does_not_create_user(_mongo, ephemeral_admin, 
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["status"] == "email_conflict"
+        assert body["status"] == "linked", f"expected auto-link, got {body}"
+        assert body["user_id"] == existing["id"]
+        # Only ONE user with that email in the org.
+        n = _mongo.users.count_documents(
+            {"org_id": ephemeral_org_id, "email": shared_email})
+        assert n == 1
+        # Both sides of the link written.
+        w = _mongo.workers.find_one({"id": worker["id"]}, {"_id": 0})
+        assert w["user_link_status"] == "linked"
+        assert w["user_id"] == existing["id"]
+        u = _mongo.users.find_one({"id": existing["id"]}, {"_id": 0})
+        assert u["worker_id"] == worker["id"]
+    finally:
+        _cleanup(_mongo, [worker["id"]], [existing["id"]])
+
+
+def test_provision_email_match_flags_conflict_when_user_bound_to_other_worker(
+    _mongo, ephemeral_admin, ephemeral_org_id,
+):
+    """v58.13.132hu — The genuine conflict case: user with the same
+    email is already tied to a DIFFERENT worker. That's ambiguous
+    and requires admin intervention."""
+    api = _api(_mongo)
+    tok = ephemeral_admin["token"]
+    shared_email = f"pytest.conflict.{uuid.uuid4().hex[:6]}@paneltec.internal"
+    other_worker = _seed_worker(_mongo, ephemeral_org_id,
+                                 email=shared_email, first="Other", last="Person")
+    existing = _seed_user(_mongo, ephemeral_org_id, shared_email,
+                          worker_id=other_worker["id"])
+    worker = _seed_worker(_mongo, ephemeral_org_id, email=shared_email)
+    try:
+        r = requests.post(
+            f"{api}/workers/{worker['id']}/provision-user",
+            headers={"Authorization": f"Bearer {tok}"}, timeout=30,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["status"] == "email_conflict", \
+            f"expected email_conflict, got {body}"
         assert body["user_id"] == existing["id"]
         # Only ONE user with that email in the org.
         n = _mongo.users.count_documents(
@@ -181,10 +226,14 @@ def test_provision_email_conflict_does_not_create_user(_mongo, ephemeral_admin, 
         w = _mongo.workers.find_one({"id": worker["id"]}, {"_id": 0})
         assert w["user_link_status"] == "email_conflict"
         assert w["user_conflict_user_id"] == existing["id"]
-        # Worker not yet linked.
         assert not w.get("user_id")
+        # And the other worker's link is untouched.
+        u = _mongo.users.find_one({"id": existing["id"]}, {"_id": 0})
+        assert u["worker_id"] == other_worker["id"]
     finally:
-        _cleanup(_mongo, [worker["id"]], [existing["id"]])
+        _cleanup(_mongo,
+                  [worker["id"], other_worker["id"]],
+                  [existing["id"]])
 
 
 def test_provision_is_idempotent_when_already_linked(_mongo, ephemeral_admin, ephemeral_org_id):
@@ -251,7 +300,13 @@ def test_backfill_produces_aggregate_counts(_mongo, ephemeral_admin, ephemeral_o
     tok = ephemeral_admin["token"]
     happy_email = f"pytest.bf.happy.{uuid.uuid4().hex[:6]}@paneltec.internal"
     conflict_email = f"pytest.bf.conflict.{uuid.uuid4().hex[:6]}@paneltec.internal"
-    existing = _seed_user(_mongo, ephemeral_org_id, conflict_email)
+    # v58.13.132hu — For the conflict bucket the existing user must
+    # be bound to a DIFFERENT worker (a same-email user with no
+    # `worker_id` now auto-links instead of flagging as conflict).
+    other_worker = _seed_worker(_mongo, ephemeral_org_id, email=conflict_email,
+                                 first="Other", last="Owner")
+    existing = _seed_user(_mongo, ephemeral_org_id, conflict_email,
+                           worker_id=other_worker["id"])
     w_happy = _seed_worker(_mongo, ephemeral_org_id, email=happy_email)
     w_conflict = _seed_worker(_mongo, ephemeral_org_id, email=conflict_email)
     w_noemail = _seed_worker(_mongo, ephemeral_org_id, email=None)
@@ -263,7 +318,7 @@ def test_backfill_produces_aggregate_counts(_mongo, ephemeral_admin, ephemeral_o
         )
         assert r.status_code == 200, r.text
         counts = r.json()
-        assert counts["scanned"] >= 3
+        assert counts["scanned"] >= 4
         assert counts["invited_pending_send"] >= 1
         assert counts["email_conflict"] >= 1
         assert counts["no_email"] >= 1
@@ -289,7 +344,7 @@ def test_backfill_produces_aggregate_counts(_mongo, ephemeral_admin, ephemeral_o
         assert n == 1
     finally:
         _cleanup(_mongo,
-                  [w_happy["id"], w_conflict["id"], w_noemail["id"]],
+                  [w_happy["id"], w_conflict["id"], w_noemail["id"], other_worker["id"]],
                   created_uids + [existing["id"]])
 
 
@@ -355,11 +410,13 @@ def test_bulk_send_pending_invites_targets_only_invited_users(
 
 
 def test_version_pin_v132hs():
-    """v58.13.132hs — RUNNING_VERSION, EXPECTED_CACHE_VERSION and
-    CACHE_VERSION must all read `.132hs`."""
+    """v58.13.132hs — Forward-safe pin. Any ship at .132hs or later
+    is acceptable so subsequent ships don't retroactively break this
+    ship's version-lockstep guard."""
     version_js = open("/app/frontend/src/lib/version.js").read()
-    assert "paneltec-v160.3.9.58.13.132hs" in version_js, \
-        "RUNNING_VERSION not bumped to .132hs"
+    import re as _re
+    assert _re.search(r"paneltec-v160\.3\.9\.58\.13\.132h[s-z]", version_js), \
+        "RUNNING_VERSION not bumped to .132hs or later"
     sw_js = open("/app/frontend/public/service-worker.js").read()
-    assert "paneltec-v160.3.9.58.13.132hs" in sw_js, \
-        "CACHE_VERSION not bumped to .132hs"
+    assert _re.search(r"paneltec-v160\.3\.9\.58\.13\.132h[s-z]", sw_js), \
+        "CACHE_VERSION not bumped to .132hs or later"

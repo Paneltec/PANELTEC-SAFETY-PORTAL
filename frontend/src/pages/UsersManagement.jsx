@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Send, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical, QrCode, Printer } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
@@ -561,6 +561,16 @@ export default function UsersManagement() {
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [bulkInviteConfirm, setBulkInviteConfirm] = useState(false);
   const [isBulkInviting, setIsBulkInviting] = useState(false);
+  // v58.13.132hu — Worker↔user mirror status. Refreshes on mount +
+  // after every backfill / bulk-invite run so admins get instant
+  // feedback on the pill.
+  const [mirrorStatus, setMirrorStatus] = useState(null);
+  const loadMirrorStatus = useCallback(() => {
+    api.get('/worker-user-mirror-status')
+      .then(({ data }) => setMirrorStatus(data))
+      .catch(() => { /* pill silently hides if the endpoint 4xxs */ });
+  }, []);
+  useEffect(() => { loadMirrorStatus(); }, [loadMirrorStatus]);
   // v160.3.9.42.1 — `sectionSort` state retired with the dropdown. Users
   // & Permissions rows now render in alphabetical (A-Z) order in every
   // section, per user request.
@@ -644,7 +654,10 @@ export default function UsersManagement() {
     for (const u of users) {
       if (u.is_test_fixture) { testHidden += 1; continue; }
       const s = u.activation_status;
-      if (s === 'pending_activation') pending += 1;
+      // v58.13.132hu — Treat `status='invited'` (auto-provisioned
+      // workers awaiting their invite send) as "pending" too so
+      // the header count and the "pending" nudge include them.
+      if (s === 'pending_activation' || u.status === 'invited') pending += 1;
       else if (s === 'suspended' || u.is_archived) archived += 1;
       else active += 1;
     }
@@ -675,7 +688,9 @@ export default function UsersManagement() {
       if (!matchesSearch(u)) continue;
       if (u.is_test_fixture) { testHidden += 1; continue; }
       const s = u.activation_status;
-      if (s === 'pending_activation') pending += 1;
+      // v58.13.132hu — mirror the segments logic above so the
+      // "N of M pending matching …" search hint stays consistent.
+      if (s === 'pending_activation' || u.status === 'invited') pending += 1;
       else if (s === 'suspended' || u.is_archived) archived += 1;
       else active += 1;
     }
@@ -685,7 +700,33 @@ export default function UsersManagement() {
   if (!can('users', 'view')) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500" data-testid="users-denied">Access denied — you need users.view permission.</div>;
   }
-  const filtered = users.filter((u) => matchesSearch(u) && (!filters.role || u.role === filters.role) && (!filters.status || u.status === filters.status));
+  // v58.13.132hu — Status-filter predicate. Fixes two bugs:
+  //   1. The default "Active" view was hiding `status='invited'`
+  //      users, so auto-provisioned workers (e.g. Glen — Walker
+  //      designs) were invisible even though the mirror pill said
+  //      they were mirrored. Now `filters.status === 'active'`
+  //      surfaces BOTH `active` and `invited` users (an invited
+  //      user is still a live account — they just haven't set a
+  //      password yet). The row Invited chip in `StatusChip`
+  //      keeps them visually distinct.
+  //   2. The "Pending inductees" built-in view carried
+  //      `filters.status = 'pending_invite'` — a value no user
+  //      row ever holds (backend writes `'invited'` /
+  //      `activation_status='pending_activation'`). Aliased both
+  //      here so the built-in view actually returns rows.
+  const statusMatches = (u) => {
+    if (!filters.status) return true;
+    if (filters.status === 'active') {
+      return u.status === 'active' || u.status === 'invited';
+    }
+    if (filters.status === 'pending_invite') {
+      return u.status === 'invited'
+          || u.activation_status === 'pending_activation'
+          || u.invite_pending === true;
+    }
+    return u.status === filters.status;
+  };
+  const filtered = users.filter((u) => matchesSearch(u) && (!filters.role || u.role === filters.role) && statusMatches(u));
   const disabledCount = users.filter((u) => u.status === 'disabled').length;
   const bulkable = filtered.filter((u) => u.id !== me?.id && !u.deleted_at);
   const bulkAllChecked = bulkable.length > 0 && bulkable.every((u) => bulkSelected.has(u.id));
@@ -903,6 +944,59 @@ export default function UsersManagement() {
                 </button>
               </>
             )}
+            {/* v58.13.132hu — Worker↔user mirror pill. Renders a
+                compact "68/70 mirrored · 1 conflict · 1 no email"
+                summary derived from `/api/worker-user-mirror-status`.
+                Helps admins spot future gaps at a glance without
+                having to run the backfill. Hidden until the fetch
+                lands. */}
+            {mirrorStatus && (
+              <>
+                <span className="text-slate-300">·</span>
+                <span
+                  data-testid="users-mirror-pill"
+                  title="Worker → user auto-provisioning status. Click the ‘Provision users for workers’ button to heal any gap."
+                  className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700"
+                >
+                  <span className="font-semibold text-slate-900" data-testid="users-mirror-linked-count">
+                    {mirrorStatus.linked}/{mirrorStatus.workers_total}
+                  </span>
+                  <span>mirrored</span>
+                  {mirrorStatus.invited_pending > 0 && (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-blue-700" data-testid="users-mirror-pending">
+                        {mirrorStatus.invited_pending} pending
+                      </span>
+                    </>
+                  )}
+                  {mirrorStatus.email_conflict > 0 && (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-amber-700" data-testid="users-mirror-conflict">
+                        {mirrorStatus.email_conflict} conflict
+                      </span>
+                    </>
+                  )}
+                  {mirrorStatus.no_email > 0 && (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-slate-500" data-testid="users-mirror-noemail">
+                        {mirrorStatus.no_email} no email
+                      </span>
+                    </>
+                  )}
+                  {mirrorStatus.unset > 0 && (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-rose-700" data-testid="users-mirror-unset">
+                        {mirrorStatus.unset} not yet provisioned
+                      </span>
+                    </>
+                  )}
+                </span>
+              </>
+            )}
           </span>
         }
         action={can('users', 'edit') ? (
@@ -990,6 +1084,7 @@ export default function UsersManagement() {
                     { duration: 6000 },
                   );
                   await load();
+                  loadMirrorStatus();
                 } catch (e) { toast.error(apiError(e)); }
                 finally { setIsBackfilling(false); }
               }}
@@ -1555,6 +1650,7 @@ export default function UsersManagement() {
                       toast.success(`Sent ${data.sent} · Skipped recent ${data.skipped_recent} · Skipped no-channel ${data.skipped_no_channel}`);
                       setBulkInviteConfirm(false);
                       await load();
+                      loadMirrorStatus();
                     } catch (e) { toast.error(apiError(e)); }
                     finally { setIsBulkInviting(false); }
                   }}

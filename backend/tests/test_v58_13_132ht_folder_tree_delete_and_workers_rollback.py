@@ -226,14 +226,17 @@ def test_workers_toolbar_has_search_and_no_company_chip_filter():
 # ── Version lockstep ───────────────────────────────────────────────
 
 def test_version_pin_v132ht():
+    """v58.13.132ht — Forward-safe pin. Any ship at .132ht or later
+    is acceptable so subsequent ships don't retroactively break this
+    ship's version-lockstep guard."""
     js = _read(VJS)
     sw = _read(SW)
     assert re.search(
-        r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132ht'", js
-    ), "RUNNING_VERSION not bumped to .132ht"
+        r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[t-z]", js
+    ), "RUNNING_VERSION not bumped to .132ht or later"
     assert re.search(
-        r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132ht'", js
-    ), "EXPECTED_CACHE_VERSION not bumped to .132ht"
+        r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[t-z]", js
+    ), "EXPECTED_CACHE_VERSION not bumped to .132ht or later"
     assert re.search(
-        r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132ht'", sw
-    ), "service-worker CACHE_VERSION not bumped to .132ht"
+        r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[t-z]", sw
+    ), "service-worker CACHE_VERSION not bumped to .132ht or later"
