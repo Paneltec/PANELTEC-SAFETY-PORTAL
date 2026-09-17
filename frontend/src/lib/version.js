@@ -13085,7 +13085,22 @@
 //         `parent_folder_id` payload.
 //       · Testid patterns present.
 //     Version pin `.132gz` on version.js + service-worker.js.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hq';
+// v58.13.132hs — Worker → user auto-provisioning.
+//   New backend module `backend/worker_user_provisioning.py` +
+//   routes at `backend/worker_user_provisioning_routes.py` (mounted
+//   under `/api`). Auto-creates a `users` row for every new worker
+//   with role=`viewer`, `status="invited"`, no email sent. Admin
+//   sends invites manually via the existing
+//   `POST /users/{user_id}/invite` (auth_invite.py). Bulk sender
+//   at `POST /users/bulk-send-pending-invites`. Backfill at
+//   `POST /workers/backfill-user-provision`.
+//   FE toolbar buttons (backfill + bulk-send) added to
+//   `pages/UsersManagement.jsx`; drawer per-user "Send invite"
+//   button added for `status="invited"` users. `pages/Workers.jsx`
+//   "Create login" button repointed from the deprecated
+//   `POST /users` (410) to the new
+//   `POST /workers/{id}/provision-user` endpoint.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hs';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13106,7 +13121,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hq';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hq';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hs';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

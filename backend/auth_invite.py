@@ -275,11 +275,17 @@ async def send_invite(user_id: str, body: InviteIn, request: Request,
                              purpose="invite",
                              ttl=timedelta(days=INVITE_TTL_DAYS))
     expires_at = (datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS)).isoformat()
+    sent_at_iso = now_iso()
     await db.users.update_one(
         {"id": target["id"]},
         {"$set": {
             "invite_token_hash": _sha(token),
             "invite_expires_at": expires_at,
+            # v58.13.132hs — record send timestamp so the bulk
+            # "Send pending invites" flow can skip users that were
+            # invited recently, and the Users list can render a
+            # "Sent <relative>" pill next to the Invited badge.
+            "last_invite_sent":  sent_at_iso,
             "must_change_password": True,
             "updated_at": now_iso(),
         }},
@@ -299,10 +305,26 @@ async def send_invite(user_id: str, body: InviteIn, request: Request,
     if not sent_via:
         raise HTTPException(400, "No email or SMS channel available for this user.")
 
+    # v58.13.132hs — Bridge the send back to the worker record so
+    # the worker profile pill flips from "Invited (not sent)" to
+    # "Invite sent". Idempotent — only touches workers that were
+    # auto-provisioned from this user (matched by user_id OR by
+    # email inside the same org).
+    from worker_user_provisioning import STATUS_INVITE_SENT
+    await db.workers.update_many(
+        {"org_id": target["org_id"],
+         "$or": [{"user_id": target["id"]},
+                 {"email": (target.get("email") or "").lower()}]},
+        {"$set": {"user_link_status":     STATUS_INVITE_SENT,
+                  "user_link_updated_at": sent_at_iso,
+                  "updated_at":           sent_at_iso}},
+    )
+
     await _audit(caller, "auth.invite_sent",
                  target_user_id=target["id"], channel=sent_via,
                  expires_at=expires_at)
-    return {"ok": True, "channel": sent_via, "expires_at": expires_at}
+    return {"ok": True, "channel": sent_via, "expires_at": expires_at,
+            "sent_at": sent_at_iso}
 
 
 class TokenIn(BaseModel):

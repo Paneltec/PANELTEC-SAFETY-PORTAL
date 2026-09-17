@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical, QrCode, Printer } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Send, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical, QrCode, Printer } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
 import {
@@ -557,6 +557,10 @@ export default function UsersManagement() {
   const [sectionOpen, setSectionOpen] = useState({});
   // v160.3.9.42.3 — Bug 3: "Refresh from Simpro" tactile-feedback state.
   const [isRefreshingSimpro, setIsRefreshingSimpro] = useState(false);
+  // v58.13.132hs — Auto-provision toolbar state.
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const [bulkInviteConfirm, setBulkInviteConfirm] = useState(false);
+  const [isBulkInviting, setIsBulkInviting] = useState(false);
   // v160.3.9.42.1 — `sectionSort` state retired with the dropdown. Users
   // & Permissions rows now render in alphabetical (A-Z) order in every
   // section, per user request.
@@ -968,6 +972,44 @@ export default function UsersManagement() {
               title={simproStatus.connected ? 'Choose Simpro employees to import into this workspace' : 'Connect Simpro first'}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-50">
               <FlPersonAdd /> Add employees from Simpro
+            </button>
+            {/* v58.13.132hs — Auto-provisioning toolbar. Backfill scans
+                every worker in the org and creates a status=invited
+                user for those without one (no emails sent). Send-pending
+                emails every status=invited user that has NEVER been
+                emailed. Both admin-gated on the backend. */}
+            <button
+              onClick={async () => {
+                if (isBackfilling) return;
+                setIsBackfilling(true);
+                try {
+                  const { data } = await api.post('/workers/backfill-user-provision');
+                  toast.success(
+                    `Backfill · Scanned ${data.scanned} · New ${data.invited_pending_send} · ` +
+                    `Conflict ${data.email_conflict} · No email ${data.no_email} · Already linked ${data.already_linked}`,
+                    { duration: 6000 },
+                  );
+                  await load();
+                } catch (e) { toast.error(apiError(e)); }
+                finally { setIsBackfilling(false); }
+              }}
+              data-testid="backfill-provision-btn"
+              disabled={isBackfilling || !can('users', 'edit')}
+              title="Create user accounts for workers without one (no emails sent)"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-slate-700 text-sm font-semibold border border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <UserPlus size={14} className={isBackfilling ? 'animate-spin' : ''} />
+              {isBackfilling ? 'Backfilling…' : 'Provision users for workers'}
+            </button>
+            <button
+              onClick={() => setBulkInviteConfirm(true)}
+              data-testid="bulk-send-invites-btn"
+              disabled={!can('users', 'edit')}
+              title="Send invite emails to every user in Invited state that has never been emailed"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold border border-emerald-700 hover:bg-emerald-700 disabled:opacity-60"
+            >
+              <Send size={14} />
+              Send pending invites
             </button>
           </div>) : null} />
 
@@ -1471,6 +1513,61 @@ export default function UsersManagement() {
           </div>
         </div>
       )}
+      {/* v58.13.132hs — Bulk "Send pending invites" confirm dialog.
+          Counts users in `invited` state that have never been emailed
+          (or emailed longer than `resendDays` ago) and asks for
+          explicit confirmation before firing the bulk send. */}
+      {bulkInviteConfirm && (() => {
+        const pending = users.filter((u) => u.status === 'invited' && !u.last_invite_sent && u.email);
+        return (
+          <div data-testid="bulk-invites-modal"
+            className="fixed inset-0 z-[70] bg-slate-900/70 grid place-items-center p-4"
+            onClick={(e) => e.target === e.currentTarget && !isBulkInviting && setBulkInviteConfirm(false)}>
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
+                <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0"><Send size={18} /></div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-display font-bold text-slate-900">Send invites to {pending.length} pending user{pending.length === 1 ? '' : 's'}?</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Each invited user with an email address and no prior send will receive a magic link. Recipients set their own password on first click.</p>
+                </div>
+              </div>
+              <div className="px-5 py-3 text-sm text-slate-700 max-h-48 overflow-auto">
+                {pending.length === 0 && (
+                  <div className="text-xs text-slate-500 italic">No pending invites to send.</div>
+                )}
+                {pending.slice(0, 25).map((u) => (
+                  <div key={u.id} className="text-xs py-0.5 truncate">• {u.name || u.email} <span className="text-slate-400">({u.email})</span></div>
+                ))}
+                {pending.length > 25 && (
+                  <div className="text-[11px] text-slate-400 mt-1">…and {pending.length - 25} more</div>
+                )}
+              </div>
+              <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button type="button" onClick={() => setBulkInviteConfirm(false)} disabled={isBulkInviting}
+                  data-testid="bulk-invites-cancel"
+                  className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+                <button type="button"
+                  disabled={isBulkInviting || pending.length === 0}
+                  onClick={async () => {
+                    setIsBulkInviting(true);
+                    try {
+                      const { data } = await api.post('/users/bulk-send-pending-invites', { user_ids: [], resend_after_days: 0 });
+                      toast.success(`Sent ${data.sent} · Skipped recent ${data.skipped_recent} · Skipped no-channel ${data.skipped_no_channel}`);
+                      setBulkInviteConfirm(false);
+                      await load();
+                    } catch (e) { toast.error(apiError(e)); }
+                    finally { setIsBulkInviting(false); }
+                  }}
+                  data-testid="bulk-invites-confirm"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-60">
+                  {isBulkInviting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  {isBulkInviting ? 'Sending…' : `Send ${pending.length} invite${pending.length === 1 ? '' : 's'}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {active && <UserDrawer userRow={active} onClose={() => setActive(null)} onReload={load} canEdit={can('users', 'edit')} defaultTab={activeTab} />}
       {assignRoleTarget && (
         <AssignRoleDialog
@@ -2240,6 +2337,26 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
                 <button onClick={() => setResetPwdOpen(true)} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm inline-flex items-center gap-1.5" data-testid="password-btn">
                   <KeyRound size={13} /> Password
                 </button>
+                {/* v58.13.132hs — Send invite (magic link) button. Only
+                    surfaces for users in `invited` / `pending_invite`
+                    state — active/disabled don't need it. Idempotent
+                    on the backend; re-clicking just resends. */}
+                {(userRow.status === 'invited' || userRow.status === 'pending_invite' || userRow.invite_pending) && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { data } = await api.post(`/users/${userRow.id}/invite`, { channel: 'auto' });
+                        toast.success(`Invite sent via ${data.channel} to ${userRow.email}`);
+                        await onReload?.();
+                      } catch (e) { toast.error(apiError(e)); }
+                    }}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm inline-flex items-center gap-1.5 border border-emerald-700 hover:bg-emerald-700"
+                    data-testid="send-invite-btn"
+                  >
+                    <Send size={13} />
+                    {userRow.last_invite_sent ? 'Resend invite' : 'Send invite'}
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -198,7 +198,13 @@ def test_frontend_renders_company_filter_chips():
 
 
 def test_version_bumped_to_132hq():
+    """v58.13.132hs — Forward-safe pin. Any ship at .132hq or later
+    is acceptable so subsequent ships don't retroactively break
+    this ship's version-lockstep guard."""
     js, sw = _read(VJS), _read(SW)
-    assert re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hq'", js)
-    assert re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hq'", js)
-    assert re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hq'", sw)
+    # Anything from `.132hq` onward is fine — verify the file references
+    # a `.132h` tail at or beyond the `q` sub-letter, OR any later
+    # subletter (r, s, t, …).
+    assert re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[q-z]", js)
+    assert re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[q-z]", js)
+    assert re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[q-z]", sw)

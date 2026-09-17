@@ -671,6 +671,9 @@ api.include_router(induction_types_router)
 # v58.13.132hq — worker_companies CRUD (editable dropdown).
 from worker_companies import router as worker_companies_router  # noqa: E402
 api.include_router(worker_companies_router)
+# v58.13.132hs — Worker → user auto-provisioning (single, backfill, link).
+from worker_user_provisioning_routes import router as worker_user_provisioning_router  # noqa: E402
+api.include_router(worker_user_provisioning_router)
 # Phase 3.21 — Session history audit log (30d retention).
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
 api.include_router(session_history_router)

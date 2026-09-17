@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from auth import get_current_user, hash_password
@@ -110,6 +110,10 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         "simpro_position": doc.get("simpro_position"),
         "must_set_password": bool(doc.get("must_set_password")),
         "role_assigned_at": doc.get("role_assigned_at"),
+        # v58.13.132hs — surface last_invite_sent so the FE can hide
+        # the "Send invite" per-row action for users we've already
+        # emailed and skip them in the bulk sender.
+        "last_invite_sent": doc.get("last_invite_sent"),
         # v160.3.9.33 — Phase 4d Option C: manual-role-override flag.
         "role_locked": bool(doc.get("role_locked")),
         # v160.3.9.33 — surface the modern role_id so the FE grouping-by-role
@@ -595,6 +599,90 @@ async def admin_set_password(
 
 class BulkDeleteIn(BaseModel):
     user_ids: List[str] = Field(default_factory=list)
+
+
+class BulkSendPendingInvitesIn(BaseModel):
+    """v58.13.132hs — Bulk send invite emails to every user in
+    `status=invited` state that has NOT yet been emailed (or was
+    emailed longer than `resend_after_days` ago).
+
+    `user_ids` is an optional allow-list — if provided, only those
+    users are considered. Empty list = every eligible user.
+    """
+    user_ids: List[str] = Field(default_factory=list)
+    resend_after_days: int = Field(0, ge=0, le=365)
+
+
+@router.post("/bulk-send-pending-invites")
+async def bulk_send_pending_invites(
+    body: BulkSendPendingInvitesIn,
+    request: Request,
+    actor: dict = Depends(require_permission("users", "edit")),
+):
+    """v58.13.132hs — Send invite links to every eligible `status=invited`
+    user in the caller's org. Reuses `auth_invite.send_invite` so the
+    email template, worker-status bridge, and audit trail stay in one
+    place. Idempotency: users whose `last_invite_sent` is inside the
+    `resend_after_days` window are skipped (default 0 = never re-send
+    to any user that already got one).
+    """
+    from datetime import datetime, timedelta, timezone
+    from auth_invite import send_invite, InviteIn
+    if actor.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+
+    q: dict = {"org_id": actor["org_id"], "status": "invited",
+               "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}]}
+    if body.user_ids:
+        q["id"] = {"$in": body.user_ids}
+    targets = await db.users.find(q, {"_id": 0, "id": 1, "email": 1, "mobile": 1,
+                                       "last_invite_sent": 1}).to_list(1000)
+
+    cutoff: Optional[datetime] = None
+    if body.resend_after_days > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=body.resend_after_days)
+
+    def _skip_recent(u: dict) -> bool:
+        if cutoff is None:
+            # 0 = skip if any prior send exists.
+            return bool(u.get("last_invite_sent"))
+        raw = u.get("last_invite_sent")
+        if not raw:
+            return False
+        try:
+            dt = raw if hasattr(raw, 'tzinfo') else datetime.fromisoformat(
+                str(raw).replace('Z', '+00:00'))
+            return dt > cutoff
+        except Exception:
+            return False
+
+    sent = 0
+    skipped_recent = 0
+    skipped_no_channel = 0
+    errors: list[dict] = []
+    for u in targets:
+        if _skip_recent(u):
+            skipped_recent += 1
+            continue
+        try:
+            await send_invite(user_id=u["id"], body=InviteIn(channel="auto"),
+                              request=request, caller=actor)
+            sent += 1
+        except HTTPException as e:
+            if e.status_code == 400 and "No email or SMS channel" in (e.detail or ""):
+                skipped_no_channel += 1
+            else:
+                errors.append({"user_id": u["id"], "detail": str(e.detail)})
+        except Exception as e:
+            errors.append({"user_id": u["id"], "detail": str(e)})
+
+    return {
+        "sent":               sent,
+        "skipped_recent":     skipped_recent,
+        "skipped_no_channel": skipped_no_channel,
+        "errors":             errors,
+        "scanned":            len(targets),
+    }
 
 
 @router.post("/bulk-delete")

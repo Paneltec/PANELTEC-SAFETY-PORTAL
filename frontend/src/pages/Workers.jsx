@@ -2278,18 +2278,31 @@ export default function Workers() {
     finally { setRestoring(null); }
   };
 
-  // Phase 4.7.1 — admin "Create login" for a worker without a linked user
-  // account. Defaults role=worker and no workspace assignments (admin can
-  // refine later via Users admin). Returns the new user.id which we splice
-  // into userByEmail so the kebab shows up immediately.
+  // v58.13.132hs — "Create login" repointed to the auto-provisioning
+  // endpoint. The old `POST /users` route was removed in
+  // v160.3.9.32-4b (returns 410 Gone) so this affordance was silently
+  // broken. The new path calls the same service that Simpro sync uses
+  // — role=viewer, status=invited, no email sent. Admin still has to
+  // click "Send invite" in Settings > Users afterward.
   const createLogin = async (w) => {
     if (!w.email) { toast.error('Worker has no email — add one first.'); return; }
     try {
-      const { data } = await api.post('/users', {
-        email: w.email, name: fullName(w), role: 'worker', workspace_ids: [],
-      });
-      setUserByEmail((m) => ({ ...m, [w.email.toLowerCase()]: data }));
-      toast.success('Login created — use the kebab to send the invite.');
+      const { data } = await api.post(`/workers/${w.id}/provision-user`);
+      if (data.status === 'invited_pending_send' || data.status === 'linked') {
+        // Refresh the userByEmail map so the row's kebab flips
+        // from "Create login" to the standard access-status menu.
+        await loadUsers();
+        if (data.status === 'linked') {
+          toast.success('Worker already linked to a user.');
+        } else {
+          toast.success('Login created — head to Settings › Users and click "Send invite" when ready.');
+        }
+      } else if (data.status === 'email_conflict') {
+        toast.error('Email already in use by another user — admin review required.');
+        await loadUsers();
+      } else if (data.status === 'no_email') {
+        toast.error('Worker has no email address on file.');
+      }
     } catch (e) { toast.error(apiError(e)); }
   };
 

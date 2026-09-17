@@ -447,6 +447,26 @@ async def refresh_workers(
             )}},
         )
 
+    # v58.13.132hs — Auto-provision `users` rows for every freshly
+    # inserted worker. Never sends email — admin gates that via the
+    # per-user "Send invite" or bulk "Send pending invites" flow in
+    # /app/settings/users. Failures here MUST NOT roll back the
+    # worker insert — the worker is the source of truth; a
+    # provisioning miss is recoverable via the backfill button.
+    from worker_user_provisioning import provision_user_for_worker
+    provision_counts = {"invited_pending_send": 0, "email_conflict": 0,
+                         "no_email": 0, "already_linked": 0}
+    for n in plan_new_workers:
+        try:
+            res = await provision_user_for_worker(n["new_doc"], user)
+            key = res.get("status", "")
+            if key in provision_counts:
+                provision_counts[key] += 1
+        except Exception as e:
+            log.warning("worker auto-provision failed for worker=%s: %s",
+                        n["new_doc"].get("id"), e)
+    counts["user_provisioning"] = provision_counts
+
     snapshot_doc = {
         "id": snapshot_id, "org_id": org_id,
         "run_at": ts, "triggered_by": user["id"],
