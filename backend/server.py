@@ -668,6 +668,9 @@ api.include_router(equipment_register_router)
 # v58.13.132gv Phase 3 — Editable induction-type dropdown CRUD.
 from induction_types import router as induction_types_router  # noqa: E402
 api.include_router(induction_types_router)
+# v58.13.132hq — worker_companies CRUD (editable dropdown).
+from worker_companies import router as worker_companies_router  # noqa: E402
+api.include_router(worker_companies_router)
 # Phase 3.21 — Session history audit log (30d retention).
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
 api.include_router(session_history_router)
@@ -1105,6 +1108,13 @@ async def on_startup():
             await seed_import_matcher_templates_on_startup()
         except Exception as e:
             log.warning("Import matcher template seed failed: %s", e)
+        # v58.13.132hq — Backfill worker_company_id on existing rows.
+        # Idempotent — only touches workers WITHOUT a company set.
+        try:
+            from worker_companies import backfill_worker_company_ids_on_startup
+            await backfill_worker_company_ids_on_startup()
+        except Exception as e:
+            log.warning("worker_companies backfill failed: %s", e)
         # v160.3.3 — HR docs dedup index.
         try:
             await ensure_hr_dedup_index()
