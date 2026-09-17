@@ -4,7 +4,7 @@
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Paperclip, Plug, Smartphone, Square, UploadCloud, Users, X, ZoomIn } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, Lock, MapPin, Paperclip, Plug, Smartphone, Square, UploadCloud, Users, X, ZoomIn } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import DismissibleHint from '../components/DismissibleHint';
@@ -244,7 +244,7 @@ function EditSummaryPill({ tone = 'neutral', children, testid, title }) {
 // (same endpoint as the view drawer). On success the local state
 // updates so the avatar refreshes immediately without closing the
 // modal.
-function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
+function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY, photoScale, onChangeScale }) {
   const can = useCan();
   const canEdit = can('workers', 'edit');
   // Local overrides so we can refresh the avatar without waiting for
@@ -262,6 +262,12 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
   const effectiveOffset = typeof photoOffsetY === 'number'
     ? Math.max(0, Math.min(100, photoOffsetY))
     : (typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50);
+  // v58.13.132hp — Live-preview zoom. Applied as CSS scale() on the
+  // oversized <img> inside the crop wrapper. Preserves the .132fd
+  // translateY behaviour by chaining transforms.
+  const effectiveScale = typeof photoScale === 'number'
+    ? Math.max(0.5, Math.min(2.0, photoScale))
+    : (typeof worker?.photo_scale === 'number' ? worker.photo_scale : 1.0);
 
   // Reload the download-token URL whenever the effective photo changes.
   React.useEffect(() => {
@@ -341,7 +347,11 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
               // fully-shifted-down bottom of the extra height.
               height: '150%',
               objectFit: 'cover',
-              transform: `translateY(${-effectiveOffset * 0.280}px)`,
+              // v58.13.132hp — Chain scale() BEFORE translateY() so
+              // the zoom happens around the crop centre and the
+              // vertical offset shifts the enlarged image.
+              transform: `translateY(${-effectiveOffset * 0.280}px) scale(${effectiveScale})`,
+              transformOrigin: 'center center',
               display: 'block',
             }}
             data-testid="worker-edit-photo-img"
@@ -389,6 +399,8 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
         <SliderWithDiagnostic
           effectiveOffset={effectiveOffset}
           onChangeOffsetY={onChangeOffsetY}
+          effectiveScale={effectiveScale}
+          onChangeScale={onChangeScale}
         />
       )}
     </div>
@@ -402,7 +414,7 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY }) {
 // vertical movement), fixed above by wrapping every photo render
 // site in overflow-hidden + oversized-img + translateY. This is the
 // slimmed-down slider without the counter panel.
-function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY }) {
+function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY, effectiveScale, onChangeScale }) {
   return (
     <div className="w-full max-w-[240px] flex flex-col gap-1 mt-1"
       data-testid="worker-edit-photo-align-block">
@@ -434,9 +446,91 @@ function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY }) {
         <span>Higher</span>
         <span>Lower</span>
       </div>
+      {/* v58.13.132hp — Zoom / scale slider. Companion control to the
+          vertical alignment above. 0.5×..2.0× UI range so the admin
+          can crop-in on a face without a re-upload. */}
+      {typeof onChangeScale === 'function' && (
+        <>
+          <div className="flex items-center justify-between gap-3 mt-2">
+            <label htmlFor="worker-photo-scale"
+              className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
+              Zoom
+            </label>
+            <button type="button"
+              onClick={() => onChangeScale(1.0)}
+              disabled={Math.abs((effectiveScale || 1.0) - 1.0) < 0.01}
+              data-testid="worker-edit-photo-scale-reset"
+              className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline whitespace-nowrap">
+              Reset to 1×
+            </button>
+          </div>
+          <input
+            id="worker-photo-scale"
+            type="range"
+            min="0.5" max="2.0" step="0.05"
+            value={effectiveScale}
+            onChange={(e) => onChangeScale(Number(e.target.value))}
+            onInput={(e) => onChangeScale(Number(e.target.value))}
+            data-testid="worker-edit-photo-scale-slider"
+            data-photo-scale={effectiveScale}
+            className="w-full accent-[#1e4a8c]"
+          />
+          <div className="flex items-center justify-between text-[10px] text-slate-500 select-none">
+            <span>Out</span>
+            <span>{(effectiveScale ?? 1).toFixed(2)}×</span>
+            <span>In</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
+// v58.13.132hp — TFN input with reveal-to-edit + mask-on-blur pattern.
+// Australian TFNs are 9 digits and sensitive PII. When the field has
+// a stored value AND the user hasn't clicked to reveal, show
+// `••• ••• 123` (last 3 digits visible for confirmation). Clicking
+// the pencil reveals the raw value for editing; clicking away
+// re-masks. Storage is plaintext in the DB (same posture as the
+// existing PII fields — the whole worker doc is PII-scrub-gated
+// server-side by _serialise's viewer check).
+function TfnField({ value, onChange }) {
+  const [revealed, setRevealed] = React.useState(false);
+  const hasStored = !!(value && value.trim());
+  const display = React.useMemo(() => {
+    if (!hasStored) return '';
+    const tail = value.replace(/\D/g, '').slice(-3).padStart(3, '•');
+    return `••• ••• ${tail}`;
+  }, [value, hasStored]);
+  if (revealed || !hasStored) {
+    return (
+      <div className="relative">
+        <input
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 9))}
+          onBlur={() => hasStored && setRevealed(false)}
+          autoFocus={revealed}
+          maxLength={9}
+          placeholder="9 digits"
+          data-testid="worker-tax-file-number"
+          className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-lg font-mono text-sm"
+        />
+        <Lock size={11} className="absolute right-3 top-3 text-amber-600" />
+      </div>
+    );
+  }
+  return (
+    <button type="button"
+      onClick={() => setRevealed(true)}
+      data-testid="worker-tax-file-number-masked"
+      className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-lg font-mono text-sm text-left bg-slate-50 hover:bg-slate-100 relative"
+    >
+      {display}
+      <Edit3 size={11} className="absolute right-3 top-3 text-slate-500" />
+    </button>
+  );
+}
+
 
 // v160.3.6c — Compact 40×40 circular photo for the Workers list rows.
 // Reuses `filesUrl()` which has an inflight-dedup + 15-min in-memory token
@@ -492,7 +586,9 @@ function WorkerRowPhoto({ worker }) {
           // v58.13.132g2 — bump 120% → 150% (2.5× multiplier).
           height: '150%',
           objectFit: 'cover',
-          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.200}px)`,
+          // v58.13.132hp — Apply stored `photo_scale` on the list-row photo too.
+          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.200}px) scale(${typeof worker?.photo_scale === 'number' ? Math.max(0.5, Math.min(2.0, worker.photo_scale)) : 1.0})`,
+          transformOrigin: 'center center',
           display: 'block',
         }}
       />
@@ -1100,7 +1196,9 @@ function IdCardPhoto({ worker, onExpand }) {
             // v58.13.132g2 — bump 120% → 150% (2.5× multiplier).
             height: '150%',
             objectFit: 'cover',
-            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.640}px)`,
+            // v58.13.132hp — Apply stored `photo_scale` on the drawer photo too.
+            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.640}px) scale(${typeof worker?.photo_scale === 'number' ? Math.max(0.5, Math.min(2.0, worker.photo_scale)) : 1.0})`,
+            transformOrigin: 'center center',
             display: 'block',
           }}
         />
@@ -1497,6 +1595,14 @@ function EditModal({ worker, onClose, onSaved }) {
     // a legacy record → 50 (centre) via the same coercion the
     // backend applies on serialise.
     photo_offset_y: typeof worker.photo_offset_y === 'number' ? worker.photo_offset_y : 50,
+    // v58.13.132hp — Photo zoom (0.5..2.0 UI range, 0.5..2.5 backend clamp).
+    // 1.0 = natural size. Missing on legacy records coerces to 1.0.
+    photo_scale: typeof worker.photo_scale === 'number' ? worker.photo_scale : 1.0,
+    // v58.13.132hp — Paneltec-only personal fields (never Simpro-synced).
+    usi_number:              worker.usi_number              || '',
+    tax_file_number:         worker.tax_file_number         || '',
+    emergency_contact_name:  worker.emergency_contact_name  || '',
+    emergency_contact_phone: worker.emergency_contact_phone || '',
   });
   const [saving, setSaving] = useState(false);
   const [pickerCompany, setPickerCompany] = useState(null);
@@ -1710,7 +1816,9 @@ function EditModal({ worker, onClose, onSaved }) {
             {/* v160.3.4c — photo mirrored from the read-only VIEW modal */}
             {!isNew && <EditWorkerPhoto worker={worker}
               photoOffsetY={f.photo_offset_y}
-              onChangeOffsetY={(v) => setF((prev) => ({ ...prev, photo_offset_y: v }))} />}
+              onChangeOffsetY={(v) => setF((prev) => ({ ...prev, photo_offset_y: v }))}
+              photoScale={f.photo_scale}
+              onChangeScale={(v) => setF((prev) => ({ ...prev, photo_scale: v }))} />}
             <div className="min-w-0 flex-1">
               <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">{isNew ? 'New worker' : 'Edit worker'}</div>
               <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">{isNew ? 'Add worker' : fullName(worker)}</h2>
@@ -1803,6 +1911,35 @@ function EditModal({ worker, onClose, onSaved }) {
               <label className="col-span-2"><span className="block text-xs font-medium text-slate-700 mb-1">Suburb</span>
                 <input value={f.suburb} onChange={(e) => setF({ ...f, suburb: e.target.value })}
                   data-testid="worker-suburb" className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></label>
+              {/* v58.13.132hp — Paneltec-only personal fields. Amber
+                  helper text makes it explicit these are NEVER synced
+                  from Simpro so admins don't wonder why their manual
+                  entry survives a refresh. */}
+              <div className="col-span-2 mt-2 border-t border-slate-100 pt-3">
+                <div className="text-[10px] uppercase tracking-wider text-amber-700 font-semibold mb-2 flex items-center gap-2">
+                  <Lock size={11} /> Paneltec-only — never synced from Simpro
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label><span className="block text-xs font-medium text-slate-700 mb-1">USI number</span>
+                    <input value={f.usi_number} maxLength={20}
+                      onChange={(e) => setF({ ...f, usi_number: e.target.value.toUpperCase().replace(/\s/g, '') })}
+                      data-testid="worker-usi-number" placeholder="10-char USI"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm" /></label>
+                  <label><span className="block text-xs font-medium text-slate-700 mb-1">Tax file number</span>
+                    <TfnField value={f.tax_file_number}
+                      onChange={(v) => setF({ ...f, tax_file_number: v })} /></label>
+                  <label><span className="block text-xs font-medium text-slate-700 mb-1">Emergency contact — name</span>
+                    <input value={f.emergency_contact_name} maxLength={120}
+                      onChange={(e) => setF({ ...f, emergency_contact_name: e.target.value })}
+                      data-testid="worker-emergency-contact-name" placeholder="Full name"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></label>
+                  <label><span className="block text-xs font-medium text-slate-700 mb-1">Emergency contact — phone</span>
+                    <input value={f.emergency_contact_phone} maxLength={40}
+                      onChange={(e) => setF({ ...f, emergency_contact_phone: e.target.value })}
+                      data-testid="worker-emergency-contact-phone" placeholder="+61 400 000 000" type="tel"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></label>
+                </div>
+              </div>
             </div>
           </Section>
 

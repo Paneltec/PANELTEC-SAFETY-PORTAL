@@ -8,11 +8,33 @@
  * intentionally a READ-ONLY view surface for discoverability.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { IdCard, Loader2 } from 'lucide-react';
+import { ChevronDown, Edit3, IdCard, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import OpenAsPdfButton from '../OpenAsPdfButton';
+import CertEditModal from '../certifications/CertEditModal';
+
+// v58.13.132hp — localStorage-per-user persistence for the panel
+// open/closed state. Keyed on workerId so each profile remembers
+// its own choice. Falls back to `true` (open) on first mount.
+function useCollapseState(storageKey) {
+  const [open, setOpen] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw === null) return true;
+      return raw === '1';
+    } catch (_e) { return true; }
+  });
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem(storageKey, next ? '1' : '0'); } catch (_e) { /* quota */ }
+      return next;
+    });
+  };
+  return [open, toggle];
+}
 
 // Kept in sync with backend/cert_kinds.py — licence-family slugs.
 const LICENCE_SLUGS = new Set([
@@ -51,6 +73,9 @@ const TONE_CHIP = {
 export default function LicencesPanel({ workerId }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  // v58.13.132hp — Collapsible + inline edit modal.
+  const [open, toggle] = useCollapseState(`paneltec:licences:open:${workerId}`);
+  const [editing, setEditing] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -96,7 +121,11 @@ export default function LicencesPanel({ workerId }) {
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white"
       data-testid="section-licences">
-      <div className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex-wrap">
+      <button type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        data-testid="section-licences-toggle"
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex-wrap text-left hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40">
         <IdCard size={14} className="text-slate-500" />
         <span className="text-sm font-semibold text-slate-800 mr-1">Licences</span>
         <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700"
@@ -115,11 +144,11 @@ export default function LicencesPanel({ workerId }) {
             {summary.expiring} expiring 30d
           </span>
         )}
-        <span className="ml-auto text-[10px] text-slate-500 italic">
-          Filtered view. Add/edit/delete via the Certifications section above.
-        </span>
-      </div>
-      <div className="px-4 py-4">
+        <ChevronDown size={14}
+          className={`text-slate-400 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+      <div className="px-4 py-4" data-testid="section-licences-body">
         {loading ? (
           <div className="text-sm text-slate-500 inline-flex items-center gap-2">
             <Loader2 size={14} className="animate-spin" /> Loading…
@@ -137,7 +166,7 @@ export default function LicencesPanel({ workerId }) {
                 <th className="text-left px-3 py-2">Number</th>
                 <th className="text-left px-3 py-2">Expires</th>
                 <th className="text-left px-3 py-2">Status</th>
-                <th className="text-right px-3 py-2">File</th>
+                <th className="text-right px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -167,17 +196,31 @@ export default function LicencesPanel({ workerId }) {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {r.doc_file_id ? (
-                        <OpenAsPdfButton
-                          source="cert_file"
-                          refObj={{ worker_id: workerId, cert_id: r.id }}
-                          filename={r.name || 'certificate'}
-                          onDownloadOriginal={() => openOriginal(r)}
-                          data-testid={`licence-file-${r.id}`}
-                        />
-                      ) : (
-                        <span className="text-slate-400 text-xs">—</span>
-                      )}
+                      {/* v58.13.132hp — Inline view (PDF preview modal
+                          from .132hk) + edit (existing CertEditModal).
+                          Prior version told the user to scroll up to
+                          the Certifications section to edit; now
+                          both actions live where the row is. */}
+                      <div className="inline-flex items-center gap-1">
+                        {r.doc_file_id ? (
+                          <OpenAsPdfButton
+                            source="cert_file"
+                            refObj={{ worker_id: workerId, cert_id: r.id }}
+                            filename={r.name || 'certificate'}
+                            onDownloadOriginal={() => openOriginal(r)}
+                            data-testid={`licence-file-${r.id}`}
+                          />
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
+                        <button type="button"
+                          onClick={() => setEditing(r)}
+                          data-testid={`licence-edit-${r.id}`}
+                          title="Edit licence"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-slate-100 text-slate-600 hover:text-[#1e4a8c]">
+                          <Edit3 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -186,6 +229,14 @@ export default function LicencesPanel({ workerId }) {
           </table>
         )}
       </div>
+      )}
+      {editing && (
+        <CertEditModal
+          cert={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
     </div>
   );
 }

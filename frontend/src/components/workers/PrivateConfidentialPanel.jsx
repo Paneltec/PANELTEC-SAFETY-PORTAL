@@ -12,7 +12,7 @@
  * gate here beyond the backend's admin+hr_lead check.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Lock, UploadCloud, Loader2, Download, Trash2, Save, FileText, X, Clipboard } from 'lucide-react';
+import { ChevronDown, Lock, UploadCloud, Loader2, Download, Trash2, Save, FileText, X, Clipboard } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
@@ -20,6 +20,27 @@ import useClipboardPaste from '../../lib/useClipboardPaste';
 import OpenAsPdfButton from '../OpenAsPdfButton';
 
 const MAX_MB = 50;
+
+// v58.13.132hp — Mirror of the LicencesPanel collapse pattern so
+// both Section D panels share the same localStorage-per-user
+// persistence key shape (paneltec:{panel}:open:{workerId}).
+function useCollapseState(storageKey) {
+  const [open, setOpen] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw === null) return true;
+      return raw === '1';
+    } catch (_e) { return true; }
+  });
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem(storageKey, next ? '1' : '0'); } catch (_e) { /* quota */ }
+      return next;
+    });
+  };
+  return [open, toggle];
+}
 
 function fmtBytes(n) {
   if (!n && n !== 0) return '—';
@@ -36,6 +57,8 @@ export default function PrivateConfidentialPanel({ workerId }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [editingNotes, setEditingNotes] = useState(null); // {id, value}
   const fileInputRef = useRef(null);
+  // v58.13.132hp — Collapsible section state.
+  const [open, toggle] = useCollapseState(`paneltec:private-confidential:open:${workerId}`);
 
   const load = async () => {
     setLoading(true);
@@ -108,16 +131,23 @@ export default function PrivateConfidentialPanel({ workerId }) {
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white"
       data-testid="section-private-confidential">
-      <div className="w-full flex items-center gap-2 px-4 py-2.5 bg-rose-50 border-b border-rose-100">
+      <button type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        data-testid="section-private-confidential-toggle"
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-rose-50 border-b border-rose-100 text-left hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40">
         <Lock size={14} className="text-rose-700" />
         <span className="text-sm font-semibold text-slate-800 mr-1">Private &amp; Confidential</span>
         <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700"
           data-testid="section-private-confidential-count">
           {rows.length} file{rows.length === 1 ? '' : 's'}
         </span>
-        <span className="ml-auto text-[10px] text-slate-500">Encrypted at rest. Visible to all admins.</span>
-      </div>
-      <div className="px-4 py-4 space-y-3">
+        <span className="ml-auto text-[10px] text-slate-500 mr-2">Encrypted at rest. Visible to all admins.</span>
+        <ChevronDown size={14}
+          className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+      <div className="px-4 py-4 space-y-3" data-testid="section-private-confidential-body">
         {/* Drop-zone uploader */}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -230,6 +260,7 @@ export default function PrivateConfidentialPanel({ workerId }) {
           </table>
         )}
       </div>
+      )}
 
       {/* Delete confirm modal */}
       {confirmDelete && (

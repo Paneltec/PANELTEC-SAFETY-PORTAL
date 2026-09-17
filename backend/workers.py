@@ -58,6 +58,14 @@ def _serialise(doc: dict, viewer: Optional[dict] = None) -> dict:
         out["photo_offset_y"] = 50
     else:
         out["photo_offset_y"] = max(0, min(100, _pox))
+    # v58.13.132hp — Default coercion for `photo_scale`. Missing, null,
+    # or non-float stored values render as 1.0 (natural size).
+    _ps = out.get("photo_scale")
+    try:
+        _psf = float(_ps) if _ps is not None else 1.0
+    except (TypeError, ValueError):
+        _psf = 1.0
+    out["photo_scale"] = max(0.5, min(2.5, _psf))
     cid = doc.get("simpro_company_id")
     if doc.get("source") == "manual":
         out["company_label"] = "Manual"
@@ -166,6 +174,13 @@ class WorkerIn(BaseModel):
     # Phase 2
     availability: Optional[dict] = None
     client_ids: Optional[list[str]] = None
+    # v58.13.132hp — Paneltec-only personal fields (see WorkerPatch
+    # for full-context comment). Optional at create so seeds / Simpro
+    # imports never fail.
+    usi_number: Optional[str] = Field(default=None, max_length=20)
+    tax_file_number: Optional[str] = Field(default=None, max_length=20)
+    emergency_contact_name: Optional[str] = Field(default=None, max_length=120)
+    emergency_contact_phone: Optional[str] = Field(default=None, max_length=40)
 
 
 # v58.13.131o — SmartFill card assignment entry.
@@ -222,6 +237,23 @@ class WorkerPatch(BaseModel):
     # bottom). Missing / null coerces to 50 on serialise. Values
     # outside the range are clamped server-side (never 400).
     photo_offset_y: Optional[int] = None
+    # v58.13.132hp — Photo zoom / scale. Companion to `photo_offset_y`
+    # so admins can crop tight portraits from wider originals without
+    # a re-upload. Stored as a float in [0.5, 2.5]; missing / null
+    # coerces to 1.0 on serialise. Out-of-range values are clamped
+    # server-side (never 400).
+    photo_scale: Optional[float] = None
+    # v58.13.132hp — Paneltec-only personal fields. NEVER synced from
+    # or to Simpro (see integrations_simpro_workers.py::_extract_pii).
+    # If Simpro carries its own emergency-contact block that maps to
+    # a separate `emergency_contact` dict via `_extract_pii`, these
+    # new fields sit BESIDE that block — they're admin-editable
+    # Paneltec-native captures for USI (VET training), TFN (payroll)
+    # and a manual emergency contact override.
+    usi_number: Optional[str] = Field(default=None, max_length=20)
+    tax_file_number: Optional[str] = Field(default=None, max_length=20)
+    emergency_contact_name: Optional[str] = Field(default=None, max_length=120)
+    emergency_contact_phone: Optional[str] = Field(default=None, max_length=40)
     # v58.13.56 — HR-merge lite. Four flags migrated off `hr_employees`
     # so the Worker detail view can carry the HR context without a
     # separate register. Gate is `hr_employees.view` (see `_serialise`
@@ -424,6 +456,16 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
             payload["photo_offset_y"] = 50
         else:
             payload["photo_offset_y"] = max(0, min(100, pox))
+    # v58.13.132hp — Same-shape clamp for `photo_scale` [0.5, 2.5].
+    # Slider FE ships with a 0.5..2.0 range but we allow 2.5 server-
+    # side so a future FE tweak doesn't need a coordinated re-ship.
+    if "photo_scale" in payload:
+        ps = payload["photo_scale"]
+        try:
+            psf = float(ps) if ps is not None else 1.0
+        except (TypeError, ValueError):
+            psf = 1.0
+        payload["photo_scale"] = max(0.5, min(2.5, psf))
     payload["updated_at"] = now_iso()
     result = await db.workers.find_one_and_update(
         {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
