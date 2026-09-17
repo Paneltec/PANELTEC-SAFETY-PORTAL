@@ -1031,13 +1031,38 @@ async def delete_folder(folder_id: str, user: dict = Depends(require_permission(
     if existing.get("is_system"):
         raise HTTPException(400, "Cannot delete the system folder")
     ts = now_iso()
-    await db.doc_folders.update_one(
-        {"id": folder_id, "org_id": user["org_id"]},
+    # v58.13.132hm — Recursive cascade. Prior to `.132hm` the delete
+    # only marked the target folder + its DIRECT files as deleted;
+    # any subfolders (and their files) were left active with a
+    # `parent_folder_id` pointing at a now-deleted parent — orphaned
+    # data that no longer surfaced in the tree but still consumed
+    # rows in `/folders/all`. Now we do a BFS over descendants and
+    # soft-delete every folder id + every file whose folder_id sits
+    # anywhere in the subtree.
+    to_delete: list = [folder_id]
+    frontier: list = [folder_id]
+    seen: set = {folder_id}
+    while frontier:
+        children_cursor = db.doc_folders.find(
+            {"org_id": user["org_id"], "deleted_at": None,
+             "parent_folder_id": {"$in": frontier}},
+            {"_id": 0, "id": 1},
+        )
+        next_frontier: list = []
+        async for c in children_cursor:
+            cid = c["id"]
+            if cid in seen:
+                continue
+            seen.add(cid)
+            next_frontier.append(cid)
+            to_delete.append(cid)
+        frontier = next_frontier
+    await db.doc_folders.update_many(
+        {"id": {"$in": to_delete}, "org_id": user["org_id"]},
         {"$set": {"deleted_at": ts, "updated_at": ts}},
     )
-    # Soft-delete all files under it.
     await db.doc_files.update_many(
-        {"folder_id": folder_id, "org_id": user["org_id"], "deleted_at": None},
+        {"folder_id": {"$in": to_delete}, "org_id": user["org_id"], "deleted_at": None},
         {"$set": {"deleted_at": ts, "updated_at": ts}},
     )
     return None

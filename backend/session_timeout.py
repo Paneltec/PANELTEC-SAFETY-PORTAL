@@ -234,10 +234,12 @@ async def session_timeout_me(user: dict = Depends(get_current_user)):
 
 class UserTimeoutIn(BaseModel):
     # v58.13.132fw — Per-user override for the idle-timeout preset.
-    # Range mirrors the presets shown in the UserDropdownCard select
-    # (15, 30, 60, 120, 240, 480, 720 minutes) but validates as
-    # anything >= 5 to keep the surface forgiving.
-    minutes: int = Field(..., ge=5, le=1440)
+    # v58.13.132hm — Raised upper bound from 1440 (24h) to 10080 (7d)
+    # to match the "7 days · extended" option in the UserDropdownCard
+    # select. Selecting that option previously fired the FE PATCH with
+    # minutes=10080, hit Pydantic's `le=1440` gate, returned 422 and
+    # surfaced as the "Could not save" toast Stephen reported.
+    minutes: int = Field(..., ge=5, le=10080)
 
 
 @router.patch("/session-timeout/me")
