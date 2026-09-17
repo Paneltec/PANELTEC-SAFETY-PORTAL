@@ -7,15 +7,31 @@ matches them against `form_templates`, extracts fields via the shared
 row per PDF flagged as `imported: true, source: "user_import"`.
 
 Idempotency: content fingerprint (sha256 + size + first-512-byte
-sha256) against existing imports. Filename plays no role — an
-admin can rename a duplicate PDF and it's still detected. Duplicate
-uploads return 409 with the existing submission id — never a
-new duplicate row.
+sha256) against existing imports. Filename plays no role in the
+DEDUPE key — an admin can rename a duplicate PDF and it's still
+detected. Duplicate uploads return 409 with the existing submission
+id — never a new duplicate row.
+
+v58.13.132hn — Filename-first template matchers. Four filename
+patterns Stephen surfaced as "Unmatched template" get a regex-first
+lookup BEFORE the token-overlap logic:
+
+  · "drain cleaning ssra"  → template "Drain Cleaning SSRA"
+  · "trailer pre-start"    → template "Trailer Pre-start"
+  · "excavation permit"    → template "Excavation / Trench Permit"
+  · "excavator pre-start"  → template "Excavator Pre-start"
+
+The three missing templates (Drain Cleaning SSRA, Trailer Pre-start,
+Excavator Pre-start) are seeded idempotently on startup by cloning
+the field-set from a sibling template (Viatec SSRA / Tip Truck /
+Plant Pre-Start Heavy respectively) and stamping a new name +
+description.
 """
 from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import sys
 import tempfile
 import uuid
@@ -48,10 +64,61 @@ CATEGORY_ROUTE = {
 }
 
 
-def _match_template(pdf_title_norm: str, templates: list[dict]) -> dict | None:
+# v58.13.132hn — Filename-pattern → template name. Regex tokens
+# (case-insensitive) matched against the OS filename BEFORE the
+# extension. First hit wins. The mapped name is looked up in
+# `form_templates.name` (org-scoped) and returned as the match.
+# If no template with the mapped name exists in the org, the matcher
+# falls through to the existing title-token logic (safe default).
+_FILENAME_MATCHERS: list[tuple[str, str]] = [
+    (r"drain[\s_-]*cleaning[\s_-]*ssra",           "Drain Cleaning SSRA"),
+    (r"trailer[\s_-]*pre[\s_-]*start",             "Trailer Pre-start"),
+    (r"excavator[\s_-]*pre[\s_-]*start",           "Excavator Pre-start"),
+    (r"excavation[\s_-]*(?:[/_-]*\s*trench[\s_-]*)?permit",
+                                                    "Excavation / Trench Permit"),
+]
+
+
+def _match_by_filename(filename: str | None, templates: list[dict]) -> dict | None:
+    """v58.13.132hn — Regex-first filename lookup.
+    Returns the matched template or None."""
+    if not filename:
+        return None
+    # Strip directory + extension to keep the regex tokens tight.
+    base = os.path.basename(filename)
+    stem = os.path.splitext(base)[0].lower()
+    for pattern, target_name in _FILENAME_MATCHERS:
+        if re.search(pattern, stem, re.IGNORECASE):
+            target_norm = _norm(target_name)
+            for t in templates:
+                if _norm(t.get("name") or "") == target_norm:
+                    return t
+            # Matcher fired but no template with that name in the org
+            # — log so an operator notices the seed hook didn't run
+            # or the template got renamed. Fall through to token match.
+            log.warning(
+                "filename matcher hit %r but no template named %r in org",
+                pattern, target_name,
+            )
+            return None
+    return None
+
+
+def _match_template(pdf_title_norm: str, templates: list[dict], filename: str | None = None) -> dict | None:
     """Match extracted PDF title against `form_templates.name` using
     word-overlap on discriminative tokens (mirrors the batch importer's
-    logic). Returns the best template or None."""
+    logic). Returns the best template or None.
+
+    v58.13.132hn — Filename-pattern lookup runs FIRST. If the OS filename
+    matches one of the `_FILENAME_MATCHERS` regexes AND a template with
+    the mapped name exists in the org, that template is returned
+    immediately (bypasses the token overlap). Otherwise falls back to
+    the original title-token match — no behavioural regression for
+    filenames outside the pattern list.
+    """
+    hit = _match_by_filename(filename, templates)
+    if hit is not None:
+        return hit
     if not pdf_title_norm:
         return None
     # Exact-normalised name equality first.
@@ -169,7 +236,7 @@ async def import_pdf(
             {"_id": 0, "id": 1, "name": 1, "category": 1, "fields": 1, "source": 1},
         ).to_list(500)
 
-        matched = _match_template(title_norm, templates)
+        matched = _match_template(title_norm, templates, filename=filename)
         if not matched:
             raise HTTPException(status_code=422, detail={
                 "message": "Could not match this PDF to a known template.",
@@ -245,3 +312,94 @@ async def import_history(
          "deep_parse_stats": 1},
     ).sort("imported_at", -1).limit(limit)
     return await cursor.to_list(limit)
+
+
+# ─────────────────────────────────────────────────────────────
+# v58.13.132hn — Startup seeder for filename-matcher targets.
+# ─────────────────────────────────────────────────────────────
+
+# Each entry: target_name → (clone_from_name, category_override).
+# `category_override=None` inherits from the clone source.
+_SEED_TARGETS: list[tuple[str, str, str | None, str]] = [
+    (
+        "Drain Cleaning SSRA",
+        "Viatec Traffic Solutions SSRA",
+        "hazard",
+        "Site Specific Risk Assessment for drain cleaning works.",
+    ),
+    (
+        "Trailer Pre-start",
+        "Tip Truck Daily Pre-Start",
+        "pre_start",
+        "Pre-operational daily check for trailers and towed plant.",
+    ),
+    (
+        "Excavator Pre-start",
+        "Plant Pre-Start Checklist (Heavy Equipment)",
+        "pre_start",
+        "Pre-operational daily check for excavators.",
+    ),
+]
+
+
+async def seed_import_matcher_templates_on_startup() -> None:
+    """Idempotent seeder — creates the three missing templates keyed
+    by `_FILENAME_MATCHERS` if they don't already exist for each
+    org that has the CLONE-FROM sibling template. Runs on FastAPI
+    startup. Silently skips orgs where the clone source itself is
+    missing (a fresh tenant might not have the sibling; that's OK,
+    it just means the filename matcher won't fire until an admin
+    imports a canonical Viatec SSRA / Tip Truck / Plant Pre-Start
+    once).
+    """
+    # Distinct orgs holding at least one form_template. Cheap query.
+    org_ids: list[str] = await db.form_templates.distinct("org_id")
+    for org_id in org_ids:
+        # Pull the org's live template names once for the existence check.
+        existing_names = {
+            _norm(row["name"]) for row in await db.form_templates.find(
+                {"org_id": org_id, "deleted_at": None},
+                {"_id": 0, "name": 1},
+            ).to_list(1000)
+            if row.get("name")
+        }
+        for target_name, clone_from, category_override, description in _SEED_TARGETS:
+            if _norm(target_name) in existing_names:
+                continue
+            source = await db.form_templates.find_one(
+                {"org_id": org_id, "deleted_at": None,
+                 "name": {"$regex": f"^{re.escape(clone_from)}$", "$options": "i"}},
+                {"_id": 0},
+            )
+            if not source:
+                log.info(
+                    "seed: org=%s missing clone source %r — skipping %r",
+                    org_id, clone_from, target_name,
+                )
+                continue
+            now_iso = datetime.now(timezone.utc).isoformat()
+            new_doc = {
+                **{k: v for k, v in source.items() if k not in
+                   {"id", "created_at", "updated_at", "deleted_at",
+                    "created_by", "updated_by"}},
+                "id": str(uuid.uuid4()),
+                "name": target_name,
+                "description": description,
+                "category": category_override or source.get("category"),
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "deleted_at": None,
+                "source": "seed_v58_13_132hn",
+            }
+            try:
+                await db.form_templates.insert_one(new_doc)
+                log.info(
+                    "seed: org=%s created template %r (cloned from %r)",
+                    org_id, target_name, clone_from,
+                )
+            except Exception as e:  # noqa: BLE001
+                log.warning(
+                    "seed: failed to insert %r for org=%s: %s",
+                    target_name, org_id, e,
+                )
+

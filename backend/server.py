@@ -1096,6 +1096,15 @@ async def on_startup():
             await seed_cert_kinds_on_startup()
         except Exception as e:
             log.warning("Simpro cert_kinds seed failed: %s", e)
+        # v58.13.132hn — Seed the 3 filename-matcher target templates
+        # (Drain Cleaning SSRA / Trailer Pre-start / Excavator Pre-start)
+        # by cloning from sibling templates. Idempotent no-op after
+        # first successful run on each org.
+        try:
+            from imports import seed_import_matcher_templates_on_startup
+            await seed_import_matcher_templates_on_startup()
+        except Exception as e:
+            log.warning("Import matcher template seed failed: %s", e)
         # v160.3.3 — HR docs dedup index.
         try:
             await ensure_hr_dedup_index()
