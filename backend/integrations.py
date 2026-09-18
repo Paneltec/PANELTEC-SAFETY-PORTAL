@@ -372,10 +372,18 @@ async def navixy_get_hash(user: dict = Depends(require_roles("admin", "hseq_lead
         raise HTTPException(400, f"Navixy auth failed: {msg}")
     new_hash = data["hash"]
     # v160.3.9.40 (SEC-003) — session_hash is a secret; store encrypted.
+    # v58.13.132is — A fresh hash IS a successful connection, so flip
+    # `status` to "connected" here too. Without this, Get Hash succeeded
+    # but the health dot stayed orange/red because `status` retained the
+    # prior "error" value, which caused user confusion (test says
+    # working, dot says degraded).
     await db.integration_configs.update_one(
         {"org_id": user["org_id"], "kind": "navixy"},
         {"$set": {"config.session_hash_encrypted": _encrypt_integration_secret(new_hash),
-                  "last_error": None, "updated_at": now_iso()},
+                  "status": "connected",
+                  "last_error": None,
+                  "last_tested_at": now_iso(),
+                  "updated_at": now_iso()},
          "$unset": {"config.session_hash": ""}},
     )
     return {"hash_last4": _last4(new_hash), "fetched_at": now_iso()}
@@ -392,16 +400,32 @@ async def navixy_test(user: dict = Depends(require_roles("admin", "hseq_lead")))
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.post(url, json={"hash": h})
     except Exception as e:
+        # v58.13.132is — Persist status on network failures too, else
+        # the health dot stays green with a stale "connected" while
+        # Navixy is unreachable.
+        await db.integration_configs.update_one(
+            {"org_id": user["org_id"], "kind": "navixy"},
+            {"$set": {"status": "error",
+                      "last_error": f"Navixy unreachable: {e}",
+                      "last_tested_at": now_iso(),
+                      "updated_at": now_iso()}},
+        )
         raise HTTPException(502, f"Navixy unreachable: {e}")
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if not data.get("success"):
         msg = (data.get("status") or {}).get("description") or "Unknown error"
-        if "hash" in msg.lower():
-            raise HTTPException(400, "Hash invalid — click Get Hash to refresh.")
+        # v58.13.132is — Persist even on hash-error so the health dot
+        # reflects reality. Previously this branch raised without
+        # writing, leaving the last-known status untouched.
         await db.integration_configs.update_one(
             {"org_id": user["org_id"], "kind": "navixy"},
-            {"$set": {"status": "error", "last_error": msg, "updated_at": now_iso()}},
+            {"$set": {"status": "error",
+                      "last_error": msg,
+                      "last_tested_at": now_iso(),
+                      "updated_at": now_iso()}},
         )
+        if "hash" in msg.lower():
+            raise HTTPException(400, "Hash invalid — click Get Hash to refresh.")
         raise HTTPException(400, msg)
     trackers = data.get("list") or []
     sample = [{"id": t.get("id"), "label": t.get("label"), "plate": t.get("source", {}).get("phone")} for t in trackers[:3]]

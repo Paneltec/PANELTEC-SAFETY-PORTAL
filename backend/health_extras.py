@@ -167,6 +167,19 @@ async def _check_navixy(cfg: dict | None, org_id: str) -> dict:
     tested = _parse_dt(cfg.get("last_tested_at"))
     veh = cfg.get("vehicle_count") or n_assets
 
+    # v58.13.132is — When the admin has JUST verified credentials via
+    # "Test connection" (within the last 10 minutes) the health dot
+    # should honour that signal and go GREEN, even if the async asset
+    # sync hasn't caught up yet. Previously the dot stayed AMBER after
+    # a successful test because it read only `navixy_last_seen_at` on
+    # assets — which lags the credential verification by however long
+    # the next sync cron takes to fire. This confused admins who saw
+    # "Test connection: working" and an orange indicator side-by-side.
+    if tested and (datetime.now(timezone.utc) - tested) < timedelta(minutes=10):
+        return {"status": "up",
+                "detail": f"Ready · credentials verified {_fmt_ago(tested)} · {veh} vehicles",
+                "last_checked_at": _iso(tested)}
+
     if latest is None:
         # Credentials in place but no live traffic yet — show amber so
         # ops knows it's provisioned but not verified since restart.
