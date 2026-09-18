@@ -13199,7 +13199,35 @@
 //    · Imported-PDF photo re-embed: bigger scope — needs source
 //      PDF stored in GridFS at import time + a new preview source
 //      adapter. Queued as `.132id` scope proposal.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ic';
+// v58.13.132id — P0 bug fixes batch.
+//   1. ResizeObserver loop crash on Wayne Nippers profile — the
+//      Workers.jsx modal-height ResizeObserver at line 2373 was
+//      mutating `node.style.maxHeight` INSIDE its own callback,
+//      which retriggered the observer synchronously (classic
+//      "observed layout inside observer" recursion). Wrapped the
+//      body in `requestAnimationFrame` so the browser batches the
+//      style write into the next paint frame and the observer
+//      sees a stable size on its next tick.
+//   2. Clients section in WorkerViewModal.jsx — .132ic removed it
+//      from the EDIT modal but the VIEW modal (which is what
+//      Wayne's screenshot showed) still had a duplicate section
+//      at L647-674. Purged.
+//   3. SWMS-N filename matcher — user filename
+//      `2026_SWMS-11_Horizontal Directional Drilling - Unloading
+//      & Operation V13.0.pdf` returned "unmatched". Added a
+//      `2026_SWMS-\d+_.+V\d+` matcher (must live in a separate
+//      SWMS import surface — flagged as follow-up since imports.py
+//      only handles form_submissions, not SWMS docs). For now
+//      the pattern lands the file in the unmatched drawer with a
+//      clear "SWMS document" hint.
+//   4. SSRA-family filename matcher — user reported an SSRA import
+//      landing in Incident Reports because the incident matchers
+//      (e.g. `near[\s_-]*miss`) fired on filenames like "SSRA —
+//      near miss review". Fix: SSRA matchers now precede all
+//      incident matchers in `_FILENAME_MATCHERS` order — first
+//      hit wins, so anything with "SSRA" or "site specific risk"
+//      in the filename beats the incident regex.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132id';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13220,7 +13248,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ic';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ic';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132id';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

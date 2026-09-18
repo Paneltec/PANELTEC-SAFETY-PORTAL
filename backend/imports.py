@@ -71,7 +71,31 @@ CATEGORY_ROUTE = {
 # If no template with the mapped name exists in the org, the matcher
 # falls through to the existing title-token logic (safe default).
 _FILENAME_MATCHERS: list[tuple[str, str]] = [
+    # v58.13.132id — SSRA-family matchers FIRST so an SSRA filename
+    # containing incident-family tokens (e.g. "SSRA — near miss
+    # review") doesn't fall through to the incident regex below.
+    # Order MATTERS: `_match_by_filename` returns on first hit.
     (r"drain[\s_-]*cleaning[\s_-]*ssra",           "Drain Cleaning SSRA"),
+    (r"viatec[\s_-]*traffic[\s_-]*solutions[\s_-]*ssra",
+                                                    "Viatec Traffic Solutions SSRA"),
+    (r"construction[\s_-]*(?:and|&|\+)[\s_-]*excavation[\s_-]*ssra",
+                                                    "Construction & Excavation SSRA"),
+    # Catch-all SSRA — falls through to token match if the specific
+    # SSRA template doesn't exist in the org.
+    (r"\bssra\b|site[\s_-]*specific[\s_-]*risk[\s_-]*assessment",
+                                                    "Construction & Excavation SSRA"),
+
+    # v58.13.132id — SWMS-N canonical pattern. Currently /imports/pdf
+    # only ingests form_submissions, so a matched SWMS filename lands
+    # against the SWMS-shaped template if one exists. If not, the
+    # matcher fires but falls through to token match (safe default)
+    # — the file still shows up in the unmatched drawer with a hint.
+    # Accepts SWMS-N, SWMS_N, `2026_SWMS-11_…`, and bare `SWMS 11`.
+    # \b doesn't help here — `_` is a word char in Python regex, so
+    # boundaries around `_SWMS_` fail. Match on explicit adjacency
+    # to word start / non-alpha instead.
+    (r"(?:^|[^a-z])swms[\s_\-]+\d+",                 "SWMS Document"),
+
     (r"trailer[\s_-]*pre[\s_-]*start",             "Trailer Pre-start"),
     (r"excavator[\s_-]*pre[\s_-]*start",           "Excavator Pre-start"),
     (r"excavation[\s_-]*(?:[/_-]*\s*trench[\s_-]*)?permit",

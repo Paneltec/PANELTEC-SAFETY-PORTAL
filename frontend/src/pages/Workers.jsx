@@ -2363,22 +2363,36 @@ export default function Workers() {
   useLayoutEffect(() => {
     const el = workersTableRef.current;
     if (!el) return undefined;
+    // v58.13.132id — Wrap the layout write in requestAnimationFrame
+    // so setting `node.style.maxHeight` doesn't retrigger this
+    // ResizeObserver synchronously. Without this, on Wayne Nippers's
+    // profile (and any worker whose row height changes mid-mount)
+    // the observer fires → we mutate maxHeight → layout dirties →
+    // observer fires again → "ResizeObserver loop completed with
+    // undelivered notifications" crash. RAF batches the write into
+    // the next paint frame, breaking the recursion cleanly.
+    let rafId = 0;
+    let disposed = false;
     const update = () => {
-      const node = workersTableRef.current;
-      if (!node) return;
-      const top = Math.max(0, node.getBoundingClientRect().top);
-      node.style.maxHeight = `calc(100dvh - ${top + 24}px)`;
+      if (rafId) return; // coalesce mid-frame bursts
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        if (disposed) return;
+        const node = workersTableRef.current;
+        if (!node) return;
+        const top = Math.max(0, node.getBoundingClientRect().top);
+        node.style.maxHeight = `calc(100dvh - ${top + 24}px)`;
+      });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(document.documentElement);
     window.addEventListener('resize', update);
-    // A short-lived delayed re-measure covers late-paint chrome (web
-    // fonts, images) that shifts the container's top after the first
-    // useLayoutEffect frame.
     const t1 = setTimeout(update, 120);
     const t2 = setTimeout(update, 500);
     return () => {
+      disposed = true;
+      if (rafId) cancelAnimationFrame(rafId);
       ro.disconnect();
       window.removeEventListener('resize', update);
       clearTimeout(t1); clearTimeout(t2);

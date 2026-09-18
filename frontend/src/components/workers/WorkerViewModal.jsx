@@ -641,37 +641,14 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
                 )}
               </section>
 
-              {/* v58.13.131o — SmartFill Cards */}
+              {/* v58.13.132ic — SmartFill Cards */}
               <SmartFillCardsSection workerId={workerId} canEdit={canManageWorker} />
 
-              {/* Clients */}
-              <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-clients">                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
-                  <Users size={14} className="text-slate-500" /> Clients
-                  {(worker.client_ids || []).length === 0 ? (
-                    <SummaryPill tone="manual" testid="section-clients-empty">0</SummaryPill>
-                  ) : (
-                    <SummaryPill testid="section-clients-count">
-                      {worker.client_ids.length} assigned
-                    </SummaryPill>
-                  )}
-                </div>
-                {(worker.client_ids || []).length === 0 ? (
-                  <div className="text-xs text-slate-400 italic">No clients assigned.</div>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {worker.client_ids.map((id) => {
-                      const meta = clientMeta[id];
-                      return (
-                        <span key={id} data-testid={`view-client-chip-${id}`}
-                          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-50 border border-slate-200 rounded-full text-xs">
-                          <span className="text-slate-700">{meta?.name || `Customer #${id}`}</span>
-                          {meta?.company_label && <CompanyChip label={meta.company_label} />}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
+              {/* v58.13.132id — Clients section removed from the VIEW
+                  modal (was still surfacing on Wayne Nippers's profile
+                  after .132ic only touched the EDIT modal). Simpro
+                  sync + row-level chips remain the source of truth
+                  for client attribution. */}
 
               {/* Certifications */}
               <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-certifications">

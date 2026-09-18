@@ -5,7 +5,7 @@
  * Types: worker_picker, vehicle_navixy, customer_picker, site_picker,
  *        job_picker, asset_scan, contact_picker
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput, ActivityIndicator,
 } from 'react-native';
@@ -14,12 +14,15 @@ import { Colors } from '../../theme/colors';
 import PickerModal from './PickerModal';
 import {
   fetchWorkers, fetchVehicles, fetchCustomers, fetchSites, fetchJobs,
-  fetchAssets, lookupAsset,
+  fetchAssets,
   type WorkerItem, type VehicleItem, type CustomerItem,
   type SiteItem, type JobItem, type AssetItem,
 } from '../../services/pickerApi';
 import * as Location from 'expo-location';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+
+// CRITICAL: expo-camera is lazy-loaded to prevent its native module from
+// initializing at app boot (which was freezing the native app).
+const LazyAssetScanner = React.lazy(() => import('./AssetScanner'));
 
 // ── Shared types ──
 interface PickerProps {
@@ -642,34 +645,15 @@ export function JobPicker({ field, value, onChange, allValues, allFields }: Pick
 }
 
 // ═══════════════════════════════════════════════════
-// 6. ASSET SCAN (QR camera + manual pick)
+// 6. ASSET SCAN (QR camera lazy-loaded + manual pick)
+// CRITICAL: expo-camera is NOT imported here to prevent
+// native module init at app boot (caused full-app freeze).
+// Camera is loaded via React.lazy only when user taps "Scan QR".
 // ═══════════════════════════════════════════════════
-
-const SCAN_TOKEN_RE = /\/scan\/([A-Za-z0-9_-]{6,32})$/;
-const RAW_TOKEN_RE = /^[A-Za-z0-9_-]{6,32}$/;
-
-/** Parse a scan token from raw QR data (raw token or /scan/{token} URL). */
-function parseScanToken(payload: string): string | null {
-  if (!payload) return null;
-  const trimmed = payload.trim();
-  if (RAW_TOKEN_RE.test(trimmed)) return trimmed;
-  try {
-    const u = new URL(trimmed);
-    const m = u.pathname.match(SCAN_TOKEN_RE);
-    if (m) return m[1];
-  } catch { /* not a URL */ }
-  const m = trimmed.match(SCAN_TOKEN_RE);
-  return m ? m[1] : null;
-}
-
 export function AssetScanPicker({ field, value, onChange }: PickerProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const [resolving, setResolving] = useState(false);
-  const [resolved, setResolved] = useState<any>(null);
   const [scanErr, setScanErr] = useState('');
-  const [scanned, setScanned] = useState(false);
-  const [camPermission, requestCamPermission] = useCameraPermissions();
   const testId = `asset-scan-${field.id}`;
 
   const fetchFn = useCallback(async (q: string) => {
@@ -686,55 +670,15 @@ export function AssetScanPicker({ field, value, onChange }: PickerProps) {
     setModalOpen(false);
   }, [onChange]);
 
-  const commitResolved = useCallback((asset: any, via: string) => {
+  const handleScanResolved = useCallback((asset: any, via: string) => {
     onChange({
       asset_id: asset.id, scan_token: asset.scan_token, name: asset.name,
       rego_serial: asset.rego_serial, asset_type: asset.asset_type,
       kind: asset.kind, resolved_via: via,
       resolved_at: new Date().toISOString(),
     });
-    setResolved(null); setScanning(false); setScanErr('');
+    setScanning(false); setScanErr('');
   }, [onChange]);
-
-  const handleBarcodeScan = useCallback(async ({ data }: { data: string }) => {
-    if (scanned || resolving) return;
-    setScanned(true);
-    const token = parseScanToken(data);
-    if (!token) {
-      setScanErr('Not a valid asset code. Try again or pick manually.');
-      setTimeout(() => setScanned(false), 2000);
-      return;
-    }
-    setResolving(true); setScanErr('');
-    try {
-      const asset = await lookupAsset(token);
-      if (!asset) {
-        setScanErr('Unknown asset code. Try again or pick manually.');
-        setTimeout(() => setScanned(false), 2000);
-      } else {
-        setResolved({ ...asset, _via: 'qr_scan' });
-      }
-    } catch {
-      setScanErr('Lookup failed. Try again.');
-      setTimeout(() => setScanned(false), 2000);
-    } finally {
-      setResolving(false);
-    }
-  }, [scanned, resolving]);
-
-  const openScanner = useCallback(async () => {
-    setScanErr('');
-    setScanned(false);
-    setResolved(null);
-    if (!camPermission?.granted) {
-      const result = await requestCamPermission();
-      if (!result.granted) {
-        setScanErr('Camera permission denied. Use manual search instead.');
-        return;
-      }
-    }
-    setScanning(true);
-  }, [camPermission, requestCamPermission]);
 
   const renderRow = useCallback((a: AssetItem) => (
     <>
@@ -761,91 +705,35 @@ export function AssetScanPicker({ field, value, onChange }: PickerProps) {
     );
   }
 
-  // Confirmation card after QR scan resolves
-  if (resolved) {
-    return (
-      <View testID={`${testId}-confirm`} style={cs.confirmCard}>
-        <View style={cs.confirmHeader}>
-          <IconAvatar icon="checkmark-circle" bg="#D1FAE5" fg="#10B981" />
-          <View style={cs.rowBody}>
-            <Text style={cs.rowPrimary}>{resolved.name || resolved.rego_serial}</Text>
-            <Text style={cs.rowSecondary}>
-              {[resolved.asset_type, resolved.rego_serial].filter(Boolean).join(' · ')}
-            </Text>
-          </View>
-        </View>
-        <View style={cs.confirmActions}>
-          <TouchableOpacity
-            testID={`${testId}-confirm-use`}
-            style={cs.confirmUseBtn}
-            onPress={() => commitResolved(resolved, resolved._via || 'qr_scan')}
-          >
-            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-            <Text style={cs.confirmUseBtnText}>Use this asset</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID={`${testId}-confirm-retry`}
-            style={cs.confirmRetryBtn}
-            onPress={() => { setResolved(null); setScanned(false); }}
-          >
-            <Text style={cs.confirmRetryText}>Scan again</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // QR camera scanning view
+  // QR camera scanning — lazy loaded
   if (scanning) {
     return (
-      <View testID={`${testId}-scanner`} style={cs.scannerWrap}>
-        <View style={cs.cameraBox}>
-          <CameraView
-            style={cs.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ['qr', 'code128', 'ean13', 'ean8'] }}
-            onBarcodeScanned={scanned ? undefined : handleBarcodeScan}
-          />
-          {resolving && (
-            <View style={cs.scanOverlay}>
-              <ActivityIndicator size="small" color="#FFFFFF" />
-              <Text style={cs.scanOverlayText}>Looking up asset…</Text>
-            </View>
-          )}
-          <View style={cs.scanFrame} />
+      <Suspense fallback={
+        <View style={cs.scannerLoadWrap}>
+          <ActivityIndicator size="small" color={Colors.navy} />
+          <Text style={cs.scannerLoadText}>Loading camera…</Text>
         </View>
-        {scanErr ? (
-          <View style={cs.scanErrRow}>
-            <Ionicons name="alert-circle" size={14} color={Colors.error} />
-            <Text style={cs.scanErrText}>{scanErr}</Text>
-          </View>
-        ) : (
-          <Text style={cs.scanHint}>Point camera at asset QR code</Text>
-        )}
-        <View style={cs.scanActions}>
-          <TouchableOpacity testID={`${testId}-scanner-close`} style={cs.scanCloseBtn} onPress={() => setScanning(false)}>
-            <Ionicons name="close" size={16} color={Colors.textSecondary} />
-            <Text style={cs.scanCloseBtnText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity testID={`${testId}-scanner-manual`} style={cs.scanManualBtn} onPress={() => { setScanning(false); setModalOpen(true); }}>
-            <Ionicons name="search" size={14} color={Colors.info} />
-            <Text style={cs.scanManualBtnText}>Search manually</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      }>
+        <LazyAssetScanner
+          testId={testId}
+          onResolved={handleScanResolved}
+          onCancel={() => setScanning(false)}
+          onFallbackManual={() => { setScanning(false); setModalOpen(true); }}
+        />
+      </Suspense>
     );
   }
 
   return (
     <View>
-      {scanErr && !scanning ? (
+      {scanErr ? (
         <View style={[cs.scanErrRow, { marginBottom: 8 }]}>
           <Ionicons name="alert-circle" size={14} color={Colors.warning} />
           <Text style={cs.scanErrText}>{scanErr}</Text>
         </View>
       ) : null}
       <View style={cs.assetActions}>
-        <TouchableOpacity testID={`${testId}-scan`} style={cs.assetScanBtn} onPress={openScanner}>
+        <TouchableOpacity testID={`${testId}-scan`} style={cs.assetScanBtn} onPress={() => setScanning(true)}>
           <Ionicons name="scan" size={18} color="#FFFFFF" />
           <Text style={cs.assetScanBtnText}>Scan QR</Text>
         </TouchableOpacity>
@@ -1032,64 +920,16 @@ const cs = StyleSheet.create({
     minHeight: 48,
   },
   assetPickText: { fontSize: 14, fontWeight: '600', color: Colors.info },
-
-  // QR scanner
-  scannerWrap: { gap: 10 },
-  cameraBox: {
-    height: 220, borderRadius: 16, overflow: 'hidden',
-    backgroundColor: '#000', position: 'relative',
-  },
-  camera: { flex: 1 },
-  scanFrame: {
-    position: 'absolute', top: '20%', left: '20%', width: '60%', height: '60%',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)', borderRadius: 12,
-  },
-  scanOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center', justifyContent: 'center', gap: 8,
-  },
-  scanOverlayText: { fontSize: 13, color: '#FFFFFF', fontWeight: '600' },
-  scanHint: { fontSize: 12, color: Colors.textTertiary, textAlign: 'center' },
   scanErrRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10,
   },
   scanErrText: { fontSize: 12, color: '#991B1B', flex: 1 },
-  scanActions: { flexDirection: 'row', gap: 8 },
-  scanCloseBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 12, backgroundColor: Colors.borderLight,
-    minHeight: 44,
+  scannerLoadWrap: {
+    alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 30, backgroundColor: Colors.borderLight, borderRadius: 16,
   },
-  scanCloseBtnText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
-  scanManualBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.info, backgroundColor: Colors.infoSoft,
-    minHeight: 44,
-  },
-  scanManualBtnText: { fontSize: 13, fontWeight: '600', color: Colors.info },
-
-  // Confirmation card
-  confirmCard: {
-    backgroundColor: '#F0FDF4', borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: '#A7F3D0', gap: 12,
-  },
-  confirmHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  confirmActions: { flexDirection: 'row', gap: 8 },
-  confirmUseBtn: {
-    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.success,
-    minHeight: 44,
-  },
-  confirmUseBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-  confirmRetryBtn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.borderLight,
-    minHeight: 44,
-  },
-  confirmRetryText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  scannerLoadText: { fontSize: 13, color: Colors.textTertiary },
 
   // Contact picker
   contactNote: {
