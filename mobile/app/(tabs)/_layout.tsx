@@ -1,6 +1,6 @@
 /**
- * Tab layout — v58.13.132di
- * 8 tabs: HOME · FORMS · QR SCAN · OUTBOX · FLEET · MY WORK · PROFILE · ASK AI
+ * Tab layout — v58.13.132ds
+ * 6 tabs: HOME · FORMS · QR SCAN · MY WORK · PROFILE · ASK AI
  */
 import React from 'react';
 import { Tabs } from 'expo-router';
@@ -66,24 +66,9 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="outbox"
-        options={{
-          title: 'Outbox',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'cloud-upload' : 'cloud-upload-outline'} focused={focused} color={color} size={22} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="fleet"
-        options={{
-          title: 'Fleet',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'car' : 'car-outline'} focused={focused} color={color} size={22} />
-          ),
-        }}
-      />
+      {/* outbox + fleet hidden from tab bar but route files kept for deep links */}
+      <Tabs.Screen name="outbox" options={{ href: null }} />
+      <Tabs.Screen name="fleet" options={{ href: null }} />
       <Tabs.Screen
         name="my-work"
         options={{
