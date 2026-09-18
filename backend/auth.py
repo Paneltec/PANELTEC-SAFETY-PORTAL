@@ -166,7 +166,15 @@ def create_access_token(user_id: str, email: str, token_version: int = 0,
 def _to_user_out(doc: dict) -> dict:
     """Strip Mongo _id and password_hash, return JSON-safe user.
     v160.3.9.30 (G2 fix) — surface company_id + role_id + activation_status
-    so FE + tests can read the scope-context of contractor_rep users."""
+    so FE + tests can read the scope-context of contractor_rep users.
+    v58.13.132io — surface `role_label` + `preview` boolean so the mobile
+    Profile screen can render the human-readable scope label during a
+    Live Preview session. Without this, `.132in`'s synthetic-user
+    `role_label` field was silently dropped by this whitelist projection,
+    so `/api/auth/me` returned `role_label=None` and the mobile Profile
+    screen fell all the way through to `res.data.role_id`/`res.data.role`
+    (i.e. still displayed the admin's/collapsed role, not the previewed
+    worker's scope label)."""
     return {
         "id": doc["id"],
         "email": doc["email"],
@@ -176,8 +184,10 @@ def _to_user_out(doc: dict) -> dict:
         "workspace_ids": doc.get("workspace_ids", []),
         "company_id": doc.get("company_id"),
         "role_id": doc.get("role_id"),
+        "role_label": doc.get("role_label"),
         "activation_status": doc.get("activation_status"),
         "created_at": doc["created_at"],
+        "preview": doc.get("preview", False),
     }
 
 
