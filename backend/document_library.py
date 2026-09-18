@@ -256,6 +256,13 @@ def _serialise_file(doc: dict) -> dict:
         # tinted rows, sort by expiry, and show "Renamed by" hints.
         "expiry_date": doc.get("expiry_date"),
         "updated_at": doc.get("updated_at"),
+        # v58.13.132if — Archive metadata. `archived_at` is set either
+        # by the auto-expiry sweep in `list_files` or manually via
+        # `/library/files/{id}/archive`. Semantic separation from
+        # `deleted_at`: archived files are kept + browsable in the
+        # Archived accordion; deleted files are soft-deleted + hidden.
+        "archived_at": doc.get("archived_at"),
+        "archived_reason": doc.get("archived_reason"),
     }
 
 
@@ -1115,6 +1122,23 @@ async def list_files(folder_id: str, user: dict = Depends(get_current_user)):
     _scope = scope_filter(user, "documents")
     if _scope.get("__scope_no_match__"):
         return []
+    # v58.13.132if — Auto-archive-on-fetch sweep. Any doc_file in this
+    # folder whose `expiry_date < today` AND `archived_at IS NULL`
+    # AND `deleted_at IS NULL` is flipped to `archived_at = now()`.
+    # Idempotent (second run matches 0 docs). Scoped per-folder so
+    # the write blast radius is bounded per request.
+    from datetime import date as _date
+    today_iso = _date.today().isoformat()
+    await db.doc_files.update_many(
+        {
+            "folder_id": folder_id, "org_id": user["org_id"],
+            "deleted_at": None,
+            "archived_at": None,
+            "expiry_date": {"$lt": today_iso, "$ne": None},
+        },
+        {"$set": {"archived_at": now_iso(),
+                  "archived_reason": "auto_expired"}},
+    )
     cursor = db.doc_files.find(
         {"folder_id": folder_id, "org_id": user["org_id"], "deleted_at": None,
          **_scope},
@@ -1705,6 +1729,48 @@ async def delete_file(file_id: str, user: dict = Depends(require_permission("doc
         user=user,
     )
     return None
+
+
+# v58.13.132if — Manual archive / restore for Doc Library files.
+# Pairs with the auto-archive-on-fetch sweep in `list_files` so
+# expired compliance docs (SDS / Licences & Tickets etc.) drop
+# into the Archived accordion without needing a cron.
+@router.post("/files/{file_id}/archive")
+async def archive_file(file_id: str, user: dict = Depends(require_permission("documents", "edit"))):
+    _require(user, WRITE_ROLES, action="archive")
+    ts = now_iso()
+    existing = await db.doc_files.find_one(
+        {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "File not found")
+    await db.doc_files.update_one(
+        {"id": file_id, "org_id": user["org_id"]},
+        {"$set": {"archived_at": ts, "archived_reason": "manual",
+                  "archived_by": user["id"], "updated_at": ts}},
+    )
+    fresh = await db.doc_files.find_one({"id": file_id}, {"_id": 0})
+    return _serialise_file(fresh)
+
+
+@router.post("/files/{file_id}/restore")
+async def restore_file(file_id: str, user: dict = Depends(require_permission("documents", "edit"))):
+    _require(user, WRITE_ROLES, action="restore")
+    ts = now_iso()
+    existing = await db.doc_files.find_one(
+        {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "File not found")
+    await db.doc_files.update_one(
+        {"id": file_id, "org_id": user["org_id"]},
+        {"$set": {"archived_at": None, "archived_reason": None,
+                  "archived_by": None, "updated_at": ts}},
+    )
+    fresh = await db.doc_files.find_one({"id": file_id}, {"_id": 0})
+    return _serialise_file(fresh)
 
 
 @router.get("/files/{file_id}/download")

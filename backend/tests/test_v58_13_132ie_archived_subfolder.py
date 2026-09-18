@@ -290,8 +290,11 @@ async def test_archive_restore_and_auto_archive_roundtrip(monkeypatch):
 # ── Version pin ─────────────────────────────────────────────────────
 
 def test_version_pin_v132ie():
+    import re as _re
     v = _r(FRONTEND / "src" / "lib" / "version.js")
-    assert "RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ie'" in v
-    assert "EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ie'" in v
+    # Forward-safe: accept .132ie or any later .132<letter+letter> pin.
+    pat = r"paneltec-v160\.3\.9\.58\.13\.132[i-z][a-z]?"
+    assert _re.search(rf"RUNNING_VERSION = '{pat}'", v)
+    assert _re.search(rf"EXPECTED_CACHE_VERSION = '{pat}'", v)
     sw = _r(FRONTEND / "public" / "service-worker.js")
-    assert "CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ie'" in sw
+    assert _re.search(rf"CACHE_VERSION = '{pat}'", sw)

@@ -8,13 +8,17 @@
 // semantic RAG is deferred to a future phase.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, ShieldOff, Sparkles, X } from 'lucide-react';
+import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, ShieldOff, Sparkles, X, Archive as ArchiveIcon, RotateCcw, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
 import useClipboardPaste from '../lib/useClipboardPaste';
 import { getToken, getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import { stashInlinePdf } from '../lib/pdfStash';
+// v58.13.132if — Shared archive helpers for Doc Library files.
+import {
+  splitDocsByArchived, useDocArchivedOpen, archiveDoc, restoreDoc,
+} from '../lib/docArchiveHelpers';
 import BulkRestrictModal from '../components/BulkRestrictModal';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
@@ -608,6 +612,81 @@ function groupFilesForDisplay(files) {
     return String(a).localeCompare(String(b), 'en', { numeric: true });
   });
   return entries;
+}
+
+
+// v58.13.132if — Archived accordion for the folder-detail file table.
+// Renders below the main grouped table. Header shows Archived · N +
+// an explanatory chip; body is a lighter-toned flat table with a
+// Restore action per row. Open state persists per-folder in
+// localStorage under `paneltec:archive:open:doc-library-files:<folderId>`.
+function DocLibraryArchivedSection({ files, canEdit, onChanged }) {
+  const { archived } = splitDocsByArchived(files);
+  const folderId = (files || [])[0]?.folder_id || 'root';
+  const [open, toggle] = useDocArchivedOpen('doc-library-files', folderId);
+  if (archived.length === 0) return null;
+  return (
+    <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-white"
+      data-testid="section-doc-library-archived">
+      <button type="button" onClick={toggle}
+        data-testid="section-doc-library-archived-toggle"
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border-b border-slate-100 text-left">
+        <ArchiveIcon size={14} className="text-slate-500" />
+        <span className="text-sm font-semibold text-slate-700">
+          Archived · {archived.length}
+        </span>
+        <span className="ml-1 text-[11px] text-slate-400">
+          (expired compliance documents kept for audit)
+        </span>
+        <ChevronDown size={14}
+          className={`text-slate-400 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="overflow-x-auto"
+          data-testid="section-doc-library-archived-body">
+          <table className="w-full text-xs">
+            <thead className="bg-white text-slate-400 text-[10px] uppercase tracking-wider">
+              <tr>
+                <th className="text-left px-4 py-2">Filename</th>
+                <th className="text-left px-4 py-2 hidden md:table-cell">Expired</th>
+                <th className="text-left px-4 py-2 hidden lg:table-cell">Archived</th>
+                <th className="text-right px-4 py-2 w-24"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {archived.map((f) => (
+                <tr key={f.id} className="opacity-75"
+                  data-testid={`file-row-${f.id}`}
+                  data-archived="true">
+                  <td className="px-4 py-2 font-medium text-slate-800">{f.filename}</td>
+                  <td className="px-4 py-2 text-slate-500 hidden md:table-cell whitespace-nowrap">
+                    {(f.expiry_date || '').slice(0, 10) || '—'}
+                  </td>
+                  <td className="px-4 py-2 text-slate-500 hidden lg:table-cell whitespace-nowrap">
+                    {(f.archived_at || '').slice(0, 10)}
+                  </td>
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
+                    {canEdit && (
+                      <button type="button"
+                        onClick={() => restoreDoc({
+                          restoreUrl: `/document-library/files/${f.id}/restore`,
+                          label: f.filename, onDone: onChanged,
+                        })}
+                        data-testid={`file-restore-${f.id}`}
+                        title="Restore to active"
+                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+                        <RotateCcw size={12} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 
@@ -2003,7 +2082,7 @@ export function DocumentLibraryFolder() {
                     _search_folder_path: r.folder_path,
                     _search_folder_name: r.folder?.name,
                   }))]]
-                : groupFilesForDisplay(applyDocSortFilter(files, { sortKey, expiryFilter }))
+                : groupFilesForDisplay(applyDocSortFilter(splitDocsByArchived(files).active, { sortKey, expiryFilter }))
               ).map(([groupKey, groupFiles]) => {
                 const palette = resolveGroupPalette({ groupKey, page: 'document-library' });
                 return (
@@ -2204,6 +2283,17 @@ export function DocumentLibraryFolder() {
                               </button>
                             )}
                             {canEdit && (
+                              <button onClick={() => archiveDoc({
+                                archiveUrl: `/document-library/files/${f.id}/archive`,
+                                label: f.filename, onDone: loadFiles,
+                              })}
+                                data-testid={`file-archive-${f.id}`}
+                                className="p-1.5 rounded text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                                title="Archive (keep for audit, hide from active list)">
+                                <ArchiveIcon size={14} />
+                              </button>
+                            )}
+                            {canEdit && (
                               <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
                                 className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete">
                                 <Trash2 />
@@ -2221,6 +2311,8 @@ export function DocumentLibraryFolder() {
           </table>
         </div>
       )}
+      {/* v58.13.132if — Archived accordion for compliance folder files. */}
+      <DocLibraryArchivedSection files={files} canEdit={canEdit} onChanged={loadFiles} />
       {previewFile && (
         <PdfPreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
       )}

@@ -3,7 +3,7 @@
 // `GET /api/workers/{id}` and displays identity, contact, personal,
 // availability, clients and certifications with expiring/expired highlights.
 import React, { useEffect, useState } from 'react';
-import { Award, Calendar, Camera, HardHat, Loader2, MapPin, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink, FileText } from 'lucide-react';
+import { Award, Calendar, Camera, HardHat, Loader2, MapPin, RotateCcw, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink, FileText, ChevronDown } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import { summariseCertifications, personalFilledCount } from '../../lib/workerSectionSummary';
@@ -14,6 +14,10 @@ import useLockBodyScroll from '../../lib/useLockBodyScroll';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
 import SmartFillCardsSection from './SmartFillCardsSection';
 import CameraCaptureModal from '../CameraCaptureModal';
+// v58.13.132if — Shared archive helpers for Discovered Documents.
+import {
+  splitDocsByArchived, useDocArchivedOpen, archiveDoc, restoreDoc,
+} from '../../lib/docArchiveHelpers';
 import { toast } from 'sonner';
 
 const DAYS = [
@@ -857,6 +861,10 @@ function UnmatchedDocsTab({ workerId, onChange }) {
     }
   };
 
+  // v58.13.132if — Archived subfolder split.
+  const [archivedOpen, toggleArchivedOpen] = useDocArchivedOpen('unmatched-documents', workerId);
+  const { active: activeRows, archived: archivedRows } = splitDocsByArchived(rows || []);
+
   if (rows === null) {
     return (
       <div className="text-sm text-slate-500 inline-flex items-center gap-2">
@@ -876,10 +884,13 @@ function UnmatchedDocsTab({ workerId, onChange }) {
 
   return (
     <div className="space-y-3" data-testid="unmatched-docs-tab">
-      <div className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-xs text-rose-900">
-        <span className="font-semibold">{rows.length} unmatched document{rows.length === 1 ? '' : 's'}.</span>{' '}
-        Preview each one, then Reclassify it as an existing cert_kind, Move it to HR (private), or Delete.
-      </div>
+      {activeRows.length > 0 && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-xs text-rose-900">
+          <span className="font-semibold">{activeRows.length} unmatched document{activeRows.length === 1 ? '' : 's'}.</span>{' '}
+          Preview each one, then Reclassify it as an existing cert_kind, Move it to HR (private), Archive, or Delete.
+        </div>
+      )}
+      {activeRows.length > 0 && (
       <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
         <table className="w-full text-xs" data-testid="unmatched-table">
           <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
@@ -891,7 +902,7 @@ function UnmatchedDocsTab({ workerId, onChange }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map((d) => (
+            {activeRows.map((d) => (
               <tr key={d.id} className="hover:bg-slate-50" data-testid={`unmatched-row-${d.id}`}>
                 <td className="px-3 py-2 font-medium text-slate-900 max-w-[240px] truncate" title={d.filename}>
                   {d.filename}
@@ -936,6 +947,20 @@ function UnmatchedDocsTab({ workerId, onChange }) {
                     >
                       <Archive size={11} /> HR
                     </button>
+                    {/* v58.13.132if — Manual archive per-row. */}
+                    <button
+                      type="button"
+                      onClick={() => archiveDoc({
+                        archiveUrl: `/workers/${workerId}/unmatched-documents/${d.id}/archive`,
+                        label: d.filename, onDone: () => { load(); onChange?.(); },
+                      })}
+                      disabled={busy === d.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      data-testid={`unmatched-archive-${d.id}`}
+                      title="Archive (keep for compliance audit, hide from active list)"
+                    >
+                      <Archive size={11} />
+                    </button>
                     <button
                       type="button"
                       onClick={() => doDelete(d)}
@@ -952,6 +977,73 @@ function UnmatchedDocsTab({ workerId, onChange }) {
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* v58.13.132if — Archived accordion. */}
+      {archivedRows.length > 0 && (
+        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white"
+          data-testid="section-unmatched-documents-archived">
+          <button type="button" onClick={toggleArchivedOpen}
+            data-testid="section-unmatched-documents-archived-toggle"
+            className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 border-b border-slate-100 text-left">
+            <Archive size={12} className="text-slate-500" />
+            <span className="text-xs font-semibold text-slate-700">
+              Archived · {archivedRows.length}
+            </span>
+            <span className="ml-1 text-[10px] text-slate-400">
+              (discovered documents kept for compliance audit)
+            </span>
+            <ChevronDown size={12}
+              className={`text-slate-400 transition-transform ml-auto ${archivedOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {archivedOpen && (
+            <div className="overflow-x-auto"
+              data-testid="section-unmatched-documents-archived-body">
+              <table className="w-full text-xs">
+                <thead className="bg-white text-slate-400 text-[10px] uppercase tracking-wider">
+                  <tr>
+                    <th className="text-left px-3 py-2">Filename</th>
+                    <th className="text-left px-3 py-2 hidden md:table-cell">Folder</th>
+                    <th className="text-left px-3 py-2 hidden md:table-cell">Archived</th>
+                    <th className="text-right px-3 py-2 w-24"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {archivedRows.map((d) => (
+                    <tr key={d.id} className="opacity-75"
+                      data-testid={`unmatched-row-${d.id}`}
+                      data-archived="true">
+                      <td className="px-3 py-2 font-medium text-slate-800 max-w-[240px] truncate">{d.filename}</td>
+                      <td className="px-3 py-2 uppercase text-[10px] tracking-wider text-slate-500 hidden md:table-cell">{d.zip_folder || '—'}</td>
+                      <td className="px-3 py-2 text-slate-500 hidden md:table-cell whitespace-nowrap">{(d.archived_at || '').slice(0, 10)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => restoreDoc({
+                            restoreUrl: `/workers/${workerId}/unmatched-documents/${d.id}/restore`,
+                            label: d.filename, onDone: () => { load(); onChange?.(); },
+                          })}
+                          data-testid={`unmatched-restore-${d.id}`}
+                          title="Restore to active"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 mr-1">
+                          <RotateCcw size={11} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => doDelete(d)}
+                          data-testid={`unmatched-delete-${d.id}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded border border-rose-300 bg-white text-[11px] font-semibold text-rose-700 hover:bg-rose-50">
+                          <Trash2 size={11} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {reclassifyDoc && (
         <div

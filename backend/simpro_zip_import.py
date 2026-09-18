@@ -1243,6 +1243,55 @@ async def delete_hr_document(
     return None
 
 
+# v58.13.132if — Manual archive / restore for HR docs. Semantic
+# separation from `deleted_at`:
+#   · deleted_at → soft-delete, 30-day audit trail, hidden by default.
+#   · archived_at → kept-but-hidden-from-active-list, restored in-place.
+# HR docs have no expiry field, so archiving is manual-only.
+@router.post("/{worker_id}/hr-documents/{doc_id}/archive")
+async def archive_hr_document(
+    worker_id: str, doc_id: str,
+    user: dict = Depends(require_roles("admin", "hr_lead")),
+):
+    doc = await db.worker_hr_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id,
+         "org_id": user["org_id"], "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "HR document not found")
+    ts = now_iso()
+    await db.worker_hr_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"archived_at": ts, "archived_reason": "manual",
+                  "archived_by": user["id"], "updated_at": ts}},
+    )
+    fresh = await db.worker_hr_documents.find_one({"id": doc_id})
+    fresh.pop("_id", None)
+    return fresh
+
+
+@router.post("/{worker_id}/hr-documents/{doc_id}/restore")
+async def restore_hr_document(
+    worker_id: str, doc_id: str,
+    user: dict = Depends(require_roles("admin", "hr_lead")),
+):
+    doc = await db.worker_hr_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id,
+         "org_id": user["org_id"], "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "HR document not found")
+    ts = now_iso()
+    await db.worker_hr_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"archived_at": None, "archived_reason": None,
+                  "archived_by": None, "updated_at": ts}},
+    )
+    fresh = await db.worker_hr_documents.find_one({"id": doc_id})
+    fresh.pop("_id", None)
+    return fresh
+
+
 # Last sync marker for the Users page.
 @bulk_router.get("/last-sync")
 async def last_sync_marker(user: dict = Depends(require_roles("admin", "hseq_lead"))):
@@ -1542,3 +1591,52 @@ async def delete_unmatched_document(
         {"$set": {"deleted_at": ts, "deleted_by": user["id"]}},
     )
     return {"deleted": True, "doc_id": doc_id}
+
+
+# v58.13.132if — Manual archive / restore for Discovered Documents.
+# Discovered docs are the holding area for files the Simpro ZIP
+# importer couldn't route (unmatched cert-kind / unknown folder).
+# Archive is manual-only (there is no expiry_date to sweep on).
+@router.post("/{worker_id}/unmatched-documents/{doc_id}/archive")
+async def archive_unmatched_document(
+    worker_id: str,
+    doc_id: str,
+    user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead")),
+):
+    doc = await db.worker_unmatched_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "Unmatched document not found")
+    ts = now_iso()
+    await db.worker_unmatched_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"archived_at": ts, "archived_reason": "manual",
+                  "archived_by": user["id"]}},
+    )
+    fresh = await db.worker_unmatched_documents.find_one({"id": doc_id})
+    fresh.pop("_id", None)
+    return fresh
+
+
+@router.post("/{worker_id}/unmatched-documents/{doc_id}/restore")
+async def restore_unmatched_document(
+    worker_id: str,
+    doc_id: str,
+    user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead")),
+):
+    doc = await db.worker_unmatched_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "Unmatched document not found")
+    await db.worker_unmatched_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"archived_at": None, "archived_reason": None,
+                  "archived_by": None}},
+    )
+    fresh = await db.worker_unmatched_documents.find_one({"id": doc_id})
+    fresh.pop("_id", None)
+    return fresh
