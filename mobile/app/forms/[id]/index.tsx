@@ -18,6 +18,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Colors } from '../../../src/theme/colors';
 import {
   fetchFormTemplate,
@@ -29,6 +30,10 @@ import {
 } from '../../../src/services/forms';
 import { getStoredUser, isPreviewSession } from '../../../src/services/auth';
 import PhotoCapture from '../../../src/components/PhotoCapture';
+import {
+  WorkerPicker, VehicleNavixyPicker, CustomerPicker,
+  SitePicker, JobPicker, AssetScanPicker, ContactPicker,
+} from '../../../src/components/pickers/PickerFields';
 
 type FieldValues = Record<string, unknown>;
 type Mode = 'fill' | 'review';
@@ -69,6 +74,24 @@ export default function FormRunnerScreen() {
   });
 
   const catMeta = template ? getCategoryMeta(template.category) : null;
+
+  // ── Seed default values for date / time fields ──
+  // Mirrors web's behaviour: date → today, time with config.default_now → HH:MM now.
+  useEffect(() => {
+    if (!template?.fields || !draftLoaded) return;
+    const now = new Date();
+    const isoDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const nowTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    setValues((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      template.fields.forEach((f) => {
+        if (f.type === 'date' && !next[f.id]) { next[f.id] = isoDate; changed = true; }
+        if (f.type === 'time' && f.config?.default_now && !next[f.id]) { next[f.id] = nowTime; changed = true; }
+      });
+      return changed ? next : prev;
+    });
+  }, [template, draftLoaded]);
 
   // Load worker ID
   useEffect(() => {
@@ -306,6 +329,8 @@ export default function FormRunnerScreen() {
                 value={values[field.id]}
                 onChange={(v) => setField(field.id, v)}
                 hasError={submitAttempted && missingFields.some((mf) => mf.id === field.id)}
+                allValues={values}
+                allFields={template.fields}
               />
             ))
           ) : (
@@ -418,6 +443,9 @@ function ReviewField({ field, value }: { field: FormField; value: unknown }) {
       case 'date':
         return { text: String(value), empty: false };
 
+      case 'time':
+        return { text: String(value), empty: false };
+
       case 'select':
       case 'radio':
         return { text: String(value), empty: false, isPill: true };
@@ -437,6 +465,57 @@ function ReviewField({ field, value }: { field: FormField; value: unknown }) {
           if (g.lat != null) return { text: `${g.lat}, ${g.lng}`, empty: false };
         }
         return { text: 'No location', empty: true };
+
+      // ── Picker fields ──
+      case 'worker_picker':
+        if (Array.isArray(value) && value.length > 0) {
+          return { text: value.map((w: any) => w.name).join(', '), empty: false };
+        }
+        if (typeof value === 'object' && value !== null && (value as any).name) {
+          return { text: (value as any).name, empty: false };
+        }
+        return { text: 'No selection', empty: true };
+
+      case 'vehicle_navixy':
+        if (typeof value === 'object' && value !== null) {
+          const v = value as any;
+          return { text: v.label || v.registration || 'Vehicle', empty: false };
+        }
+        return { text: 'No vehicle', empty: true };
+
+      case 'customer_picker':
+        if (typeof value === 'object' && value !== null && (value as any).name) {
+          return { text: (value as any).name, empty: false };
+        }
+        return { text: 'No customer', empty: true };
+
+      case 'site_picker':
+        if (typeof value === 'object' && value !== null) {
+          const sp = value as any;
+          return { text: sp.name || sp.label || 'Site', empty: false };
+        }
+        return { text: 'No site', empty: true };
+
+      case 'job_picker':
+        if (typeof value === 'object' && value !== null) {
+          const jp = value as any;
+          return { text: jp.name || `Job #${jp.simpro_job_id}`, empty: false };
+        }
+        return { text: 'No job', empty: true };
+
+      case 'asset_scan':
+        if (typeof value === 'object' && value !== null) {
+          const a = value as any;
+          return { text: a.name || a.rego_serial || 'Asset', empty: false };
+        }
+        return { text: 'No asset', empty: true };
+
+      case 'contact_picker':
+        if (typeof value === 'object' && value !== null && (value as any).name) {
+          return { text: (value as any).name, empty: false };
+        }
+        if (typeof value === 'string' && value) return { text: value, empty: false };
+        return { text: 'No contact', empty: true };
 
       default:
         if (typeof value === 'object') return { text: JSON.stringify(value), empty: false };
@@ -463,12 +542,139 @@ function ReviewField({ field, value }: { field: FormField; value: unknown }) {
   );
 }
 
+// ── Date Picker Field ──
+
+function DatePickerField({ fieldId, value, onChange }: { fieldId: string; value: string; onChange: (v: string) => void }) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  const dateValue = useMemo(() => {
+    if (value) {
+      const d = new Date(value + 'T00:00:00');
+      return isNaN(d.getTime()) ? new Date() : d;
+    }
+    return new Date();
+  }, [value]);
+
+  const handleChange = useCallback((_: unknown, selected?: Date) => {
+    if (Platform.OS === 'android') setShowPicker(false);
+    if (selected) {
+      const iso = `${selected.getFullYear()}-${String(selected.getMonth() + 1).padStart(2, '0')}-${String(selected.getDate()).padStart(2, '0')}`;
+      onChange(iso);
+    }
+  }, [onChange]);
+
+  const formatDisplay = (v: string) => {
+    if (!v) return 'Tap to select date';
+    try {
+      const d = new Date(v + 'T00:00:00');
+      return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return v; }
+  };
+
+  return (
+    <View>
+      <TouchableOpacity
+        testID={`field-date-${fieldId}`}
+        style={s.dateBtn}
+        onPress={() => setShowPicker(true)}
+      >
+        <Ionicons name="calendar-outline" size={18} color={Colors.orange} />
+        <Text style={s.dateBtnText}>{formatDisplay(value)}</Text>
+        <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
+      </TouchableOpacity>
+      {showPicker && (
+        <View>
+          <DateTimePicker
+            testID={`field-datepicker-${fieldId}`}
+            value={dateValue}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleChange}
+            textColor={Colors.ink}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity testID={`field-datepicker-${fieldId}-done`} style={s.pickerDoneBtn} onPress={() => setShowPicker(false)}>
+              <Text style={s.pickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Time Picker Field ──
+
+function TimePickerField({ fieldId, value, onChange }: { fieldId: string; value: string; onChange: (v: string) => void }) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  const timeValue = useMemo(() => {
+    if (value && /^\d{2}:\d{2}$/.test(value)) {
+      const [h, m] = value.split(':').map(Number);
+      const d = new Date(); d.setHours(h, m, 0, 0);
+      return d;
+    }
+    return new Date();
+  }, [value]);
+
+  const handleChange = useCallback((_: unknown, selected?: Date) => {
+    if (Platform.OS === 'android') setShowPicker(false);
+    if (selected) {
+      const hh = String(selected.getHours()).padStart(2, '0');
+      const mm = String(selected.getMinutes()).padStart(2, '0');
+      onChange(`${hh}:${mm}`);
+    }
+  }, [onChange]);
+
+  const formatDisplay = (v: string) => {
+    if (!v) return 'Tap to select time';
+    if (!/^\d{2}:\d{2}$/.test(v)) return v;
+    const [h, m] = v.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  };
+
+  return (
+    <View>
+      <TouchableOpacity
+        testID={`field-time-${fieldId}`}
+        style={s.dateBtn}
+        onPress={() => setShowPicker(true)}
+      >
+        <Ionicons name="time-outline" size={18} color={Colors.info} />
+        <Text style={s.dateBtnText}>{formatDisplay(value)}</Text>
+        <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
+      </TouchableOpacity>
+      {showPicker && (
+        <View>
+          <DateTimePicker
+            testID={`field-timepicker-${fieldId}`}
+            value={timeValue}
+            mode="time"
+            is24Hour={false}
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleChange}
+            textColor={Colors.ink}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity testID={`field-timepicker-${fieldId}-done`} style={s.pickerDoneBtn} onPress={() => setShowPicker(false)}>
+              <Text style={s.pickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ── Field Renderer (editable) ──
 
 function FieldRenderer({
-  field, value, onChange, hasError,
+  field, value, onChange, hasError, allValues, allFields,
 }: {
   field: FormField; value: unknown; onChange: (v: unknown) => void; hasError: boolean;
+  allValues?: FieldValues; allFields?: FormField[];
 }) {
   const borderStyle = hasError ? { borderWidth: 2, borderColor: Colors.error, borderRadius: 14 } : {};
 
@@ -518,19 +724,11 @@ function FieldRenderer({
       )}
 
       {field.type === 'date' && (
-        <TouchableOpacity
-          testID={`field-date-${field.id}`}
-          style={s.dateBtn}
-          onPress={() => {
-            const today = new Date().toISOString().split('T')[0];
-            onChange(today);
-          }}
-        >
-          <Ionicons name="calendar-outline" size={18} color={Colors.orange} />
-          <Text style={s.dateBtnText}>
-            {(value as string) || 'Tap to set today\'s date'}
-          </Text>
-        </TouchableOpacity>
+        <DatePickerField fieldId={field.id} value={value as string} onChange={onChange} />
+      )}
+
+      {field.type === 'time' && (
+        <TimePickerField fieldId={field.id} value={value as string} onChange={onChange} />
       )}
 
       {(field.type === 'select' || field.type === 'radio') && (
@@ -600,11 +798,35 @@ function FieldRenderer({
         </TouchableOpacity>
       )}
 
-      {!['text', 'textarea', 'number', 'date', 'select', 'radio', 'photo', 'signature', 'gps'].includes(field.type) && (
+      {!['text', 'textarea', 'number', 'date', 'time', 'select', 'radio', 'photo', 'signature', 'gps',
+          'worker_picker', 'vehicle_navixy', 'customer_picker', 'site_picker', 'job_picker', 'asset_scan', 'contact_picker',
+        ].includes(field.type) && (
         <View style={s.unsupported}>
           <Ionicons name="information-circle-outline" size={16} color={Colors.textTertiary} />
           <Text style={s.unsupportedText}>{field.type} field (fill on web app)</Text>
         </View>
+      )}
+
+      {field.type === 'worker_picker' && (
+        <WorkerPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+      )}
+      {field.type === 'vehicle_navixy' && (
+        <VehicleNavixyPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+      )}
+      {field.type === 'customer_picker' && (
+        <CustomerPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+      )}
+      {field.type === 'site_picker' && (
+        <SitePicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+      )}
+      {field.type === 'job_picker' && (
+        <JobPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+      )}
+      {field.type === 'asset_scan' && (
+        <AssetScanPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+      )}
+      {field.type === 'contact_picker' && (
+        <ContactPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
       )}
 
       {hasError && (
@@ -691,13 +913,18 @@ const s = StyleSheet.create({
   },
   textArea: { minHeight: 100, textAlignVertical: 'top' },
 
-  // Date
+  // Date / Time
   dateBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: Colors.surface, borderRadius: 12, padding: 14,
     borderWidth: 1, borderColor: Colors.border,
   },
-  dateBtnText: { fontSize: 15, color: Colors.ink },
+  dateBtnText: { flex: 1, fontSize: 15, color: Colors.ink },
+  pickerDoneBtn: {
+    alignSelf: 'flex-end', paddingHorizontal: 16, paddingVertical: 8,
+    marginTop: 4, marginBottom: 4,
+  },
+  pickerDoneText: { fontSize: 15, fontWeight: '700', color: Colors.orange },
 
   // Options (select/radio)
   optionsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

@@ -235,3 +235,15 @@
   - Added Forms as 2nd tab in 8-tab layout
   - Version synced to .132di across all 4 slots (pre-commit passes without escape hatch)
 - **Files modified**: forms.tsx (new), (tabs)/_layout.tsx, _layout.tsx, forms.ts (CATEGORY_ORDER), version.ts, version.js, service-worker.js, app/forms/ (6 restored route files)
+
+
+## Iteration 10 — v58.13.132dp: Mobile Picker Parity (7 field types)
+- **Commit**: 19472158f (same env, pre-commit)
+- **Date**: 2026-09-18
+- **Changes**:
+  - Replaced 7 gray "fill on web app" stubs with real modal-based picker components
+  - worker_picker (multi + company toggle), vehicle_navixy, customer_picker, site_picker (GPS), job_picker (dependsOn), asset_scan, contact_picker (text fallback)
+  - Created PickerModal, PickerFields, pickerApi
+  - Updated form runner FieldRenderer + ReviewField
+- **Files modified**: src/components/pickers/PickerModal.tsx (NEW), src/components/pickers/PickerFields.tsx (NEW), src/services/pickerApi.ts (NEW), app/forms/[id]/index.tsx
+- **Web files referenced**: frontend/src/components/forms/PickerFields.jsx, AssetScanField.jsx, pages/Forms.jsx
