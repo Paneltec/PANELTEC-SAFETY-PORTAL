@@ -66,6 +66,30 @@ def _serialise(doc: dict, viewer: Optional[dict] = None) -> dict:
     except (TypeError, ValueError):
         _psf = 1.0
     out["photo_scale"] = max(0.5, min(2.5, _psf))
+    # v58.13.132hx — Photo transform (wheel-zoom + drag). Preferred
+    # over the legacy photo_offset_y / photo_scale pair. Shape is
+    # {x: float, y: float, zoom: float}. Missing / malformed →
+    # derive from the legacy fields so the FE never sees `null`.
+    _pt = out.get("photo_transform")
+    if not isinstance(_pt, dict):
+        _pt = {}
+    try:
+        _pt_zoom = float(_pt.get("zoom")) if _pt.get("zoom") is not None else float(out["photo_scale"])
+    except (TypeError, ValueError):
+        _pt_zoom = float(out["photo_scale"])
+    try:
+        _pt_x = float(_pt.get("x")) if _pt.get("x") is not None else 0.0
+    except (TypeError, ValueError):
+        _pt_x = 0.0
+    try:
+        _pt_y = float(_pt.get("y")) if _pt.get("y") is not None else float(-(out["photo_offset_y"] - 50) * 0.5)
+    except (TypeError, ValueError):
+        _pt_y = 0.0
+    out["photo_transform"] = {
+        "x": max(-500.0, min(500.0, _pt_x)),
+        "y": max(-500.0, min(500.0, _pt_y)),
+        "zoom": max(0.5, min(3.0, _pt_zoom)),
+    }
     cid = doc.get("simpro_company_id")
     # v58.13.132hv — worker_company feature purged. company_label
     # now derives purely from simpro_company_id + source flags.
@@ -183,6 +207,7 @@ class WorkerIn(BaseModel):
     tax_file_number: Optional[str] = Field(default=None, max_length=20)
     emergency_contact_name: Optional[str] = Field(default=None, max_length=120)
     emergency_contact_phone: Optional[str] = Field(default=None, max_length=40)
+    emergency_contact_relationship: Optional[str] = Field(default=None, max_length=60)
     # v58.13.132hq — Worker company (editable dropdown).
     # v58.13.132hv — REMOVED. Feature purged.
 
@@ -247,6 +272,11 @@ class WorkerPatch(BaseModel):
     # coerces to 1.0 on serialise. Out-of-range values are clamped
     # server-side (never 400).
     photo_scale: Optional[float] = None
+    # v58.13.132hx — Photo transform (wheel-zoom + drag). Preferred
+    # over the legacy photo_offset_y/photo_scale pair. Shape is
+    # `{x: float, y: float, zoom: float}`. Missing / null coerces to
+    # a value derived from the legacy pair on serialise.
+    photo_transform: Optional[dict] = None
     # v58.13.132hp — Paneltec-only personal fields. NEVER synced from
     # or to Simpro (see integrations_simpro_workers.py::_extract_pii).
     # If Simpro carries its own emergency-contact block that maps to
@@ -258,6 +288,7 @@ class WorkerPatch(BaseModel):
     tax_file_number: Optional[str] = Field(default=None, max_length=20)
     emergency_contact_name: Optional[str] = Field(default=None, max_length=120)
     emergency_contact_phone: Optional[str] = Field(default=None, max_length=40)
+    emergency_contact_relationship: Optional[str] = Field(default=None, max_length=60)
     # v58.13.132hq — Worker company (editable dropdown).
     # v58.13.132hv — REMOVED. Feature purged.
     # v58.13.56 — HR-merge lite. Four flags migrated off `hr_employees`
@@ -472,6 +503,30 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
         except (TypeError, ValueError):
             psf = 1.0
         payload["photo_scale"] = max(0.5, min(2.5, psf))
+    # v58.13.132hx — Clamp `photo_transform.{x,y,zoom}`. Same posture
+    # as photo_offset_y — silently coerce out-of-range rather than
+    # 400 so a stale FE session can't fail its save.
+    if "photo_transform" in payload:
+        pt = payload["photo_transform"]
+        if not isinstance(pt, dict):
+            pt = {}
+        try:
+            _z = float(pt.get("zoom")) if pt.get("zoom") is not None else 1.0
+        except (TypeError, ValueError):
+            _z = 1.0
+        try:
+            _x = float(pt.get("x")) if pt.get("x") is not None else 0.0
+        except (TypeError, ValueError):
+            _x = 0.0
+        try:
+            _y = float(pt.get("y")) if pt.get("y") is not None else 0.0
+        except (TypeError, ValueError):
+            _y = 0.0
+        payload["photo_transform"] = {
+            "x": max(-500.0, min(500.0, _x)),
+            "y": max(-500.0, min(500.0, _y)),
+            "zoom": max(0.5, min(3.0, _z)),
+        }
     payload["updated_at"] = now_iso()
     result = await db.workers.find_one_and_update(
         {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},

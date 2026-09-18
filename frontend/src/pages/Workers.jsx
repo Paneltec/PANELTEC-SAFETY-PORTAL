@@ -22,7 +22,8 @@ import { PageHeader, EmptyState } from '../components/capture/Ui';
 // document ingester (photos + cert/licence/induction PDFs + HR docs).
 import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
 import InductionsMatrix from '../components/InductionsMatrix';
-import WorkerInductionsCard from '../components/WorkerInductionsCard';
+// v58.13.132hx — `WorkerInductionsCard` import retired with the
+// inductions fast-select removal.
 // v58.13.132fi — Section D panels (Private & Confidential + Licences).
 import PrivateConfidentialPanel from '../components/workers/PrivateConfidentialPanel';
 import LicencesPanel from '../components/workers/LicencesPanel';
@@ -244,32 +245,47 @@ function EditSummaryPill({ tone = 'neutral', children, testid, title }) {
 // (same endpoint as the view drawer). On success the local state
 // updates so the avatar refreshes immediately without closing the
 // modal.
-function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY, photoScale, onChangeScale }) {
+// v58.13.132hx — Photo tile: wheel-zoom + drag-to-reposition.
+// Retired the vertical alignment slider (`SliderWithDiagnostic`) and
+// the zoom slider that shipped in .132hp. Behaviour now:
+//   · Mouse wheel over the preview → zoom (step 0.1, clamp [0.5, 3.0]).
+//   · Mouse-down + drag on the preview → shift x/y in pixels.
+//   · Double-click → reset to {x: 0, y: 0, zoom: 1}.
+// Persisted as `worker.photo_transform = {x, y, zoom}` — the PATCH
+// endpoint accepts + clamps the field server-side. Legacy
+// `photo_offset_y` + `photo_scale` are still emitted by the backend
+// serialiser (derived from photo_transform when the new field is
+// missing) so old records + list rows without photo_transform still
+// render correctly.
+function getPhotoTransform(worker) {
+  const pt = worker?.photo_transform;
+  if (pt && typeof pt === 'object') {
+    const zoom = typeof pt.zoom === 'number' ? Math.max(0.5, Math.min(3.0, pt.zoom)) : 1.0;
+    const x = typeof pt.x === 'number' ? pt.x : 0;
+    const y = typeof pt.y === 'number' ? pt.y : 0;
+    return { x, y, zoom };
+  }
+  // Legacy fallback: derive from photo_offset_y/photo_scale.
+  const off = typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50;
+  const scale = typeof worker?.photo_scale === 'number' ? worker.photo_scale : 1.0;
+  // The .132hp slider mapped 0..100 → translateY 0..-28px on the 56px preview.
+  // Preserve visual continuity for records that only carry the legacy fields.
+  return { x: 0, y: -(off - 50) * 0.28, zoom: Math.max(0.5, Math.min(3.0, scale)) };
+}
+
+function EditWorkerPhoto({ worker, photoTransform, onChangeTransform }) {
   const can = useCan();
   const canEdit = can('workers', 'edit');
-  // Local overrides so we can refresh the avatar without waiting for
-  // the parent modal to refetch.
   const [photoUrl, setPhotoUrl] = React.useState(worker?.photo_url || null);
   const [photoGridfsId, setPhotoGridfsId] = React.useState(worker?.photo_gridfs_id || null);
   const [src, setSrc] = React.useState(null);
   const [broken, setBroken] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const fileRef = React.useRef(null);
-  // v58.13.132fd — Live-preview crop offset. Controlled from the
-  // parent form so the slider persists through the same PATCH the
-  // rest of the fields go through. `photoOffsetY` may be undefined
-  // when this component is rendered outside the edit form.
-  const effectiveOffset = typeof photoOffsetY === 'number'
-    ? Math.max(0, Math.min(100, photoOffsetY))
-    : (typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50);
-  // v58.13.132hp — Live-preview zoom. Applied as CSS scale() on the
-  // oversized <img> inside the crop wrapper. Preserves the .132fd
-  // translateY behaviour by chaining transforms.
-  const effectiveScale = typeof photoScale === 'number'
-    ? Math.max(0.5, Math.min(2.0, photoScale))
-    : (typeof worker?.photo_scale === 'number' ? worker.photo_scale : 1.0);
+  const dragRef = React.useRef(null); // {startX, startY, startTX, startTY}
 
-  // Reload the download-token URL whenever the effective photo changes.
+  const effective = photoTransform || getPhotoTransform(worker);
+
   React.useEffect(() => {
     let alive = true;
     setBroken(false);
@@ -294,14 +310,6 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY, photoScale, on
     try {
       const fd = new FormData();
       fd.append('file', file);
-      // v57 hotfix — DO NOT set Content-Type manually. When the app
-      // did that (``), axios/the
-      // browser sent that header verbatim WITHOUT the boundary
-      // parameter, and FastAPI's multipart parser rejected the
-      // request with `HTTP 400 "Missing boundary in multipart."`.
-      // Leaving the option off lets axios auto-derive the correct
-      // `multipart/form-data; boundary=...` header from the FormData
-      // instance.
       const { data } = await api.post(`/workers/${worker.id}/photo`, fd);
       setPhotoUrl(data.photo_url || null);
       setPhotoGridfsId(data.photo_gridfs_id || null);
@@ -314,52 +322,89 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY, photoScale, on
   const onFileChange = (e) => {
     const f = e.target.files?.[0];
     if (f) doUpload(f);
-    // Reset so the same file can be re-picked after an error.
     e.target.value = '';
   };
 
   const hasPhoto = !!photoUrl && !broken;
+  const interactive = canEdit && hasPhoto && typeof onChangeTransform === 'function';
+
+  const onWheel = (e) => {
+    if (!interactive) return;
+    e.preventDefault();
+    const step = 0.1;
+    const dir = e.deltaY < 0 ? 1 : -1;
+    const nextZoom = Math.max(0.5, Math.min(3.0, effective.zoom + dir * step));
+    onChangeTransform({ ...effective, zoom: Math.round(nextZoom * 100) / 100 });
+  };
+
+  const onPointerDown = (e) => {
+    if (!interactive) return;
+    e.preventDefault();
+    dragRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      startTX: effective.x, startTY: effective.y,
+      pointerId: e.pointerId,
+    };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+  };
+  const onPointerMove = (e) => {
+    if (!interactive || !dragRef.current) return;
+    const d = dragRef.current;
+    const nx = Math.max(-500, Math.min(500, d.startTX + (e.clientX - d.startX)));
+    const ny = Math.max(-500, Math.min(500, d.startTY + (e.clientY - d.startY)));
+    onChangeTransform({ ...effective, x: nx, y: ny });
+  };
+  const onPointerUp = (e) => {
+    if (!interactive) return;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    dragRef.current = null;
+  };
+  const onDoubleClick = () => {
+    if (!interactive) return;
+    onChangeTransform({ x: 0, y: 0, zoom: 1 });
+  };
 
   return (
     <div className="flex flex-col items-center gap-1.5 shrink-0" data-testid="worker-edit-photo-block">
       {hasPhoto ? (
-        // v58.13.132fq — Slider preview now uses an overflow-hidden
-        // wrapper + oversized img + transform translateY so the
-        // vertical alignment slider produces a VISIBLE crop shift
-        // even when the source photo is square. Diagnostic overlay
-        // was retired this ship — event chain proven wiring OK in
-        // .132fl; the bug was CSS geometry, not React state.
         <div
-          className="w-14 h-14 rounded-xl overflow-hidden shadow-sm border border-white/70 shrink-0 bg-white"
+          className={[
+            'w-24 h-24 rounded-xl overflow-hidden shadow-sm border border-white/70 shrink-0 bg-white',
+            interactive ? 'cursor-grab active:cursor-grabbing select-none' : '',
+          ].join(' ')}
           data-testid="worker-edit-photo"
+          onWheel={onWheel}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onDoubleClick={onDoubleClick}
+          title={interactive ? 'Scroll to zoom · drag to reposition · double-click to reset' : undefined}
         >
           <img
             src={src || ''}
             alt=""
+            draggable={false}
             onError={() => setBroken(true)}
             style={{
               width: '100%',
-              // v58.13.132g2 — 150% (was 120%) gives ~50% total
-              // vertical range so Stephen can push the framing lower
-              // on subjects like Mel where the face sits high in the
-              // source photo. Multiplier scales in lockstep — 2.5×
-              // the .132fs value to keep offset=100 hitting the
-              // fully-shifted-down bottom of the extra height.
-              height: '150%',
+              height: '100%',
               objectFit: 'cover',
-              // v58.13.132hp — Chain scale() BEFORE translateY() so
-              // the zoom happens around the crop centre and the
-              // vertical offset shifts the enlarged image.
-              transform: `translateY(${-effectiveOffset * 0.280}px) scale(${effectiveScale})`,
+              transform: `translate(${effective.x}px, ${effective.y}px) scale(${effective.zoom})`,
               transformOrigin: 'center center',
               display: 'block',
+              userSelect: 'none',
+              pointerEvents: 'none',
             }}
             data-testid="worker-edit-photo-img"
+            data-photo-zoom={effective.zoom}
+            data-photo-x={effective.x}
+            data-photo-y={effective.y}
           />
         </div>
       ) : (
         <div
-          className="w-14 h-14 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-base shrink-0"
+          className="w-24 h-24 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-xl shrink-0"
           data-testid="worker-edit-photo-placeholder"
         >
           {(worker?.first_name?.[0] || '?')}{(worker?.last_name?.[0] || '')}
@@ -390,101 +435,22 @@ function EditWorkerPhoto({ worker, photoOffsetY, onChangeOffsetY, photoScale, on
           </button>
         </>
       )}
-      {/* v58.13.132fd — Vertical alignment slider. Only rendered
-          when a photo exists AND the caller passes a controlled
-          `onChangeOffsetY` handler (i.e. inside the edit form).
-          Bystander render sites (list row, view drawer) show the
-          image without this control. */}
-      {canEdit && hasPhoto && typeof onChangeOffsetY === 'function' && (
-        <SliderWithDiagnostic
-          effectiveOffset={effectiveOffset}
-          onChangeOffsetY={onChangeOffsetY}
-          effectiveScale={effectiveScale}
-          onChangeScale={onChangeScale}
-        />
+      {interactive && (
+        <div className="flex items-center justify-between gap-2 w-full max-w-[160px] text-[10px] text-slate-500 select-none"
+          data-testid="worker-edit-photo-transform-readout">
+          <span className="font-mono">{effective.zoom.toFixed(2)}×</span>
+          <button type="button"
+            onClick={onDoubleClick}
+            data-testid="worker-edit-photo-transform-reset"
+            className="text-[10px] font-semibold text-[#1e4a8c] hover:underline">
+            Reset
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-// v58.13.132fq — Diagnostic overlay retired. The .132fl wiring
-// proof (state / onChange / onInput counters) already demonstrated
-// the React event chain was healthy — the visible-crop bug was CSS
-// geometry (object-cover in a square wrapper + square source = no
-// vertical movement), fixed above by wrapping every photo render
-// site in overflow-hidden + oversized-img + translateY. This is the
-// slimmed-down slider without the counter panel.
-function SliderWithDiagnostic({ effectiveOffset, onChangeOffsetY, effectiveScale, onChangeScale }) {
-  return (
-    <div className="w-full max-w-[240px] flex flex-col gap-1 mt-1"
-      data-testid="worker-edit-photo-align-block">
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor="worker-photo-offset-y"
-          className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
-          Vertical alignment
-        </label>
-        <button type="button"
-          onClick={() => onChangeOffsetY(50)}
-          disabled={effectiveOffset === 50}
-          data-testid="worker-edit-photo-align-reset"
-          className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline whitespace-nowrap">
-          Reset to centre
-        </button>
-      </div>
-      <input
-        id="worker-photo-offset-y"
-        type="range"
-        min="0" max="100" step="1"
-        value={effectiveOffset}
-        onChange={(e) => onChangeOffsetY(Number(e.target.value))}
-        onInput={(e) => onChangeOffsetY(Number(e.target.value))}
-        data-testid="worker-edit-photo-align-slider"
-        data-photo-offset-y={effectiveOffset}
-        className="w-full accent-[#1e4a8c]"
-      />
-      <div className="flex items-center justify-between text-[10px] text-slate-500 select-none">
-        <span>Higher</span>
-        <span>Lower</span>
-      </div>
-      {/* v58.13.132hp — Zoom / scale slider. Companion control to the
-          vertical alignment above. 0.5×..2.0× UI range so the admin
-          can crop-in on a face without a re-upload. */}
-      {typeof onChangeScale === 'function' && (
-        <>
-          <div className="flex items-center justify-between gap-3 mt-2">
-            <label htmlFor="worker-photo-scale"
-              className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
-              Zoom
-            </label>
-            <button type="button"
-              onClick={() => onChangeScale(1.0)}
-              disabled={Math.abs((effectiveScale || 1.0) - 1.0) < 0.01}
-              data-testid="worker-edit-photo-scale-reset"
-              className="text-[10px] font-semibold text-[#1e4a8c] hover:underline disabled:opacity-40 disabled:no-underline whitespace-nowrap">
-              Reset to 1×
-            </button>
-          </div>
-          <input
-            id="worker-photo-scale"
-            type="range"
-            min="0.5" max="2.0" step="0.05"
-            value={effectiveScale}
-            onChange={(e) => onChangeScale(Number(e.target.value))}
-            onInput={(e) => onChangeScale(Number(e.target.value))}
-            data-testid="worker-edit-photo-scale-slider"
-            data-photo-scale={effectiveScale}
-            className="w-full accent-[#1e4a8c]"
-          />
-          <div className="flex items-center justify-between text-[10px] text-slate-500 select-none">
-            <span>Out</span>
-            <span>{(effectiveScale ?? 1).toFixed(2)}×</span>
-            <span>In</span>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 // v58.13.132hp — TFN input with reveal-to-edit + mask-on-blur pattern.
 // Australian TFNs are 9 digits and sensitive PII. When the field has
@@ -563,35 +529,37 @@ function WorkerRowPhoto({ worker }) {
     );
   }
   return (
-    // v58.13.132fq — Row avatar now wraps the img in an
-    // overflow-hidden div and renders the img at h=200% + translateY
-    // so the stored photo_offset_y produces a VISIBLE vertical crop
-    // shift even for square source photos. Prior implementation
-    // relied on `object-position` alone, which cannot produce
-    // movement when the source aspect matches the container aspect
-    // (see .132fq ship memo for the object-cover geometry proof).
+    // v58.13.132hx — Row avatar reads `photo_transform` if present,
+    // else falls back to the legacy `photo_offset_y` + `photo_scale`
+    // pair. Container is a plain 40×40 rounded overflow-hidden with
+    // the photo transform applied directly (no more oversized-img
+    // hack — the drag-based crop already lets the admin position
+    // the frame anywhere).
     <div
       className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 bg-white shrink-0"
       data-testid={`worker-row-photo-${worker.id}`}
       aria-label={`${worker?.first_name || ''} ${worker?.last_name || ''}`.trim() || 'Worker photo'}
     >
-      <img
-        src={src || ''}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        onError={() => setBroken(true)}
-        style={{
-          width: '100%',
-          // v58.13.132g2 — bump 120% → 150% (2.5× multiplier).
-          height: '150%',
-          objectFit: 'cover',
-          // v58.13.132hp — Apply stored `photo_scale` on the list-row photo too.
-          transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.200}px) scale(${typeof worker?.photo_scale === 'number' ? Math.max(0.5, Math.min(2.0, worker.photo_scale)) : 1.0})`,
-          transformOrigin: 'center center',
-          display: 'block',
-        }}
-      />
+      {(() => {
+        const t = getPhotoTransform(worker);
+        return (
+          <img
+            src={src || ''}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setBroken(true)}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transform: `translate(${t.x * 0.4}px, ${t.y * 0.4}px) scale(${t.zoom})`,
+              transformOrigin: 'center center',
+              display: 'block',
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1179,29 +1147,36 @@ function IdCardPhoto({ worker, onExpand }) {
       title={canExpand ? 'Click to expand' : undefined}
       className={`relative group block p-0 border-0 bg-transparent ${canExpand ? 'cursor-pointer' : 'cursor-default'}`}
     >
-      {/* v58.13.132fq — Same overflow-hidden + oversized-img +
-          translateY treatment as the row / edit-modal photos so the
-          stored photo_offset_y produces a visible vertical shift on
-          the ID card regardless of the source photo's aspect ratio. */}
+      {/* v58.13.132hx — ID card photo now reads photo_transform first
+          (falls back to legacy photo_offset_y + photo_scale via the
+          shared helper). Container is a proper 128×128 square with the
+          transform applied directly. */}
       <div
         className={`w-32 h-32 rounded-lg overflow-hidden border border-slate-200 bg-white transition ${canExpand ? 'group-hover:ring-2 group-hover:ring-[#1e4a8c]/50 group-hover:brightness-95' : ''}`}
         data-testid="id-card-photo-img"
       >
-        <img
-          src={src || ''}
-          alt=""
-          onError={() => setBroken(true)}
-          style={{
-            width: '100%',
-            // v58.13.132g2 — bump 120% → 150% (2.5× multiplier).
-            height: '150%',
-            objectFit: 'cover',
-            // v58.13.132hp — Apply stored `photo_scale` on the drawer photo too.
-            transform: `translateY(${-(typeof worker?.photo_offset_y === 'number' ? worker.photo_offset_y : 50) * 0.640}px) scale(${typeof worker?.photo_scale === 'number' ? Math.max(0.5, Math.min(2.0, worker.photo_scale)) : 1.0})`,
-            transformOrigin: 'center center',
-            display: 'block',
-          }}
-        />
+        {(() => {
+          const t = getPhotoTransform(worker);
+          // The ID card is 128px vs 96px in the edit preview, so scale
+          // the pixel translate by 128/96 ≈ 1.33 to preserve visual
+          // consistency between the edit preview and the printed card.
+          const scale = 128 / 96;
+          return (
+            <img
+              src={src || ''}
+              alt=""
+              onError={() => setBroken(true)}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                transform: `translate(${t.x * scale}px, ${t.y * scale}px) scale(${t.zoom})`,
+                transformOrigin: 'center center',
+                display: 'block',
+              }}
+            />
+          );
+        })()}
       </div>
       {canExpand && (
         <span
@@ -1591,18 +1566,18 @@ function EditModal({ worker, onClose, onSaved }) {
     additional_notes: worker.additional_notes || '',
     availability: normaliseAvailability(worker.availability),
     client_ids: Array.isArray(worker.client_ids) ? worker.client_ids : [],
-    // v58.13.132fd — Vertical photo alignment (0..100). Missing on
-    // a legacy record → 50 (centre) via the same coercion the
-    // backend applies on serialise.
-    photo_offset_y: typeof worker.photo_offset_y === 'number' ? worker.photo_offset_y : 50,
-    // v58.13.132hp — Photo zoom (0.5..2.0 UI range, 0.5..2.5 backend clamp).
-    // 1.0 = natural size. Missing on legacy records coerces to 1.0.
-    photo_scale: typeof worker.photo_scale === 'number' ? worker.photo_scale : 1.0,
+    // v58.13.132hx — Photo transform (wheel-zoom + drag). Replaces
+    // the .132fd/.132hp slider pair. `getPhotoTransform` folds the
+    // legacy fields in when the new one is missing so a save on an
+    // old record still writes the new shape.
+    photo_transform: getPhotoTransform(worker),
     // v58.13.132hp — Paneltec-only personal fields (never Simpro-synced).
     usi_number:              worker.usi_number              || '',
     tax_file_number:         worker.tax_file_number         || '',
     emergency_contact_name:  worker.emergency_contact_name  || '',
     emergency_contact_phone: worker.emergency_contact_phone || '',
+    // v58.13.132hx — Split emergency contact into 3 fields.
+    emergency_contact_relationship: worker.emergency_contact_relationship || '',
   });
   const [saving, setSaving] = useState(false);
   const [pickerCompany, setPickerCompany] = useState(null);
@@ -1747,33 +1722,9 @@ function EditModal({ worker, onClose, onSaved }) {
       )}
     </>
   );
-  const inductionsBadges = (
-    <>
-      {certAgg.inductions === 0 ? (
-        <EditSummaryPill tone="manual" testid="edit-section-inductions-empty">No content</EditSummaryPill>
-      ) : (
-        <EditSummaryPill tone="violet" testid="edit-section-inductions-count">
-          {certAgg.inductions} inductions
-        </EditSummaryPill>
-      )}
-      {Object.entries(certAgg.inductionsByFolder)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
-        .map(([folder, n]) => {
-          const label = folder.length > 20 ? folder.slice(0, 18) + '…' : folder;
-          return (
-            <EditSummaryPill
-              key={folder}
-              tone="neutral"
-              testid={`edit-section-inductions-folder-${folder.replace(/\s+/g, '-').toLowerCase()}`}
-              title={folder}
-            >
-              {label} · {n}
-            </EditSummaryPill>
-          );
-        })}
-    </>
-  );
+  // v58.13.132hx — `inductionsBadges` retired with the fast-select
+  // Section. `WorkerInductionsCard` import + this constant removed
+  // from the file.
   const personalBadges = (
     <>
       {personalFilled > 0 ? (
@@ -1815,10 +1766,8 @@ function EditModal({ worker, onClose, onSaved }) {
           <div className="flex items-start gap-3">
             {/* v160.3.4c — photo mirrored from the read-only VIEW modal */}
             {!isNew && <EditWorkerPhoto worker={worker}
-              photoOffsetY={f.photo_offset_y}
-              onChangeOffsetY={(v) => setF((prev) => ({ ...prev, photo_offset_y: v }))}
-              photoScale={f.photo_scale}
-              onChangeScale={(v) => setF((prev) => ({ ...prev, photo_scale: v }))} />}
+              photoTransform={f.photo_transform}
+              onChangeTransform={(v) => setF((prev) => ({ ...prev, photo_transform: v }))} />}
             <div className="min-w-0 flex-1">
               <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">{isNew ? 'New worker' : 'Edit worker'}</div>
               <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">{isNew ? 'Add worker' : fullName(worker)}</h2>
@@ -1933,7 +1882,12 @@ function EditModal({ worker, onClose, onSaved }) {
                       onChange={(e) => setF({ ...f, emergency_contact_name: e.target.value })}
                       data-testid="worker-emergency-contact-name" placeholder="Full name"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></label>
-                  <label><span className="block text-xs font-medium text-slate-700 mb-1">Emergency contact — phone</span>
+                  <label><span className="block text-xs font-medium text-slate-700 mb-1">Emergency contact — relationship</span>
+                    <input value={f.emergency_contact_relationship} maxLength={60}
+                      onChange={(e) => setF({ ...f, emergency_contact_relationship: e.target.value })}
+                      data-testid="worker-emergency-contact-relationship" placeholder="e.g. Spouse, Parent, Sibling"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></label>
+                  <label className="col-span-2"><span className="block text-xs font-medium text-slate-700 mb-1">Emergency contact — phone</span>
                     <input value={f.emergency_contact_phone} maxLength={40}
                       onChange={(e) => setF({ ...f, emergency_contact_phone: e.target.value })}
                       data-testid="worker-emergency-contact-phone" placeholder="+61 400 000 000" type="tel"
@@ -1995,13 +1949,11 @@ function EditModal({ worker, onClose, onSaved }) {
             <CertificationsPanel workerId={worker.id} canEdit={true} />
           )}
 
-          {/* Phase 3.11 — Inductions snapshot from the live matrix */}
-          {!isNew && (
-            <Section icon={Award} title="Inductions" testid="section-inductions"
-              badges={inductionsBadges}>
-              <WorkerInductionsCard workerId={worker.id} workerName={[worker.first_name, worker.last_name].filter(Boolean).join(' ')} />
-            </Section>
-          )}
+          {/* v58.13.132hx — Inductions fast-select removed. The full
+              inductions matrix lives on the Workers > Inductions
+              Matrix tab; the profile-level 2×N grid was noisy and
+              already surfaced under CertificationsPanel's induction
+              pills. */}
 
           {/* v58.13.132fi — Section D · Licences (filtered view over certifications). */}
           {!isNew && (
@@ -2098,6 +2050,14 @@ export default function Workers() {
   }, []);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [search, setSearch] = useState('');
+  // v58.13.132hx — Company/role chip filter. Values:
+  //   `all` (default), `paneltec`, `viatec`, `external`.
+  // Admins are hidden from the 3 bucketed chips (only surface under
+  // "All"). Mapping mirrors backend `bucket_target_role`:
+  //   simpro_company_id="2" → paneltec_civil → Paneltec chip
+  //   simpro_company_id="3" → viatec_traffic  → Viatec chip
+  //   else (manual / other) → external_contractor → External chip
+  const [roleFilter, setRoleFilter] = useState('all');
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState(new Set());
@@ -2203,6 +2163,24 @@ export default function Workers() {
     return w.active ? 0 : 1;
   };
 
+  // v58.13.132hx — Bucket a worker into one of `admin | paneltec |
+  // viatec | external` for the chip filter. Admin comes from the
+  // linked user's role (already loaded into `userByEmail`); other
+  // buckets derive from `simpro_company_id` mirroring the backend
+  // `bucket_target_role` mapping in roles_catalogue.py.
+  const workerBucket = (w) => {
+    const linked = w.email ? userByEmail[w.email.toLowerCase()] : null;
+    const role = ((linked?.role) || '').toLowerCase();
+    if (role === 'admin' || role === 'hseq_lead') return 'admin';
+    const cid = String(w.simpro_company_id || '');
+    if (cid === '2') return 'paneltec';
+    if (cid === '3') return 'viatec';
+    // Company_label fallback for manual rows / legacy shapes.
+    if (w.company_label === 'Paneltec') return 'paneltec';
+    if (w.company_label === 'Viatec') return 'viatec';
+    return 'external';
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = rows;
@@ -2211,6 +2189,11 @@ export default function Workers() {
         const blob = `${fullName(r)} ${r.email || ''} ${r.phone || ''} ${r.mobile || ''} ${r.suburb || ''} ${r.state || ''}`.toLowerCase();
         return blob.includes(q);
       });
+    }
+    // v58.13.132hx — Apply role chip filter. Admins only appear under
+    // `all`; the 3 bucketed chips exclude admins by design.
+    if (roleFilter !== 'all') {
+      list = list.filter((r) => workerBucket(r) === roleFilter);
     }
     // v58.13.132hq — Company chip filter (multi-select).
     // v58.13.132ht — Chip UI removed; filter block deleted.
@@ -2232,7 +2215,7 @@ export default function Workers() {
     });
     return sorted;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, search, sortKey, sortDir, zipStatusByWorker, userByEmail]);
+  }, [rows, search, roleFilter, sortKey, sortDir, zipStatusByWorker, userByEmail]);
 
   const sync = async (company) => {
     setSyncOpen(false);
@@ -2520,6 +2503,31 @@ export default function Workers() {
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name, email, phone or state…" data-testid="search-input"
             className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30" />
+        </div>
+        {/* v58.13.132hx — Paneltec / Viatec / External chip filter.
+            Admins are only surfaced under `All` (never bucketed). */}
+        <div className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 p-0.5"
+          data-testid="workers-role-filter" role="tablist" aria-label="Filter by company">
+          {[
+            { k: 'all',       label: 'All' },
+            { k: 'paneltec',  label: 'Paneltec' },
+            { k: 'viatec',    label: 'Viatec' },
+            { k: 'external',  label: 'External' },
+          ].map((opt) => (
+            <button key={opt.k} type="button"
+              onClick={() => setRoleFilter(opt.k)}
+              data-testid={`workers-role-filter-${opt.k}`}
+              role="tab"
+              aria-selected={roleFilter === opt.k}
+              className={[
+                'px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-wider transition-colors',
+                roleFilter === opt.k
+                  ? 'bg-[#1e4a8c] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60',
+              ].join(' ')}>
+              {opt.label}
+            </button>
+          ))}
         </div>
         <button onClick={() => exportCsv(filtered)} disabled={filtered.length === 0} data-testid="export-csv"
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">

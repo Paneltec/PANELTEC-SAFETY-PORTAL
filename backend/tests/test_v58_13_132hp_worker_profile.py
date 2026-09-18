@@ -191,11 +191,18 @@ def test_new_fields_round_trip_live():
 # ─────────────── Frontend surface ───────────────
 
 
-def test_photo_zoom_slider_rendered():
+def test_photo_tile_wheel_zoom_supersedes_slider_v58_13_132hx():
+    """v58.13.132hx superseded the slider — the tile now uses
+    wheel-zoom + pointer drag persisted in `photo_transform`."""
     src = _read(WORKERS_JSX)
-    assert 'data-testid="worker-edit-photo-scale-slider"' in src
-    assert 'data-testid="worker-edit-photo-scale-reset"' in src
-    # Scale applied at BOTH list-row + drawer + edit-modal render sites.
+    # Old slider testids gone.
+    assert 'worker-edit-photo-scale-slider' not in src
+    assert 'worker-edit-photo-scale-reset' not in src
+    # New transform-based controls present.
+    assert "onWheel" in src
+    assert "onPointerDown" in src
+    assert "getPhotoTransform" in src
+    # Scale still applied at multiple render sites.
     assert src.count("scale(${") >= 3, (
         "Expected at least 3 photo render sites to apply scale()"
     )
@@ -269,8 +276,10 @@ def test_simpro_extract_pii_does_not_touch_new_paneltec_fields():
 # ─────────────── Version lockstep ───────────────
 
 
-def test_version_bumped_to_132hp():
+def test_version_bumped_to_132hp_or_later():
+    """v58.13.132hx superseded the .132hp version pin — accept any
+    .132h* or greater tail."""
     js, sw = _read(VJS), _read(SW)
-    assert re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hp'", js)
-    assert re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hp'", js)
-    assert re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hp'", sw)
+    assert re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[p-z]", js)
+    assert re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[p-z]", js)
+    assert re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[p-z]", sw)
