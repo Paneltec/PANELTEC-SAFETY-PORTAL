@@ -231,8 +231,10 @@ def test_import_pdf_matches_by_filename_live():
 # ─────────────── Version lockstep ───────────────
 
 
-def test_version_bumped_to_132hn():
+def test_version_bumped_to_132hn_or_later():
+    """v58.13.132hy superseded the .132hn version pin — accept any
+    .132h* letter tail from n onward."""
     js, sw = _read(VJS), _read(SW)
-    assert re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hn'", js)
-    assert re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hn'", js)
-    assert re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132hn'", sw)
+    assert re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[n-z]", js)
+    assert re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[n-z]", js)
+    assert re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132h[n-z]", sw)

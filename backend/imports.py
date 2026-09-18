@@ -76,6 +76,25 @@ _FILENAME_MATCHERS: list[tuple[str, str]] = [
     (r"excavator[\s_-]*pre[\s_-]*start",           "Excavator Pre-start"),
     (r"excavation[\s_-]*(?:[/_-]*\s*trench[\s_-]*)?permit",
                                                     "Excavation / Trench Permit"),
+    # v58.13.132hy — Legacy incident-report filename patterns.
+    # Grep of live `form_submissions` + `doc_files` surfaced the
+    # following recurring shapes (Simpro exports + SF-34 family):
+    #   · "Incident Report (####) - <ts>.pdf"
+    #   · "Incident Hazard Report ..." / "2025_SF-34 Incident Hazard Report ..."
+    #   · "Incident_Hazard_Investigation_ICAM_Report ..."
+    #   · "Near Miss Report ..." / "Near-Miss ..."
+    #   · "Injury Report ..." / "Register of Injury ..."
+    #   · "ICAM Report ..." (standalone)
+    # Ordered from most-specific to least-specific so a Near-Miss
+    # PDF isn't routed to Incident Report on the "incident" token.
+    (r"near[\s_-]*miss(?:[\s_-]*report)?",         "Near Miss Report"),
+    (r"icam(?:[\s_-]*report)?",                    "Incident Report"),
+    (r"incident[\s_-]*(?:hazard[\s_-]*)?investigation",
+                                                    "Incident Report"),
+    (r"incident[\s_-]*(?:hazard[\s_-]*)?report",   "Incident Report"),
+    (r"injury[\s_-]*(?:report|register)",          "Incident Report"),
+    (r"register[\s_-]*of[\s_-]*injury",            "Incident Report"),
+    (r"first[\s_-]*aid[\s_-]*(?:injury|report)",   "Incident Report"),
 ]
 
 
@@ -339,7 +358,49 @@ _SEED_TARGETS: list[tuple[str, str, str | None, str]] = [
         "pre_start",
         "Pre-operational daily check for excavators.",
     ),
+    # v58.13.132hy — Incident Report legacy target for filename
+    # matcher fallback. Cloned from any existing incident-category
+    # template in the org (via `_seed_fallback_by_category`) so
+    # orgs that already carry a canonical incident template get a
+    # working target automatically. `Incident Report Form` is a
+    # known sibling in some tenants; the fallback resolver picks
+    # the shortest-named incident-category template as the source.
+    (
+        "Incident Report",
+        "Incident Report Form",
+        "incident",
+        "Legacy Simpro incident report (Incident, Near-Miss, ICAM, Injury).",
+    ),
+    (
+        "Near Miss Report",
+        "Incident Report Form",
+        "near_miss",
+        "Legacy Simpro near-miss report.",
+    ),
 ]
+
+
+# v58.13.132hy — Fallback clone source resolver. When the named
+# `clone_from` template is not present in the org, look for any
+# template whose category matches the seed's category override.
+# Returns the shortest-named match (so we prefer the canonical
+# "Incident Report" over "Test Hot Work Permit" when both are
+# `category=incident`). Missing → None (seed row skipped, same
+# posture as before).
+async def _seed_fallback_by_category(
+    org_id: str, category: str | None, ignore_name: str,
+) -> dict | None:
+    if not category:
+        return None
+    rows = await db.form_templates.find(
+        {"org_id": org_id, "deleted_at": None, "category": category,
+         "name": {"$ne": ignore_name}},
+        {"_id": 0},
+    ).to_list(50)
+    if not rows:
+        return None
+    rows.sort(key=lambda r: (len(r.get("name") or ""), (r.get("name") or "").lower()))
+    return rows[0]
 
 
 async def seed_import_matcher_templates_on_startup() -> None:
@@ -371,6 +432,14 @@ async def seed_import_matcher_templates_on_startup() -> None:
                  "name": {"$regex": f"^{re.escape(clone_from)}$", "$options": "i"}},
                 {"_id": 0},
             )
+            if not source:
+                # v58.13.132hy — Category fallback. Try any template
+                # matching the seed's category override before giving
+                # up. Lets the Incident Report seed fire in orgs that
+                # already carry a different-named incident template.
+                source = await _seed_fallback_by_category(
+                    org_id, category_override, ignore_name=target_name,
+                )
             if not source:
                 log.info(
                     "seed: org=%s missing clone source %r — skipping %r",
