@@ -321,6 +321,21 @@ function PhonePreview({ canEdit }) {
     setRole('worker');
     setSrc(computeExpoResetUrl());
   };
+  // v58.13.132im — Exit preview handler. Clears both preview-scoped
+  // sessionStorage keys (the banner reads paneltec_preview_user; the
+  // mobile app's isPreviewSession() reads paneltec_preview_jwt), then
+  // re-points the iframe at a token-less URL so the RN Web bundle
+  // reloads without carrying any preview credentials into the next
+  // session.
+  const onExitPreview = () => {
+    try {
+      window.sessionStorage.removeItem('paneltec_preview_user');
+      window.sessionStorage.removeItem('paneltec_preview_jwt');
+    } catch (_) { /* private-mode fallback */ }
+    setPreviewWorkerId('');
+    setRole('worker');
+    setSrc(computeExpoResetUrl());
+  };
   const onOpen = () => {
     if (src) window.open(src, '_blank', 'noopener,noreferrer');
   };
@@ -479,11 +494,51 @@ function PhonePreview({ canEdit }) {
           </button>
         </div>
 
+        {/* v58.13.132im — Exit-preview chip.
+            The Expo iframe boot sets `sessionStorage.paneltec_preview_user`
+            + `paneltec_preview_jwt` (see mobile/app/index.tsx). Clearing
+            both keys stops PreviewBanner's 1.5 s poll from firing and
+            restores full-write behaviour on the same-origin session,
+            so subsequent tab navigations that share the localStorage
+            token get to their destination screens un-gated. We also
+            re-point the iframe at a token-less URL so any lingering
+            preview_jwt inside the RN Web app is wiped on reload. */}
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={onExitPreview}
+            data-testid="mobile-preview-exit"
+            className="w-full text-xs font-semibold rounded-lg py-2 border transition"
+            style={{ borderColor: '#EF4444', color: '#B91C1C', background: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#FEE2E2';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'white';
+            }}
+          >
+            Exit preview mode
+          </button>
+        </div>
+
         {/* Phone bezel — dark body (a real phone bezel IS dark), amber
             notch dot to match the mobile team's v58.7 palette. Iframe
             content is unchanged; it inherits the new mobile palette
             when the Expo bundle loads. */}
         <div className="mx-auto mt-4" style={{ width: 320 }}>
+          {/* v58.13.132im — Muted copy immediately above the bezel so
+              admins understand what "preview" actually gives them. */}
+          <p
+            className="mb-2 text-[11px] leading-relaxed"
+            style={{ color: '#6B6B6B' }}
+            data-testid="mobile-preview-help"
+          >
+            <strong style={{ color: '#B91C1C' }}>Read-only preview.</strong>{' '}
+            Tab navigation works; Confirm/Submit actions on forms are
+            disabled server-side to keep audit trails clean. Click{' '}
+            <strong>Exit preview mode</strong> above to interact with
+            the real device flow.
+          </p>
           <div
             className="relative rounded-[36px] p-3 shadow-2xl"
             style={{ height: 680, background: '#1A1A1A' }}

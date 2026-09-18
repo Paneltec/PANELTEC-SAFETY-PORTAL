@@ -56,22 +56,36 @@ async def records_mine(user: dict = Depends(get_current_user)):
     Joins `form_submissions.submitted_by == user.id` against
     `form_templates.category`. Categories with no submissions are
     omitted. Each group returns at most 50 most-recent items.
-    """
-    # Build a template_id → category map (small set — cache-worthy).
-    tpl_cat: dict[str, str] = {}
-    async for t in db.form_templates.find(
-        {"org_id": user["org_id"]}, {"_id": 0, "id": 1, "category": 1}
-    ):
-        tpl_cat[t.get("id") or ""] = t.get("category") or "general"
 
-    submissions = []
-    async for s in db.form_submissions.find(
-        {"org_id": user["org_id"], "submitted_by": user["id"],
-         "deleted_at": None},
-        {"_id": 0, "id": 1, "template_id": 1, "template_name_snapshot": 1,
-         "submitted_at": 1, "status": 1},
-    ).sort("submitted_at", -1).limit(500):
-        submissions.append(s)
+    v58.13.132im — Both Mongo cursor drains are wrapped in
+    `asyncio.wait_for(..., timeout=6.0)` so a slow index scan can
+    never turn into an infinite mobile-home spinner. On timeout we
+    return `{groups: []}` with a warning log; the mobile home
+    already renders an empty-state card in that case.
+    """
+    async def _load():
+        # Build a template_id → category map (small set — cache-worthy).
+        tpl_cat: dict[str, str] = {}
+        async for t in db.form_templates.find(
+            {"org_id": user["org_id"]}, {"_id": 0, "id": 1, "category": 1}
+        ):
+            tpl_cat[t.get("id") or ""] = t.get("category") or "general"
+
+        submissions = []
+        async for s in db.form_submissions.find(
+            {"org_id": user["org_id"], "submitted_by": user["id"],
+             "deleted_at": None},
+            {"_id": 0, "id": 1, "template_id": 1, "template_name_snapshot": 1,
+             "submitted_at": 1, "status": 1},
+        ).sort("submitted_at", -1).limit(500):
+            submissions.append(s)
+        return tpl_cat, submissions
+
+    try:
+        tpl_cat, submissions = await asyncio.wait_for(_load(), timeout=6.0)
+    except asyncio.TimeoutError:
+        log.warning("records/mine hit 6s wait_for — returning empty groups")
+        return {"groups": [], "degraded": True}
 
     groups_map: dict[str, list[dict]] = {}
     for s in submissions:

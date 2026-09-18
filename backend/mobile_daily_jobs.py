@@ -23,11 +23,15 @@ role='admin' only. The previous "admin/manager/hseq_lead/owner"
 permissive gate is retired per Stephen (no managers/HSEQ in this org).
 """
 from __future__ import annotations
+import asyncio
 import hashlib
+import logging
 import os
 import re
 import uuid
 from datetime import datetime, timezone
+
+log = logging.getLogger("paneltec.mobile.daily_jobs")
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -460,35 +464,50 @@ async def get_today_daily_job(user: dict = Depends(get_current_user)) -> dict:
     v58.13.132cf — assignee_id lookup now covers both users and workers
     (matches the .132cf create-path). Snapshot fields (`worker_name`,
     `assigned_by_name`, `preamble`, `pdf_url`) come straight from the
-    doc — no additional lookups needed."""
-    the_date = _today_iso()
-    assignee_id = None
-    if user.get("id"):
-        # Prefer the user-side match (matches the picker's user source).
-        assignee_id = user["id"]
-    if user.get("email") and not await db.daily_job_assignments.find_one(
-        {"org_id": user["org_id"], "worker_id": assignee_id, "date": the_date},
-    ):
-        # Fallback: look up a linked worker row by email.
-        w = await db.workers.find_one(
-            {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
-            {"_id": 0, "id": 1},
+    doc — no additional lookups needed.
+
+    v58.13.132im — Whole lookup wrapped in `asyncio.wait_for(6.0)` so
+    a stalled Mongo query can never freeze the mobile Home tab. On
+    timeout we return the same shape as the "no_job" branch with a
+    `degraded` flag + warning log.
+    """
+    async def _load() -> dict:
+        the_date = _today_iso()
+        assignee_id = None
+        if user.get("id"):
+            # Prefer the user-side match (matches the picker's user source).
+            assignee_id = user["id"]
+        if user.get("email") and not await db.daily_job_assignments.find_one(
+            {"org_id": user["org_id"], "worker_id": assignee_id, "date": the_date},
+        ):
+            # Fallback: look up a linked worker row by email.
+            w = await db.workers.find_one(
+                {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
+                {"_id": 0, "id": 1},
+            )
+            if w:
+                assignee_id = w.get("id")
+
+        if not assignee_id:
+            return {"assignment": None, "status": "no_job"}
+
+        doc = await db.daily_job_assignments.find_one(
+            {"org_id": user["org_id"], "worker_id": assignee_id, "date": the_date},
+            {"_id": 0},
         )
-        if w:
-            assignee_id = w.get("id")
+        if not doc:
+            return {"assignment": None, "status": "no_job"}
 
-    if not assignee_id:
-        return {"assignment": None, "status": "no_job"}
+        status = _derive_status(doc)
+        return {"assignment": _clean_assignment(doc), "status": status}
 
-    doc = await db.daily_job_assignments.find_one(
-        {"org_id": user["org_id"], "worker_id": assignee_id, "date": the_date},
-        {"_id": 0},
-    )
-    if not doc:
-        return {"assignment": None, "status": "no_job"}
-
-    status = _derive_status(doc)
-    return {"assignment": _clean_assignment(doc), "status": status}
+    try:
+        return await asyncio.wait_for(_load(), timeout=6.0)
+    except asyncio.TimeoutError:
+        log.warning(
+            "daily-jobs/today hit 6s wait_for — returning no_job/degraded",
+        )
+        return {"assignment": None, "status": "no_job", "degraded": True}
 
 
 def _derive_status(doc: dict) -> str:
