@@ -13136,7 +13136,33 @@
 //    · SSRA / form_submission AI PDFs — already handled by
 //      `forms_pdf.render_form_submission_pdf` (per-field photo +
 //      signature embed shipped .132hz-a scope). Verified.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-c';
+// v58.13.132ib — Form pickers systemic fix: WorkerPicker honors config.
+//   inline_company_toggle + multi + regression harness.
+//   1. WorkerPicker now renders an inline company-toggle chip row above
+//      the search input when `config.inline_company_toggle: true`, using
+//      `config.company_options` (Paneltec Civil / Viatec). Selecting a
+//      chip filters workers by `simpro_company_id` via new
+//      `company_id` query param on `GET /api/forms/pickers/workers`.
+//      66 of 69 worker_picker fields carry this config — never honored
+//      by the web renderer until now.
+//   2. WorkerPicker now honors `config.multi: true` — value is an
+//      Array<worker>, row click appends (not replaces), each chip has
+//      its own remove `x`. Fixes real data loss on Toolbox Talk
+//      Attendees, JSEA Prepared By, SSRA Rest-of-Team fields
+//      (7 fields across 7 templates).
+//   3. New `scripts/verify_pickers_132ib.py` — Playwright regression
+//      harness that iterates every form template with any picker field,
+//      opens the FillOutModal, and asserts every picker's toggle→row→
+//      chip cycle works. Locks the currently-working behaviour forever.
+//   4. `isAnswerValid` widened to accept `Array<worker>.length > 0`
+//      for `multi: true` worker_pickers.
+//   5. `SubmissionViewer` renders the multi array as a chip cluster
+//      in read-only view.
+//   6. Mobile fill flow deliberately UNCHANGED — /app/mobile/ edit ban.
+//      Stub message at mobile/app/forms/[id]/index.tsx:606 still shows
+//      "<type> field (fill on web app)" — queued for Expo specialist
+//      per user instruction.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ib';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13157,7 +13183,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-c';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-c';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ib';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -123,12 +123,21 @@ function PickerList({ items, render, onPick, loading, emptyState, searchActive, 
 
 function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
                        displaySecondary, fetchUrl, fetchParams, renderRow,
-                       emptyState, pinnedRow, footerNote, testId }) {
+                       emptyState, pinnedRow, footerNote, testId,
+                       // v58.13.132ib — Extension points for WorkerPicker
+                       // (`inline_company_toggle` + `multi`) and any
+                       // future picker that needs to inject affordances
+                       // above the search input or override the pick
+                       // handler (multi-select mode).
+                       topSlot,
+                       hideSelectedChip = false,
+                       onPickOverride = null,
+                       forceOpen = false }) {
   const [q, setQ] = useState('');
   const debounced = useDebounced(q, 250);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!forceOpen);
   const containerRef = useRef(null);
 
   // Close on outside click.
@@ -171,7 +180,7 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
     return () => { cancelled = true; };
   }, [open, debounced, paramsKey, fetchUrl, readOnly, fetchParams]);
 
-  if (value && typeof value === 'object' && value.id) {
+  if (value && typeof value === 'object' && value.id && !hideSelectedChip) {
     return (
       <ChipDisplay icon={icon}
         primary={displayPrimary(value)}
@@ -202,6 +211,7 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
       </button>
       {open && (
         <div className="absolute z-30 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-2">
+          {topSlot}
           <div className="relative">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
@@ -211,7 +221,16 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
           </div>
           {pinnedRow}
           <PickerList items={items} render={renderRow}
-            onPick={(it) => { onChange(it); setOpen(false); setQ(''); }}
+            onPick={(it) => {
+              if (onPickOverride) {
+                // Multi-select path — parent decides append/replace
+                // and whether to keep the dropdown open.
+                onPickOverride(it);
+                setQ('');
+              } else {
+                onChange(it); setOpen(false); setQ('');
+              }
+            }}
             loading={loading} emptyState={emptyState}
             searchActive={!!debounced}
             testId={`${testId}-list`} />
@@ -228,11 +247,145 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
 
 
 // ─────────────── Workers ───────────────
+// v58.13.132ib — Honors two config keys that had been silently ignored
+// on the web renderer:
+//   · `config.inline_company_toggle: true` +
+//     `config.company_options: [{label, simpro_id}]` — renders an
+//     inline chip row above the search input. Selecting a chip
+//     filters workers by that Simpro company id. 66/69 worker_picker
+//     fields across all templates carry this config.
+//   · `config.multi: true` — stores an Array<worker> instead of a
+//     single object. Row clicks APPEND rather than replace. Renders
+//     a chip cluster above the search toggle with per-worker remove.
+//     Fixes real data loss on Toolbox Talk Attendees, JSEA Prepared
+//     By, SSRA Rest-of-Team etc (7 fields, 7 templates).
 export function WorkerPicker(props) {
+  const cfg = (props.field.config || {});
+  const inlineToggle = !!cfg.inline_company_toggle;
+  const companyOptions = Array.isArray(cfg.company_options) ? cfg.company_options : [];
+  const multi = !!cfg.multi;
+  const testId = `worker-picker-${props.field.id}`;
+  // `null` = "All companies" (default when toggle rendered).
+  const [companyFilter, setCompanyFilter] = React.useState(null);
+
+  const values = multi
+    ? (Array.isArray(props.value) ? props.value : [])
+    : props.value;
+
+  // Build the optional top slot — company chips above the search input.
+  const topSlot = inlineToggle && companyOptions.length > 0 ? (
+    <div className="flex flex-wrap gap-1.5 px-1 pt-0.5" data-testid={`${testId}-company-toggle`}>
+      <button type="button"
+        onClick={() => setCompanyFilter(null)}
+        data-testid={`${testId}-company-all`}
+        className={
+          'px-2.5 py-1 rounded-full text-[11px] font-semibold border transition '
+          + (companyFilter === null
+            ? 'bg-slate-900 text-white border-slate-900'
+            : 'bg-white text-slate-600 border-slate-300 hover:border-slate-500')
+        }>
+        All
+      </button>
+      {companyOptions.map((opt) => (
+        <button key={opt.simpro_id} type="button"
+          onClick={() => setCompanyFilter(String(opt.simpro_id))}
+          data-testid={`${testId}-company-${opt.simpro_id}`}
+          className={
+            'px-2.5 py-1 rounded-full text-[11px] font-semibold border transition '
+            + (String(companyFilter) === String(opt.simpro_id)
+              ? 'bg-[#1e4a8c] text-white border-[#1e4a8c]'
+              : 'bg-white text-slate-600 border-slate-300 hover:border-[#1e4a8c]')
+          }>
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  const fetchParams = React.useMemo(
+    () => (companyFilter ? { company_id: companyFilter } : {}),
+    [companyFilter],
+  );
+
+  // Multi-mode: render an above-picker chip cluster + a "hidden chip"
+  // PickerInput below so the dropdown stays interactive after a pick.
+  if (multi) {
+    const selectedList = values || [];
+    const selectedIds = new Set(selectedList.map((w) => w.id));
+
+    const onPickMulti = (w) => {
+      if (selectedIds.has(w.id)) return; // idempotent
+      props.onChange([...selectedList, w]);
+    };
+    const removeAt = (idx) => {
+      const next = selectedList.slice();
+      next.splice(idx, 1);
+      props.onChange(next);
+    };
+
+    return (
+      <div className="space-y-2" data-testid={`${testId}-multi`}>
+        {selectedList.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" data-testid={`${testId}-multi-chips`}>
+            {selectedList.map((w, idx) => (
+              <span key={`${w.id}-${idx}`}
+                data-testid={`${testId}-multi-chip-${w.id}`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs">
+                <HardHat size={11} />
+                <span className="font-semibold">{w.name}</span>
+                {!props.readOnly && (
+                  <button type="button"
+                    onClick={() => removeAt(idx)}
+                    data-testid={`${testId}-multi-remove-${w.id}`}
+                    className="ml-0.5 hover:text-emerald-700"
+                    aria-label={`Remove ${w.name}`}>
+                    <X size={10} />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+        <PickerInput {...props}
+          value={null}
+          hideSelectedChip
+          onPickOverride={onPickMulti}
+          topSlot={topSlot}
+          icon={<HardHat size={13} />}
+          testId={testId}
+          fetchUrl="/forms/pickers/workers"
+          fetchParams={fetchParams}
+          displayPrimary={(v) => v.name}
+          displaySecondary={(v) => [v.trade, v.phone].filter(Boolean).join(' · ')}
+          renderRow={(w) => (
+            <>
+              <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0">
+                {(w.name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">
+                  {w.name}
+                  {selectedIds.has(w.id) && (
+                    <span className="ml-1.5 text-[10px] uppercase tracking-wider text-emerald-700">· selected</span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-500 truncate">{[w.trade, w.phone].filter(Boolean).join(' · ')}</div>
+              </div>
+            </>
+          )}
+        />
+      </div>
+    );
+  }
+
+  // Single-select path — thin wrapper adding `topSlot` + `fetchParams`
+  // to the existing PickerInput contract.
   return (
     <PickerInput {...props}
+      topSlot={topSlot}
+      fetchParams={fetchParams}
       icon={<HardHat size={13} />}
-      testId={`worker-picker-${props.field.id}`}
+      testId={testId}
       fetchUrl="/forms/pickers/workers"
       displayPrimary={(v) => v.name}
       displaySecondary={(v) => [v.trade, v.phone].filter(Boolean).join(' · ')}

@@ -145,16 +145,32 @@ def _worker_display_name(w: dict) -> str:
 # ─────────────── Workers ───────────────
 
 @router.get("/workers")
-async def workers(q: Optional[str] = None, limit: int = Query(200, ge=1, le=500),
+async def workers(q: Optional[str] = None,
+                  # v58.13.132ib — Optional company filter so
+                  # `worker_picker` fields with `config.
+                  # inline_company_toggle` can narrow to one Simpro
+                  # company (e.g. Paneltec Civil `"2"` vs Viatec
+                  # `"3"`). Silent no-op when the caller doesn't
+                  # supply it, preserving pre-.132ib callers.
+                  company_id: Optional[str] = None,
+                  limit: int = Query(200, ge=1, le=500),
                   user: dict = Depends(get_current_user)):
-    key = ("workers", user["org_id"], _norm(q), limit)
+    key = ("workers", user["org_id"], _norm(q), _norm(company_id), limit)
     cached = _cache_get(key)
     if cached:
         return cached
+    flt: dict = {"org_id": user["org_id"], "deleted_at": None, "active": {"$ne": False}}
+    if company_id:
+        # Match Simpro's own company id (used in `company_options` on the
+        # template config), NOT the internal worker_company_id UUID.
+        flt["simpro_company_id"] = str(company_id)
     cur = db.workers.find(
-        {"org_id": user["org_id"], "deleted_at": None, "active": {"$ne": False}},
+        flt,
         {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1,
-         "position": 1, "phone": 1, "mobile": 1, "email": 1},
+         "position": 1, "phone": 1, "mobile": 1, "email": 1,
+         # v58.13.132ib — Surface the company id so the FE can badge
+         # / group workers when the toggle is off.
+         "simpro_company_id": 1, "worker_company_name": 1},
     )
     rows = []
     qn = _norm(q)
@@ -169,6 +185,8 @@ async def workers(q: Optional[str] = None, limit: int = Query(200, ge=1, le=500)
             "id": w.get("id"), "name": name, "trade": trade,
             "phone": w.get("mobile") or w.get("phone"),
             "email": w.get("email"), "active": True,
+            "simpro_company_id": w.get("simpro_company_id"),
+            "company_name": w.get("worker_company_name"),
         })
     rows.sort(key=lambda r: (r["name"] or "").lower())
     payload = {"workers": rows[:limit], "count": len(rows)}

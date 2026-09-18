@@ -13,8 +13,15 @@ export function isAnswerValid(field, value, photoFiles) {
     return !!value?.dataUrl?.startsWith?.('data:image');
   }
   if (t === 'gps') return !!(value && value.lat != null && value.lng != null);
-  if (t === 'worker_picker' || t === 'customer_picker' || t === 'job_picker')
+  if (t === 'worker_picker' || t === 'customer_picker' || t === 'job_picker') {
+    // v58.13.132ib — worker_picker with `config.multi: true` stores
+    // Array<worker>. Valid when there's at least one attendee.
+    if (t === 'worker_picker' && (field.config || {}).multi) {
+      return Array.isArray(value) && value.length > 0
+        && !!value[0] && typeof value[0] === 'object' && !!value[0].id;
+    }
     return !!(value && typeof value === 'object' && value.id);
+  }
   if (t === 'site_picker')
     return !!(value && (value.id || (value.freeform && value.lat != null && value.lng != null)));
   if (t === 'asset_scan' || t === 'vehicle_navixy')
