@@ -32,7 +32,12 @@ const COLS = [
   { key: 'status',      label: 'Status',   get: (r) => r.follow_up_status || r.status || '—' },
 ];
 
-export default function IncidentsTable({ items, isAdmin, onArchive, onUnarchive }) {
+export default function IncidentsTable({ items, isAdmin, onArchive, onUnarchive,
+  // v58.13.132ia-b — Multi-select support. When `selected` (Set<string>)
+  // is provided the table renders a leading checkbox column; toggles fire
+  // `onToggleSelect(id)` and `onToggleSelectAll(ids, checked)`. Parent
+  // owns the selection state so the header bar can show "N selected".
+  selected, onToggleSelect, onToggleSelectAll }) {
   const [sortKey, setSortKey] = useState('occurred_at');
   const [sortDir, setSortDir] = useState('desc');
   const navigate = useNavigate();
@@ -61,6 +66,18 @@ export default function IncidentsTable({ items, isAdmin, onArchive, onUnarchive 
         <table className="min-w-full text-sm">
           <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
             <tr>
+              {selected && (
+                <th className="px-2 py-2 w-8">
+                  <input
+                    type="checkbox"
+                    data-testid="incidents-table-select-all"
+                    aria-label="Select all rows on this page"
+                    checked={sorted.length > 0 && sorted.every((r) => selected.has(r.id))}
+                    onChange={(e) => onToggleSelectAll?.(sorted.map((r) => r.id), e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-[#1e4a8c] focus:ring-[#1e4a8c]"
+                  />
+                </th>
+              )}
               {COLS.map((c) => (
                 <th key={c.key}
                     onClick={() => toggleSort(c.key)}
@@ -89,8 +106,21 @@ export default function IncidentsTable({ items, isAdmin, onArchive, onUnarchive 
                       'border-t border-slate-100 ' +
                       (idx % 2 === 1 ? 'bg-slate-100 ' : 'bg-white ') +
                       (isArchived ? 'opacity-60 saturate-50 ' : '') +
+                      (selected?.has(r.id) ? 'ring-2 ring-inset ring-[#1e4a8c] ' : '') +
                       'hover:bg-blue-50'
                     }>
+                  {selected && (
+                    <td className="px-2 py-1.5 w-8">
+                      <input
+                        type="checkbox"
+                        data-testid={`incidents-table-select-${r.id}`}
+                        aria-label={`Select incident ${r.external_id || r.id}`}
+                        checked={selected.has(r.id)}
+                        onChange={() => onToggleSelect?.(r.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-[#1e4a8c] focus:ring-[#1e4a8c]"
+                      />
+                    </td>
+                  )}
                   {COLS.map((c) => (
                     <td key={c.key} className="px-3 py-1.5 text-slate-700 whitespace-nowrap">
                       {c.get(r) || '—'}
@@ -147,7 +177,7 @@ export default function IncidentsTable({ items, isAdmin, onArchive, onUnarchive 
               );
             })}
             {sorted.length === 0 && (
-              <tr><td colSpan={COLS.length + 1} className="px-3 py-6 text-center text-slate-500">No matching incidents.</td></tr>
+              <tr><td colSpan={COLS.length + 1 + (selected ? 1 : 0)} className="px-3 py-6 text-center text-slate-500">No matching incidents.</td></tr>
             )}
           </tbody>
         </table>

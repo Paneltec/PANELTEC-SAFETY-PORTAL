@@ -522,6 +522,9 @@ api.include_router(hr_employees_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
+# v58.13.132ia-b — Bulk PDF export for Incidents multi-select.
+from incidents_bulk import router as incidents_bulk_router  # noqa: E402
+api.include_router(incidents_bulk_router)
 api.include_router(inspections_router)
 # v160.3.0-adjust-13 — new Capture bucket, sibling of inspections.
 api.include_router(risk_assessments_router)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Upload, FileText } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Archive as ArchiveIcon, Download, X as XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import useDeepLinkOpen from '../lib/useDeepLinkOpen';
@@ -84,6 +84,28 @@ export default function IncidentsList() {
   };
   // v58.13.132ia — Upload PDF modal (Admin-only).
   const [importOpen, setImportOpen] = useState(false);
+  // v58.13.132ia-b — Multi-select. `selected` is a Set of incident ids.
+  // Bulk actions: Archive (fans out per-item POST /incidents/{id}/archive
+  // to preserve the 30-day audit trail) + Download PDFs (zip via
+  // POST /incidents/bulk-pdf-export). No bulk delete surface.
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(null); // 'archive' | 'pdf' | null
+  const toggleSelect = React.useCallback((id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const toggleSelectAll = React.useCallback((ids, checked) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) ids.forEach((i) => next.add(i));
+      else ids.forEach((i) => next.delete(i));
+      return next;
+    });
+  }, []);
+  const clearSelection = React.useCallback(() => setSelected(new Set()), []);
   // v160.3.0-adjust-16g — Client-side search from shared toolbar layers
   // on top of the existing status/category selects. The pre-filtered
   // subset feeds into the toolbar; the toolbar then applies text search
@@ -122,6 +144,68 @@ export default function IncidentsList() {
   }, [load, includeArchivedInFetch, items.length, pageSize]);
 
   const evict = (id) => setItems((prev) => prev.filter((x) => x.id !== id));
+
+  // v58.13.132ia-b — Bulk archive: fans out per-item POSTs so each row
+  // gets its own `archive_audit` entry + `archive_batch_id`. Bypasses
+  // the per-row confirm + toast in `useArchiveActions.onArchive` — we
+  // do a single top-level confirm and a single summary toast instead.
+  const bulkArchive = React.useCallback(async () => {
+    if (!isAdmin || selected.size === 0) return;
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Archive ${selected.size} incident${selected.size === 1 ? '' : 's'}? Records remain recoverable for 30 days.`)) return;
+    setBulkBusy('archive');
+    const ids = Array.from(selected);
+    let ok = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await api.post(`/incidents/${id}/archive`);
+        ok += 1;
+      } catch (e) {
+        failed += 1;
+      }
+    }
+    setBulkBusy(null);
+    clearSelection();
+    if (failed === 0) {
+      toast.success(`Archived ${ok} incident${ok === 1 ? '' : 's'}.`);
+    } else {
+      toast.warning(`Archived ${ok} · ${failed} failed`);
+    }
+    load(includeArchivedInFetch, 0, pageSize, false);
+  }, [isAdmin, selected, clearSelection, load, includeArchivedInFetch, pageSize]);
+
+  const bulkPdfExport = React.useCallback(async () => {
+    if (selected.size === 0) return;
+    setBulkBusy('pdf');
+    try {
+      const r = await api.post('/incidents/bulk-pdf-export',
+        { ids: Array.from(selected) },
+        { responseType: 'blob' });
+      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+      const blobUrl = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `paneltec_incidents_${stamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      const missing = r.headers?.['x-missing-ids'];
+      const exported = r.headers?.['x-exported-count'];
+      if (missing && missing.length > 0) {
+        toast.warning(`Exported ${exported || selected.size} · ${missing.split(',').filter(Boolean).length} skipped`);
+      } else {
+        toast.success(`Downloaded ${exported || selected.size} incident PDF${(exported || selected.size) === 1 ? '' : 's'}.`);
+      }
+      clearSelection();
+    } catch (e) {
+      toast.error(apiError(e) || 'Bulk PDF export failed');
+    } finally {
+      setBulkBusy(null);
+    }
+  }, [selected, clearSelection]);
 
   const preFiltered = useMemo(
     () => items.filter((i) =>
@@ -239,6 +323,53 @@ export default function IncidentsList() {
           </button>
         ))}
       </div>
+      {/* v58.13.132ia-b — Multi-select action bar. Renders inline (not
+          sticky-fixed) so it never overlaps the topbar or sidebar.
+          Shows when at least one row is selected. Bulk archive is
+          admin-only; bulk PDF download is available to any user with
+          incidents.view. */}
+      {selected.size > 0 && (
+        <div
+          data-testid="incidents-selection-bar"
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1e4a8c] bg-[#e8effa] px-3 py-2"
+        >
+          <span data-testid="incidents-selection-count"
+                className="text-sm font-semibold text-[#1e4a8c] mr-2">
+            {selected.size} selected
+          </span>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={bulkArchive}
+              disabled={bulkBusy !== null}
+              data-testid="incidents-bulk-archive-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <ArchiveIcon size={14} />
+              {bulkBusy === 'archive' ? 'Archiving…' : 'Archive'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={bulkPdfExport}
+            disabled={bulkBusy !== null}
+            data-testid="incidents-bulk-pdf-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#1e4a8c] text-sm font-semibold text-white hover:bg-[#143263] disabled:opacity-50"
+          >
+            <Download size={14} />
+            {bulkBusy === 'pdf' ? 'Preparing zip…' : 'Download PDFs'}
+          </button>
+          <button
+            type="button"
+            onClick={clearSelection}
+            disabled={bulkBusy !== null}
+            data-testid="incidents-bulk-clear-btn"
+            className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-slate-600 hover:bg-white/60 disabled:opacity-50"
+          >
+            <XIcon size={12} /> Clear
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2 mb-4">
         <select className={inputClass + ' w-auto'} value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })} data-testid="incident-filter-status">
           <option value="">All statuses</option><option value="open">open</option><option value="in_progress">in progress</option><option value="closed">closed</option>
@@ -297,6 +428,9 @@ export default function IncidentsList() {
             isAdmin={isAdmin}
             onArchive={isAdmin ? onArchive : undefined}
             onUnarchive={isAdmin ? onUnarchive : undefined}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
           />
         ) : (
         <GroupedTilesView
@@ -312,7 +446,26 @@ export default function IncidentsList() {
           dateFn={(i) => i.occurred_at || i.created_at || ''}
           emptyMessage="No matching incidents."
           renderTile={(i, ctx = {}) => (
-            <div data-testid={`incidents-card-wrap-${i.id}`}>
+            <div className="relative" data-testid={`incidents-card-wrap-${i.id}`}>
+            {/* v58.13.132ia-b — Multi-select checkbox overlaid at top-left.
+                Positioned absolute so the underlying CaptureCard layout
+                is untouched. Kept above CaptureCard's own header row
+                via z-10 so the click target isn't stolen by the tile's
+                open-detail handler. */}
+            <label
+              className="absolute top-2 left-2 z-10 inline-flex items-center bg-white/90 backdrop-blur-sm rounded-md border border-slate-200 p-1 cursor-pointer hover:border-[#1e4a8c] shadow-sm"
+              onClick={(e) => e.stopPropagation()}
+              title={selected.has(i.id) ? 'Deselect' : 'Select'}
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(i.id)}
+                onChange={() => toggleSelect(i.id)}
+                data-testid={`incidents-card-select-${i.id}`}
+                aria-label={`Select incident ${i.external_id || i.id}`}
+                className="h-4 w-4 rounded border-slate-300 text-[#1e4a8c] focus:ring-[#1e4a8c]"
+              />
+            </label>
             <CaptureCard
               record={{
                 ...i,

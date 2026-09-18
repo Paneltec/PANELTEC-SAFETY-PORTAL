@@ -13104,7 +13104,16 @@
 //      the same vehicle-list shape sourced from local assets
 //      with `status="local_fleet_fallback"`. FE keeps the
 //      dropdown populated instead of flipping to manual-only.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia';
+// v58.13.132ia-b — Incidents multi-select · Part 2.
+//   - Row checkboxes overlaid on each Incidents CaptureCard (Cards view).
+//   - Sticky "N selected" header bar with Bulk Archive + Bulk PDF Export.
+//   - No bulk delete (destructive — archive only). No bulk status change.
+//   - Bulk archive: reuses existing per-item `POST /api/incidents/{id}/archive`
+//     (30-day soft-delete audit trail already in place since .132ed).
+//   - Bulk PDF export: new backend `POST /api/incidents/bulk-pdf-export`
+//     zips per-record PDFs rendered via `pdf_renderer.render_incident_pdf`.
+//     Streams `application/zip` with `paneltec_incidents_<yyyymmdd>_<hhmmss>.zip`.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-b';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13125,7 +13134,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-b';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
