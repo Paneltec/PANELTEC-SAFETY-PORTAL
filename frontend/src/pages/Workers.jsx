@@ -27,6 +27,7 @@ import InductionsMatrix from '../components/InductionsMatrix';
 // v58.13.132fi — Section D panels (Private & Confidential + Licences).
 import PrivateConfidentialPanel from '../components/workers/PrivateConfidentialPanel';
 import LicencesPanel from '../components/workers/LicencesPanel';
+import InductionsPanel from '../components/workers/InductionsPanel';
 import OpenAsPdfButton from '../components/OpenAsPdfButton';
 // Phase 4.7.1 — surface password/access controls on the Workers list.
 import AccessKebab from '../components/auth/AccessKebab';
@@ -1909,40 +1910,10 @@ function EditModal({ worker, onClose, onSaved }) {
             )}
           </Section>
 
-          {/* Clients */}
-          <Section icon={Users} title="Clients" testid="section-clients"
-            badges={clientsBadges}
-            defaultOpen={false}>
-            <div className="text-xs text-slate-500 mb-2">Populate from SimPRO:</div>
-            <div className="flex items-center gap-2 mb-3 flex-wrap">
-              {CLIENT_SOURCES.map((s) => (
-                <button key={s.value} type="button" onClick={() => setPickerCompany(s.value)}
-                  data-testid={`populate-${s.value}`}
-                  className={`text-xs font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full ${s.tint}`}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            {f.client_ids.length === 0 ? (
-              <div className="text-xs text-slate-400 italic">No clients assigned yet.</div>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {f.client_ids.map((id) => {
-                  const meta = clientCache[id];
-                  return (
-                    <span key={id} data-testid={`client-chip-${id}`}
-                      className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs">
-                      <span className="text-slate-700">{meta?.name || `Customer #${id}`}</span>
-                      {meta?.company_label && <CompanyChip label={meta.company_label} />}
-                      <button type="button" onClick={() => setF({ ...f, client_ids: f.client_ids.filter((x) => x !== id) })}
-                        data-testid={`client-chip-remove-${id}`}
-                        className="text-slate-400 hover:text-[#7a1f33]"><X size={11} /></button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </Section>
+          {/* v58.13.132ic — Clients section removed. `client_ids` is
+              still hydrated from the Simpro sync + shown as a table
+              chip on the Workers list, but the profile-level picker
+              was unused and cluttered the edit modal per Stephen. */}
 
           {/* Certifications */}
           {!isNew && (
@@ -1958,6 +1929,11 @@ function EditModal({ worker, onClose, onSaved }) {
           {/* v58.13.132fi — Section D · Licences (filtered view over certifications). */}
           {!isNew && (
             <LicencesPanel workerId={worker.id} />
+          )}
+
+          {/* v58.13.132ic — Section E · Inductions (filtered view over certifications). */}
+          {!isNew && (
+            <InductionsPanel workerId={worker.id} />
           )}
 
           {/* v58.13.132fi — Section D · Private & Confidential (admin CRUD on worker_hr_documents). */}
@@ -1983,11 +1959,12 @@ function EditModal({ worker, onClose, onSaved }) {
         </div>
       </form>
 
-      {pickerCompany && (
-        <ClientPicker company={pickerCompany} selectedIds={f.client_ids}
-          onClose={() => setPickerCompany(null)}
-          onApply={(ids) => { setF({ ...f, client_ids: ids }); setPickerCompany(null); }} />
-      )}
+      {/* v58.13.132ic — ClientPicker mount removed with the Clients
+          section. `pickerCompany` state kept for now to avoid a
+          rippling delete through the file's state hook order; it's
+          set to `null` and never mutated. Follow-up cleanup can drop
+          it plus the `ClientPicker`/`CLIENT_SOURCES` definitions
+          in a subsequent ship. */}
     </div>
   );
 }

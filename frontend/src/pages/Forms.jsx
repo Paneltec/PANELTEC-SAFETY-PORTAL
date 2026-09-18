@@ -232,10 +232,15 @@ function ColouredRadioGroup({ field, value, onChange, readOnly }) {
 // sibling `select` field labelled "Vehicle Type" / "Plant Type" /
 // "Equipment Type" is filled in, the fleet list filters to vehicles whose
 // derived `vehicle_type` slug matches the selected option.
-function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allValues }) {
+function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allValues, templateName }) {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // v58.13.132ic — SSRA-family templates render the vehicle field as
+  // a plain HTML `<select>` per Stephen's brief. Keeps the same fleet
+  // source + local-fleet-fallback + manual-entry escape hatch — just
+  // trades the search+pick list for a native dropdown.
+  const isSsra = /ssra|site[\s_-]*specific[\s_-]*risk/i.test(templateName || '');
   // v58.13.132gx Phase 4 — Backend now returns `status:
   // "navixy_disconnected"` with an actionable `message` when the
   // Navixy hash has expired + can't auto-refresh. Surface as an
@@ -394,7 +399,32 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
             </div>
           )}
           {error && <div className="text-xs text-rose-600">{error}</div>}
-          {!error && (
+          {!error && isSsra ? (
+            // v58.13.132ic — SSRA templates: native <select>.
+            <select
+              value=""
+              onChange={(e) => {
+                const id = e.target.value;
+                if (!id) return;
+                const v = vehicles.find((x) => String(x.id) === String(id));
+                if (v) onChange({ navixy_id: v.id, label: v.label || null, registration: v.plate || '' });
+              }}
+              data-testid={`vehicle-select-${field.id}`}
+              className="w-full px-3 py-2 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white"
+            >
+              <option value="">
+                {loading ? 'Loading fleet…'
+                  : filtered.length === 0
+                    ? (filterSlug ? `No "${siblingTypeValue}" vehicles match` : 'No vehicles available')
+                    : `Select a vehicle (${filtered.length})…`}
+              </option>
+              {filtered.map((v) => (
+                <option key={v.id} value={v.id} data-testid={`vehicle-select-opt-${v.id}`}>
+                  {v.label || 'Vehicle'}{v.plate ? ` — ${v.plate}` : ''}
+                </option>
+              ))}
+            </select>
+          ) : (!error && (
             <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
               {filtered.length === 0 ? (
                 <div className="px-3 py-3 text-xs text-slate-500 italic">
@@ -411,7 +441,7 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
                 </button>
               ))}
             </div>
-          )}
+          ))}
         </div>
       ) : (
         <div className="flex gap-2">
@@ -431,7 +461,7 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
   );
 }
 
-export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues, submissionId, onStageChange }) {
+export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues, submissionId, onStageChange, templateName }) {
   if (field.type === 'reference_matrix') {
     const { ReferenceMatrixField } = require('../components/forms/BydaFields');
     return <ReferenceMatrixField field={field} />;
@@ -453,7 +483,7 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
   if (field.type === 'gps') return <GpsField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
   if (field.type === 'vehicle_navixy')
     return <VehicleNavixyField field={field} value={value} onChange={onChange} readOnly={readOnly}
-      allFields={allFields} allValues={allValues} />;
+      allFields={allFields} allValues={allValues} templateName={templateName} />;
   if (field.type === 'worker_picker')
     return <WorkerPicker field={field} value={value} onChange={onChange} readOnly={readOnly}
       allFields={allFields} allValues={allValues} />;
@@ -941,6 +971,7 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
                 onStageChange={(fid, files) => setAttachmentFiles((prev) => ({ ...prev, [fid]: files }))}
                 allFields={template.fields || []}
                 allValues={values}
+                templateName={template.name}
                 readOnly={isLocked} />
               {hasErr && (
                 <div data-testid={`field-error-${f.id}`}

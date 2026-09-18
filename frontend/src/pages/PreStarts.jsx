@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Search, X } from 'lucide-react';
+import { Plus, Trash2, Search, X, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
@@ -553,6 +553,7 @@ export default function PreStartsList() {
                     const ws = p.work_summary || '';
                     const shortSummary = ws.length > 90 ? ws.substring(0, 87) + '…' : ws;
                     return (
+                      <div key={p.id} data-testid={`prestarts-card-wrap-${p.id}`}>
                       <CaptureCard
                         key={p.id}
                         record={p}
@@ -571,6 +572,21 @@ export default function PreStartsList() {
                         onUnarchive={isAdmin ? onUnarchive : undefined}
                         openInitially={deepLinkId === p.id}
                       />
+                      {/* v58.13.132ic — Source filename affordance for
+                          records ingested via /api/imports/pdf.
+                          Mirrors the Incidents .132ia + SSRA .132hz
+                          patterns. Text-only display; making it a
+                          clickable preview requires storing the
+                          source PDF in GridFS (queued for .132id). */}
+                      {p.imported_from_pdf && (
+                        <div className="mt-1 text-[10px] text-slate-500 truncate flex items-center gap-1"
+                          data-testid={`prestarts-original-doc-${p.id}`}
+                          title={p.imported_from_pdf}>
+                          <FileText size={10} className="shrink-0 text-slate-400" />
+                          <span className="truncate">Source: {p.imported_from_pdf}</span>
+                        </div>
+                      )}
+                      </div>
                     );
                   })}
                 </CaptureCardGrid>

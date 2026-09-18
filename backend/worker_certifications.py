@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 
@@ -246,6 +246,13 @@ class CertIn(BaseModel):
     issue_date: Optional[str] = Field(default=None, max_length=10)
     expiry_date: Optional[str] = Field(default=None, max_length=10)
     notes: Optional[str] = Field(default="", max_length=2000)
+    # v58.13.132ic — Optional category so the FE Licences / Inductions
+    # tabs can persist their filter dimension when creating a new row.
+    # Accepted values mirror `induction_columns.py`:
+    #   `site_induction` · `competency` · `license` · `general`.
+    # None → the row inherits whatever the `_match_folder_name` /
+    # cert-kind classifier resolves at query time (backward compat).
+    category: Optional[str] = Field(default=None, max_length=32)
 
     @field_validator("issue_date", "expiry_date")
     @classmethod
@@ -264,6 +271,9 @@ class CertPatch(BaseModel):
     issue_date: Optional[str] = Field(default=None, max_length=10)
     expiry_date: Optional[str] = Field(default=None, max_length=10)
     notes: Optional[str] = Field(default=None, max_length=2000)
+    # v58.13.132ic — Allow reclassifying an existing cert between the
+    # Certifications / Licences / Inductions tabs.
+    category: Optional[str] = Field(default=None, max_length=32)
 
     @field_validator("issue_date", "expiry_date")
     @classmethod
@@ -319,6 +329,13 @@ async def create_cert(
         "doc_file_id": None, "doc_folder_id": None,
         "doc_seed_folder": _match_folder_name(body.name),
         "notes": (body.notes or "").strip(),
+        # v58.13.132ic — Persist FE-supplied category so the row lands
+        # on the correct profile tab. Only accept known values;
+        # everything else drops to None (backward compat).
+        "category": (body.category
+                     if body.category in ("site_induction", "competency",
+                                           "license", "general")
+                     else None),
         "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
     }
@@ -432,6 +449,11 @@ async def delete_cert(
 async def upload_cert_file(
     worker_id: str,
     file: UploadFile = File(...),
+    # v58.13.132ic — Optional category hint from the FE Licences /
+    # Inductions tabs so the newly-created cert row lands on the
+    # correct profile tab immediately (not just via filename
+    # heuristic on next load).
+    category: Optional[str] = Form(default=None),
     user: dict = Depends(get_current_user),
 ):
     _require_write(user, action="upload")
@@ -511,6 +533,12 @@ async def upload_cert_file(
         "doc_folder_id": sub_folder["id"],
         "doc_seed_folder": seed_folder["name"],
         "notes": "",
+        # v58.13.132ic — Persist FE-supplied category so Licences /
+        # Inductions upload lands on the correct tab.
+        "category": (category
+                     if category in ("site_induction", "competency",
+                                      "license", "general")
+                     else None),
         "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
     }

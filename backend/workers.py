@@ -1075,36 +1075,56 @@ def _fs_bucket() -> AsyncIOMotorGridFSBucket:
 
 def _canonicalise_image(raw: bytes) -> tuple[bytes, str, dict]:
     """Return (blob, mime, meta). Falls back to (raw, sniffed_mime, {})
-    if Pillow fails — never raises."""
-    meta = {}
+    if Pillow fails — never raises.
+
+    v58.13.132ic — Store the FULL uploaded photo. Previously this
+    function centre-cropped to a square then downscaled to 512x512
+    — which meant `photo_transform = {x, y, zoom}` could only pan
+    inside a pre-cropped thumbnail. Users complained that once a
+    photo was uploaded, the ORIGINAL pixels were gone. Now:
+      · EXIF orientation applied (iPhone photos come in rotated).
+      · Alpha channels flattened onto white for JPEG output.
+      · Saved as JPEG q=95 (near-lossless, ~30% smaller than PNG).
+      · NO centre-crop. NO resize. Original aspect + pixels intact.
+    Downstream tile renders read `photo_transform` and translate/
+    scale via CSS — those already work against the full photo.
+    """
+    meta: dict = {}
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(raw))
         img.load()
-        # EXIF orientation → apply.
+        # EXIF orientation → apply so iPhone portrait shots don't
+        # arrive sideways.
         try:
             from PIL import ImageOps
             img = ImageOps.exif_transpose(img)
         except Exception:
             pass
-        # Convert to RGB for JPEG (drop alpha).
-        if img.mode not in ("RGB", "L"):
+        # Flatten alpha onto white for JPEG output. Preserves the
+        # visible pixels while dropping the transparency channel.
+        if img.mode in ("RGBA", "LA"):
+            from PIL import Image as _PI
+            bg = _PI.new("RGB", img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[-1])
+            img = bg
+        elif img.mode != "RGB":
             img = img.convert("RGB")
-        # Centre-crop square → 512x512.
         w, h = img.size
-        side = min(w, h)
-        left = (w - side) // 2
-        top = (h - side) // 2
-        img = img.crop((left, top, left + side, top + side))
-        img = img.resize((512, 512))
         out = io.BytesIO()
-        img.save(out, format="JPEG", quality=85, optimize=True)
+        img.save(out, format="JPEG", quality=95, optimize=True,
+                 progressive=True)
         blob = out.getvalue()
-        meta = {"resized_to": "512x512", "out_size": len(blob),
-                "resized_by": "Pillow"}
+        meta = {
+            "resized_to": None,          # kept for backward compat with
+                                         # older audit rows.
+            "orig_w": w, "orig_h": h,
+            "out_size": len(blob),
+            "resized_by": "Pillow(full-fidelity)",
+        }
         return blob, "image/jpeg", meta
     except Exception as e:
-        log.warning("workers.photo Pillow-resize failed, storing raw: %s", e)
+        log.warning("workers.photo Pillow re-encode failed, storing raw: %s", e)
         return raw, _sniff_mime(raw[:16]) or "application/octet-stream", {
             "resized_to": None, "out_size": len(raw), "fallback_reason": str(e),
         }

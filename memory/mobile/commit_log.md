@@ -247,3 +247,16 @@
   - Updated form runner FieldRenderer + ReviewField
 - **Files modified**: src/components/pickers/PickerModal.tsx (NEW), src/components/pickers/PickerFields.tsx (NEW), src/services/pickerApi.ts (NEW), app/forms/[id]/index.tsx
 - **Web files referenced**: frontend/src/components/forms/PickerFields.jsx, AssetScanField.jsx, pages/Forms.jsx
+
+## Iteration 11 — v58.13.132dp: QR camera scan + time/date native pickers
+- **Commit**: 1b10d876b0f3b7e0a0381e6954a27dc5bae3557f
+- **Date**: 2026-09-18
+- **Changes**:
+  - AssetScanPicker: full QR camera scan via expo-camera CameraView + parseScanToken + /api/forms/assets/lookup confirmation card + permission denial graceful fallback
+  - Time field: native @react-native-community/datetimepicker, clock icon trigger, default_now auto-seed, HH:MM 24h storage
+  - Date field: upgraded from tap-for-today to real native DateTimePicker with formatted display
+  - ReviewField: added time type
+  - Version: 1.0.7 → 1.0.8, 132di → 132dp
+- **Files modified**: src/components/pickers/PickerFields.tsx, app/forms/[id]/index.tsx, src/lib/version.ts, app.json
+- **No regressions**: Metro bundles clean (1351 modules), no native crash, all lint passes
+

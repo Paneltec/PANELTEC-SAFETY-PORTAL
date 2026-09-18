@@ -13162,7 +13162,44 @@
 //      Stub message at mobile/app/forms/[id]/index.tsx:606 still shows
 //      "<type> field (fill on web app)" — queued for Expo specialist
 //      per user instruction.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ib';
+// v58.13.132ic — Worker profile enhancements batch + fixes.
+//   1. Remove Clients section from the Worker edit modal — Stephen
+//      confirmed the profile-level Clients affordance is not used
+//      day-to-day; Simpro sync populates the underlying `client_ids`.
+//   2. Photo tile RE-DO: backend `_canonicalise_image` no longer
+//      centre-crops or 512x512-resizes on upload. Original pixels are
+//      preserved (EXIF-oriented, RGB, JPEG q=95). The `photo_transform`
+//      = {x, y, zoom} is the only tile-window control — downstream
+//      renders (row avatar / ID card) already apply the transform
+//      to the full photo, so no FE change needed there.
+//   3. Licences panel — feature-parity with Certifications:
+//      · Drop-zone + `+ Add licence` button (uses the same worker
+//        /certifications/upload endpoint as Certifications since
+//        licences already live in worker_certifications).
+//      · Per-row delete (soft-delete via
+//        `DELETE /workers/certifications/{cert_id}`).
+//   4. New Inductions panel — mirror of Licences layout, filtered
+//      to worker_certifications with category='site_induction'.
+//      Full 7-column table (Name/Issuer/Issued/Expiry/Status/File/
+//      Actions) with Edit, Delete, and Add affordances.
+//   5. SSRA Select Vehicle — `VehicleNavixyField` renders a plain
+//      HTML `<select>` when the parent template name matches /ssra/i.
+//      Same fleet source (`/api/forms/fleet/vehicles`), same value
+//      shape (`{navixy_id, label, registration}`), and the local-
+//      fleet-fallback logic from .132hw preserved.
+//   6. Pre-Starts — imported-from-pdf source filename affordance
+//      (matches Incidents .132ia + SSRA .132hz patterns). Text-only
+//      display; making it clickable requires storing the source
+//      PDF in GridFS (deferred to a future ship — see memo).
+//   Investigation deferred:
+//    · ResizeObserver loop error: 10 legitimate ResizeObserver call
+//      sites already wrap the callback in RAF debouncing (spot-
+//      checked Workers.jsx:2396, GroupedTilesView:155). No
+//      recursive-layout smell found. Continuing to monitor.
+//    · Imported-PDF photo re-embed: bigger scope — needs source
+//      PDF stored in GridFS at import time + a new preview source
+//      adapter. Queued as `.132id` scope proposal.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ic';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13183,7 +13220,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ib';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ib';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ic';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

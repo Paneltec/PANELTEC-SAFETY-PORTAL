@@ -1,23 +1,23 @@
 /**
- * v58.13.132fi — Licences panel: filtered view over worker_certifications.
+ * v58.13.132ic — Inductions panel: worker profile Inductions tab.
  *
- * v58.13.132hx — Layout aligned with the Certifications tab. Columns
- * mirror `CertificationsPanel` in `pages/Workers.jsx` exactly:
- *   Name · Issuer · Issued · Expiry · Status · File · Actions
- * Header summary pills swapped to the same `EditSummaryPill`-style
- * chips the Certifications panel uses (total / expired / expiring)
- * so the two sections read as siblings, not cousins. Retains the
- * licence-family filter over `/workers/{id}/certifications`.
+ * Mirrors `LicencesPanel` structure (which mirrors `CertificationsPanel`
+ * in `pages/Workers.jsx`). Filters `worker_certifications` to rows with
+ * `category === 'site_induction'` — the same category `.132gv` writes
+ * when the induction-matrix import + inductions cert-kinds engine
+ * pick up an induction column.
  *
- * v58.13.132ic — Feature-parity with Certifications:
- *   · Drop-zone upload + `+ Add licence (no file)` button.
- *   · Per-row soft-delete (30-day recoverable via
- *     `DELETE /workers/certifications/{cert_id}`).
+ * Columns: Name / Issuer / Issued / Expiry / Status / File / Actions.
+ * Actions per row: Edit (opens shared `CertEditModal`), Delete (soft-
+ * delete via `DELETE /workers/certifications/{cert_id}`). Full-panel
+ * affordances: drop-zone upload + `+ Add induction` (creates a manual
+ * row with `category: 'site_induction'` so the newly-created cert lands
+ * in this list and not in Certifications).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ChevronDown, Edit3, IdCard, Loader2, Plus, Trash2,
-  UploadCloud,
+  AlertTriangle, BookOpenCheck, ChevronDown, Edit3, Loader2, Plus,
+  Trash2, UploadCloud,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
@@ -25,9 +25,6 @@ import { filesUrl } from '../../lib/downloadUrl';
 import OpenAsPdfButton from '../OpenAsPdfButton';
 import CertEditModal from '../certifications/CertEditModal';
 
-// v58.13.132hp — localStorage-per-user persistence for the panel
-// open/closed state. Keyed on workerId so each profile remembers
-// its own choice. Falls back to `true` (open) on first mount.
 function useCollapseState(storageKey) {
   const [open, setOpen] = useState(() => {
     try {
@@ -46,13 +43,6 @@ function useCollapseState(storageKey) {
   return [open, toggle];
 }
 
-// Kept in sync with backend/cert_kinds.py — licence-family slugs.
-const LICENCE_SLUGS = new Set([
-  'hr_licence', 'mr_licence', 'ewp_licence', 'forklift_licence',
-  'working_at_heights', 'first_aid', 'white_card', 'trade_certificate',
-  'drivers_licence',
-]);
-
 function dayDiff(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -68,7 +58,6 @@ function expiryTone(iso) {
   return 'valid';
 }
 
-// v58.13.132hx — Match the Certifications tab formatting exactly.
 function shortDate(iso) {
   if (!iso) return '—';
   try {
@@ -90,12 +79,19 @@ function StatusBadgeCert({ status, tone }) {
   );
 }
 
-export default function LicencesPanel({ workerId }) {
+// v58.13.132ic — `worker_certifications` rows for inductions carry
+// `category: 'site_induction'`. We match on category first (preferred),
+// then fall back to a name-substring heuristic for legacy rows that
+// pre-date the category migration.
+const INDUCTION_CATEGORY = 'site_induction';
+const INDUCTION_NAME_RE = /\b(induction|orient(ation)?|site[\s-]*safety[\s-]*brief)\b/i;
+
+export default function InductionsPanel({ workerId }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [open, toggle] = useCollapseState(`paneltec:licences:open:${workerId}`);
+  const [open, toggle] = useCollapseState(`paneltec:inductions:open:${workerId}`);
   const [editing, setEditing] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -104,17 +100,15 @@ export default function LicencesPanel({ workerId }) {
     try {
       const { data } = await api.get(`/workers/${workerId}/certifications`);
       const all = Array.isArray(data) ? data : (data?.rows || data?.items || []);
-      const licencesOnly = all.filter((r) => {
-        const slug = (r.cert_kind_slug || r.cert_kind || '').toLowerCase();
-        const name = (r.name || '').toLowerCase();
-        return LICENCE_SLUGS.has(slug) || /licen[cs]e|ticket|white card/.test(name);
+      const inductionsOnly = all.filter((r) => {
+        if ((r.category || '').toLowerCase() === INDUCTION_CATEGORY) return true;
+        return INDUCTION_NAME_RE.test(r.name || '');
       });
-      // Sort: expired first (most urgent), then expiring, then valid.
-      licencesOnly.sort((a, b) => {
+      inductionsOnly.sort((a, b) => {
         const rank = { expired: 0, expiring: 1, valid: 2, [null]: 3 };
         return (rank[expiryTone(a.expiry_date)] ?? 3) - (rank[expiryTone(b.expiry_date)] ?? 3);
       });
-      setRows(licencesOnly);
+      setRows(inductionsOnly);
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
@@ -131,20 +125,6 @@ export default function LicencesPanel({ workerId }) {
     return s;
   }, [rows]);
 
-  const openOriginal = async (r) => {
-    if (!r.doc_file_id) return;
-    try {
-      const u = await filesUrl(`/workers/${workerId}/certifications/${r.id}/file`);
-      window.open(u, '_blank', 'noopener,noreferrer');
-    } catch (_e) { toast.error('Unable to open file'); }
-  };
-
-  // v58.13.132ic — Feature-parity with Certifications tab: upload,
-  // manual-add, and soft-delete land per-row here too. All three
-  // hit the shared `/workers/{id}/certifications*` endpoints — the
-  // panel filters by licence-family slug at render time, so a
-  // newly-uploaded licence appears here immediately when its
-  // classified slug lands in `LICENCE_SLUGS`.
   const upload = async (fileList) => {
     if (!fileList || !fileList.length) return;
     setUploading(true);
@@ -153,48 +133,56 @@ export default function LicencesPanel({ workerId }) {
       for (const f of Array.from(fileList)) {
         const form = new FormData();
         form.append('file', f);
-        // Hint the classifier so an ambiguous filename lands on the
-        // Licences tab rather than a generic Certifications bucket.
-        form.append('category', 'license');
+        // v58.13.132ic — Hint the backend that this upload belongs on
+        // the Inductions tab. When the cert-kind engine can't classify
+        // the filename it falls back to `category` from the form field
+        // (see backend/workers.py::upload_certification).
+        form.append('category', INDUCTION_CATEGORY);
         const { data } = await api.post(
           `/workers/${workerId}/certifications/upload`, form,
         );
         lastCertId = data?.cert?.id;
       }
-      toast.success(`${fileList.length} licence${fileList.length === 1 ? '' : 's'} uploaded`);
+      toast.success(`${fileList.length} induction${fileList.length === 1 ? '' : 's'} uploaded`);
       await load();
       if (lastCertId) setEditing(rows.find((r) => r.id === lastCertId) || { id: lastCertId });
     } catch (e) { toast.error(apiError(e)); }
     finally { setUploading(false); }
   };
+
+  const addManual = async () => {
+    try {
+      const { data } = await api.post(`/workers/${workerId}/certifications`,
+        { name: 'New induction', category: INDUCTION_CATEGORY });
+      await load();
+      setEditing(data);
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
   const onDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files?.length) upload(e.dataTransfer.files);
   };
-  const addManual = async () => {
-    try {
-      const { data } = await api.post(`/workers/${workerId}/certifications`,
-        { name: 'New licence', category: 'license' });
-      await load();
-      setEditing(data);
-    } catch (e) { toast.error(apiError(e)); }
-  };
+
   const removeRow = async (r) => {
     // eslint-disable-next-line no-alert
-    if (!window.confirm(`Delete "${r.name || 'licence'}"? Recoverable for 30 days.`)) return;
+    if (!window.confirm(`Delete "${r.name || 'induction'}"? Recoverable for 30 days.`)) return;
     try {
       await api.delete(`/workers/certifications/${r.id}`);
-      toast.success(`${r.name || 'Licence'} removed`);
+      toast.success(`${r.name || 'Induction'} removed`);
       await load();
     } catch (e) { toast.error(apiError(e)); }
   };
 
-  // v58.13.132hx — Header summary pills mirror the Certifications tab
-  // treatment (`EditSummaryPill` style). Kept inline here (rather than
-  // importing) to avoid a cross-file coupling — the shape is 4 lines,
-  // and any drift in the Cert panel is a source-pin candidate for the
-  // ship pytest, not a runtime problem.
+  const openOriginal = async (r) => {
+    if (!r.doc_file_id) return;
+    try {
+      const u = await filesUrl(`/workers/${workerId}/certifications/${r.id}/file`);
+      window.open(u, '_blank', 'noopener,noreferrer');
+    } catch (_e) { toast.error('Unable to open file'); }
+  };
+
   const SummaryPill = ({ tone, children, testid, title }) => {
     const map = {
       total:    'bg-slate-100 text-slate-700 border border-slate-200',
@@ -216,32 +204,32 @@ export default function LicencesPanel({ workerId }) {
 
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white"
-      data-testid="section-licences">
+      data-testid="section-inductions">
       <button type="button"
         onClick={toggle}
         aria-expanded={open}
-        data-testid="section-licences-toggle"
+        data-testid="section-inductions-toggle"
         className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex-wrap text-left hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40">
-        <IdCard size={14} className="text-slate-500" />
-        <span className="text-sm font-semibold text-slate-800 mr-1">Licences</span>
+        <BookOpenCheck size={14} className="text-slate-500" />
+        <span className="text-sm font-semibold text-slate-800 mr-1">Inductions</span>
         {summary.total === 0 ? (
-          <SummaryPill tone="manual" testid="licences-panel-empty">No items</SummaryPill>
+          <SummaryPill tone="manual" testid="inductions-panel-empty">No items</SummaryPill>
         ) : (
-          <SummaryPill testid="licences-panel-total">{summary.total} items</SummaryPill>
+          <SummaryPill testid="inductions-panel-total">{summary.total} items</SummaryPill>
         )}
         {summary.missing > 0 && (
-          <SummaryPill tone="warn" testid="licences-panel-missing"
-            title={`${summary.missing} licence(s) have no attached file`}>
+          <SummaryPill tone="warn" testid="inductions-panel-missing"
+            title={`${summary.missing} induction(s) have no attached file`}>
             <AlertTriangle size={10} /> {summary.missing} missing file
           </SummaryPill>
         )}
         {summary.expired > 0 && (
-          <SummaryPill tone="expired" testid="licences-panel-expired">
+          <SummaryPill tone="expired" testid="inductions-panel-expired">
             {summary.expired} expired
           </SummaryPill>
         )}
         {summary.expiring > 0 && (
-          <SummaryPill tone="pending" testid="licences-panel-expiring">
+          <SummaryPill tone="pending" testid="inductions-panel-expiring">
             {summary.expiring} expiring
           </SummaryPill>
         )}
@@ -249,37 +237,37 @@ export default function LicencesPanel({ workerId }) {
           className={`text-slate-400 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-      <div className="px-4 py-4 border-t border-slate-200 space-y-3" data-testid="section-licences-body">
-        {/* v58.13.132ic — Drop-zone + Add button (Certifications parity). */}
+      <div className="px-4 py-4 border-t border-slate-200 space-y-3" data-testid="section-inductions-body">
+        {/* Drop-zone */}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
-          data-testid="licence-dropzone"
+          data-testid="induction-dropzone"
           className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors ${
-            dragOver ? 'border-[#1e4a8c] bg-[#e6eff9]' : 'border-[#b9d2ec] bg-[#e6eff9]/40 hover:bg-[#e6eff9]'
+            dragOver ? 'border-[#5b21b6] bg-[#f5f3ff]' : 'border-[#ddd6fe] bg-[#f5f3ff]/40 hover:bg-[#f5f3ff]'
           }`}
         >
-          <UploadCloud size={22} className="mx-auto text-[#1e4a8c] mb-1.5" />
-          <div className="text-sm font-medium text-[#1e4a8c]">
-            {uploading ? 'Uploading…' : 'Drop a new licence here (creates a new row)'}
+          <UploadCloud size={22} className="mx-auto text-[#5b21b6] mb-1.5" />
+          <div className="text-sm font-medium text-[#5b21b6]">
+            {uploading ? 'Uploading…' : 'Drop a new induction here (creates a new row)'}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            For licences not already in the list. Up to 50MB. PDF / JPG / PNG.
+            For inductions not already in the list. Up to 50MB. PDF / JPG / PNG.
           </div>
           <input
             ref={fileInputRef} type="file" multiple
             accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
             onChange={(e) => upload(e.target.files)}
-            className="hidden" data-testid="licence-file-input"
+            className="hidden" data-testid="induction-file-input"
           />
         </div>
 
         <div className="flex justify-end">
-          <button type="button" onClick={addManual} data-testid="licence-add-manual"
+          <button type="button" onClick={addManual} data-testid="induction-add-manual"
             className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
-            <Plus size={12} /> Add licence (no file)
+            <Plus size={12} /> Add induction (no file)
           </button>
         </div>
 
@@ -288,12 +276,12 @@ export default function LicencesPanel({ workerId }) {
             <Loader2 size={14} className="animate-spin" /> Loading…
           </div>
         ) : rows.length === 0 ? (
-          <div className="text-center py-6 text-sm text-slate-400 italic" data-testid="licences-empty">
-            No licences recorded yet. Add one via the Certifications section above.
+          <div className="text-center py-6 text-sm text-slate-400 italic" data-testid="inductions-empty">
+            No inductions recorded yet.
           </div>
         ) : (
           <div className="border border-slate-200 rounded-lg overflow-x-auto">
-            <table className="zebra-list w-full text-xs" data-testid="licences-table">
+            <table className="zebra-list w-full text-xs" data-testid="inductions-table">
               <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-3 py-2">Name</th>
@@ -316,15 +304,10 @@ export default function LicencesPanel({ workerId }) {
                   return (
                     <tr key={r.id}
                       className="border-t border-slate-100"
-                      data-testid={`licence-row-${r.id}`}
+                      data-testid={`induction-row-${r.id}`}
                       data-expiry-tone={tone || 'none'}>
                       <td className="px-3 py-2 font-semibold text-slate-900 break-words max-w-[220px]">
                         {r.name || '—'}
-                        {r.licence_number && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            #{r.licence_number}
-                          </div>
-                        )}
                       </td>
                       <td className="px-3 py-2 text-slate-600 hidden md:table-cell break-words max-w-[180px]">
                         {r.issuer || '—'}
@@ -343,11 +326,11 @@ export default function LicencesPanel({ workerId }) {
                           <OpenAsPdfButton
                             source="cert_file"
                             refObj={{ worker_id: workerId, cert_id: r.id }}
-                            filename={r.name || 'certificate'}
+                            filename={r.name || 'induction'}
                             onDownloadOriginal={() => openOriginal(r)}
                             variant="icon"
-                            data-testid={`licence-file-${r.id}`}
-                            className="!bg-[#e6eff9] !text-[#1e4a8c] hover:!bg-[#d8e6f4] !w-6 !h-6"
+                            data-testid={`induction-file-${r.id}`}
+                            className="!bg-[#f5f3ff] !text-[#5b21b6] hover:!bg-[#ede9fe] !w-6 !h-6"
                           />
                         ) : (
                           <span className="text-[10px] text-slate-400 italic" title="no file">—</span>
@@ -357,15 +340,15 @@ export default function LicencesPanel({ workerId }) {
                         <div className="inline-flex items-center gap-1">
                           <button type="button"
                             onClick={() => setEditing(r)}
-                            data-testid={`licence-edit-${r.id}`}
-                            title="Edit licence"
-                            className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
+                            data-testid={`induction-edit-${r.id}`}
+                            title="Edit induction"
+                            className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ede9fe]">
                             <Edit3 size={13} />
                           </button>
                           <button type="button"
                             onClick={() => removeRow(r)}
-                            data-testid={`licence-delete-${r.id}`}
-                            title="Delete licence (30-day recoverable)"
+                            data-testid={`induction-delete-${r.id}`}
+                            title="Delete induction (30-day recoverable)"
                             className="inline-flex items-center justify-center w-6 h-6 rounded bg-rose-50 text-rose-700 hover:bg-rose-100">
                             <Trash2 size={12} />
                           </button>
