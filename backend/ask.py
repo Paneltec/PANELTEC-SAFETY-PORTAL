@@ -19,6 +19,7 @@ name-shaped zero-domain-hit query returns a fallback body via
 recent activity without a second round-trip.
 """
 from __future__ import annotations
+import asyncio
 import json
 import logging
 import os
@@ -583,8 +584,13 @@ async def briefing(workspace_id: Optional[str] = Query(None), user: dict = Depen
     user_text = (f"Question: {question}\n\nEvidence (JSON):\n"
                  f"{json.dumps(llm_evidence, ensure_ascii=False)[:24000]}")
     try:
-        answer = await _claude_json(ASK_SYSTEM, user_text)
-    except HTTPException:
+        # v58.13.132il — Hard 10s timeout so a slow / hung Claude call
+        # can't turn into an infinite web-dashboard spinner. Falls
+        # through to the same "temporarily unavailable" copy below.
+        answer = await asyncio.wait_for(
+            _claude_json(ASK_SYSTEM, user_text), timeout=10.0,
+        )
+    except (HTTPException, asyncio.TimeoutError):
         # Fall back gracefully — caller will still get a useful payload
         answer = {
             "title": "Briefing temporarily unavailable",

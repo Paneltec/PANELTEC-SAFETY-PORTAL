@@ -8,11 +8,15 @@ mobile-auth dep is needed.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from math import asin, cos, radians, sin, sqrt
 from typing import Any, List, Optional
+
+log = logging.getLogger("paneltec.mobile.data")
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -131,6 +135,10 @@ async def ai_briefing(user: dict = Depends(get_current_user)):
 
     # Best-effort LLM upgrade — if `ai._claude_json` is available and
     # the Emergent LLM key is set, upgrade the briefing.
+    # v58.13.132il — Hard 8s timeout so a slow/hanging Claude call
+    # can never turn into an infinite spinner on the mobile home
+    # screen. If the wait_for fires, we keep the fallback string
+    # that was already computed above.
     try:
         if os.environ.get("EMERGENT_LLM_KEY"):
             from ai import _claude_json
@@ -140,15 +148,20 @@ async def ai_briefing(user: dict = Depends(get_current_user)):
                 f"Signals: {open_hazards} hazard reports today. "
                 f"Return JSON: {{\"briefing\": str, \"severity\": \"info\"|\"warn\"}}."
             )
-            resp = await _claude_json(
-                system="You are a concise safety briefing writer.",
-                user_text=prompt,
+            resp = await asyncio.wait_for(
+                _claude_json(
+                    system="You are a concise safety briefing writer.",
+                    user_text=prompt,
+                ),
+                timeout=8.0,
             )
             if isinstance(resp, dict) and resp.get("briefing"):
                 briefing = str(resp["briefing"])[:600]
                 severity = resp.get("severity", severity)
-    except Exception:
-        pass  # keep the hand-crafted fallback
+    except asyncio.TimeoutError:
+        log.warning("mobile briefing LLM upgrade timed out — using fallback")
+    except Exception as _e:
+        log.warning("mobile briefing LLM upgrade failed: %s", _e)
 
     payload = {"briefing": briefing, "severity": severity,
                "generated_at": _now_iso()}
