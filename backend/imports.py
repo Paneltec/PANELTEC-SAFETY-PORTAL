@@ -321,6 +321,23 @@ async def import_pdf(
                                  "method": "adjust-19-drop"},
             "source": "user_import",
         }
+        # v58.13.132ik — Extract raster images out of the legacy PDF
+        # BEFORE we insert the submission doc, so the very first read
+        # already carries the `evidence_photos` array. Best-effort:
+        # a PyMuPDF failure on a corrupt PDF must NEVER block the
+        # import (the text fields are the primary audit artefact).
+        try:
+            from pdf_photo_extractor import extract_and_persist
+            evidence = await extract_and_persist(
+                sub_id, data, org_id=org_id,
+            )
+            if evidence:
+                submission["evidence_photos"] = evidence
+                submission["evidence_photos_count"] = len(evidence)
+                submission["deep_parse_stats"]["evidence_photos"] = len(evidence)
+        except Exception as e:
+            log.warning("evidence-photo extraction failed for %s: %s",
+                        filename, e)
         await db.form_submissions.insert_one(submission)
     finally:
         try: os.unlink(tmp_path)
@@ -336,6 +353,9 @@ async def import_pdf(
         "target_route": CATEGORY_ROUTE.get(matched.get("category")) or "/app/forms",
         "fields_extracted": populated,
         "fields_total": len(matched.get("fields") or []),
+        # v58.13.132ik — Client uses this to render a "N evidence
+        # photos preserved" toast on the post-import redirect.
+        "evidence_photos_count": submission.get("evidence_photos_count", 0),
     }
 
 

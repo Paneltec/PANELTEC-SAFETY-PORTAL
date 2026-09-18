@@ -460,6 +460,59 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
         # Final flush of any trailing scalars.
         _flush()
 
+    # v58.13.132ik — Imported-legacy-PDF evidence-photo tail section.
+    # When the submission was created via `/imports/pdf` and PyMuPDF
+    # pulled raster images out of the source PDF, `evidence_photos`
+    # carries the persisted image list. Render a labelled section so
+    # the AI-generated PDF preserves the original visual evidence.
+    evidence = sub.get("evidence_photos") or []
+    if evidence:
+        story += [Spacer(1, 6),
+                  _section(f"Extracted evidence photos ({len(evidence)})")]
+        story += [_para(
+            "Photos pulled from the original imported PDF. Kept for audit.",
+            "PtMuted",
+        )]
+        # 4-wide thumbnail grid. Same shape as the compliance widget's
+        # photo row, so the layout stays consistent.
+        thumb_w = 1.5 * inch
+        thumb_h = 1.1 * inch
+        row: list = []
+        rows: list[list] = [row]
+        missing: list[str] = []
+        for ph in evidence:
+            if not isinstance(ph, dict):
+                continue
+            path = _photo_path(sub.get("id", ""), ph)
+            if path is None:
+                missing.append(ph.get("filename") or ph.get("stored_name") or "photo")
+                continue
+            if len(row) >= 4:
+                row = []
+                rows.append(row)
+            try:
+                row.append(Image(str(path), width=thumb_w, height=thumb_h,
+                                 kind="proportional"))
+            except Exception:
+                row.append(_para("[photo]", "PtMuted"))
+        while rows[-1] and len(rows[-1]) < 4:
+            rows[-1].append("")
+        if rows and rows[0]:
+            evidence_table = Table(rows, colWidths=[thumb_w + 0.05 * inch] * 4)
+            evidence_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(evidence_table)
+        if missing:
+            story.append(_para(
+                f"[Evidence photos missing on disk: {', '.join(missing)}]",
+                "PtMuted",
+            ))
+
     story += [Spacer(1, 8), _para(
         f"Submission id {sub.get('id', '')[:8]} · The Paneltec Group", "PtSmall")]
 

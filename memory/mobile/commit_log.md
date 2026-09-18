@@ -260,3 +260,15 @@
 - **Files modified**: src/components/pickers/PickerFields.tsx, app/forms/[id]/index.tsx, src/lib/version.ts, app.json
 - **No regressions**: Metro bundles clean (1351 modules), no native crash, all lint passes
 
+
+
+## Iteration 13 — v58.13.132dr: Mobile compliance question widget
+- **Commit**: 88a00650464ecaf3152b1e1171fbe11823fddb18
+- **Date**: 2026-09-18
+- **Changes**:
+  - New: src/components/forms/ComplianceQuestion.tsx — 3-state pill buttons (emerald/rose/slate), info alert, camera photo attach, inline notes textarea (2000 char cap + counter), photo thumbnail grid with lightbox preview
+  - Updated: app/forms/[id]/index.tsx — compliance in FieldRenderer + unsupported filter + ReviewField + required-field check + outer label suppression
+  - Version: 1.0.9 → 1.0.10, 132dq → 132dr
+- **Files modified**: src/components/forms/ComplianceQuestion.tsx (NEW), app/forms/[id]/index.tsx, app.json, src/lib/version.ts
+- **Web files referenced**: frontend/src/components/forms/ComplianceQuestion.jsx
+- **No regressions**: Metro bundles clean, all lint passes, all prior features verified working

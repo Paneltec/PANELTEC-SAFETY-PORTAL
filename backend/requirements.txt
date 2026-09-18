@@ -142,3 +142,4 @@ pdf2image==1.17.0
 pypdfium2==5.13.0
 pytesseract==0.3.13
 pypdf==6.19.0
+pymupdf==1.28.2
