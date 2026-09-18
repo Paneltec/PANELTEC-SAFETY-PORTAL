@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
-import { getStoredUser, getStoredRoleLabel, clearSession } from '../../src/services/auth';
+import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet, authPost } from '../../src/services/apiClient';
 import { MOCK_COMPLIANCE_LIST, MOCK_AD_HOC_JOB } from '../../src/services/mockData';
 
@@ -59,7 +59,13 @@ export default function HomeScreen() {
       getStoredRoleLabel(),
     ]);
     setUser(u);
-    setRoleLabel(rl || '');
+    // In preview mode the stored role label is stale (admin's label) — use
+    // the user object's role_label instead (populated from the preview JWT).
+    if (isPreviewSession()) {
+      setRoleLabel(u?.role_label || u?.role_id || u?.role || '');
+    } else {
+      setRoleLabel(rl || u?.role_label || u?.role_id || u?.role || '');
+    }
 
     // Fetch AI briefing
     setBriefingLoading(true);

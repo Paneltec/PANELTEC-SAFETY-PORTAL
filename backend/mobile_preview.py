@@ -255,6 +255,13 @@ async def mint_preview_user(
             "name": full_name + " (preview)",
             "role": role_id_final,
             "role_id": role_id_final,
+            # v58.13.132ip — Persist the scope label on the synthetic
+            # user object too (not just on the JWT). This is what mobile
+            # splash writes into `sessionStorage.paneltec_preview_user`
+            # via `getStoredUser()`, so home.tsx / other screens that
+            # read the user dict directly (rather than calling
+            # /api/auth/me) can surface the correct label.
+            "role_label": payload.get("role_label"),
             "org_id": org_id,
             "workspace_ids": [],
             "company_id": worker_snapshot.get("simpro_company_id") or scope_company_id,
@@ -273,6 +280,8 @@ async def mint_preview_user(
             "name": label,
             "role": role_id_final,
             "role_id": role_id_final,
+            # v58.13.132ip — see note above.
+            "role_label": payload.get("role_label"),
             "org_id": org_id,
             "workspace_ids": [],
             "company_id": scope_company_id,
