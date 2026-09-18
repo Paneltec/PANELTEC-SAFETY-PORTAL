@@ -142,7 +142,7 @@ export default function ProfileScreen() {
           iconBg="#DBEAFE"
           title="Personal Information"
           subtitle="Contact, address, emergency contacts"
-          onPress={() => {}}
+          onPress={() => router.push('/profile/personal')}
         />
         <ProfileRow
           testID="profile-nav-certs"
@@ -151,7 +151,7 @@ export default function ProfileScreen() {
           iconBg="#D1FAE5"
           title="My Certifications"
           subtitle="Licences and competency cards"
-          onPress={() => {}}
+          onPress={() => router.push('/profile/certifications')}
         />
         <ProfileRow
           testID="profile-nav-inductions"
@@ -160,7 +160,7 @@ export default function ProfileScreen() {
           iconBg="#EDE9FE"
           title="My Inductions"
           subtitle="Site inductions & training records"
-          onPress={() => {}}
+          onPress={() => router.push('/profile/inductions')}
         />
         <ProfileRow
           testID="profile-nav-idcard"
@@ -169,7 +169,7 @@ export default function ProfileScreen() {
           iconBg="#CFFAFE"
           title="Digital ID Card"
           subtitle="Worker ID with QR code"
-          onPress={() => {}}
+          onPress={() => router.push('/profile/id-card')}
         />
 
         <View style={s.divider} />

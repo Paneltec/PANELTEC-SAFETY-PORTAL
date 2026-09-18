@@ -337,7 +337,19 @@ function FilterTree({ data, filter, setFilter, loading, serviceDueCount, sourceC
       </button>
       {(distinctTags || []).length === 0 && (
         <div className="px-3 py-2 text-[11px] text-slate-400 italic" data-testid="fleet-filter-tags-empty">
-          No Navixy tags yet — vehicles show once tags land in Navixy.
+          {tagsReconnectHint && isAdmin ? (
+            <>
+              Navixy session expired.{' '}
+              <a
+                href={tagsReconnectHint}
+                data-testid="fleet-filter-tags-reconnect"
+                className="text-blue-600 hover:text-blue-800 underline not-italic font-medium">
+                Reconnect Navixy →
+              </a>
+            </>
+          ) : (
+            'No Navixy tags yet — vehicles show once tags land in Navixy.'
+          )}
         </div>
       )}
       {(distinctTags || []).map((entry) => {
@@ -711,13 +723,14 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
           </span>
         )}
         {!tagsLoading && tagsError && isAdmin && (
-          <span
+          <a
+            href={tagsReconnectHint || '/app/settings/integrations/navixy'}
             data-testid="fleet-tag-filter-error"
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border border-amber-300 bg-amber-50 text-amber-900"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
             title={tagsError}
           >
-            ⚠ Navixy tags unavailable
-          </span>
+            ⚠ Navixy tags unavailable — Reconnect →
+          </a>
         )}
       </div>
       <div className="overflow-x-auto">
@@ -935,6 +948,10 @@ export default function FleetRegister() {
   const [distinctTags, setDistinctTags] = useState([]);
   const [tagsLoading, setTagsLoading] = useState(true);
   const [tagsError, setTagsError] = useState(null);
+  // v58.13.132ir — Backend sends `reconnect_hint` (route to Navixy admin
+  // page) when the session hash / creds expired. FE renders an admin
+  // CTA linking there instead of the neutral "no tags yet" copy.
+  const [tagsReconnectHint, setTagsReconnectHint] = useState(null);
   const [tagFilter, setTagFilter] = useState('');  // '' = All tags
   const LIMIT = 50;
 
@@ -956,12 +973,14 @@ export default function FleetRegister() {
         setTagSourceByVehicle(srcMap);
         setDistinctTags(r.data?.distinct_tags || []);
         setTagsError(r.data?.error || null);
+        setTagsReconnectHint(r.data?.reconnect_hint || null);
       })
       .catch((e) => {
         if (cancelled) return;
         setTagsByVehicle({});
         setDistinctTags([]);
         setTagsError(apiError(e) || 'Navixy tags unavailable');
+        setTagsReconnectHint('/app/settings/integrations/navixy');
       })
       .finally(() => { if (!cancelled) setTagsLoading(false); });
     return () => { cancelled = true; };

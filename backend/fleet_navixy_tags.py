@@ -72,13 +72,60 @@ async def _navixy_cfg(org_id: str) -> Optional[dict]:
     return hydrate_integration_config(doc)
 
 
-def _graceful_empty(msg: Optional[str], connected: bool) -> dict:
-    """Standard "no tags for you" response shape."""
+async def _collect_local_tags(org_id: str) -> tuple[list[dict], list[dict]]:
+    """v58.13.132ir — Read every asset with a locally-cached `tag_label`
+    (Navixy-linked or not) and return `(items, distinct_tags)` in the
+    same shape as the live path. Used as fallback when Navixy is
+    unreachable so admins keep tag-filter capability against the last
+    known sync. Excludes retired + soft-deleted rows to stay consistent
+    with the default register view."""
+    items: list[dict] = []
+    label_counts: dict[str, int] = {}
+    async for a in db.assets.find(
+        {
+            "org_id": org_id,
+            "deleted_at": None,
+            "status": {"$ne": "retired"},
+            "tag_label": {"$nin": [None, ""]},
+        },
+        {"_id": 0, "id": 1, "tag_label": 1, "navixy_device_id": 1},
+    ):
+        label = (a.get("tag_label") or "").strip()
+        if not label:
+            continue
+        items.append({
+            "vehicle_id": a["id"],
+            "tag_label": label,
+            "source": "navixy" if a.get("navixy_device_id") else "local",
+        })
+        label_counts[label] = label_counts.get(label, 0) + 1
+    distinct = [
+        {"label": lbl, "count": cnt}
+        for lbl, cnt in sorted(label_counts.items(), key=lambda kv: kv[0].lower())
+    ]
+    return items, distinct
+
+
+def _graceful_empty(msg: Optional[str], connected: bool,
+                    items: Optional[list[dict]] = None,
+                    distinct_tags: Optional[list[dict]] = None) -> dict:
+    """Standard "no tags for you" response shape.
+    v58.13.132ir — Accepts optional locally-derived items + distinct_tags
+    so a Navixy outage still surfaces cached tags rather than an empty
+    picker. When local items are present the caller SHOULD null the
+    `error` field so the FE doesn't render an amber warning."""
     return {
-        "items": [],
+        "items": items or [],
         "connected": connected,
         "error": msg,
-        "distinct_tags": [],
+        "distinct_tags": distinct_tags or [],
+        # v58.13.132ir — FE renders a "Reconnect Navixy" CTA when this
+        # is populated. Admins-only surface, gated client-side.
+        "reconnect_hint": (
+            "/app/settings/integrations/navixy"
+            if msg else None
+        ),
+        "tag_list_source": "local_fallback" if (items or distinct_tags) else None,
     }
 
 
@@ -92,14 +139,30 @@ async def get_navixy_tags(user: dict = Depends(get_current_user)):
 
     cfg = await _navixy_cfg(org_id)
     if not cfg:
-        payload = _graceful_empty("Navixy not connected", connected=False)
+        # v58.13.132ir — Fall back to locally-cached tags on every asset
+        # so admins keep tag-filter capability during a Navixy outage /
+        # session-hash expiry. Message downgrades to null when we have
+        # local tags to show, so the FE amber banner stays quiet.
+        local_items, local_distinct = await _collect_local_tags(org_id)
+        payload = _graceful_empty(
+            None if local_items else "Navixy not connected",
+            connected=False,
+            items=local_items,
+            distinct_tags=local_distinct,
+        )
         _cache_set(org_id, payload)
         return payload
 
     base = (cfg.get("api_base_url") or "").rstrip("/")
     h = cfg.get("session_hash")
     if not base or not h:
-        payload = _graceful_empty("Navixy config incomplete", connected=False)
+        local_items, local_distinct = await _collect_local_tags(org_id)
+        payload = _graceful_empty(
+            None if local_items else "Navixy config incomplete",
+            connected=False,
+            items=local_items,
+            distinct_tags=local_distinct,
+        )
         _cache_set(org_id, payload)
         return payload
 
@@ -130,7 +193,15 @@ async def get_navixy_tags(user: dict = Depends(get_current_user)):
             trk_data = trk_resp.json() or {}
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("navixy tag fetch failed for org=%s: %s", org_id, exc)
-        payload = _graceful_empty(f"Navixy fetch failed: {exc}", connected=True)
+        # v58.13.132ir — Same fallback as the pre-flight cfg check:
+        # surface local `tag_label` cache when live fetch dies.
+        local_items, local_distinct = await _collect_local_tags(org_id)
+        payload = _graceful_empty(
+            None if local_items else f"Navixy fetch failed: {exc}",
+            connected=True,
+            items=local_items,
+            distinct_tags=local_distinct,
+        )
         _cache_set(org_id, payload)
         return payload
 

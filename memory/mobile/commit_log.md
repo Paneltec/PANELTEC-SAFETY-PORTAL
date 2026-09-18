@@ -272,3 +272,20 @@
 - **Files modified**: src/components/forms/ComplianceQuestion.tsx (NEW), app/forms/[id]/index.tsx, app.json, src/lib/version.ts
 - **Web files referenced**: frontend/src/components/forms/ComplianceQuestion.jsx
 - **No regressions**: Metro bundles clean, all lint passes, all prior features verified working
+
+
+
+## Iteration 14 — v58.13.132dc: Restore 4 Profile sub-screens
+- **Commit**: f8b45194f20ff5fa0803c206f4ae20579befe1be
+- **Date**: 2026-09-18
+- **Changes**:
+  - Restored `personal.tsx` (Personal Info), `certifications.tsx` (My Certifications), `inductions.tsx` (My Inductions), `id-card.tsx` (Digital ID Card) from archive into `/app/mobile/app/profile/`
+  - Created `profile/_layout.tsx` (Stack navigator) and `profile/certifications/[id].tsx` (detail screen)
+  - Wired `onPress` handlers in `(tabs)/profile.tsx` → `router.push('/profile/personal')`, `/profile/certifications`, `/profile/inductions`, `/profile/id-card`
+  - Registered `<Stack.Screen name="profile" />` in root `_layout.tsx`
+  - Added preview-mode awareness to `personal.tsx`: disables editing, shows read-only fields + preview banner when `isPreviewSession()` is true
+  - API calls use existing `fetchWorkerProfile()`, `fetchInductionMatrix()`, `fetchQrPngBase64()` which auto-scope via preview JWT
+- **Files created**: app/profile/_layout.tsx, app/profile/personal.tsx, app/profile/certifications.tsx, app/profile/inductions.tsx, app/profile/id-card.tsx, app/profile/certifications/[id].tsx
+- **Files modified**: app/(tabs)/profile.tsx, app/_layout.tsx
+- **Web files referenced**: Archive: app/_archived_pre_132cz/profile_stack/*
+- **No regressions**: Metro bundles clean, all lint passes, all 4 screens verified rendering with live API data
