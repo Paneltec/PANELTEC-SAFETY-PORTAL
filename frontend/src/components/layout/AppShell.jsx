@@ -104,7 +104,9 @@ const NAV = [
     // to match backend `_WRITE_ROLES` (admin / manager / hseq_lead).
     { to: '/app/pre-starts/bulk-import', label: 'Bulk Import from URL', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-pre-starts-bulk-import', requiresCan: ['pre_starts', 'edit'], pastel: 'peach' },
     { to: '/app/site-diary', label: 'Site Diary', icon: Notebook24Regular, iconActive: Notebook24Filled, testid: 'nav-site-diary', resource: 'site_diary', pastel: 'butter' },
-    { to: '/app/hazards', label: 'Hazard Reports', icon: Warning24Regular, iconActive: Warning24Filled, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
+    // v58.13.132ia — Hazard Reports merged into Incident Reports.
+    // Sidebar entry retired; deep-link /app/hazards redirects to
+    // /app/incidents?type=hazard (see App.js).
     { to: '/app/incidents', label: 'Incident Reports', icon: Alert24Regular, iconActive: Alert24Filled, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
     { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheckmark24Regular, iconActive: ShieldCheckmark24Filled, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
     // v58.13.106 / v58.13.109b — Site Visitors register. Single source

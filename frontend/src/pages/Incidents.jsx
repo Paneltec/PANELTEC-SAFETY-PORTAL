@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import useDeepLinkOpen from '../lib/useDeepLinkOpen';
@@ -19,10 +19,27 @@ import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, i
 // Phase 4.17 v134.1 — Dashboard tab.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
+// v58.13.132ia — Upload PDF affordance reuses the shared modal.
+import PdfImportModal from '../components/imports/PdfImportModal';
+import { useSearchParams } from 'react-router-dom';
 
 const CATS = [
   ['near_miss', 'Near miss'], ['first_aid', 'First aid'], ['medical', 'Medical'],
   ['ltc', 'Lost-time'], ['env', 'Environmental'], ['property', 'Property'],
+  // v58.13.132ia — Hazards merged into Incidents.
+  ['hazard', 'Hazard'],
+];
+
+// v58.13.132ia — Type filter chips. `injury` unions first_aid + medical + ltc
+// so admins get one grouped bucket for personal-injury records without a
+// data migration on the existing category values.
+const TYPE_CHIPS = [
+  { key: 'all',        label: 'All',           match: null },
+  { key: 'hazard',     label: 'Hazard',        match: (c) => c === 'hazard' },
+  { key: 'near_miss',  label: 'Near Miss',     match: (c) => c === 'near_miss' },
+  { key: 'injury',     label: 'Injury',        match: (c) => c === 'first_aid' || c === 'medical' || c === 'ltc' },
+  { key: 'property',   label: 'Property',      match: (c) => c === 'property' },
+  { key: 'env',        label: 'Environmental', match: (c) => c === 'env' },
 ];
 
 // v58.12.7 — Per-CATS-key palette override for GroupedTilesView. Reads
@@ -55,6 +72,18 @@ export default function IncidentsList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [filter, setFilter] = useState({ status: '', category: '' });
+  // v58.13.132ia — Type filter chip (client-side over `category` field).
+  // Reads from URL param `?type=<chip>` so /app/hazards can redirect here
+  // with `?type=hazard` and land on the pre-filtered list.
+  const [sp, setSp] = useSearchParams();
+  const typeChip = TYPE_CHIPS.some((c) => c.key === sp.get('type')) ? sp.get('type') : 'all';
+  const setTypeChip = (k) => {
+    const next = new URLSearchParams(sp);
+    if (k === 'all') next.delete('type'); else next.set('type', k);
+    setSp(next, { replace: true });
+  };
+  // v58.13.132ia — Upload PDF modal (Admin-only).
+  const [importOpen, setImportOpen] = useState(false);
   // v160.3.0-adjust-16g — Client-side search from shared toolbar layers
   // on top of the existing status/category selects. The pre-filtered
   // subset feeds into the toolbar; the toolbar then applies text search
@@ -97,14 +126,16 @@ export default function IncidentsList() {
   const preFiltered = useMemo(
     () => items.filter((i) =>
       (!filter.status || i.follow_up_status === filter.status) &&
-      (!filter.category || i.category === filter.category)),
-    [items, filter.status, filter.category]
+      (!filter.category || i.category === filter.category) &&
+      // v58.13.132ia — Type chip filter (client-side).
+      (typeChip === 'all' || (TYPE_CHIPS.find((c) => c.key === typeChip)?.match?.(i.category) ?? true))),
+    [items, filter.status, filter.category, typeChip]
   );
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="incidents-list">
       <PageHeader crumb="Capture / Incident Reports" title="Incident Reports"
-        subtitle="Structured incident capture with witness statements and evidence."
+        subtitle="Structured incident capture — including hazards, near misses, injuries and property/environmental events."
         action={
           <div className="flex items-center gap-2">
             {isAdmin && (
@@ -117,7 +148,20 @@ export default function IncidentsList() {
                 Archive…
               </button>
             )}
-            <NewButton to="/app/incidents/new" label="New incident" testid="incident-create-btn" />
+            {/* v58.13.132ia — "New incident" record button retired from
+                the header per Stephen's redesign brief. Field records
+                land here via the mobile capture flow + the new
+                Upload PDF affordance below. */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                data-testid="incidents-upload-pdf-btn"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold hover:bg-[#143263]"
+              >
+                <Upload size={14} /> Upload PDF
+              </button>
+            )}
           </div>
         } />
 
@@ -172,6 +216,29 @@ export default function IncidentsList() {
           />
         </TabsContent>
         <TabsContent value="list" className="mt-4">
+      {/* v58.13.132ia — Type filter chip row. Client-side filter on
+          `category` (see TYPE_CHIPS + preFiltered above). URL-persisted
+          via `?type=<chip>`. Admins hidden from the 3 bucketed chips
+          are N/A here — the chips group by incident category, not
+          role. */}
+      <div className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 p-0.5 mb-3"
+        data-testid="incidents-type-filter" role="tablist" aria-label="Filter by incident type">
+        {TYPE_CHIPS.map((c) => (
+          <button key={c.key} type="button"
+            onClick={() => setTypeChip(c.key)}
+            data-testid={`incidents-type-filter-${c.key}`}
+            role="tab"
+            aria-selected={typeChip === c.key}
+            className={[
+              'px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-wider transition-colors',
+              typeChip === c.key
+                ? 'bg-[#1e4a8c] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60',
+            ].join(' ')}>
+            {c.label}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-wrap gap-2 mb-4">
         <select className={inputClass + ' w-auto'} value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })} data-testid="incident-filter-status">
           <option value="">All statuses</option><option value="open">open</option><option value="in_progress">in progress</option><option value="closed">closed</option>
@@ -245,6 +312,7 @@ export default function IncidentsList() {
           dateFn={(i) => i.occurred_at || i.created_at || ''}
           emptyMessage="No matching incidents."
           renderTile={(i, ctx = {}) => (
+            <div data-testid={`incidents-card-wrap-${i.id}`}>
             <CaptureCard
               record={{
                 ...i,
@@ -266,6 +334,19 @@ export default function IncidentsList() {
               onUnarchive={isAdmin ? onUnarchive : undefined}
               openInitially={deepLinkId === i.id}
             />
+            {/* v58.13.132ia — "View original document" affordance.
+                Mirrors the .132hz SSRA pattern: show source filename
+                inline when the record was ingested via /api/imports/pdf.
+                Missing → line hidden. */}
+            {i.imported_from_pdf && (
+              <div className="mt-1 text-[10px] text-slate-500 truncate flex items-center gap-1"
+                data-testid={`incidents-original-doc-${i.id}`}
+                title={i.imported_from_pdf}>
+                <FileText size={10} className="shrink-0 text-slate-400" />
+                <span className="truncate">Source: {i.imported_from_pdf}</span>
+              </div>
+            )}
+            </div>
           )}
         />
         )}
@@ -286,6 +367,13 @@ export default function IncidentsList() {
       }
         </TabsContent>
       </Tabs>
+
+      {/* v58.13.132ia — Upload PDF modal. Reuses shared /api/imports/pdf. */}
+      <PdfImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => load(includeArchivedInFetch, 0, pageSize, false)}
+      />
     </div>
   );
 }

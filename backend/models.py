@@ -17,7 +17,7 @@ Role = Literal["worker", "supervisor", "hseq_lead", "auditor", "manager", "admin
 SwmsStatus = Literal["draft", "submitted", "approved", "rejected", "changes_requested"]
 HazardStatus = Literal["open", "in_progress", "closed"]
 HazardSeverity = Literal["low", "medium", "high", "critical"]
-IncidentCategory = Literal["near_miss", "first_aid", "medical", "ltc", "env", "property"]
+IncidentCategory = Literal["near_miss", "first_aid", "medical", "ltc", "env", "property", "hazard"]
 IncidentStatus = Literal["open", "in_progress", "closed"]
 ChecklistResponse = Literal["pass", "fail", "na"]
 

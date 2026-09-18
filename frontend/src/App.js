@@ -276,7 +276,13 @@ function App() {
               <Route path="site-diary" element={<SiteDiaryList />} />
               <Route path="site-diary/new" element={<SiteDiaryNew />} />
 
-              <Route path="hazards" element={<HazardsList />} />
+              {/* v58.13.132ia — Hazard Reports merged into Incidents.
+                  Legacy /app/hazards deep-links redirect to
+                  /app/incidents?type=hazard for one release cycle so
+                  bookmarks land on the pre-filtered chip. HazardNew
+                  route retained so the mobile capture flow keeps
+                  posting to the same URL until the mobile app bumps. */}
+              <Route path="hazards" element={<Navigate to="/app/incidents?type=hazard" replace />} />
               <Route path="hazards/new" element={<HazardNew />} />
 
               <Route path="incidents" element={<IncidentsList />} />

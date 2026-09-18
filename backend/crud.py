@@ -850,7 +850,13 @@ hazards_router    = build_router("hazards",      "hazards",             HazardIn
                                  # surface on the Hazard Reports capture tab.
                                  mirror_categories=["hazard", "near_miss"])
 incidents_router  = build_router("incidents",    "incidents",           IncidentIn,    "incidents",    "incident",
-                                 mirror_categories=["incident"])
+                                 # v58.13.132ia — Hazard Reports merged into Incidents.
+                                 # `hazard` + `near_miss` mirror categories join the mirror
+                                 # projection so field-captured hazard-family form_submissions
+                                 # surface on the Incidents Capture tab. Native `hazards`
+                                 # collection rows are physically migrated by
+                                 # `migrations/merge_hazards_into_incidents_v58_13_132ia.py`.
+                                 mirror_categories=["incident", "hazard", "near_miss"])
 inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections",  "inspection",
                                   mirror_categories=["inspection"])
 # v160.3.0-adjust-13 — Risk Assessments Capture bucket. Reads submissions
