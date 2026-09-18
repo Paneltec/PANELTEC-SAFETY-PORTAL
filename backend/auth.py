@@ -240,12 +240,38 @@ async def get_current_user(
         preview_worker_id = payload.get("preview_worker_id")
         preview_scope = payload.get("preview_scope")
         preview_modules = payload.get("preview_modules") or []
+        # v58.13.132in — Look up the previewed worker's real name so
+        # /api/auth/me returns "Matthew Wells (preview)" instead of
+        # the useless "Preview · worker" placeholder. Also carry
+        # `role_label` — scope-aware so the mobile Profile screen has
+        # a human-readable role even when the JWT `role_id` collapsed
+        # to `worker` via the scope aggregation in mobile_preview.
+        preview_role_label = payload.get("role_label")
+        preview_name: Optional[str] = None
+        if preview_worker_id:
+            _w = await db.workers.find_one(
+                {"id": preview_worker_id, "org_id": payload["org_id"],
+                 "deleted_at": None},
+                {"_id": 0, "first_name": 1, "last_name": 1, "email": 1},
+            )
+            if _w:
+                first = (_w.get("first_name") or "").strip()
+                last = (_w.get("last_name") or "").strip()
+                full = (first + " " + last).strip()
+                if full:
+                    preview_name = f"{full} (preview)"
         synthetic = {
             "id": payload["sub"],
             "email": worker_email or f"{payload['sub']}@preview.paneltec.local",
-            "name": f"Preview · {payload.get('role_id') or 'role'}",
+            "name": preview_name or f"Preview · {payload.get('role_id') or 'role'}",
             "role": payload.get("role") or "worker",
-            "role_id": payload.get("role_id"),
+            # v58.13.132in — Expose the scope on `role_id` when present so
+            # the mobile Profile fallback cascade (role_label ?? role_id
+            # ?? role) lands on `paneltec_civil` / `viatec_traffic` /
+            # `admin` / `external_contractor` — not the collapsed
+            # `worker` string.
+            "role_id": preview_scope or payload.get("role_id"),
+            "role_label": preview_role_label,
             "org_id": payload["org_id"],
             "workspace_ids": [],
             "company_id": None,

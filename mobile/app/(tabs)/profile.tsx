@@ -11,7 +11,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
 import Wordmark from '../../src/components/Wordmark';
-import { getStoredUser, getStoredRoleLabel, clearSession } from '../../src/services/auth';
+import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet } from '../../src/services/apiClient';
 import { MOBILE_BUNDLE_VERSION } from '../../src/lib/version';
 
@@ -45,8 +45,14 @@ export default function ProfileScreen() {
     if (res.ok) {
       setUser(res.data);
       setDataSource('api');
-      const rl = await getStoredRoleLabel();
-      setRoleLabel(rl || res.data.role_id || res.data.role || '');
+      // In preview mode the stored role label is stale (belongs to the admin,
+      // not the previewed worker) — always use the API response instead.
+      if (isPreviewSession()) {
+        setRoleLabel(res.data.role_label || res.data.role_id || res.data.role || '');
+      } else {
+        const rl = await getStoredRoleLabel();
+        setRoleLabel(rl || res.data.role_label || res.data.role_id || res.data.role || '');
+      }
     } else if ('expired' in res && res.expired) {
       await clearSession();
       router.replace('/(auth)/pin-entry');
@@ -54,14 +60,18 @@ export default function ProfileScreen() {
     } else {
       // Fall back to stored session data
       const storedUser = await getStoredUser();
-      const rl = await getStoredRoleLabel();
       if (storedUser?.name) {
         setUser(storedUser);
         setDataSource('stored');
       } else {
         setDataSource('none');
       }
-      setRoleLabel(rl || '');
+      if (isPreviewSession()) {
+        setRoleLabel(storedUser?.role_label || storedUser?.role_id || storedUser?.role || '');
+      } else {
+        const rl = await getStoredRoleLabel();
+        setRoleLabel(rl || storedUser?.role_label || storedUser?.role_id || storedUser?.role || '');
+      }
     }
     setLoading(false);
   }, [router]);

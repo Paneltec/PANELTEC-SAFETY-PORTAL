@@ -229,6 +229,14 @@ async def mint_preview_user(
         "iat": now,
         "exp": exp,
     }
+    # v58.13.132in — Human-readable role label persisted on the JWT so
+    # `get_current_user` can echo it back on `/api/auth/me` without a
+    # per-request lookup. SCOPE_META already carries the label; role_id
+    # falls back to a Title-cased split of the role id.
+    if scope and scope in SCOPE_META:
+        payload["role_label"] = SCOPE_META[scope]["label"]
+    elif role_id:
+        payload["role_label"] = role_id.replace("_", " ").title()
     if scope:
         payload["preview_scope"] = scope
         payload["preview_modules"] = modules_override or []
