@@ -110,11 +110,14 @@ def test_doc_library_folder_has_archived_split_and_actions():
 # ── Version lockstep ────────────────────────────────────────────────
 
 def test_version_pin_v132if():
+    import re as _re
     v = _r(FRONTEND / "src" / "lib" / "version.js")
     sw = _r(FRONTEND / "public" / "service-worker.js")
-    assert "'paneltec-v160.3.9.58.13.132if'" in v
-    assert v.count("'paneltec-v160.3.9.58.13.132if'") >= 2  # RUNNING + EXPECTED
-    assert "'paneltec-v160.3.9.58.13.132if'" in sw
+    # Forward-safe: accept .132if or any later `.132<letter+letter>` pin.
+    pat = r"paneltec-v160\.3\.9\.58\.13\.132[i-z][f-z]?"
+    assert _re.search(rf"RUNNING_VERSION = '{pat}'", v)
+    assert _re.search(rf"EXPECTED_CACHE_VERSION = '{pat}'", v)
+    assert _re.search(rf"CACHE_VERSION = '{pat}'", sw)
 
 
 # ── Behavioural — mongo-backed round-trip on the auto-archive sweep ─

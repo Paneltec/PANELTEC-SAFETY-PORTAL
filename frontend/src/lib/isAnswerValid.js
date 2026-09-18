@@ -28,6 +28,15 @@ export function isAnswerValid(field, value, photoFiles) {
     return !!(value && (value.asset_id || value.id));
   if (t === 'date' || t === 'datetime' || t === 'radio' || t === 'select')
     return typeof value === 'string' && value.trim().length > 0;
+  // v58.13.132ig — Compliance question is a 3-state field. Valid iff a
+  // status has been picked. Empty photos / notes are OK — those are
+  // captured in .132ih/.132ii.
+  if (t === 'compliance') {
+    if (!value || typeof value !== 'object') return false;
+    return value.status === 'compliant'
+      || value.status === 'at_risk'
+      || value.status === 'na';
+  }
   if (t === 'number')
     return value !== '' && value != null && !Number.isNaN(Number(value));
   // text / textarea / fallback

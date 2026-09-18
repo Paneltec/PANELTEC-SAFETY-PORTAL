@@ -28,6 +28,8 @@ import { categoryColor } from '../lib/templateColors';
 import TemplateBuilder from '../components/forms/TemplateBuilder';
 import AssetScanField, { buildAutofillFromAsset } from '../components/forms/AssetScanField';
 import { WorkerPicker, JobPicker, SitePicker, CustomerPicker } from '../components/forms/PickerFields';
+// v58.13.132ig — Compliance question widget (Compliant / At Risk / N/A).
+import ComplianceQuestion from '../components/forms/ComplianceQuestion';
 
 // v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
@@ -526,6 +528,9 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
       </select>
     );
   if (field.type === 'radio') return <ColouredRadioGroup field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+  // v58.13.132ig — First-class Compliant / At Risk / N/A question widget.
+  if (field.type === 'compliance')
+    return <ComplianceQuestion field={field} value={value} onChange={onChange} readOnly={readOnly} />;
   if (field.type === 'date')
     return <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={readOnly}
       data-testid={`field-${field.id}`}

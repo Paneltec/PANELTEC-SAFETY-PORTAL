@@ -106,7 +106,15 @@ ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        # `actions` is a repeatable follow-up-task row with
                        # server-stamped id, frozen actionee_name, and a
                        # Closed-row date-closed invariant enforced on write.
-                       "reference_matrix", "attachment", "actions"}
+                       "reference_matrix", "attachment", "actions",
+                       # v58.13.132ig — Compliance question widget.
+                       # Replaces the yes/no/na "radio-with-3-options" idiom
+                       # with a first-class 3-state field. Value shape on
+                       # submission: `{status, photos, notes}` where
+                       # status ∈ {"compliant", "at_risk", "na"}. Legacy
+                       # yes/no/na rows migrate to this via
+                       # scripts/migrate_compliance_status_v58_13_132ig.py.
+                       "compliance"}
 ATTACHMENT_ALLOWED_MIMES = {
     "application/pdf", "image/png", "image/jpeg", "image/webp",
     "application/msword",
@@ -143,6 +151,10 @@ def _clean_field(f: dict) -> dict:
     cfg = f.get("config") or {}
     if not isinstance(cfg, dict):
         cfg = {}
+    # v58.13.132ig — Optional per-question `help_text` renders behind
+    # the (i) info icon in the Compliance question widget. Capped at
+    # 500 chars so it fits a tooltip without wrapping into a wall.
+    help_text = str(f.get("help_text") or "").strip()[:500]
     return {
         "id": str(f.get("id") or new_id())[:60],
         "label": str(f.get("label") or "").strip()[:200] or "Untitled",
@@ -150,6 +162,7 @@ def _clean_field(f: dict) -> dict:
         "required": bool(f.get("required", False)),
         "options": list(f.get("options") or []),
         "placeholder": str(f.get("placeholder") or "")[:200],
+        "help_text": help_text,
         "config": cfg,
     }
 

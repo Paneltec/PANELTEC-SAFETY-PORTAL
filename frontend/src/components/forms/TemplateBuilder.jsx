@@ -32,6 +32,8 @@ const FIELD_TYPES = [
   { key: 'number',    label: 'Number' },
   { key: 'select',    label: 'Dropdown (select)' },
   { key: 'radio',     label: 'Choice buttons (radio)' },
+  // v58.13.132ig — Compliant / At Risk / N/A question widget.
+  { key: 'compliance', label: 'Compliance (Compliant · At Risk · N/A)' },
   { key: 'photo',     label: 'Photo capture' },
   { key: 'signature', label: 'Signature pad' },
   { key: 'gps',       label: 'GPS location' },
@@ -46,7 +48,8 @@ const FIELD_TYPES = [
 const newFieldId = () => `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 const emptyField = () => ({
-  id: newFieldId(), label: '', type: 'text', required: false, options: [], placeholder: '',
+  id: newFieldId(), label: '', type: 'text', required: false, options: [],
+  placeholder: '', help_text: '',
 });
 
 function FieldEditor({ field, index, onChange, onRemove, error }) {
@@ -98,6 +101,16 @@ function FieldEditor({ field, index, onChange, onRemove, error }) {
               data-testid={`builder-placeholder-${field.id}`}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-700" />
           )}
+          {/* v58.13.132ig — Per-question help text renders behind the (i)
+              icon on the Compliance widget. Visible in the editor for
+              every field type; only the Compliance widget surfaces it
+              today (other types can pick it up in future ships). */}
+          <input type="text" value={field.help_text || ''}
+            maxLength={500}
+            onChange={(e) => update('help_text', e.target.value)}
+            placeholder="Help text · shown behind the (i) icon (optional)"
+            data-testid={`builder-help-text-${field.id}`}
+            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700" />
           {needsOptions && (
             <div>
               <textarea value={optionsText} rows={3}
@@ -128,7 +141,11 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
   const [description, setDescription] = useState(template?.description || '');
   const [fields, setFields] = useState(() =>
     (template?.fields && template.fields.length)
-      ? template.fields.map((f) => ({ ...f, id: f.id || newFieldId(), options: f.options || [] }))
+      ? template.fields.map((f) => ({
+          ...f, id: f.id || newFieldId(),
+          options: f.options || [],
+          help_text: f.help_text || '',
+        }))
       : [{ ...emptyField(), label: '' }],
   );
   // v160.3.0 — Qualification gate. Admin edits which cert-kind slugs
@@ -200,6 +217,8 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
           required: !!f.required,
           options: (f.type === 'select' || f.type === 'radio') ? f.options : [],
           placeholder: f.placeholder || '',
+          // v58.13.132ig — Persist per-question help_text.
+          help_text: (f.help_text || '').trim().slice(0, 500),
           config: f.config || {},
         })),
         // v160.3.0 — Only send the gate list on save; backend enforces
