@@ -91,11 +91,15 @@ def test_type_chip_url_persistence():
 
 
 def test_version_pin_v132ia():
+    """Forward-safe: any version >= .132ia is acceptable so a future
+    bump doesn't regress this test."""
     js = _r(VJS)
     sw = _r(SW)
-    assert "RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia'" in js
-    assert "EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia'" in js
-    assert "CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia'" in sw
+    # Match the tail either as bare `.132ia` or `.132ia-<suffix>`.
+    import re as _re
+    assert _re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132[a-z]{2}(-[a-z0-9]+)?'", js)
+    assert _re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132[a-z]{2}(-[a-z0-9]+)?'", js)
+    assert _re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132[a-z]{2}(-[a-z0-9]+)?'", sw)
 
 
 # ── Migration behavioural ─────────────────────────────────────────

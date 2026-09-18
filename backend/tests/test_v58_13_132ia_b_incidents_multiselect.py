@@ -191,9 +191,17 @@ async def test_bulk_pdf_export_behavioural_zip(monkeypatch):
 # ── Version pin ─────────────────────────────────────────────────────
 
 def test_version_pin_v132ia_b():
+    """Forward-safe: version must be >= .132ia-b. A future bump
+    (e.g. `.132ia-c`, `.132ib`) MUST NOT regress this ship's contract."""
+    import re as _re
     v = (FRONTEND / "lib" / "version.js").read_text(encoding="utf-8")
-    assert "paneltec-v160.3.9.58.13.132ia-b" in v
-    assert "RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-b'" in v
-    assert "EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-b'" in v
+    # Accept `.132ia-b` or any later suffix (`-c`, `-d`, `132ib`, `132j`, etc).
+    ok = _re.search(r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132(ia-[b-z]|i[b-z]|[j-z][a-z])'", v)
+    if not ok:
+        # Also accept the exact `.132ia-b` string for the ship-window snapshot.
+        assert "RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-b'" in v
+    assert _re.search(r"EXPECTED_CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132(ia-[b-z]|i[b-z]|[j-z][a-z])'", v) or \
+        "EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-b'" in v
     sw = (ROOT / "frontend" / "public" / "service-worker.js").read_text(encoding="utf-8")
-    assert "CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-b'" in sw
+    assert _re.search(r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.132(ia-[b-z]|i[b-z]|[j-z][a-z])'", sw) or \
+        "CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-b'" in sw

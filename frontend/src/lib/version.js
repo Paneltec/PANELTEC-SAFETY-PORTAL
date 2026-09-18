@@ -13113,7 +13113,30 @@
 //   - Bulk PDF export: new backend `POST /api/incidents/bulk-pdf-export`
 //     zips per-record PDFs rendered via `pdf_renderer.render_incident_pdf`.
 //     Streams `application/zip` with `paneltec_incidents_<yyyymmdd>_<hhmmss>.zip`.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-b';
+// v58.13.132ia-c — Incidents + SSRA AI PDF photo/signature embed fix.
+//   Root cause: `pdf_template.attachments_section` renders a filename
+//   TEXT LIST, never the actual images. `signatures_section` renders
+//   BLANK boxes with role labels, never the captured signature blobs.
+//   `render_incident_pdf` (pdf_renderer.py L750) called both of those,
+//   so incidents ingested with `evidence_photos` + AI-populated
+//   `signatures` reached the PDF without any of that evidence
+//   embedded — auditors saw filenames but no visual proof.
+//   Fix:
+//    · `pdf_template.py` — new `photos_section(record)` embeds each
+//      `evidence_photos` / `photo_urls` URL inline via the existing
+//      `pdf_renderer._resolve_upload` + `_embed` helpers (data-URI
+//      + `/api/files/…` + filesystem-path shapes handled).
+//    · `pdf_template.py::signatures_section` — accepts an optional
+//      `signatures: list[dict]` param. Each entry with `image`
+//      (data-URI base64) or `image_url` (/api/files path) renders
+//      the actual signature above its role label. Missing entries
+//      fall back to the blank-box behaviour.
+//    · `render_incident_pdf` — Attachments section now embeds photos
+//      inline; Signatures section receives `inc.get('signatures')`.
+//    · SSRA / form_submission AI PDFs — already handled by
+//      `forms_pdf.render_form_submission_pdf` (per-field photo +
+//      signature embed shipped .132hz-a scope). Verified.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-c';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13134,7 +13157,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ia-b';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-b';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ia-c';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

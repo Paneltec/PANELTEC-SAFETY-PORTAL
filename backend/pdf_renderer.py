@@ -782,11 +782,12 @@ def render_incident_pdf(inc: dict) -> bytes:
         )]
     else:
         story += [P.Paragraph('No follow-up actions recorded.', P.BODY_MUTED)]
-    # Photos → attachments strip
-    photo_atts = [{'name': u.rsplit('/', 1)[-1], 'kind': 'evidence photo'}
-                  for u in (inc.get('evidence_photos') or inc.get('photo_urls') or [])]
-    story += P.section_label('Attachments')
-    story += P.attachments_section(photo_atts)
+    # v58.13.132ia-c — Embed evidence photos inline (was: filename list).
+    # Falls back to the pre-.132ia-c attachments list when there are no
+    # photos so the section header still renders on empty incidents.
+    photo_refs = list(inc.get('evidence_photos') or inc.get('photo_urls') or [])
+    story += P.section_label('Evidence photos')
+    story += P.photos_section(photo_refs)
     # Timeline (synthesised if absent)
     events = list(inc.get('timeline') or [])
     if not events:
@@ -801,7 +802,14 @@ def render_incident_pdf(inc: dict) -> bytes:
     story += P.section_label('Timeline')
     story += P.timeline_section(events)
     story += P.section_label('Signatures')
-    story += [P.signatures_section(['Reporter', 'Site manager', 'HSEQ lead'])]
+    # v58.13.132ia-c — Populate real signature payloads when present.
+    # `inc.signatures` shape: list of dicts { role, image | image_url,
+    # signed_by?, signed_at? }. Falls back to blank Reporter / Site
+    # manager / HSEQ lead boxes when the list is empty or shorter than
+    # the default 3 roles.
+    sigs = list(inc.get('signatures') or [])
+    story += [P.signatures_section(['Reporter', 'Site manager', 'HSEQ lead'],
+                                    signatures=sigs)]
     doc.build(story)
     return buf.getvalue()
 

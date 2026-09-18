@@ -23,7 +23,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import (BaseDocTemplate, Frame, PageTemplate,
+from reportlab.platypus import (BaseDocTemplate, Frame, Image, PageTemplate,
                                 Paragraph, Spacer, Table, TableStyle, KeepTogether)
 from reportlab.pdfgen.canvas import Canvas
 
@@ -225,23 +225,150 @@ def timeline_section(events: Iterable[dict] | None) -> list:
     return out
 
 
-def signatures_section(roles: list[str] | None = None) -> Table:
+def signatures_section(roles: list[str] | None = None,
+                       signatures: list[dict] | None = None) -> Table:
+    """Signature block.
+
+    v58.13.132ia-c — Optional ``signatures`` list carrying real signature
+    payloads. Each entry is a dict with:
+      · ``role``        — column label (defaults to positional role).
+      · ``image``       — data-URI ("data:image/png;base64,…") OR raw
+                          base64 string OR bytes. Rendered inline.
+      · ``image_url``   — server-relative path ("/api/files/…").
+                          Resolved via ``pdf_renderer._resolve_upload``.
+      · ``signed_by``   — printed name shown BELOW the signature line.
+      · ``signed_at``   — ISO timestamp shown BELOW the printed name.
+
+    When ``signatures`` is missing or shorter than ``roles``, remaining
+    columns render as blank signature boxes with only the role label —
+    preserving the pre-.132ia-c behaviour for unpopulated slots.
+    """
     roles = roles or ['Author', 'Approver']
-    cells, labels = [], []
-    for r in roles:
-        cells.append(Paragraph('', BODY))
-        labels.append(Paragraph(r, META))
+    signatures = list(signatures or [])
+    # Merge: pad `signatures` up to len(roles) so the two lists align.
+    slots: list[dict] = []
+    for i, r in enumerate(roles):
+        sig = signatures[i] if i < len(signatures) else {}
+        slots.append({
+            'role': sig.get('role') or r,
+            'image': sig.get('image'),
+            'image_url': sig.get('image_url'),
+            'signed_by': sig.get('signed_by'),
+            'signed_at': sig.get('signed_at'),
+        })
+
+    def _resolve_flowable(slot: dict):
+        raw = slot.get('image')
+        url = slot.get('image_url')
+        # Try raw / data-URI first.
+        try:
+            if raw:
+                if isinstance(raw, bytes):
+                    return Image(io.BytesIO(raw), width=48 * mm, height=20 * mm, kind='proportional')
+                s = raw
+                if isinstance(s, str):
+                    if ',' in s and s.startswith('data:'):
+                        s = s.split(',', 1)[1]
+                    import base64
+                    return Image(io.BytesIO(base64.b64decode(s, validate=False)),
+                                 width=48 * mm, height=20 * mm, kind='proportional')
+        except Exception:  # pragma: no cover — best-effort embed.
+            pass
+        try:
+            if url:
+                # Lazy import to avoid circular dep at module load.
+                from pdf_renderer import _resolve_upload
+                p = _resolve_upload(url)
+                if p:
+                    return Image(str(p), width=48 * mm, height=20 * mm, kind='proportional')
+        except Exception:  # pragma: no cover
+            pass
+        return Paragraph('', BODY)
+
+    # Top row: signature image (or blank).
+    cells = [_resolve_flowable(s) for s in slots]
+    # Second row: role label.
+    labels = [Paragraph(s['role'], META) for s in slots]
+    # Third row: signed_by + signed_at when present.
+    ident = []
+    for s in slots:
+        parts = []
+        if s.get('signed_by'):
+            parts.append(str(s['signed_by']))
+        if s.get('signed_at'):
+            parts.append(str(s['signed_at'])[:19].replace('T', ' '))
+        ident.append(Paragraph(' · '.join(parts), META) if parts else Paragraph('', META))
+
     col_w = (A4[0] - 2 * MARGIN_LR - (len(roles) - 1) * 8 * mm) / len(roles)
-    t = Table([cells, labels], colWidths=[col_w] * len(roles), rowHeights=[26 * mm, 10])
+    t = Table([cells, labels, ident],
+              colWidths=[col_w] * len(roles),
+              rowHeights=[26 * mm, 10, 10])
     t.setStyle(TableStyle([
         ('LINEBELOW',    (0, 0), (-1, 0), 0.6, SLATE_BORDER),
         ('VALIGN',       (0, 0), (-1, -1), 'BOTTOM'),
         ('BOTTOMPADDING',(0, 0), (-1, 0), 2),
-        ('TOPPADDING',   (0, 1), (-1, 1), 4),
+        ('TOPPADDING',   (0, 1), (-1, 2), 4),
         ('LEFTPADDING',  (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
     return t
+
+
+def photos_section(photo_refs: list) -> list:
+    """v58.13.132ia-c — Embed evidence photos inline.
+
+    ``photo_refs`` is a list of either:
+      · plain strings (``/api/files/incidents/foo.jpg`` / data-URIs /
+        filesystem paths), OR
+      · dicts carrying ``url`` / ``file_url`` / ``data_url`` / ``stored_name``.
+
+    Each resolvable ref renders as a proportional 90mm-wide inline
+    Image with the filename beneath. Unresolved refs render an amber
+    "unavailable" placeholder so the auditor still sees a slot.
+
+    Returns an empty-list-fallback Paragraph when the list is empty so
+    the caller can drop it straight into a story.
+    """
+    if not photo_refs:
+        return [Paragraph('No evidence photos attached.', BODY_MUTED)]
+    # Lazy import to avoid the pdf_template ⇄ pdf_renderer cycle.
+    from pdf_renderer import _resolve_upload
+    import base64
+
+    out: list = []
+    for i, ref in enumerate(photo_refs):
+        url = ref if isinstance(ref, str) else (
+            (ref or {}).get('file_url') or (ref or {}).get('url')
+            or (ref or {}).get('data_url') or (ref or {}).get('stored_name'))
+        if not url:
+            out.append(Paragraph(f'Photo {i + 1}: [reference missing]', BODY_MUTED))
+            continue
+        caption = url.rsplit('/', 1)[-1][:64].replace('<', '&lt;')
+        img_flowable = None
+        # Data-URI branch — decode inline.
+        if isinstance(url, str) and url.startswith('data:') and ',' in url:
+            try:
+                b = base64.b64decode(url.split(',', 1)[1], validate=False)
+                img_flowable = Image(io.BytesIO(b), width=90 * mm, height=68 * mm,
+                                     kind='proportional')
+            except Exception:  # pragma: no cover
+                img_flowable = None
+        # Filesystem-relative branch — resolve under uploads/.
+        if img_flowable is None:
+            p = _resolve_upload(url) if isinstance(url, str) else None
+            if p:
+                try:
+                    img_flowable = Image(str(p), width=90 * mm, height=68 * mm,
+                                         kind='proportional')
+                except Exception:  # pragma: no cover
+                    img_flowable = None
+        if img_flowable is not None:
+            out.append(img_flowable)
+            out.append(Paragraph(caption, META))
+            out.append(Spacer(1, 4))
+        else:
+            out.append(Paragraph(f'Photo {i + 1}: [unavailable · {caption}]', BODY_MUTED))
+    return out
 
 
 def attachments_section(items: list[dict] | None) -> list:

@@ -195,6 +195,12 @@ class IncidentIn(BaseModel):
     description: str = ""
     immediate_actions: str = ""
     evidence_photos: List[str] = Field(default_factory=list)
+    # v58.13.132ia-c — Signatures captured on the record (mobile capture
+    # + AI-generated PDF path). Each entry: {role, image?, image_url?,
+    # signed_by?, signed_at?}. Rendered inline by
+    # `pdf_template.signatures_section` when present; blank boxes
+    # otherwise (backward compat).
+    signatures: List[dict] = Field(default_factory=list)
     follow_up_actions: List[dict] = Field(default_factory=list)
     follow_up_status: IncidentStatus = "open"
     # v160.0.10.1
