@@ -181,9 +181,16 @@ export default function IncidentsList() {
         </select>
       </div>
 
-      {loading ? <div className="text-sm text-slate-500">Loading…</div>
-       : preFiltered.length === 0 ? <EmptyState title="No incidents" body="Log your first incident — even a near miss." action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-empty-create" />} />
+      {loading && items.length === 0 ? <div className="text-sm text-slate-500">Loading…</div>
+       : items.length === 0 ? <EmptyState title="No incidents" body="Log your first incident — even a near miss." action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-empty-create" />} />
        : (<>
+        {/* v58.13.132hw — Never unmount the toolbar on a subsequent
+            search-triggered load. Prior gate was `loading ?
+            <Loading /> : preFiltered.length === 0 ? …` which
+            unmounted CaptureListToolbar every time `searchQuery`
+            flipped `includeArchivedInFetch`, wiping the toolbar's
+            local `q` state on the first keystroke. Keeping the
+            toolbar mounted preserves the input cursor. */}
         <CaptureListToolbar
           items={preFiltered}
           onFiltered={setSearchFiltered}

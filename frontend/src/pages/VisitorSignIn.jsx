@@ -30,7 +30,13 @@ export default function VisitorSignIn() {
 
   useEffect(() => {
     let alive = true;
-    api.get(`/public/site/${token}/form`)
+    // v58.13.132hw — Was hitting non-existent `/public/site/{token}/form`
+    // which 404'd → visitor saw "This QR code is no longer valid."
+    // even for perfectly good QRs. The existing anonymous resolver at
+    // `/scan/site/{token}` (sites_qr.py::resolve_site_scan, no auth
+    // dependency) returns the same shape VisitorSignIn needs
+    // (site.{name,address}, active_swms, signon_questions).
+    api.get(`/scan/site/${token}`)
       .then((r) => { if (alive) setSiteInfo(r.data); })
       .catch((e) => { if (alive) setError(e?.response?.data?.detail || 'This QR code is no longer valid.'); });
     return () => { alive = false; };

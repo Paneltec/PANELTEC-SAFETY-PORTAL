@@ -294,6 +294,60 @@ async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
         )
         return True
 
+    async def _local_fleet_fallback(
+        org_id: str, reason: str, navixy_error: str | None = None,
+    ) -> dict:
+        """v58.13.132hw — Pull the vehicle list from `db.assets`
+        (the Fleet Register) when Navixy is unreachable. Shape
+        mirrors the Navixy response so the FE picker doesn't
+        need a branch — same keys: `id`, `label`, `plate`,
+        `registration`, `vehicle_type`, `tags`.
+        `status` set to `local_fleet_fallback` so the FE can
+        render a subtle info chip ("Using local fleet — Navixy
+        offline") without a red-banner nag."""
+        overrides_by_id: dict = {}
+        async for row in db.vehicle_categorisation_overrides.find(
+            {"org_id": org_id}, {"_id": 0, "navixy_id": 1, "vehicle_type": 1},
+        ):
+            try:
+                overrides_by_id[int(row["navixy_id"])] = row["vehicle_type"]
+            except (TypeError, ValueError):
+                pass
+        vehicles = []
+        async for a in db.assets.find(
+            {"org_id": org_id, "deleted_at": None,
+             "$or": [{"active": True}, {"active": {"$exists": False}}]},
+            {"_id": 0, "id": 1, "name": 1, "registration": 1,
+             "vehicle_type": 1, "navixy_device_id": 1, "asset_type": 1},
+        ):
+            nid = a.get("navixy_device_id")
+            vt = (overrides_by_id.get(int(nid)) if nid else None) \
+                 or a.get("vehicle_type") or a.get("asset_type") or "unknown"
+            vehicles.append({
+                "id": nid or a.get("id"),
+                "label": a.get("name") or a.get("registration") or "Vehicle",
+                "plate": a.get("registration") or "",
+                "registration": a.get("registration") or "",
+                "vehicle_type": vt,
+                "tags": [],
+                "source": "local_fleet",
+            })
+        message = (
+            "Using local Fleet Register — Navixy is offline. "
+            "Pick your vehicle below or enter the rego manually."
+        )
+        if navixy_error:
+            message = (
+                f"Navixy unavailable ({navixy_error}). Showing local Fleet "
+                "Register — pick a vehicle or enter the rego manually."
+            )
+        return {
+            "vehicles": vehicles,
+            "status": "local_fleet_fallback",
+            "reason": reason,
+            "message": message,
+        }
+
     try:
         raw = await _try_navixy_call()
     except HTTPException as e:
@@ -312,53 +366,33 @@ async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
                 try:
                     raw = await _try_navixy_call()
                 except HTTPException:
-                    # Even the retry failed — soft-return but DON'T
-                    # flip DB status (that just creates a different
-                    # error message on the next call). Leaving the
-                    # config alone lets each new request re-attempt
-                    # the auto-refresh so recovery is automatic
-                    # once Navixy is reachable again.
-                    return {
-                        "vehicles": [],
-                        "status": "navixy_disconnected",
-                        "message": (
-                            "Fleet integration needs reconnecting. Ask "
-                            "your admin to open Settings → Integrations "
-                            "→ Navixy and click Get Hash."
-                        ),
-                    }
+                    # v58.13.132hw — Local fleet fallback. Instead of
+                    # returning an empty dropdown + "reconnect Navixy"
+                    # nag (which strands SSRA / pre-start submitters
+                    # whenever the hash expires), pull vehicles from
+                    # `db.assets` and hand them to the same FE picker.
+                    # The two sources produce identical vehicle shapes
+                    # (see `_local_fleet_fallback` below).
+                    return await _local_fleet_fallback(
+                        user["org_id"], reason="navixy_disconnected"
+                    )
             else:
                 # Auto-refresh unavailable (missing creds / unreachable).
-                return {
-                    "vehicles": [],
-                    "status": "navixy_disconnected",
-                    "message": (
-                        "Fleet integration needs reconnecting. Ask your "
-                        "admin to open Settings → Integrations → Navixy "
-                        "and click Get Hash."
-                    ),
-                }
+                return await _local_fleet_fallback(
+                    user["org_id"], reason="navixy_disconnected"
+                )
         else:
             raise
     except Exception as e:
-        # v58.13.132ho — Extend `.132gx`'s soft-response envelope to
-        # cover the "Navixy reachable but returned a non-HTTPException"
-        # class (5xx from Navixy, DNS blip, connection reset, decode
-        # error). Previously raised HTTP 502 which the FE surfaced as
-        # a red banner with no manual-entry fallback — that stranded
-        # SSRA / pre-start submitters whenever Navixy hiccuped.
-        # Now returns HTTP 200 with `status: navixy_unavailable` +
-        # actionable message so the FE can flip to manual mode via
-        # the same code path it uses for `navixy_disconnected`.
-        return {
-            "vehicles": [],
-            "status": "navixy_unavailable",
-            "message": (
-                f"Fleet integration is temporarily unavailable "
-                f"({str(e)[:80]}). You can still enter the rego "
-                f"manually below."
-            ),
-        }
+        # v58.13.132hw — Same fallback for the "Navixy reachable but
+        # returned a non-HTTPException" bucket (5xx, DNS blip,
+        # connection reset, decode error). `.132ho` returned an empty
+        # list with status=navixy_unavailable; `.132hw` returns the
+        # local Fleet Register instead so users can still submit.
+        return await _local_fleet_fallback(
+            user["org_id"], reason="navixy_unavailable",
+            navixy_error=str(e)[:80],
+        )
 
     # Load admin overrides once.
     overrides_by_id: dict = {}

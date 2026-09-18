@@ -13085,29 +13085,26 @@
 //         `parent_folder_id` payload.
 //       · Testid patterns present.
 //     Version pin `.132gz` on version.js + service-worker.js.
-// v58.13.132hv — Three items bundled.
-//   1. Amanda Guy duplicate archived. Evidence-based pick: kept
-//      simpro=50 record (13 certs + linked user + populated
-//      Office Manager position); soft-deleted simpro=1086 (0 certs,
-//      empty position). Historical data preserved. Audit trail
-//      written. mirror-status conflict now 0.
-//   2. worker_companies feature fully purged (Stephen picked purge
-//      over keep-dormant). Collection dropped, workers.worker_company_*
-//      fields unset (70 rows), router unmounted, startup backfill
-//      hook removed, `_serialise` override deleted, model fields
-//      dropped, `worker_companies.py` deleted.
-//   3. Role catalogue fix. `.132hs` provisioner defaulted new
-//      users to `role="viewer"` — a slug the .132s cleanup
-//      hard-removed. Glen — Walker Designs reproduction: his row's
-//      role dropdown appeared empty because "viewer" doesn't
-//      exist in db.roles and the FE dropdown filters unknown
-//      role_ids into a placeholder. Provisioner now derives the
-//      default from worker.simpro_company_id (2 → paneltec_civil,
-//      3 → viatec_traffic, else external_contractor). Retro-fixed
-//      Glen (worker → paneltec_civil) and MELINDA LINFORD
-//      (viewer → paneltec_civil, auto-provisioned row only —
-//      accidental role change on the ADMIN Melinda reverted).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hv';
+// v58.13.132hw — Three P0 bug fixes bundled.
+//   1. Visitor QR sign-in page 404'd on load. `VisitorSignIn.jsx`
+//      was calling non-existent `GET /public/site/{token}/form`.
+//      Repointed to the existing anonymous resolver at
+//      `GET /scan/site/{token}` (sites_qr.py, no auth dependency).
+//   2. Incidents search input cleared after 1 keystroke. The page
+//      unmounted `CaptureListToolbar` on every `setLoading(true)`
+//      — first keystroke fires debounced onQueryChange → search
+//      flips `includeArchivedInFetch` → triggers a fresh load →
+//      toolbar unmounts + remounts with empty `q`. Now the
+//      loading gate only replaces the toolbar on the initial
+//      empty load; subsequent search-triggered loads keep it
+//      mounted so the cursor + input state survive.
+//   3. SSRA "From Fleet" vehicle picker: added a `db.assets`
+//      local Fleet Register fallback. When Navixy hash-refresh
+//      fails OR Navixy is unreachable, the backend now returns
+//      the same vehicle-list shape sourced from local assets
+//      with `status="local_fleet_fallback"`. FE keeps the
+//      dropdown populated instead of flipping to manual-only.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hw';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13128,7 +13125,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hv';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hv';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hw';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

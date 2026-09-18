@@ -255,14 +255,18 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
         setVehicles(r.data?.vehicles || []);
         // v58.13.132ho — Treat `navixy_disconnected` AND
         // `navixy_unavailable` as the same soft-response class.
-        // Both flip the picker into manual-entry mode with an
-        // amber banner. `navixy_unavailable` is the new
-        // transient-fault status added in `.132ho`; `navixy_disconnected`
-        // is the hash-invalid path from `.132gx`. Extends coverage
-        // to SSRAs where a 502 previously stranded the worker.
-        const soft = r.data?.status === 'navixy_disconnected'
-          || r.data?.status === 'navixy_unavailable';
-        if (soft) {
+        // v58.13.132hw — Backend now returns `local_fleet_fallback`
+        // whenever Navixy is unreachable AND the local Fleet
+        // Register has vehicles. Treat it as "everything's fine,
+        // just show an info chip" — DON'T flip to manual mode,
+        // the dropdown is populated from db.assets.
+        const status = r.data?.status;
+        const soft = status === 'navixy_disconnected'
+          || status === 'navixy_unavailable';
+        if (status === 'local_fleet_fallback') {
+          setDisconnectedMsg(r.data?.message || null);
+          // Stay in dropdown mode; vehicles list is already populated.
+        } else if (soft) {
           setDisconnectedMsg(r.data?.message || 'Fleet integration needs reconnecting.');
           // Nudge worker into manual-entry mode so the form isn't
           // blocked while an admin fixes the integration.
