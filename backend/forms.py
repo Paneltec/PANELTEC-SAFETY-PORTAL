@@ -1217,6 +1217,20 @@ async def create_submission(template_id: str, body: SubmissionIn,
                 v = []
             elif not isinstance(v, list):
                 v = []
+        # v58.13.132ig / .132ii — Compliance field value is a dict
+        # `{status, photos, notes}`. Coerce loose shapes into the
+        # canonical schema so downstream PDF/summary code can rely on
+        # it. Notes capped at 2000 chars per Stephen's spec.
+        elif t == "compliance":
+            if not isinstance(v, dict):
+                v = {}
+            status = v.get("status")
+            if status not in ("compliant", "at_risk", "na"):
+                status = None
+            photos = v.get("photos") if isinstance(v.get("photos"), list) else []
+            notes = v.get("notes")
+            notes = str(notes)[:2000] if isinstance(notes, str) else ""
+            v = {"status": status, "photos": photos, "notes": notes}
         entry: dict[str, Any] = {
             "id": fid,
             "label": label,

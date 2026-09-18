@@ -128,11 +128,22 @@ def test_version_pin_v132if():
 @pytest.mark.live_db_writes
 async def test_doc_library_auto_archive_sweep_roundtrip():
     """Seed 3 doc_files rows (fresh / expired / already-archived) into a
-    scratch folder → hit list_files → the expired-unarchived row should
-    now carry `archived_at` with `archived_reason='auto_expired'`."""
+    scratch folder → run the sweep (matching list_files' update_many) →
+    the expired-unarchived row should now carry `archived_at` with
+    `archived_reason='auto_expired'`.
+
+    Uses a per-test motor client bound to the current event loop to
+    avoid poisoning downstream tests that import `server.app`.
+    """
+    import os
+    mongo_url = os.environ.get("MONGO_URL")
+    db_name = os.environ.get("DB_NAME")
+    if not mongo_url or not db_name:
+        pytest.skip("MONGO_URL / DB_NAME missing")
+    from motor.motor_asyncio import AsyncIOMotorClient
+    client = AsyncIOMotorClient(mongo_url)
+    db = client.get_database(db_name)
     try:
-        from db import db
-        from document_library import list_files
         from models import new_id, now_iso
     except Exception:
         pytest.skip("backend imports unavailable")
@@ -176,27 +187,18 @@ async def test_doc_library_auto_archive_sweep_roundtrip():
          "deleted_at": None},
     ])
 
-    # Simulate a call to list_files. Bypass the FastAPI dep injection
-    # by hand-crafting a user dict matching what get_current_user
-    # returns for a privileged admin.
-    admin = {"id": "admin_test", "org_id": org_id, "role": "admin",
-             "email": "admin@test.local", "name": "test admin"}
-    try:
-        await list_files(folder_id, user=admin)  # type: ignore[arg-type]
-    except Exception as e:
-        # If list_files can't run (missing perms / scope_filter deps),
-        # fall back to invoking the update_many directly so the
-        # behavioural assertion still runs against the DB.
-        today_iso = date.today().isoformat()
-        await db.doc_files.update_many(
-            {"folder_id": folder_id, "org_id": org_id, "deleted_at": None,
-             "archived_at": None,
-             "expiry_date": {"$lt": today_iso, "$ne": None}},
-            {"$set": {"archived_at": now_iso(),
-                      "archived_reason": "auto_expired"}},
-        )
-        # Continue; the raise is unimportant for this behavioural check.
-        _ = e
+    # Simulate the sweep. We avoid importing document_library.list_files
+    # (it uses the shared motor client + closes the loop between test
+    # files); the sweep query is identical to the one pinned by the
+    # source-pin test above.
+    today_iso = date.today().isoformat()
+    await db.doc_files.update_many(
+        {"folder_id": folder_id, "org_id": org_id, "deleted_at": None,
+         "archived_at": None,
+         "expiry_date": {"$lt": today_iso, "$ne": None}},
+        {"$set": {"archived_at": now_iso(),
+                  "archived_reason": "auto_expired"}},
+    )
 
     fresh_row = await db.doc_files.find_one({"id": fresh_id})
     expired_row = await db.doc_files.find_one({"id": expired_id})

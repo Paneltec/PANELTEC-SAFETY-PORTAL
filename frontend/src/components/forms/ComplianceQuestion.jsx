@@ -95,6 +95,29 @@ export default function ComplianceQuestion({
   const persistedPhotos = _readPersistedPhotos(value);
   const canStage = !readOnly && typeof onStagePhotos === 'function';
 
+  // v58.13.132ii — Per-question notes. Local mirror commits on blur so
+  // typing feels snappy without thrashing the parent state on every
+  // keystroke. Notes cap 2000 chars (server also enforces).
+  const persistedNotes = (value && typeof value === 'object' && typeof value.notes === 'string') ? value.notes : '';
+  const [notesOpen, setNotesOpen] = useState(() => persistedNotes.length > 0);
+  const [notesDraft, setNotesDraft] = useState(persistedNotes);
+  React.useEffect(() => {
+    // Keep the local draft in sync when the persisted notes change
+    // externally (e.g. draft-restore or a status-only commit).
+    setNotesDraft(persistedNotes);
+  }, [persistedNotes]);
+  const commitNotes = () => {
+    if (readOnly || typeof onChange !== 'function') return;
+    const trimmed = (notesDraft || '').slice(0, 2000);
+    if (trimmed === persistedNotes) return;
+    const prev = (value && typeof value === 'object') ? value : {};
+    onChange({
+      status: prev.status || null,
+      photos: Array.isArray(prev.photos) ? prev.photos : [],
+      notes: trimmed,
+    });
+  };
+
   // Object-URL previews for staged Files — revoked when the array
   // reference changes (parent state update triggers a fresh map).
   const stagedPreviews = useMemo(() => (stagedPhotos || []).map((f) => ({
@@ -218,11 +241,19 @@ export default function ComplianceQuestion({
           </button>
           <button
             type="button"
-            disabled
+            disabled={readOnly}
+            onClick={() => setNotesOpen((v) => !v)}
             data-testid={`compliance-notes-${field?.id || 'unknown'}`}
-            title="Add note — coming in v58.13.132ii"
-            aria-label="Add note (coming soon)"
-            className="p-1.5 rounded-full text-slate-300 cursor-not-allowed"
+            title={notesOpen ? 'Hide note' : 'Add note'}
+            aria-label={notesOpen ? 'Hide note' : 'Add note'}
+            aria-expanded={notesOpen}
+            className={
+              'p-1.5 rounded-full ' +
+              (readOnly ? 'text-slate-300 cursor-not-allowed'
+                        : (notesOpen || notesDraft
+                            ? 'text-brand-blue bg-blue-50 hover:bg-blue-100'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'))
+            }
           >
             <StickyNote size={14} />
           </button>
@@ -281,6 +312,39 @@ export default function ComplianceQuestion({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* v58.13.132ii — Per-question notes textarea. Expanded when the
+          notes button is toggled OR when there's already saved notes.
+          Commits on blur to keep parent re-renders sparse. 2000-char
+          cap enforced client-side and server-side. */}
+      {notesOpen && !readOnly && (
+        <div
+          className="pt-1"
+          data-testid={`compliance-notes-panel-${field?.id || 'unknown'}`}
+        >
+          <textarea
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value.slice(0, 2000))}
+            onBlur={commitNotes}
+            rows={2}
+            maxLength={2000}
+            placeholder="Add a note for this question…"
+            data-testid={`compliance-notes-input-${field?.id || 'unknown'}`}
+            className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 bg-slate-50/40 text-slate-700 leading-snug focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:bg-white"
+          />
+          <div className="text-[10px] text-slate-400 text-right mt-0.5">
+            {notesDraft.length} / 2000
+          </div>
+        </div>
+      )}
+      {notesOpen && readOnly && persistedNotes && (
+        <div
+          data-testid={`compliance-notes-readonly-${field?.id || 'unknown'}`}
+          className="pt-1 text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2 border border-slate-200"
+        >
+          {persistedNotes}
         </div>
       )}
 
