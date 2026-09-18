@@ -44,6 +44,8 @@ import InspectionsList, { InspectionNew } from '@/pages/Inspections';
 // migration.
 // import SiteSigninList from '@/pages/SiteSigninList';
 import RiskAssessments from '@/pages/RiskAssessments';
+// v58.13.132hz — Dedicated SSRA capture page.
+import SsraCapture from '@/pages/capture/SsraCapture';
 // v58.13.132dz — `CsIncidentsList` import retired. The `/app/submissions/*`
 // routes now redirect to `/app/incidents` (data merged into Incident
 // Reports in v58.13.132dz; see the ship memo).
@@ -294,6 +296,10 @@ function App() {
               <Route path="admin/visitors" element={<AdminVisitors />} />
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />
+              {/* v58.13.132hz — Dedicated SSRA capture route. Filters
+                  risk-assessments to SSRA-family templates + hosts
+                  the Upload PDF affordance. */}
+              <Route path="capture/ssra" element={<SsraCapture />} />
               {/* v58.13.12 — Submissions bucket. */}
               {/* v58.13.132dz — CS Incidents merged into Incident
                   Reports. Both `submissions` and

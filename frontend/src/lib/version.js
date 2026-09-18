@@ -13104,7 +13104,7 @@
 //      the same vehicle-list shape sourced from local assets
 //      with `status="local_fleet_fallback"`. FE keeps the
 //      dropdown populated instead of flipping to manual-only.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hy';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hz';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13125,7 +13125,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132hy';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hy';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132hz';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

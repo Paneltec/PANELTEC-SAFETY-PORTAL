@@ -116,6 +116,11 @@ const NAV = [
     // v160.3.0-adjust-13 — new Capture bucket. Slots after Inspection
     // Reports because risk assessments feed inspection / audit workflows.
     { to: '/app/risk-assessments', label: 'Risk Assessments', icon: ShieldTask24Regular, iconActive: ShieldTask24Filled, testid: 'nav-risk-assessments', resource: 'risk_assessments', pastel: 'lilac' },
+    // v58.13.132hz — Dedicated SSRA capture entry point. Slots after
+    // Risk Assessments because SSRAs are a subset of that surface.
+    // Same permission (risk_assessments.view) since the underlying
+    // endpoint is /api/risk-assessments.
+    { to: '/app/capture/ssra', label: 'SSRA', icon: ShieldTask24Regular, iconActive: ShieldTask24Filled, testid: 'nav-capture-ssra', resource: 'risk_assessments', pastel: 'lilac' },
     // v58.13.12 — New "Submissions" bucket.
     // v58.13.132dz — CS Incidents sidebar entry retired. Data merged
     // into Incident Reports (see `/api/cs-incident` 410 gate + the
