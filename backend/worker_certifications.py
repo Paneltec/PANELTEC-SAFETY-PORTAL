@@ -306,6 +306,26 @@ async def list_certs(worker_id: str, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=403,
                                 detail="Permission denied: certifications.team_view")
     today = date.today()
+
+    # v58.13.132ie — Auto-archive sweep. Any row with `expiry_date <
+    # today` AND `archived_at IS NULL` AND `deleted_at IS NULL` is
+    # flipped to `archived_at = now()` before we serialise the list.
+    # Idempotent (re-runs are cheap: the second update matches 0 docs)
+    # and scoped to this worker so the write blast radius is bounded.
+    # Doing this on-fetch keeps the "user opens a worker → expired
+    # rows drop into the Archived section" contract without needing
+    # a cron.
+    today_iso = today.isoformat()
+    await db.worker_certifications.update_many(
+        {
+            "org_id": user["org_id"], "worker_id": worker_id,
+            "deleted_at": None,
+            "archived_at": None,
+            "expiry_date": {"$lt": today_iso, "$ne": None},
+        },
+        {"$set": {"archived_at": now_iso(), "archived_reason": "auto_expired"}},
+    )
+
     cursor = db.worker_certifications.find(
         {"org_id": user["org_id"], "worker_id": worker_id, "deleted_at": None},
         {"_id": 0},
@@ -441,6 +461,75 @@ async def delete_cert(
                     {"$set": {"deleted_at": ts, "updated_at": ts}},
                 )
     return None
+
+
+# v58.13.132ie — Archived subfolder: manual archive / restore endpoints.
+#
+# `archived_at` semantic is distinct from `deleted_at`:
+#   · deleted_at → soft-delete, 30-day audit trail, hidden by default,
+#                  restored via the archive dialog.
+#   · archived_at → "expired but preserved", visible in the collapsible
+#                  Archived section of each cert-family tab, restored
+#                  in-place. Set automatically by the on-fetch sweep
+#                  in `list_certs` when `expiry_date < today`, or
+#                  manually via this endpoint.
+async def _archive_gate(cert_id: str, user: dict) -> dict:
+    """Common lookup + scope check for archive + restore. Returns
+    the resolved cert doc; raises 404 on scope-miss + 404 on missing."""
+    existing = await db.worker_certifications.find_one(
+        {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Certification not found")
+    parent_worker = await db.workers.find_one(
+        {"id": existing.get("worker_id"), "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "company_id": 1, "user_id": 1, "email": 1},
+    )
+    require_scoped_access(user, "workers", parent_worker)
+    return existing
+
+
+@router.post("/certifications/{cert_id}/archive")
+async def archive_cert(
+    cert_id: str,
+    user: dict = Depends(require_permission("certifications", "edit")),
+):
+    """Manual archive — flips `archived_at` to now(). Idempotent: if
+    the row is already archived the timestamp is refreshed."""
+    await _archive_gate(cert_id, user)
+    ts = now_iso()
+    await db.worker_certifications.update_one(
+        {"id": cert_id, "org_id": user["org_id"]},
+        {"$set": {"archived_at": ts, "archived_reason": "manual",
+                  "archived_by": user["id"], "updated_at": ts}},
+    )
+    row = await db.worker_certifications.find_one(
+        {"id": cert_id, "org_id": user["org_id"]}, {"_id": 0},
+    )
+    return _serialise_cert(row)
+
+
+@router.post("/certifications/{cert_id}/restore")
+async def restore_cert(
+    cert_id: str,
+    user: dict = Depends(require_permission("certifications", "edit")),
+):
+    """Restore an archived cert back to active. Clears `archived_at`
+    + related metadata. Row keeps its expiry_date — a restored+expired
+    row will re-archive on next list fetch unless the user also
+    updates the expiry."""
+    await _archive_gate(cert_id, user)
+    ts = now_iso()
+    await db.worker_certifications.update_one(
+        {"id": cert_id, "org_id": user["org_id"]},
+        {"$set": {"archived_at": None, "archived_reason": None,
+                  "archived_by": None, "updated_at": ts}},
+    )
+    row = await db.worker_certifications.find_one(
+        {"id": cert_id, "org_id": user["org_id"]}, {"_id": 0},
+    )
+    return _serialise_cert(row)
 
 
 # ────────────────────── Upload ──────────────────────

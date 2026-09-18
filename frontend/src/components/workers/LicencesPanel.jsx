@@ -16,14 +16,17 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ChevronDown, Edit3, IdCard, Loader2, Plus, Trash2,
-  UploadCloud,
+  AlertTriangle, ChevronDown, Edit3, IdCard, Loader2, Plus, RotateCcw,
+  Trash2, UploadCloud, Archive as ArchiveIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import OpenAsPdfButton from '../OpenAsPdfButton';
 import CertEditModal from '../certifications/CertEditModal';
+import {
+  splitByArchived, useArchivedOpen, archiveCert, restoreCert,
+} from '../../lib/certArchiveHelpers';
 
 // v58.13.132hp — localStorage-per-user persistence for the panel
 // open/closed state. Keyed on workerId so each profile remembers
@@ -96,6 +99,7 @@ export default function LicencesPanel({ workerId }) {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [open, toggle] = useCollapseState(`paneltec:licences:open:${workerId}`);
+  const [archivedOpen, toggleArchived] = useArchivedOpen('licences', workerId);
   const [editing, setEditing] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -122,12 +126,15 @@ export default function LicencesPanel({ workerId }) {
   useEffect(() => { load(); }, [workerId]);
 
   const summary = useMemo(() => {
-    const s = { total: rows.length, expired: 0, expiring: 0, valid: 0, missing: 0 };
-    for (const r of rows) {
+    // v58.13.132ie — Only ACTIVE rows count toward the header pills.
+    const active = rows.filter((r) => !r.archived_at);
+    const s = { total: active.length, expired: 0, expiring: 0, valid: 0, missing: 0 };
+    for (const r of active) {
       const t = expiryTone(r.expiry_date);
       if (t) s[t] += 1;
       if (!r.doc_file_id) s.missing += 1;
     }
+    s.archived = rows.length - active.length;
     return s;
   }, [rows]);
 
@@ -137,6 +144,94 @@ export default function LicencesPanel({ workerId }) {
       const u = await filesUrl(`/workers/${workerId}/certifications/${r.id}/file`);
       window.open(u, '_blank', 'noopener,noreferrer');
     } catch (_e) { toast.error('Unable to open file'); }
+  };
+
+  // v58.13.132ie — Row renderer shared between active + archived tables.
+  const renderRow = (r, isArchived) => {
+    const tone = expiryTone(r.expiry_date);
+    const d = dayDiff(r.expiry_date);
+    const statusLabel = tone === 'expired' ? `Expired ${-d}d ago`
+      : tone === 'expiring' ? `Expires in ${d}d`
+      : tone === 'valid' ? 'Valid'
+      : 'No expiry';
+    return (
+      <tr key={r.id}
+        className={`border-t border-slate-100 ${isArchived ? 'opacity-75' : ''}`}
+        data-testid={`licence-row-${r.id}`}
+        data-archived={isArchived ? 'true' : 'false'}
+        data-expiry-tone={tone || 'none'}>
+        <td className="px-3 py-2 font-semibold text-slate-900 break-words max-w-[220px]">
+          {r.name || '—'}
+          {r.licence_number && (
+            <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+              #{r.licence_number}
+            </div>
+          )}
+        </td>
+        <td className="px-3 py-2 text-slate-600 hidden md:table-cell break-words max-w-[180px]">
+          {r.issuer || '—'}
+        </td>
+        <td className="px-3 py-2 text-slate-500 hidden lg:table-cell whitespace-nowrap">
+          {shortDate(r.issue_date)}
+        </td>
+        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+          {shortDate(r.expiry_date)}
+        </td>
+        <td className="px-3 py-2 whitespace-nowrap">
+          <StatusBadgeCert status={statusLabel} tone={tone} />
+        </td>
+        <td className="px-3 py-2 text-center">
+          {r.doc_file_id ? (
+            <OpenAsPdfButton
+              source="cert_file"
+              refObj={{ worker_id: workerId, cert_id: r.id }}
+              filename={r.name || 'certificate'}
+              onDownloadOriginal={() => openOriginal(r)}
+              variant="icon"
+              data-testid={`licence-file-${r.id}`}
+              className="!bg-[#e6eff9] !text-[#1e4a8c] hover:!bg-[#d8e6f4] !w-6 !h-6"
+            />
+          ) : (
+            <span className="text-[10px] text-slate-400 italic" title="no file">—</span>
+          )}
+        </td>
+        <td className="px-3 py-2 text-right whitespace-nowrap">
+          <div className="inline-flex items-center gap-1">
+            <button type="button"
+              onClick={() => setEditing(r)}
+              data-testid={`licence-edit-${r.id}`}
+              title="Edit licence"
+              className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
+              <Edit3 size={13} />
+            </button>
+            {isArchived ? (
+              <button type="button"
+                onClick={() => restoreCert(r, load)}
+                data-testid={`licence-restore-${r.id}`}
+                title="Restore to active"
+                className="inline-flex items-center justify-center w-6 h-6 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+                <RotateCcw size={12} />
+              </button>
+            ) : (
+              <button type="button"
+                onClick={() => archiveCert(r, load)}
+                data-testid={`licence-archive-${r.id}`}
+                title="Archive (keep for compliance audit, hide from active list)"
+                className="inline-flex items-center justify-center w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-slate-200">
+                <ArchiveIcon size={12} />
+              </button>
+            )}
+            <button type="button"
+              onClick={() => removeRow(r)}
+              data-testid={`licence-delete-${r.id}`}
+              title="Delete licence (30-day recoverable)"
+              className="inline-flex items-center justify-center w-6 h-6 rounded bg-rose-50 text-rose-700 hover:bg-rose-100">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
   };
 
   // v58.13.132ic — Feature-parity with Certifications tab: upload,
@@ -287,97 +382,77 @@ export default function LicencesPanel({ workerId }) {
           <div className="text-sm text-slate-500 inline-flex items-center gap-2">
             <Loader2 size={14} className="animate-spin" /> Loading…
           </div>
-        ) : rows.length === 0 ? (
-          <div className="text-center py-6 text-sm text-slate-400 italic" data-testid="licences-empty">
-            No licences recorded yet. Add one via the Certifications section above.
-          </div>
-        ) : (
-          <div className="border border-slate-200 rounded-lg overflow-x-auto">
-            <table className="zebra-list w-full text-xs" data-testid="licences-table">
-              <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-3 py-2">Name</th>
-                  <th className="text-left px-3 py-2 hidden md:table-cell">Issuer</th>
-                  <th className="text-left px-3 py-2 hidden lg:table-cell whitespace-nowrap">Issued</th>
-                  <th className="text-left px-3 py-2 whitespace-nowrap">Expiry</th>
-                  <th className="text-left px-3 py-2 whitespace-nowrap">Status</th>
-                  <th className="text-center px-3 py-2 w-12">File</th>
-                  <th className="px-3 py-2 w-24"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const tone = expiryTone(r.expiry_date);
-                  const d = dayDiff(r.expiry_date);
-                  const statusLabel = tone === 'expired' ? `Expired ${-d}d ago`
-                    : tone === 'expiring' ? `Expires in ${d}d`
-                    : tone === 'valid' ? 'Valid'
-                    : 'No expiry';
-                  return (
-                    <tr key={r.id}
-                      className="border-t border-slate-100"
-                      data-testid={`licence-row-${r.id}`}
-                      data-expiry-tone={tone || 'none'}>
-                      <td className="px-3 py-2 font-semibold text-slate-900 break-words max-w-[220px]">
-                        {r.name || '—'}
-                        {r.licence_number && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            #{r.licence_number}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600 hidden md:table-cell break-words max-w-[180px]">
-                        {r.issuer || '—'}
-                      </td>
-                      <td className="px-3 py-2 text-slate-500 hidden lg:table-cell whitespace-nowrap">
-                        {shortDate(r.issue_date)}
-                      </td>
-                      <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
-                        {shortDate(r.expiry_date)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <StatusBadgeCert status={statusLabel} tone={tone} />
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        {r.doc_file_id ? (
-                          <OpenAsPdfButton
-                            source="cert_file"
-                            refObj={{ worker_id: workerId, cert_id: r.id }}
-                            filename={r.name || 'certificate'}
-                            onDownloadOriginal={() => openOriginal(r)}
-                            variant="icon"
-                            data-testid={`licence-file-${r.id}`}
-                            className="!bg-[#e6eff9] !text-[#1e4a8c] hover:!bg-[#d8e6f4] !w-6 !h-6"
-                          />
-                        ) : (
-                          <span className="text-[10px] text-slate-400 italic" title="no file">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1">
-                          <button type="button"
-                            onClick={() => setEditing(r)}
-                            data-testid={`licence-edit-${r.id}`}
-                            title="Edit licence"
-                            className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
-                            <Edit3 size={13} />
-                          </button>
-                          <button type="button"
-                            onClick={() => removeRow(r)}
-                            data-testid={`licence-delete-${r.id}`}
-                            title="Delete licence (30-day recoverable)"
-                            className="inline-flex items-center justify-center w-6 h-6 rounded bg-rose-50 text-rose-700 hover:bg-rose-100">
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        ) : (() => {
+          // v58.13.132ie — Split rows into Active + Archived buckets.
+          const { active: activeRows, archived: archivedRows } = splitByArchived(rows);
+          return (
+            <>
+              {activeRows.length === 0 ? (
+                <div className="text-center py-6 text-sm text-slate-400 italic" data-testid="licences-empty">
+                  No active licences. Add one above.
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                  <table className="zebra-list w-full text-xs" data-testid="licences-table">
+                    <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
+                      <tr>
+                        <th className="text-left px-3 py-2">Name</th>
+                        <th className="text-left px-3 py-2 hidden md:table-cell">Issuer</th>
+                        <th className="text-left px-3 py-2 hidden lg:table-cell whitespace-nowrap">Issued</th>
+                        <th className="text-left px-3 py-2 whitespace-nowrap">Expiry</th>
+                        <th className="text-left px-3 py-2 whitespace-nowrap">Status</th>
+                        <th className="text-center px-3 py-2 w-12">File</th>
+                        <th className="px-3 py-2 w-28"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeRows.map((r) => renderRow(r, false))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {archivedRows.length > 0 && (
+                <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden"
+                     data-testid="section-licences-archived">
+                  <button type="button" onClick={toggleArchived}
+                    data-testid="section-licences-archived-toggle"
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 border-b border-slate-100 text-left">
+                    <ArchiveIcon size={12} className="text-slate-500" />
+                    <span className="text-xs font-semibold text-slate-700">
+                      Archived · {archivedRows.length}
+                    </span>
+                    <span className="ml-1 text-[10px] text-slate-400">
+                      (expired licences kept for compliance audit)
+                    </span>
+                    <ChevronDown size={12}
+                      className={`text-slate-400 transition-transform ml-auto ${archivedOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {archivedOpen && (
+                    <div className="overflow-x-auto" data-testid="section-licences-archived-body">
+                      <table className="zebra-list w-full text-xs">
+                        <thead className="bg-white text-slate-400 text-[10px] uppercase tracking-wider">
+                          <tr>
+                            <th className="text-left px-3 py-2">Name</th>
+                            <th className="text-left px-3 py-2 hidden md:table-cell">Issuer</th>
+                            <th className="text-left px-3 py-2 hidden lg:table-cell whitespace-nowrap">Issued</th>
+                            <th className="text-left px-3 py-2 whitespace-nowrap">Expired</th>
+                            <th className="text-left px-3 py-2 whitespace-nowrap">Status</th>
+                            <th className="text-center px-3 py-2 w-12">File</th>
+                            <th className="px-3 py-2 w-28"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {archivedRows.map((r) => renderRow(r, true))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
       )}
       {editing && (

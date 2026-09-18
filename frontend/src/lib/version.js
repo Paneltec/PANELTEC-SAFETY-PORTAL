@@ -13227,7 +13227,36 @@
 //      incident matchers in `_FILENAME_MATCHERS` order — first
 //      hit wins, so anything with "SSRA" or "site specific risk"
 //      in the filename beats the incident regex.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132id';
+// v58.13.132ie — Archived subfolder on worker cert-family tabs.
+//   Scope this ship: `worker_certifications` collection powers three
+//   worker-profile tabs (Certifications, Licences, Inductions). All
+//   three now split into:
+//     · Active — expiry either in the future OR absent, AND
+//                `archived_at` is null.
+//     · Archived (collapsible bottom section) — `archived_at` is set.
+//   Backend gains:
+//     · `archived_at: ISO string | null` field on every cert row.
+//     · Auto-archive sweep runs inside `GET /workers/{id}/certifications`
+//       (idempotent, in-place per-request bulk update — cheaper than a
+//       nightly cron and no scheduler dependency). Any row where
+//       `expiry_date < today` AND `archived_at IS NULL` AND
+//       `deleted_at IS NULL` gets `archived_at = now()`.
+//     · New endpoints:
+//       - `POST /workers/certifications/{cert_id}/archive`  (manual)
+//       - `POST /workers/certifications/{cert_id}/restore`  (unarchive)
+//   Frontend gains:
+//     · Per-row Archive button on active cert rows.
+//     · Per-row Restore button on archived rows.
+//     · Collapsible "Archived" section at bottom of each tab, count
+//       shown in the header, remembers open/closed via localStorage.
+//   Deliberately NOT in scope:
+//     · HR Documents (Private & Confidential) — the collection has
+//       no expiry field so auto-archive doesn't apply; manual-only
+//       archive is deferred to .132if.
+//     · Discovered Documents — same reason (no expiry).
+//     · Compliance folders (Doc Library) — user pre-approved the
+//       split into .132if.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ie';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13248,7 +13277,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132id';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132id';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ie';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

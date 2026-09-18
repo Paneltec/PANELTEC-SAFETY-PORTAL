@@ -4,9 +4,13 @@
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, Lock, MapPin, Paperclip, Plug, Smartphone, Square, UploadCloud, Users, X, ZoomIn } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, Lock, MapPin, Paperclip, Plug, RotateCcw, Smartphone, Square, UploadCloud, Users, X, ZoomIn, Archive } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+// v58.13.132ie — Shared archive helpers for cert-family panels.
+import {
+  splitByArchived, useArchivedOpen, archiveCert, restoreCert,
+} from '../lib/certArchiveHelpers';
 import DismissibleHint from '../components/DismissibleHint';
 import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
@@ -690,6 +694,8 @@ function StatusBadgeCert({ status }) {
 
 function CertificationsPanel({ workerId, canEdit }) {
   const [open, setOpen] = useState(false);
+  // v58.13.132ie — Persist Archived accordion open state per worker.
+  const [certArchivedOpen, toggleCertArchived] = useArchivedOpen('certifications', workerId);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -917,7 +923,11 @@ function CertificationsPanel({ workerId, canEdit }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((c) => (
+                  {/* v58.13.132ie — Only render ACTIVE rows in the
+                      main table; archived rows drop into the
+                      collapsible accordion below. `archivedRows`
+                      is computed above the return statement. */}
+                  {rows.filter((c) => !c.archived_at).map((c) => (
                     editingId === c.id
                       ? <CertEditRow key={c.id} cert={c}
                           onSaved={() => { setEditingId(null); load(); }}
@@ -1024,6 +1034,11 @@ function CertificationsPanel({ workerId, canEdit }) {
                                 <button type="button" onClick={() => setEditingId(c.id)} data-testid={`cert-edit-${c.id}`}
                                   title="Edit"
                                   className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 /></button>
+                                {/* v58.13.132ie — Archive/Restore per-row toggle. */}
+                                <button type="button" onClick={() => archiveCert(c, load)}
+                                  data-testid={`cert-archive-${c.id}`}
+                                  title="Archive (keep for compliance audit, hide from active list)"
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-slate-200"><Archive size={12} /></button>
                                 <button type="button" onClick={() => removeCert(c)} data-testid={`cert-delete-${c.id}`}
                                   title="Delete"
                                   className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 /></button>
@@ -1037,6 +1052,74 @@ function CertificationsPanel({ workerId, canEdit }) {
               </table>
             </div>
           )}
+
+          {/* v58.13.132ie — Certifications Archived accordion. */}
+          {(() => {
+            const archivedRows = rows.filter((c) => c.archived_at);
+            if (archivedRows.length === 0) return null;
+            return (
+              <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden"
+                   data-testid="section-certifications-archived">
+                <button type="button" onClick={toggleCertArchived}
+                  data-testid="section-certifications-archived-toggle"
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 border-b border-slate-100 text-left">
+                  <Archive size={12} className="text-slate-500" />
+                  <span className="text-xs font-semibold text-slate-700">
+                    Archived · {archivedRows.length}
+                  </span>
+                  <span className="ml-1 text-[10px] text-slate-400">
+                    (expired certifications kept for compliance audit)
+                  </span>
+                  <ChevronDown size={12}
+                    className={`text-slate-400 transition-transform ml-auto ${certArchivedOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {certArchivedOpen && (
+                  <div className="overflow-x-auto" data-testid="section-certifications-archived-body">
+                    <table className="zebra-list w-full text-xs">
+                      <thead className="bg-white text-slate-400 text-[10px] uppercase tracking-wider">
+                        <tr>
+                          <th className="text-left px-3 py-2">Name</th>
+                          <th className="text-left px-3 py-2 hidden md:table-cell">Issuer</th>
+                          <th className="text-left px-3 py-2 hidden lg:table-cell whitespace-nowrap">Expired</th>
+                          <th className="text-center px-3 py-2 w-12">File</th>
+                          <th className="px-3 py-2 w-24"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {archivedRows.map((c) => (
+                          <tr key={c.id}
+                              className="border-t border-slate-100 opacity-75"
+                              data-testid={`cert-row-${c.id}`}
+                              data-archived="true">
+                            <td className="px-3 py-2 font-semibold text-slate-900 break-words max-w-[220px]">{c.name}</td>
+                            <td className="px-3 py-2 text-slate-600 hidden md:table-cell break-words max-w-[180px]">{c.issuer || '—'}</td>
+                            <td className="px-3 py-2 text-slate-500 hidden lg:table-cell whitespace-nowrap">{shortDate(c.expiry_date)}</td>
+                            <td className="px-3 py-2 text-center text-[10px] text-slate-400 italic">
+                              {c.doc_file_id ? 'stored' : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {canEdit && (
+                                <div className="inline-flex gap-1 items-center">
+                                  <button type="button" onClick={() => restoreCert(c, load)}
+                                    data-testid={`cert-restore-${c.id}`}
+                                    title="Restore to active"
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100"><RotateCcw size={12} /></button>
+                                  <button type="button" onClick={() => removeCert(c)}
+                                    data-testid={`cert-delete-${c.id}`}
+                                    title="Delete"
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 size={12} /></button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
