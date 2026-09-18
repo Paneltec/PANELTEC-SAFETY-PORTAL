@@ -30,6 +30,7 @@ import {
 } from '../../../src/services/forms';
 import { getStoredUser, isPreviewSession } from '../../../src/services/auth';
 import PhotoCapture from '../../../src/components/PhotoCapture';
+import ComplianceQuestion from '../../../src/components/forms/ComplianceQuestion';
 import {
   WorkerPicker, VehicleNavixyPicker, CustomerPicker,
   SitePicker, JobPicker, AssetScanPicker, ContactPicker,
@@ -157,6 +158,10 @@ export default function FormRunnerScreen() {
       if (v == null || v === '') return true;
       if (typeof v === 'string' && !v.trim()) return true;
       if (Array.isArray(v) && v.length === 0) return true;
+      // Compliance fields: check the status sub-key
+      if (f.type === 'compliance' && typeof v === 'object' && v !== null) {
+        return !(v as Record<string, unknown>).status;
+      }
       return false;
     });
   }, [template, values]);
@@ -517,6 +522,25 @@ function ReviewField({ field, value }: { field: FormField; value: unknown }) {
         if (typeof value === 'string' && value) return { text: value, empty: false };
         return { text: 'No contact', empty: true };
 
+      case 'compliance': {
+        if (typeof value === 'object' && value !== null) {
+          const cv = value as { status?: string; photos?: unknown[]; notes?: string };
+          if (cv.status) {
+            const statusMap: Record<string, string> = { compliant: 'Compliant ✓', at_risk: 'At Risk ✗', na: 'N/A' };
+            const label = statusMap[cv.status] || cv.status;
+            const extras: string[] = [];
+            if (Array.isArray(cv.photos) && cv.photos.length > 0) extras.push(`${cv.photos.length} photo(s)`);
+            if (cv.notes) extras.push('has notes');
+            return {
+              text: extras.length > 0 ? `${label} · ${extras.join(', ')}` : label,
+              empty: false,
+              isPill: true,
+            };
+          }
+        }
+        return { text: 'Not answered', empty: true };
+      }
+
       default:
         if (typeof value === 'object') return { text: JSON.stringify(value), empty: false };
         return { text: String(value), empty: false };
@@ -680,11 +704,15 @@ function FieldRenderer({
 
   return (
     <View testID={`form-field-${field.id}`} style={[s.fieldBlock, borderStyle]}>
-      <Text style={s.fieldLabel}>
-        {field.label}
-        {field.required && <Text style={s.required}> *</Text>}
-      </Text>
-      <Text style={s.fieldType}>{field.type}</Text>
+      {field.type !== 'compliance' && (
+        <>
+          <Text style={s.fieldLabel}>
+            {field.label}
+            {field.required && <Text style={s.required}> *</Text>}
+          </Text>
+          <Text style={s.fieldType}>{field.type}</Text>
+        </>
+      )}
 
       {field.type === 'text' && (
         <TextInput
@@ -798,7 +826,7 @@ function FieldRenderer({
         </TouchableOpacity>
       )}
 
-      {!['text', 'textarea', 'number', 'date', 'time', 'select', 'radio', 'photo', 'signature', 'gps',
+      {!['text', 'textarea', 'number', 'date', 'time', 'select', 'radio', 'photo', 'signature', 'gps', 'compliance',
           'worker_picker', 'vehicle_navixy', 'customer_picker', 'site_picker', 'job_picker', 'asset_scan', 'contact_picker',
         ].includes(field.type) && (
         <View style={s.unsupported}>
@@ -827,6 +855,14 @@ function FieldRenderer({
       )}
       {field.type === 'contact_picker' && (
         <ContactPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+      )}
+
+      {field.type === 'compliance' && (
+        <ComplianceQuestion
+          field={field}
+          value={value}
+          onChange={onChange}
+        />
       )}
 
       {hasError && (

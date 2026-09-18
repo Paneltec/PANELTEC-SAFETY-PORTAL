@@ -136,6 +136,162 @@ def _value_to_text(v) -> str:
     return s or "—"
 
 
+# v58.13.132ij — Compliance answer rendering helpers.
+
+_COMPLIANCE_PILL_STYLES = {
+    "compliant": {"label": "COMPLIANT",
+                  "bg": colors.HexColor("#10B981"),
+                  "fg": colors.white},
+    "at_risk":   {"label": "AT RISK",
+                  "bg": colors.HexColor("#F43F5E"),
+                  "fg": colors.white},
+    "na":        {"label": "N/A",
+                  "bg": colors.HexColor("#94A3B8"),
+                  "fg": colors.white},
+}
+
+
+def _compliance_pill_flowable(status: str) -> Table:
+    """Return a small coloured pill Table with the status text. Used
+    inline with the question label so the auditor sees the outcome
+    at a glance."""
+    cfg = _COMPLIANCE_PILL_STYLES.get(status) or {
+        "label": "UNANSWERED",
+        "bg": colors.HexColor("#E2E8F0"),
+        "fg": colors.HexColor("#475569"),
+    }
+    cell = Paragraph(
+        f"<font size='7' color='#{cfg['fg'].hexval()[2:]}'"
+        f"><b>{cfg['label']}</b></font>",
+        STYLES["PtSmall"],
+    )
+    t = Table([[cell]], colWidths=[0.9 * inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), cfg["bg"]),
+        ("BOX", (0, 0), (-1, -1), 0.6, cfg["bg"]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return t
+
+
+def _render_compliance_answer(story: list, field: dict, submission_id: str) -> None:
+    """Emit the compliance answer for `field` into `story` in-place.
+
+    Layout order:
+      1. `<b>label</b>  <status pill>` header row.
+      2. Photo thumbnail row (up to 4-wide).
+      3. Notes paragraph in a subtle grey block.
+
+    Legacy fallback: if the answer value is a scalar (pre-.132ig
+    migration) or the migration left `_legacy_status` on the entry,
+    render that text and skip the pill/photos/notes machinery.
+    """
+    label = _display_label(field.get("label") or "Untitled")
+    val = field.get("value")
+    legacy = field.get("_legacy_status")
+
+    # 1. Legacy scalar answer OR no dict-shape value → render as text.
+    if not isinstance(val, dict):
+        story.append(Spacer(1, 2))
+        story.append(Paragraph(f"<b>{label}</b>", STYLES["PtBody"]))
+        if legacy is not None and str(legacy).strip():
+            story.append(_para(f"Legacy answer: {legacy}", "PtMuted"))
+        elif val not in (None, ""):
+            story.append(_para(_value_to_text(val)))
+        else:
+            story.append(_para("Not answered.", "PtMuted"))
+        return
+
+    status = val.get("status")
+    photos = val.get("photos") if isinstance(val.get("photos"), list) else []
+    notes = val.get("notes") if isinstance(val.get("notes"), str) else ""
+
+    # 1. Label + status pill in a single row so they render side-by-side.
+    header = Table(
+        [[Paragraph(f"<b>{label}</b>", STYLES["PtBody"]),
+          _compliance_pill_flowable(status)]],
+        colWidths=[4.6 * inch, 1.0 * inch],
+    )
+    header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+    ]))
+    story.append(Spacer(1, 2))
+    story.append(header)
+
+    if legacy is not None and str(legacy).strip():
+        story.append(_para(f"Migrated from legacy answer: {legacy}", "PtSmall"))
+
+    # 2. Photo thumbnail row — up to 4 wide. Additional rows overflow
+    #    naturally when there are >4 photos.
+    resolved_paths: list[Path] = []
+    missing: list[str] = []
+    for ph in photos:
+        if not isinstance(ph, dict):
+            continue
+        p = _photo_path(submission_id, ph)
+        if p is not None:
+            resolved_paths.append(p)
+        else:
+            missing.append(ph.get("filename") or ph.get("stored_name") or "photo")
+    if resolved_paths:
+        thumb_w = 1.5 * inch
+        thumb_h = 1.1 * inch
+        row: list = []
+        rows: list[list] = [row]
+        for path in resolved_paths:
+            if len(row) >= 4:
+                row = []
+                rows.append(row)
+            try:
+                row.append(Image(str(path), width=thumb_w, height=thumb_h,
+                                 kind="proportional"))
+            except Exception:
+                row.append(_para("[photo]", "PtMuted"))
+        # Pad final row so the last chunk left-aligns properly.
+        while len(rows[-1]) < 4:
+            rows[-1].append("")
+        thumb_table = Table(rows, colWidths=[thumb_w + 0.05 * inch] * 4)
+        thumb_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(thumb_table)
+    if missing:
+        story.append(_para(
+            f"[Photos referenced but missing on disk: {', '.join(missing)}]",
+            "PtMuted",
+        ))
+
+    # 3. Notes in a subtle grey block.
+    if notes.strip():
+        notes_table = Table(
+            [[_para(notes.strip(), "PtSmall")]],
+            colWidths=[5.6 * inch],
+        )
+        notes_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), SLATE_BG),
+            ("BOX", (0, 0), (-1, -1), 0.4, BRAND_BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(Spacer(1, 3))
+        story.append(notes_table)
+
+
 def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
     buf = io.BytesIO()
     title = sub.get("template_name_snapshot") or template.get("name") or "Form submission"
@@ -286,6 +442,17 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
                     story.append(_para(f"Vehicle: {' · '.join(parts)}"))
                 else:
                     story.append(_para("No vehicle selected.", "PtMuted"))
+
+            elif ftype == "compliance":
+                # v58.13.132ij — Render compliance answers as:
+                #   1. Coloured status pill inline with the label.
+                #   2. Up to 4-wide photo thumbnail row.
+                #   3. Notes as a subtle grey paragraph block.
+                # Legacy `_legacy_status` fallback: if the answer has no
+                # `status` dict but the migration left a `_legacy_status`
+                # scalar, render it as text so the PDF audit trail keeps
+                # showing yes/no/na for pre-migration answers.
+                _render_compliance_answer(story, f, sub.get("id", ""))
 
             else:
                 story.append(_para(_value_to_text(val)))
