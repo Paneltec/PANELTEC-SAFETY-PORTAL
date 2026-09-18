@@ -175,15 +175,6 @@ export default function ProfileScreen() {
         <View style={s.divider} />
 
         <ProfileRow
-          testID="profile-nav-fleet"
-          icon="car-outline"
-          iconColor={Colors.orange}
-          iconBg={Colors.orangeSoft}
-          title="My Fleet"
-          subtitle="Assigned vehicles & equipment"
-          onPress={() => {}}
-        />
-        <ProfileRow
           testID="profile-nav-swms"
           icon="shield-checkmark-outline"
           iconColor="#2563EB"
