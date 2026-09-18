@@ -298,6 +298,13 @@ export async function clearSession(): Promise<void> {
   await Storage.deleteItem(KEYS.orgName);
   await Storage.deleteItem(KEYS.permissions);
   await Storage.deleteItem(KEYS.employeeId);
+  // Clear web-only preview session keys (sessionStorage)
+  if (Platform.OS === 'web') {
+    try {
+      sessionStorage.removeItem('paneltec_preview_jwt');
+      sessionStorage.removeItem('paneltec_preview_user');
+    } catch { /* noop — SSR or non-browser */ }
+  }
   clearDeviceHintCache();
 }
 
