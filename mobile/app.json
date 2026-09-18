@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paneltec Group Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "scheme": "paneltec",
