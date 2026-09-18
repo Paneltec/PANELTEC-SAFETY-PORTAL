@@ -198,6 +198,21 @@ function computeExpoUrl(roleOrScope, token, workerId) {
   }
   if (token) u.searchParams.set('preview_token', token);
   if (workerId) u.searchParams.set('preview_worker_id', workerId);
+  // v58.13.132in — Human-readable role label ridealong so mobile splash
+  // can (in a follow-up mobile ship) drop it straight into localStorage
+  // ahead of Profile mount, overriding the admin's stale
+  // `paneltec_role_label`. The parent frame + Expo build run on
+  // different subdomains, so we can't write into the iframe's
+  // localStorage directly from here.
+  const SCOPE_LABELS = {
+    paneltec_civil: 'Paneltec Civil',
+    viatec_traffic: 'Viatec Traffic Solutions',
+    admin: 'Admin',
+    external_contractor: 'External Contractor',
+  };
+  const label = SCOPE_LABELS[roleOrScope]
+    || String(roleOrScope || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  if (label) u.searchParams.set('preview_role_label', label);
   u.searchParams.set('_t', Date.now().toString());
   return u.toString();
 }
@@ -555,6 +570,34 @@ function PhonePreview({ canEdit }) {
               data-testid="mobile-preview-iframe"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               referrerPolicy="no-referrer-when-downgrade"
+              onLoad={(e) => {
+                // v58.13.132in — Belt-and-braces role-label handoff.
+                // The Expo web build runs on a different subdomain
+                // (`<sub>.expo.preview...` vs `<sub>.preview...`), so
+                // the parent frame can't write into the iframe's
+                // localStorage directly. Post the label to the iframe;
+                // a follow-up mobile ship can subscribe and clobber
+                // the stale `paneltec_role_label` ahead of Profile
+                // mount. Until then the URL query param
+                // `preview_role_label` (see computeExpoUrl) covers
+                // the same intent.
+                try {
+                  const SCOPE_LABELS = {
+                    paneltec_civil: 'Paneltec Civil',
+                    viatec_traffic: 'Viatec Traffic Solutions',
+                    admin: 'Admin',
+                    external_contractor: 'External Contractor',
+                  };
+                  const label = SCOPE_LABELS[role]
+                    || String(role || '').replace(/_/g, ' ')
+                        .replace(/\b\w/g, (c) => c.toUpperCase());
+                  e.currentTarget.contentWindow?.postMessage({
+                    type: 'paneltec_preview_role_label',
+                    role_label: label,
+                    role_id: role,
+                  }, '*');
+                } catch (_) { /* cross-origin — best-effort only */ }
+              }}
               className="w-full h-full rounded-[24px] block"
               style={{ border: 0, background: '#F5F5F7' }}
             />
