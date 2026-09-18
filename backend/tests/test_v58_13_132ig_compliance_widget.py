@@ -97,8 +97,7 @@ def test_compliance_widget_component_exists():
     assert "bg-slate-400 text-white" in src
     # Info popover renders only when help_text is set.
     assert "helpText ? (" in src
-    # Camera + notes stubs disabled with a "coming in .132ih/ii" hint.
-    assert "coming in v58.13.132ih" in src
+    # Notes button still stubbed for .132ii; camera is now enabled in .132ih.
     assert "coming in v58.13.132ii" in src
     # Value shape merges photos/notes to protect future ships.
     assert "photos: Array.isArray(prev.photos)" in src

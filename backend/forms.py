@@ -1500,8 +1500,12 @@ async def upload_submission_photos(
             break
     if not target:
         raise HTTPException(400, "Unknown field_id on this submission")
-    if target.get("type") != "photo":
-        raise HTTPException(400, "Field is not a photo field")
+    # v58.13.132ih — Compliance question widget shares this endpoint.
+    # For `photo` fields we append to `value` (list). For `compliance`
+    # fields we append into `value.photos` (dict-shape).
+    target_type = target.get("type")
+    if target_type not in ("photo", "compliance"):
+        raise HTTPException(400, "Field type must be photo or compliance")
 
     sub_dir = UPLOAD_ROOT / submission_id
     sub_dir.mkdir(parents=True, exist_ok=True)
@@ -1553,12 +1557,31 @@ async def upload_submission_photos(
         saved.append(photo)
 
     if saved:
-        # Append to the photo field's value array atomically.
-        new_value = list(target.get("value") or []) + saved
-        await db.form_submissions.update_one(
-            {"id": submission_id, "org_id": user["org_id"], "fields.id": field_id},
-            {"$set": {"fields.$.value": new_value}},
-        )
+        # v58.13.132ih — Two write shapes:
+        #   · `photo` field → append into `value` (list).
+        #   · `compliance` field → append into `value.photos` (dict).
+        if target_type == "photo":
+            new_value = list(target.get("value") or []) + saved
+            await db.form_submissions.update_one(
+                {"id": submission_id, "org_id": user["org_id"], "fields.id": field_id},
+                {"$set": {"fields.$.value": new_value}},
+            )
+        else:  # compliance
+            existing_val = target.get("value")
+            if not isinstance(existing_val, dict):
+                # Untouched compliance answer: seed the dict shape so
+                # subsequent writes don't clobber `status`/`notes`.
+                existing_val = {"status": None, "photos": [], "notes": ""}
+            existing_photos = list(existing_val.get("photos") or [])
+            new_value = {
+                "status": existing_val.get("status"),
+                "photos": existing_photos + saved,
+                "notes": existing_val.get("notes") or "",
+            }
+            await db.form_submissions.update_one(
+                {"id": submission_id, "org_id": user["org_id"], "fields.id": field_id},
+                {"$set": {"fields.$.value": new_value}},
+            )
 
     return {"saved": saved, "rejected": rejected}
 

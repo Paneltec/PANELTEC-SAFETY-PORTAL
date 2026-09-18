@@ -463,7 +463,7 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
   );
 }
 
-export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues, submissionId, onStageChange, templateName }) {
+export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues, submissionId, onStageChange, templateName, complianceStagedPhotos, onComplianceStagePhotos, onComplianceUnstagePhoto }) {
   if (field.type === 'reference_matrix') {
     const { ReferenceMatrixField } = require('../components/forms/BydaFields');
     return <ReferenceMatrixField field={field} />;
@@ -528,9 +528,14 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
       </select>
     );
   if (field.type === 'radio') return <ColouredRadioGroup field={field} value={value} onChange={onChange} readOnly={readOnly} />;
-  // v58.13.132ig — First-class Compliant / At Risk / N/A question widget.
+  // v58.13.132ig / .132ih — First-class Compliant / At Risk / N/A question widget.
   if (field.type === 'compliance')
-    return <ComplianceQuestion field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+    return <ComplianceQuestion
+      field={field} value={value} onChange={onChange} readOnly={readOnly}
+      stagedPhotos={complianceStagedPhotos || []}
+      onStagePhotos={onComplianceStagePhotos}
+      onUnstagePhoto={onComplianceUnstagePhoto}
+    />;
   if (field.type === 'date')
     return <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={readOnly}
       data-testid={`field-${field.id}`}
@@ -627,6 +632,11 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
   // mime, size } coming from AttachmentField's `onStageChange`. Uploaded
   // AFTER the submission POST returns (see submit() below).
   const [attachmentFiles, setAttachmentFiles] = useState({});
+  // v58.13.132ih — staged per-question photos for `compliance` fields.
+  // Keyed by field.id → File[]. Uploaded AFTER submission POST, same
+  // endpoint (`/forms/submissions/{id}/photos`) which now accepts both
+  // `photo` and `compliance` target fields.
+  const [compliancePhotoFiles, setCompliancePhotoFiles] = useState({});
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState('');
   const [lockedFields, setLockedFields] = useState({});
@@ -715,6 +725,23 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
     setDirty(true);
     setTouched((p) => ({ ...p, [fid]: true }));
     setPhotoFiles((p) => ({ ...p, [fid]: files }));
+  }, []);
+  // v58.13.132ih — Compliance-question staged photos. Append-only from
+  // the widget; unstage removes a File by index.
+  const stageCompliancePhotos = useCallback((fid, files) => {
+    setDirty(true);
+    setTouched((p) => ({ ...p, [fid]: true }));
+    setCompliancePhotoFiles((p) => ({
+      ...p, [fid]: [...(p[fid] || []), ...files],
+    }));
+  }, []);
+  const unstageCompliancePhoto = useCallback((fid, idx) => {
+    setDirty(true);
+    setCompliancePhotoFiles((p) => {
+      const next = [...(p[fid] || [])];
+      next.splice(idx, 1);
+      return { ...p, [fid]: next };
+    });
   }, []);
 
   const missingFields = useMemo(() => (template.fields || []).filter((f) => {
@@ -814,6 +841,25 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
         fd.append('field_id', fid);
         (photoFiles[fid] || []).forEach((file) => fd.append('files', file));
         await api.post(`/forms/submissions/${sub.id}/photos`, fd);
+      }
+      // v58.13.132ih — Compliance-question staged photos share the
+      // /photos endpoint. Same field_id + files shape; server routes
+      // the write into `value.photos` (dict) instead of `value` (list).
+      const complianceFieldIds = Object.keys(compliancePhotoFiles)
+        .filter((fid) => (compliancePhotoFiles[fid] || []).length > 0);
+      for (let i = 0; i < complianceFieldIds.length; i++) {
+        const fid = complianceFieldIds[i];
+        setProgress(`Uploading compliance photos (${i + 1}/${complianceFieldIds.length})…`);
+        const fd = new FormData();
+        fd.append('field_id', fid);
+        (compliancePhotoFiles[fid] || []).forEach((file) => fd.append('files', file));
+        try {
+          await api.post(`/forms/submissions/${sub.id}/photos`, fd);
+        } catch (err) {
+          toast.error(`Compliance photo upload failed`, {
+            description: err?.response?.data?.detail || err?.message || 'Upload failed',
+          });
+        }
       }
       // v58.12.4 — attachment upload loop mirrors the photo loop above.
       // Best-effort per file: individual failure toasts but never rolls
@@ -974,6 +1020,9 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
                 photoFiles={photoFiles[f.id]}
                 onPhotoChange={(files) => setPhotoField(f.id, files)}
                 onStageChange={(fid, files) => setAttachmentFiles((prev) => ({ ...prev, [fid]: files }))}
+                complianceStagedPhotos={compliancePhotoFiles[f.id]}
+                onComplianceStagePhotos={(files) => stageCompliancePhotos(f.id, files)}
+                onComplianceUnstagePhoto={(idx) => unstageCompliancePhoto(f.id, idx)}
                 allFields={template.fields || []}
                 allValues={values}
                 templateName={template.name}

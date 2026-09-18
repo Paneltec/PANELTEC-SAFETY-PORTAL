@@ -1,5 +1,5 @@
 /**
- * v58.13.132ig — Compliance question widget.
+ * v58.13.132ig / .132ih — Compliance question widget.
  *
  * First-class 3-state field for checklist / inspection forms
  * (Pre-Starts, SSRAs, Toolbox Talks, Inspections, Site Audits, JSEAs).
@@ -12,30 +12,37 @@
  *       AT RISK   (rose-500 when active — brand danger)
  *       N/A       (slate-400 when active)
  *   · Right-aligned in the same row: 3 utility icons:
- *       (i) info    — visible only when `help_text` is set on the
- *                     field. Click opens a small popover with the
- *                     help copy.
- *       📷 camera   — coming in .132ih (per-question photo attach).
- *                     For .132ig the button renders as disabled with
- *                     a "coming soon" tooltip so the layout matches
- *                     the mockup and the future ship becomes a
- *                     one-line wire-up.
- *       📝 notes    — coming in .132ii (per-question notes text
- *                     input). Same disabled-stub treatment.
+ *       (i) info    — visible only when `help_text` is set. Click
+ *                     opens a small popover with the help copy.
+ *       📷 camera   — v58.13.132ih: on click triggers a hidden
+ *                     `<input type="file" accept="image/*"
+ *                     capture="environment" multiple>` — on mobile
+ *                     Safari / Chrome this opens the native camera;
+ *                     on desktop it falls back to the file picker.
+ *                     Staged files (pre-submit) or persisted photos
+ *                     render as inline thumbnails below the buttons;
+ *                     click a thumbnail to open the lightbox.
+ *       📝 notes    — still stubbed for .132ii.
  *
  * Value shape: `{status, photos, notes}` where status is one of
  * "compliant" | "at_risk" | "na" | null (null = un-answered).
  *
  * Callers pass:
- *   · field       — the FormField (label / help_text / required).
+ *   · field       — the FormField (label / help_text / required / id).
  *   · value       — current value dict OR null.
  *   · onChange(v) — commit a new value dict.
  *   · readOnly    — disable all interactions.
  *   · questionNumber — optional 1-based ordinal; when set, renders
  *                     "N. <label>".
+ *
+ * v58.13.132ih optional props (photo attach staging):
+ *   · stagedPhotos: File[]        — client-side pending uploads.
+ *   · onStagePhotos: (files) => v — append staged Files.
+ *   · onUnstagePhoto: (i) => v    — remove a staged File by index.
  */
-import React, { useState } from 'react';
-import { Info, Camera, StickyNote } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { Info, Camera, StickyNote, X } from 'lucide-react';
+import ImagePreviewModal from '../ImagePreviewModal';
 
 const STATUS_BUTTONS = [
   {
@@ -60,14 +67,44 @@ function _readStatus(value) {
   return null;
 }
 
+function _readPersistedPhotos(value) {
+  if (!value || typeof value !== 'object') return [];
+  const arr = Array.isArray(value.photos) ? value.photos : [];
+  return arr.filter((p) => p && (p.file_url || p.stored_name));
+}
+
 export default function ComplianceQuestion({
-  field, value, onChange, readOnly = false, questionNumber = null,
+  field,
+  value,
+  onChange,
+  readOnly = false,
+  questionNumber = null,
+  stagedPhotos = [],
+  onStagePhotos = null,
+  onUnstagePhoto = null,
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
+  const [preview, setPreview] = useState(null); // { url } | { file }
+  const cameraInputRef = useRef(null);
+
   const status = _readStatus(value);
   const helpText = (field?.help_text || '').trim();
   const label = field?.label || 'Untitled';
   const prefix = questionNumber != null ? `${questionNumber}. ` : '';
+
+  const persistedPhotos = _readPersistedPhotos(value);
+  const canStage = !readOnly && typeof onStagePhotos === 'function';
+
+  // Object-URL previews for staged Files — revoked when the array
+  // reference changes (parent state update triggers a fresh map).
+  const stagedPreviews = useMemo(() => (stagedPhotos || []).map((f) => ({
+    file: f,
+    name: f?.name || 'photo',
+    url: (() => { try { return URL.createObjectURL(f); } catch { return null; } })(),
+  })), [stagedPhotos]);
+  React.useEffect(() => () => {
+    stagedPreviews.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
+  }, [stagedPreviews]);
 
   const commit = (nextStatus) => {
     if (readOnly || typeof onChange !== 'function') return;
@@ -78,6 +115,13 @@ export default function ComplianceQuestion({
       photos: Array.isArray(prev.photos) ? prev.photos : [],
       notes: typeof prev.notes === 'string' ? prev.notes : '',
     });
+  };
+
+  const onCameraPick = (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!picked.length || !onStagePhotos) return;
+    onStagePhotos(picked);
   };
 
   return (
@@ -144,13 +188,31 @@ export default function ComplianceQuestion({
               )}
             </div>
           ) : null}
+          {/* v58.13.132ih — Camera / file-picker attach. Uses the browser's
+              native accept+capture combo: mobile opens the camera,
+              desktop falls back to the file picker. */}
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            className="hidden"
+            data-testid={`compliance-camera-input-${field?.id || 'unknown'}`}
+            onChange={onCameraPick}
+          />
           <button
             type="button"
-            disabled
+            disabled={!canStage}
+            onClick={() => cameraInputRef.current?.click()}
             data-testid={`compliance-camera-${field?.id || 'unknown'}`}
-            title="Photo attach — coming in v58.13.132ih"
-            aria-label="Attach photo (coming soon)"
-            className="p-1.5 rounded-full text-slate-300 cursor-not-allowed"
+            title={canStage ? 'Take or attach photo' : 'Photo attach not available here'}
+            aria-label={canStage ? 'Take or attach photo' : 'Attach photo (unavailable)'}
+            className={
+              'p-1.5 rounded-full ' + (canStage
+                ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                : 'text-slate-300 cursor-not-allowed')
+            }
           >
             <Camera size={14} />
           </button>
@@ -166,6 +228,69 @@ export default function ComplianceQuestion({
           </button>
         </div>
       </div>
+
+      {/* v58.13.132ih — Inline thumbnail row. Merges persisted photos
+          (already on the server) with client-side staged Files. */}
+      {(persistedPhotos.length > 0 || stagedPreviews.length > 0) && (
+        <div
+          className="grid grid-cols-4 gap-2 pt-1"
+          data-testid={`compliance-photos-${field?.id || 'unknown'}`}
+        >
+          {persistedPhotos.map((p, i) => (
+            <button
+              key={`p-${p.stored_name || p.id || i}`}
+              type="button"
+              onClick={() => setPreview({ url: p.file_url })}
+              data-testid={`compliance-photo-thumb-${field?.id || 'unknown'}-${i}`}
+              className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-50 hover:border-brand-blue"
+            >
+              <img
+                src={p.file_url}
+                alt={p.filename || 'photo'}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </button>
+          ))}
+          {stagedPreviews.map((p, i) => (
+            <div
+              key={`s-${i}`}
+              className="relative aspect-square rounded-lg overflow-hidden border border-dashed border-brand-blue bg-blue-50 group"
+              data-staged="true"
+            >
+              <button
+                type="button"
+                onClick={() => setPreview({ file: p.file })}
+                data-testid={`compliance-photo-staged-thumb-${field?.id || 'unknown'}-${i}`}
+                className="w-full h-full block"
+              >
+                {p.url ? (
+                  <img src={p.url} alt={p.name} className="w-full h-full object-cover" />
+                ) : null}
+              </button>
+              {typeof onUnstagePhoto === 'function' && !readOnly && (
+                <button
+                  type="button"
+                  onClick={() => onUnstagePhoto(i)}
+                  data-testid={`compliance-photo-unstage-${field?.id || 'unknown'}-${i}`}
+                  aria-label="Remove staged photo"
+                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/95 text-rose-700 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {preview && (
+        <ImagePreviewModal
+          url={preview.url}
+          file={preview.file}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   );
 }
