@@ -67,9 +67,9 @@ export default function HomeScreen() {
       setRoleLabel(rl || u?.role_label || u?.role_id || u?.role || '');
     }
 
-    // Fetch AI briefing
+    // Fetch AI briefing (45s timeout — LLM-backed, can be slow)
     setBriefingLoading(true);
-    const briefRes = await authGet<BriefingResponse>('/api/mobile/ai/briefing');
+    const briefRes = await authGet<BriefingResponse>('/api/mobile/ai/briefing', { timeoutMs: 45_000 });
     if (briefRes.ok) {
       setBriefing(briefRes.data);
       setBriefingError('');
@@ -77,7 +77,10 @@ export default function HomeScreen() {
       handleExpired();
       return;
     } else {
-      setBriefingError('error' in briefRes ? briefRes.error : 'Failed to load');
+      const errMsg = 'error' in briefRes ? briefRes.error : 'Failed to load';
+      const isTimeout = 'timeout' in briefRes && briefRes.timeout;
+      console.warn(`[briefing] ${isTimeout ? 'TIMEOUT' : 'ERROR'}: ${errMsg}`);
+      setBriefingError(isTimeout ? 'Briefing timed out' : errMsg);
     }
     setBriefingLoading(false);
 
@@ -350,9 +353,15 @@ export default function HomeScreen() {
             )}
           </View>
           {briefingLoading ? (
-            <ActivityIndicator color={Colors.orange} style={{ marginVertical: 16 }} />
+            <View style={s.briefingLoadingWrap}>
+              <ActivityIndicator color={Colors.orange} />
+              <Text style={s.briefingLoadingText}>Generating briefing…</Text>
+            </View>
           ) : briefingError ? (
-            <Text style={s.briefingError}>{briefingError}</Text>
+            <TouchableOpacity testID="briefing-retry-btn" style={s.briefingRetryWrap} onPress={() => { setBriefingError(''); loadData(); }}>
+              <Ionicons name="cloud-offline-outline" size={18} color={Colors.textTertiary} />
+              <Text style={s.briefingRetryText}>Briefing unavailable — tap to retry</Text>
+            </TouchableOpacity>
           ) : briefing ? (
             <Text style={s.briefingSummary}>{briefing.briefing}</Text>
           ) : null}
@@ -493,7 +502,13 @@ const s = StyleSheet.create({
   briefingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   briefingTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink, flex: 1 },
   briefingSummary: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
-  briefingError: { fontSize: 13, color: Colors.error, fontStyle: 'italic' },
+  briefingLoadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
+  briefingLoadingText: { fontSize: 12, color: Colors.textTertiary, fontStyle: 'italic' },
+  briefingRetryWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 12, paddingHorizontal: 4,
+  },
+  briefingRetryText: { fontSize: 13, color: Colors.textTertiary },
   severityPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   severityText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 

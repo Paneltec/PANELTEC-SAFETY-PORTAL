@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paneltec Group Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "scheme": "paneltec",
@@ -17,7 +17,7 @@
         "backgroundColor": "#0F172A"
       },
       "package": "com.emergent.whscompliance.fv5aib",
-      "versionCode": 138
+      "versionCode": 139
     },
     "web": {
       "bundler": "metro",

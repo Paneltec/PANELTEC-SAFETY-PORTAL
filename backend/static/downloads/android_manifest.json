@@ -1,12 +1,13 @@
 {
-  "filename": "paneltec-field-app-v58.13.132at.apk",
-  "version": "1.0.6",
-  "version_code": 137,
-  "size_bytes": 121906775,
-  "sha256": "0a6112f0cc90de4d1b4907064c34dfe7044a81220143d88c18c74a0e68ab44a0",
-  "built_at": "2026-09-08T04:27:19Z",
-  "eas_build_id": "24783f93-3817-4f32-a85c-e41fea8d5734",
+  "filename": "paneltec-field-app-eas-5acf5ebd-4480-4e1d-a069-dedcfcfb4158.apk",
+  "version": "1.0.16",
+  "version_code": 138,
+  "size_bytes": 64045843,
+  "sha256": "74314127787b871f5c2e0789ec1394c743a60b516a7b5f0ba4eb1963a58cf060",
+  "built_at": "2026-09-19T08:52:17.959Z",
+  "eas_build_id": "5acf5ebd-4480-4e1d-a069-dedcfcfb4158",
   "bundle_id": "com.emergent.whscompliance.fv5aib",
-  "ship_version": "paneltec-v160.3.9.58.13.132at",
-  "changelog": "Sentry native + JS crash reporting added (EU region DSN). ErrorBoundary, boot-trace, splash retention and on-next-boot recovery screen from .132al preserved. First build capable of shipping a native stack trace off-device for the .132ai launch crash investigation."
+  "git_commit": "2279c15383107956248fc49f8ac877123ce230f1",
+  "synced_at": "2026-09-19T09:09:10.956182+00:00",
+  "synced_by_user_id": "808cb7de-985a-4c49-8554-9c67e5e86313"
 }

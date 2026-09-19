@@ -182,15 +182,35 @@ _EAS_GRAPHQL = "https://api.expo.dev/graphql"
 _EAS_APP_SLUG = "paneltec-civil-field"
 _EAS_ACCOUNT = "stephenguy"
 
-_LATEST_BUILD_QUERY = """
-query LatestAndroidBuild($accountName: String!, $appSlug: String!) {
-  account: accountByName(accountName: $accountName) {
-    apps(limit: 20) {
+# v58.13.132ix hotfix (post-cda0f65) — the correct EAS GraphQL entry
+# point is `me { accounts { ... } }`; the earlier `accountByName` call
+# failed with GRAPHQL_VALIDATION_FAILED. Two-step:
+#   1. me → accounts → apps → find the app whose `slug` matches
+#      `_EAS_APP_SLUG`. Grab its `id`.
+#   2. app.byId(appId) → builds(...) → newest FINISHED with artifact.
+_ME_APPS_QUERY = """
+query MeAccountsApps {
+  me {
+    accounts {
       id
-      slug
+      name
+      apps(limit: 50, offset: 0) {
+        id
+        slug
+      }
+    }
+  }
+}
+"""
+
+_APP_BUILDS_QUERY = """
+query AppBuilds($appId: String!) {
+  app {
+    byId(appId: $appId) {
       builds(
         limit: 5
-        filter: { platforms: [ANDROID], statuses: [FINISHED], distributions: [INTERNAL] }
+        offset: 0
+        filter: { platform: ANDROID, status: FINISHED, distribution: INTERNAL }
       ) {
         id
         status
@@ -236,39 +256,74 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
     log.warning("apk_ingest.invoked by user_id=%s email=%s",
                 user.get("id"), user.get("email"))
 
-    # 1. Query EAS for the latest internal Android build.
-    async with httpx.AsyncClient(timeout=30) as client:
+    # 1. Query EAS for the app id via `me.accounts.apps`, then fetch
+    #    the latest internal Android build for that app id.
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        # --- Step 1: resolve appId from slug. -------------------------
         try:
-            r = await client.post(
+            r1 = await client.post(
                 _EAS_GRAPHQL,
                 headers={"Authorization": f"Bearer {token}",
                          "Content-Type": "application/json"},
-                json={"query": _LATEST_BUILD_QUERY,
-                      "variables": {"accountName": _EAS_ACCOUNT,
-                                    "appSlug": _EAS_APP_SLUG}},
+                json={"query": _ME_APPS_QUERY},
             )
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502,
                                 detail=f"EAS unreachable: {exc}")
-        if r.status_code != 200:
+        if r1.status_code != 200:
             raise HTTPException(
                 status_code=502,
-                detail=f"EAS GraphQL HTTP {r.status_code}: {r.text[:200]}",
+                detail=f"EAS GraphQL (me) HTTP {r1.status_code}: {r1.text[:200]}",
             )
-        payload = r.json()
-        if "errors" in payload:
+        p1 = r1.json()
+        if "errors" in p1:
             raise HTTPException(
                 status_code=502,
-                detail=f"EAS GraphQL error: {payload['errors']!r}",
+                detail=f"EAS GraphQL (me) error: {p1['errors']!r}",
             )
-        apps = ((payload.get("data") or {}).get("account") or {}).get("apps") or []
-        target = next((a for a in apps if a.get("slug") == _EAS_APP_SLUG), None)
-        if not target:
+        accounts = ((p1.get("data") or {}).get("me") or {}).get("accounts") or []
+        app_id: Optional[str] = None
+        for acc in accounts:
+            if acc.get("name") and acc["name"].lower() != _EAS_ACCOUNT.lower():
+                # Skip other accounts the token can see.
+                continue
+            for a in acc.get("apps") or []:
+                if a.get("slug") == _EAS_APP_SLUG:
+                    app_id = a.get("id")
+                    break
+            if app_id:
+                break
+        if not app_id:
             raise HTTPException(
                 status_code=502,
                 detail=f"EAS app slug {_EAS_APP_SLUG!r} not visible on "
                        f"account {_EAS_ACCOUNT!r}",
             )
+
+        # --- Step 2: fetch latest FINISHED internal Android build. ----
+        try:
+            r2 = await client.post(
+                _EAS_GRAPHQL,
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"},
+                json={"query": _APP_BUILDS_QUERY,
+                      "variables": {"appId": app_id}},
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502,
+                                detail=f"EAS unreachable: {exc}")
+        if r2.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"EAS GraphQL (builds) HTTP {r2.status_code}: {r2.text[:200]}",
+            )
+        payload = r2.json()
+        if "errors" in payload:
+            raise HTTPException(
+                status_code=502,
+                detail=f"EAS GraphQL (builds) error: {payload['errors']!r}",
+            )
+        target = ((payload.get("data") or {}).get("app") or {}).get("byId") or {}
         builds = target.get("builds") or []
         pick = next(
             (b for b in builds
