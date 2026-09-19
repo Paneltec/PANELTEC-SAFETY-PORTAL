@@ -1,8 +1,13 @@
-# v58.13.132it — Paneltec /app disk hygiene cron.
-# Runs every 5 minutes; the guard script itself is a no-op when
-# /app usage < 80% (tightened from 85% in .132it). See
-# /app/scripts/purge_webpack_cache_if_full.sh.
+# v58.13.132iw — Paneltec /app disk hygiene cron (LIVE).
+# Runs every 2 minutes; the guard script itself is a no-op when
+# /app usage < 75% (tightened from 80% in .132iw after two 100%
+# events inside a single hour).
+# Install location: /etc/cron.d/paneltec-disk-hygiene.
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-*/5 * * * * root /app/scripts/purge_webpack_cache_if_full.sh >/dev/null 2>&1
+*/2 * * * * root /app/scripts/purge_webpack_cache_if_full.sh >/dev/null 2>&1
+# On cron daemon start (typically at container resume) run once
+# immediately as a safety net so a very-full pod doesn't have to wait
+# up to 2 min for the first tick.
+@reboot root /app/scripts/purge_webpack_cache_if_full.sh >/dev/null 2>&1

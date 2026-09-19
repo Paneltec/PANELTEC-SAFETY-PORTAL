@@ -496,3 +496,74 @@ async def set_suspicious_alerts(body: SuspiciousAlertsIn,
         upsert=True,
     )
     return {"ok": True, "mode": body.mode}
+
+
+# ─────────────────────── Disk panic (v58.13.132iw) ───────────────────────
+
+@router.post("/health/disk-panic")
+async def disk_panic(user: dict = Depends(get_current_user)):
+    """v58.13.132iw — Admin-only on-demand disk purge.
+    Executes `/app/scripts/purge_webpack_cache_if_full.sh` with the
+    threshold temporarily set to `0` so it runs unconditionally,
+    regardless of the current /app usage %. Belt-and-braces safety net
+    when the every-2-minute cron hasn't fired yet or when the pod is
+    already at 100%.
+
+    Returns before/after free-space stats + the tail of the hygiene
+    log so admins can confirm what was reclaimed. Non-admins → 403."""
+    import shutil
+    import subprocess
+
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin only")
+
+    def _du():
+        u = shutil.disk_usage("/app")
+        return {
+            "total_mb": round(u.total / (1024 * 1024), 1),
+            "free_mb":  round(u.free  / (1024 * 1024), 1),
+            "used_pct": round((u.used / u.total) * 100, 1),
+        }
+
+    before = _du()
+    log.warning("disk_panic.invoked by user_id=%s email=%s before=%s",
+                user.get("id"), user.get("email"), before)
+    try:
+        proc = subprocess.run(
+            ["/bin/bash", "/app/scripts/purge_webpack_cache_if_full.sh"],
+            env={**os.environ, "THRESHOLD": "0", "SKIP_GIT_GC": "1"},
+            capture_output=True, text=True, timeout=25,
+        )
+        script_ok = proc.returncode == 0
+        script_stderr = (proc.stderr or "")[-500:]
+    except subprocess.TimeoutExpired:
+        script_ok = False
+        script_stderr = "purge script timed out after 25s"
+    except Exception as exc:  # noqa: BLE001
+        script_ok = False
+        script_stderr = f"purge script failed to launch: {exc}"
+
+    after = _du()
+    freed_mb = round(before["free_mb"] - after["free_mb"], 1) * -1  # positive when we freed
+
+    # Tail the hygiene log for admin-visible evidence of what was purged.
+    tail_lines: list[str] = []
+    try:
+        with open("/var/log/paneltec-disk-hygiene.log", "r", encoding="utf-8") as f:
+            tail_lines = f.readlines()[-15:]
+    except FileNotFoundError:
+        tail_lines = ["(hygiene log not created yet)"]
+    except Exception as exc:  # noqa: BLE001
+        tail_lines = [f"(log tail failed: {exc})"]
+
+    log.warning("disk_panic.done user_id=%s freed_mb=%s after=%s script_ok=%s",
+                user.get("id"), freed_mb, after, script_ok)
+
+    return {
+        "ok": script_ok,
+        "before": before,
+        "after": after,
+        "freed_mb": freed_mb,
+        "script_stderr": script_stderr,
+        "hygiene_log_tail": [ln.rstrip("\n") for ln in tail_lines],
+    }

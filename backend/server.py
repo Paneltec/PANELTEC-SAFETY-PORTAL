@@ -728,6 +728,27 @@ install_backup(app, _mongo_db, require_roles("admin"))
 
 @app.on_event("startup")
 async def on_startup():
+    # v58.13.132iw — Disk-panic startup guard. If /app free < 200 MB
+    # at backend boot, fire the purge script BEFORE the rest of the
+    # startup work touches the disk. Non-fatal on any failure — the
+    # goal is best-effort headroom, not a fail-closed gate.
+    try:
+        import shutil as _shutil, subprocess as _subprocess
+        _free_mb = _shutil.disk_usage("/app").free / (1024 * 1024)
+        if _free_mb < 200:
+            log.warning("disk_panic.startup_guard triggered: /app free=%.1f MB < 200 MB",
+                        _free_mb)
+            _subprocess.run(
+                ["/bin/bash", "/app/scripts/purge_webpack_cache_if_full.sh"],
+                env={**os.environ, "THRESHOLD": "0", "SKIP_GIT_GC": "1"},
+                capture_output=True, text=True, timeout=25,
+            )
+            _free_mb_after = _shutil.disk_usage("/app").free / (1024 * 1024)
+            log.warning("disk_panic.startup_guard done: /app free=%.1f MB (was %.1f MB)",
+                        _free_mb_after, _free_mb)
+    except Exception as _e:  # noqa: BLE001
+        log.warning("disk_panic.startup_guard failed: %s", _e)
+
     await ensure_indexes()
     # v58.13.132hf — Boot-trigger the doc_files extracted_text
     # backfill 5 minutes after startup. Admin can cancel via

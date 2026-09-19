@@ -16,7 +16,7 @@
 # Logged (with per-target MB freed) to /var/log/paneltec-disk-hygiene.log.
 set -u
 
-THRESHOLD=${THRESHOLD:-80}
+THRESHOLD=${THRESHOLD:-75}
 LOG=/var/log/paneltec-disk-hygiene.log
 
 TARGETS=(
@@ -153,8 +153,12 @@ fi
 # 5. git gc on /app/.git — only run if still >= threshold after the
 # cheap steps above, since gc is expensive (CPU + IO) and rewrites the
 # pack file. Fast-exit if the earlier steps already got us under water.
+# v58.13.132iw — SKIP_GIT_GC=1 makes on-demand panic mode return fast
+# (git gc can take ~70s and blocks the HTTP response beyond CF's edge
+# timeout). The cron path leaves SKIP_GIT_GC unset so gc still fires
+# there.
 mid_pct=$(usage_pct)
-if [ "$mid_pct" -ge "$THRESHOLD" ] && [ -d /app/.git ]; then
+if [ "$mid_pct" -ge "$THRESHOLD" ] && [ -d /app/.git ] && [ "${SKIP_GIT_GC:-0}" != "1" ]; then
   gc_before=$(du -sk /app/.git 2>/dev/null | awk '{print $1}')
   # Timeout gc after 120s to avoid stalling cron; --prune=now reaps
   # dangling objects immediately (no 2-week grace period).
