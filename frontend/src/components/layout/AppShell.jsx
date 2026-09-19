@@ -73,6 +73,85 @@ import { Sheet, SheetContent, SheetTitle } from '../ui/sheet';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { ChangePasswordModal } from '../auth/AuthBundle';
 import { ApiHealthPill, BackupPill, UserDropdownCard } from './TopbarPills';
+
+// v58.13.132ix — APK version + Sync-from-EAS block for the top-bar
+// "Download app" popover. Split into its own component so the fetch
+// happens only when the popover is actually mounted (DropdownMenu
+// unmounts closed content) — no wasted GET on every page render.
+function ApkVersionBlock() {
+  const [meta, setMeta] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [syncing, setSyncing] = React.useState(false);
+
+  const loadMeta = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api.get('/mobile/downloads/android/version');
+      setMeta(r.data);
+    } catch (_) {
+      setMeta(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => { loadMeta(); }, [loadMeta]);
+
+  const onSync = async () => {
+    setSyncing(true);
+    try {
+      const r = await api.post('/mobile/downloads/android/ingest-from-eas');
+      const m = r.data?.manifest;
+      if (m) {
+        toast.success(`Synced: v${m.version} · build ${m.eas_build_id?.slice(0, 8)}`);
+      } else {
+        toast.success('APK synced from EAS');
+      }
+      await loadMeta();
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || 'EAS sync failed';
+      toast.error(msg);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5" data-testid="topbar-apk-version-block">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Published APK</div>
+          {loading ? (
+            <div className="text-xs text-slate-400 mt-0.5">Checking…</div>
+          ) : !meta || !meta.available ? (
+            <div className="text-xs text-slate-500 mt-0.5" data-testid="topbar-apk-version-none">None published yet</div>
+          ) : (
+            <div className="text-xs text-slate-800 mt-0.5" data-testid="topbar-apk-version-current">
+              <span className="font-semibold">v{meta.version}</span>
+              {meta.version_code ? <span className="text-slate-500"> · build {meta.version_code}</span> : null}
+              {meta.built_at ? (
+                <div className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                  Built {new Date(meta.built_at).toLocaleDateString()}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onSync}
+          disabled={syncing}
+          data-testid="topbar-apk-sync-eas"
+          className="shrink-0 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+          title="Pull the latest FINISHED Android build from EAS and republish here."
+        >
+          {syncing ? '…syncing' : 'Sync latest from EAS'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 import AdminPillsLock from './AdminPillsLock';
 
 const NAV = [
@@ -476,13 +555,19 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
               <ChevronDown size={10} className="opacity-70" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-72 p-3">
+          <DropdownMenuContent align="end" className="w-80 p-3">
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
               Paneltec Civil · Mobile app
             </DropdownMenuLabel>
             <p className="mt-1 mb-3 text-xs text-slate-600 leading-relaxed">
               Install the mobile app for field workers, admins doing role-simulator testing, or QR sign-on stations.
             </p>
+            {/* v58.13.132ix — Currently-published APK metadata + admin
+                "Sync latest from EAS" button. Reads manifest from
+                /mobile/downloads/android/version (public, no auth) and
+                POSTs to /mobile/downloads/android/ingest-from-eas
+                (admin-only) to refresh from EAS. */}
+            <ApkVersionBlock />
             <a
               href="/api/mobile/downloads/android/latest.apk"
               download

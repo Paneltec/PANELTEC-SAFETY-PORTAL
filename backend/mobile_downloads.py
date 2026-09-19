@@ -5,8 +5,15 @@ Public (no auth) — workers scanning onboarding cards can't be
 authenticated yet.
 
 Endpoints:
-  GET /api/mobile/downloads/android/latest.apk   → APK file stream
-  GET /api/mobile/downloads/android/version      → metadata JSON
+  GET  /api/mobile/downloads/android/latest.apk     → APK file stream
+  GET  /api/mobile/downloads/android/version        → metadata JSON
+  POST /api/mobile/downloads/android/ingest-from-eas → v58.13.132ix
+       admin-only. Fetches the latest FINISHED Android build from
+       EAS on the stephenguy account's paneltec-civil-field project,
+       downloads the signed APK artifact, and writes it to disk +
+       updates android_manifest.json. Requires `EXPO_TOKEN` env var
+       (unset by default in this pod — the admin op must export it
+       into backend/.env and restart backend before calling).
 
 v58.13.132ah — Range-aware delivery.
   Prior `FileResponse` did NOT advertise `Accept-Ranges: bytes`
@@ -21,13 +28,23 @@ v58.13.132ah — Range-aware delivery.
   `Accept-Ranges: bytes`. Malformed / unsatisfiable ranges → 416.
 """
 from __future__ import annotations
+import hashlib
 import json
+import logging
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from auth import get_current_user
+from db import db
+
+log = logging.getLogger("paneltec.mobile_downloads")
 
 router = APIRouter(tags=["mobile-downloads"])
 
@@ -157,3 +174,200 @@ async def android_latest_apk(request: Request):
         media_type="application/vnd.android.package-archive",
         headers=headers,
     )
+
+
+# ─────────────────────── v58.13.132ix — Ingest from EAS ───────────────────────
+
+_EAS_GRAPHQL = "https://api.expo.dev/graphql"
+_EAS_APP_SLUG = "paneltec-civil-field"
+_EAS_ACCOUNT = "stephenguy"
+
+_LATEST_BUILD_QUERY = """
+query LatestAndroidBuild($accountName: String!, $appSlug: String!) {
+  account: accountByName(accountName: $accountName) {
+    apps(limit: 20) {
+      id
+      slug
+      builds(
+        limit: 5
+        filter: { platforms: [ANDROID], statuses: [FINISHED], distributions: [INTERNAL] }
+      ) {
+        id
+        status
+        platform
+        appVersion
+        appBuildVersion
+        completedAt
+        gitCommitHash
+        artifacts { buildUrl }
+      }
+    }
+  }
+}
+"""
+
+
+@router.post("/mobile/downloads/android/ingest-from-eas")
+async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
+    """v58.13.132ix — Admin-only. Pull the latest FINISHED internal
+    Android build from EAS, download its APK artifact, and drop it in
+    APK_DIR with a refreshed android_manifest.json.
+
+    Reads `EXPO_TOKEN` from the process env. If unset, returns 501 with
+    an instruction to add it to backend/.env (not committed).
+
+    Never overwrites the existing on-disk APK/manifest until the new
+    file is fully downloaded + sha256'd, so a mid-flight failure leaves
+    the previous binary intact and the endpoint keeps serving it."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin only")
+
+    token = os.environ.get("EXPO_TOKEN")
+    if not token:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "EXPO_TOKEN not set in backend env. Add it to "
+                "backend/.env then `sudo supervisorctl restart backend` "
+                "before calling this endpoint. Do NOT commit the token."
+            ),
+        )
+
+    log.warning("apk_ingest.invoked by user_id=%s email=%s",
+                user.get("id"), user.get("email"))
+
+    # 1. Query EAS for the latest internal Android build.
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            r = await client.post(
+                _EAS_GRAPHQL,
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"},
+                json={"query": _LATEST_BUILD_QUERY,
+                      "variables": {"accountName": _EAS_ACCOUNT,
+                                    "appSlug": _EAS_APP_SLUG}},
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502,
+                                detail=f"EAS unreachable: {exc}")
+        if r.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"EAS GraphQL HTTP {r.status_code}: {r.text[:200]}",
+            )
+        payload = r.json()
+        if "errors" in payload:
+            raise HTTPException(
+                status_code=502,
+                detail=f"EAS GraphQL error: {payload['errors']!r}",
+            )
+        apps = ((payload.get("data") or {}).get("account") or {}).get("apps") or []
+        target = next((a for a in apps if a.get("slug") == _EAS_APP_SLUG), None)
+        if not target:
+            raise HTTPException(
+                status_code=502,
+                detail=f"EAS app slug {_EAS_APP_SLUG!r} not visible on "
+                       f"account {_EAS_ACCOUNT!r}",
+            )
+        builds = target.get("builds") or []
+        pick = next(
+            (b for b in builds
+             if b.get("status") == "FINISHED"
+             and (b.get("artifacts") or {}).get("buildUrl")),
+            None,
+        )
+        if not pick:
+            raise HTTPException(
+                status_code=404,
+                detail="No FINISHED internal Android build with an "
+                       "artifact URL found on the last 5 builds.",
+            )
+
+        build_id = pick["id"]
+        artifact_url = pick["artifacts"]["buildUrl"]
+        app_version = pick.get("appVersion") or "unknown"
+        app_build_version = pick.get("appBuildVersion") or "unknown"
+        completed_at = pick.get("completedAt") or _now_iso()
+        git_sha = pick.get("gitCommitHash") or ""
+
+        # 2. Download the APK to a temp file first, hash it, then swap.
+        APK_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"paneltec-field-app-eas-{build_id}.apk"
+        final_path = APK_DIR / filename
+        tmp_path = APK_DIR / f".{filename}.partial"
+
+        sha = hashlib.sha256()
+        total = 0
+        try:
+            async with client.stream("GET", artifact_url) as resp:
+                if resp.status_code != 200:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"EAS artifact HTTP {resp.status_code}",
+                    )
+                with open(tmp_path, "wb") as f:
+                    async for chunk in resp.aiter_bytes(1024 * 512):
+                        f.write(chunk)
+                        sha.update(chunk)
+                        total += len(chunk)
+        except httpx.HTTPError as exc:
+            tmp_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=502,
+                                detail=f"APK download failed: {exc}")
+
+    if total < 5_000_000:  # sanity — a real APK is >5MB
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Downloaded artifact suspiciously small ({total} bytes)",
+        )
+
+    sha256 = sha.hexdigest()
+
+    # 3. Atomic swap onto final path, rewrite manifest.
+    tmp_path.replace(final_path)
+
+    manifest = {
+        "filename": filename,
+        "version": app_version,
+        "version_code": int(app_build_version) if str(app_build_version).isdigit() else app_build_version,
+        "size_bytes": total,
+        "sha256": sha256,
+        "built_at": completed_at,
+        "eas_build_id": build_id,
+        "bundle_id": "com.emergent.whscompliance.fv5aib",
+        "git_commit": git_sha,
+        "synced_at": _now_iso(),
+        "synced_by_user_id": user.get("id"),
+    }
+    APK_MANIFEST.write_text(json.dumps(manifest, indent=2))
+
+    # 4. Insert an audit trail row in mobile_downloads_manifest.
+    try:
+        await db.mobile_downloads_manifest.insert_one({
+            **manifest,
+            "artifact_url": artifact_url,   # signed URL, expires quickly
+            "created_at": _now_iso(),
+        })
+    except Exception as exc:  # noqa: BLE001
+        # Best-effort audit — never fail the request if Mongo blips.
+        log.warning("apk_ingest.audit_log_failed: %s", exc)
+
+    log.warning("apk_ingest.done user_id=%s build_id=%s version=%s "
+                "size_mb=%.1f sha256=%s",
+                user.get("id"), build_id, app_version,
+                total / (1024 * 1024), sha256)
+
+    return {
+        "ok": True,
+        "manifest": manifest,
+        "message": (
+            f"Fresh APK from EAS build {build_id} written to disk. "
+            f"/api/mobile/downloads/android/latest.apk now serves "
+            f"version {app_version} (build {app_build_version})."
+        ),
+    }
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
