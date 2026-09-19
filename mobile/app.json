@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paneltec Group Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.17",
+    "version": "1.0.18",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "scheme": "paneltec",
@@ -17,7 +17,7 @@
         "backgroundColor": "#0F172A"
       },
       "package": "com.emergent.whscompliance.fv5aib",
-      "versionCode": 139
+      "versionCode": 140
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +36,12 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "@sentry/react-native",
+      [
+        "@sentry/react-native",
+        {
+          "autoUpload": false
+        }
+      ],
       "expo-font",
       "expo-image",
       "expo-secure-store",

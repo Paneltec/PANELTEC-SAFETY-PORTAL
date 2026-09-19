@@ -18,6 +18,7 @@ import {
   getSimulateRole, setSimulateRole, ROLE_OPTIONS,
   type SimulateRoleId,
 } from '../../src/services/simulateRole';
+import { useUpdateCheck } from '../../src/features/updates/useUpdateCheck';
 
 interface MeResponse {
   id: string;
@@ -41,6 +42,8 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<'api' | 'stored' | 'none'>('none');
   const [simRole, setSimRole] = useState<SimulateRoleId>('');
+
+  const update = useUpdateCheck();
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -214,6 +217,52 @@ export default function ProfileScreen() {
           badge="Soon"
         />
 
+        {/* Check for updates */}
+        <TouchableOpacity
+          testID="profile-check-updates"
+          style={s.updateRow}
+          onPress={() => {
+            update.manualCheck();
+            if (update.checking) return;
+            setTimeout(() => {
+              if (update.available) {
+                Alert.alert(
+                  'Update Available',
+                  `v${update.serverVersion} is available. Install now?`,
+                  [
+                    { text: 'Later', style: 'cancel' },
+                    { text: 'Install', onPress: update.install },
+                  ],
+                );
+              } else if (update.manualError) {
+                Alert.alert('Check Failed', update.manualError);
+              } else {
+                Alert.alert('Up to Date', `You're on the latest version (v${require('../../app.json').expo.version} · build ${require('../../app.json').expo.android.versionCode}).`);
+              }
+            }, 2000);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={s.updateRowLeft}>
+            <View style={[s.profileIconWrap, { backgroundColor: '#DBEAFE' }]}>
+              <Ionicons name="cloud-download-outline" size={18} color="#2C6BFF" />
+            </View>
+            <View>
+              <Text style={s.updateRowTitle}>Check for Updates</Text>
+              <Text style={s.updateRowSub}>
+                Current: v{require('../../app.json').expo.version} · build {require('../../app.json').expo.android.versionCode}
+              </Text>
+            </View>
+          </View>
+          {update.checking ? (
+            <ActivityIndicator size="small" color={Colors.orange} />
+          ) : update.available ? (
+            <View style={s.updateDot} />
+          ) : (
+            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+          )}
+        </TouchableOpacity>
+
         <View style={s.divider} />
 
         {/* Admin Tools — Role Simulator */}
@@ -349,6 +398,16 @@ const s = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: '700', color: Colors.warning },
 
   divider: { height: 8, backgroundColor: Colors.navy },
+
+  updateRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+  },
+  updateRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  updateRowTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink },
+  updateRowSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  updateDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2C6BFF' },
 
   adminSection: { backgroundColor: Colors.surface, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
   adminSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },

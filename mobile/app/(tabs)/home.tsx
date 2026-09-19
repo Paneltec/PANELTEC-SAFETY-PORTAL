@@ -14,6 +14,8 @@ import { Colors } from '../../src/theme/colors';
 import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet, authPost } from '../../src/services/apiClient';
 import { MOCK_COMPLIANCE_LIST, MOCK_AD_HOC_JOB } from '../../src/services/mockData';
+import { useUpdateCheck } from '../../src/features/updates/useUpdateCheck';
+import UpdateBanner from '../../src/features/updates/UpdateBanner';
 
 type ViewMode = 'home' | 'signed_on' | 'job_detail';
 
@@ -42,6 +44,9 @@ export default function HomeScreen() {
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
   const [briefingError, setBriefingError] = useState('');
+
+  // Update check
+  const update = useUpdateCheck();
 
   // Sign-on state
   const [signedOnSite, setSignedOnSite] = useState<string | null>(null);
@@ -307,6 +312,15 @@ export default function HomeScreen() {
         contentContainerStyle={s.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.orange]} />}
       >
+        {/* Update banner */}
+        {update.available && !update.dismissed && (
+          <UpdateBanner
+            serverVersion={update.serverVersion}
+            onInstall={update.install}
+            onDismiss={update.dismiss}
+          />
+        )}
+
         {/* Notification banner */}
         {hasNotification && (
           <TouchableOpacity testID="home-notification-banner" style={s.notifBanner} onPress={() => setViewMode('job_detail')}>
