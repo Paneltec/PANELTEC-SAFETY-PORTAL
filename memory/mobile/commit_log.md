@@ -305,3 +305,18 @@
 - **Files created**: src/services/simulateRole.ts
 - **Files modified**: src/services/apiClient.ts, src/services/profile.ts, src/services/profileExtended.ts, app/(tabs)/profile.tsx, app/_layout.tsx, src/lib/version.ts
 - **No regressions**: Metro bundles clean, all lint passes, toggle visible + functional in screenshot
+
+
+
+## Iteration 16 — v58.13.132iu-publish: EAS Update for Expo Go
+- **Commit**: b865080c5b72a6dcb863a604aac91b72c454b738
+- **Date**: 2026-09-19
+- **Changes**:
+  - Created new Expo project under emergent account (old stephenguy project inaccessible from this container)
+  - New project ID: 4bbf4e6f-83fc-4c31-992c-3e93ef1788b1
+  - Installed expo-updates@29.0.20 (required for EAS Update)
+  - Published Android bundle to branch `preview` — Update group ID: a3062642-0b32-4de6-a572-229006dc091d
+  - app.json now owned by emergent account (required for publish auth)
+  - Hermes bytecode skipped (container lacks compatible hermesc binary) — JS bundle used instead
+- **Files modified**: app.json, package.json, yarn.lock
+- **Note**: Original stephenguy project ID (df0c866d-b261-4aff-a724-afdd6420389a) was replaced. If Stephen needs to reclaim ownership, re-set owner + projectId in app.json.
