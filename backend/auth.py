@@ -376,6 +376,71 @@ async def get_current_user(
                 "phase5.straggler user_id=%s email=%s role=%r role_id=<missing>",
                 user.get("id"), user.get("email"), legacy,
             )
+    # v58.13.132iu — Role Simulator header (`X-Simulate-Role`).
+    #
+    # Admin-only escape hatch: an authenticated admin can pass
+    #   X-Simulate-Role: paneltec_civil | viatec_traffic |
+    #                    external_contractor | admin
+    # and the returned `user` dict flips its `role` / `role_id` /
+    # `role_label` to the simulated identity for permission gates + FE
+    # branching. `user["id"]`, `user["email"]`, `user["org_id"]` and
+    # every other identity field remain the REAL admin's — so any
+    # write recorded off this request still audits under the admin's
+    # user_id. This differs from Preview mode (which is read-only and
+    # runs as a synthetic user).
+    #
+    # Non-admins passing the header get 403 to close the self-elevation
+    # attack surface. Non-scope values get 400. Every applied
+    # simulation logs at INFO level with `real_user_id`, `real_role`,
+    # `simulated_role`, and the request path so ops can grep audits.
+    sim_role_raw = request.headers.get("X-Simulate-Role")
+    if sim_role_raw:
+        sim_role = sim_role_raw.strip().lower()
+        _VALID_SIM_SCOPES = {"admin", "paneltec_civil", "viatec_traffic", "external_contractor"}
+        if user.get("role") != "admin":
+            _log.warning(
+                "role_simulator.forbidden real_user_id=%s real_role=%s attempted=%s path=%s",
+                user.get("id"), user.get("role"), sim_role, request.url.path,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="X-Simulate-Role requires admin",
+                headers={"X-Auth-Reason": "sim-role-forbidden"},
+            )
+        if sim_role not in _VALID_SIM_SCOPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid X-Simulate-Role: {sim_role_raw!r}. "
+                       "Valid: admin | paneltec_civil | viatec_traffic | external_contractor",
+                headers={"X-Auth-Reason": "sim-role-invalid"},
+            )
+        _log.info(
+            "role_simulator.applied real_user_id=%s real_role=%s simulated=%s path=%s method=%s",
+            user.get("id"), user.get("role"), sim_role,
+            request.url.path, request.method,
+        )
+        # Snapshot the real identity BEFORE mutating — downstream
+        # readers (audit sinks, telemetry) can find `real_user_id` etc.
+        user["real_user_id"]  = user["id"]
+        user["real_role"]     = user.get("role")
+        user["real_role_id"]  = user.get("role_id")
+        user["simulated_role"] = sim_role
+        _SIM_MAP = {
+            "admin":                ("admin",                "Admin"),
+            "paneltec_civil":       ("paneltec_civil",       "Paneltec Civil"),
+            "viatec_traffic":       ("viatec_traffic",       "Viatec Traffic Solutions"),
+            "external_contractor":  ("external_contractor",  "External Contractor"),
+        }
+        sim_role_id, sim_role_label = _SIM_MAP[sim_role]
+        user["role_id"]    = sim_role_id
+        user["role_label"] = sim_role_label
+        # Re-derive the legacy `role` string from the simulated
+        # `role_id` so downstream `require_roles()` gates read the
+        # simulated identity too. Fall back to `worker` if the
+        # derivation returns None (unmapped scope).
+        derived_sim = await _derive_legacy_role(sim_role_id)
+        user["role"] = derived_sim or ("admin" if sim_role == "admin" else "worker")
+
     return user
 
 

@@ -1,12 +1,14 @@
 /**
- * Shared mobile API client — v58.13.132dc.
+ * Shared mobile API client — v58.13.132iu.
  *
  * Wraps fetch with:
  * - Auto-attach Bearer token from getStoredJwt()
+ * - Auto-attach X-Simulate-Role header when admin role sim is active
  * - 401 detection → returns { expired: true } so screens can redirect to PIN
  * - 429 detection → returns { rateLimited: true, retryAfter }
  */
 import { getStoredJwt } from './auth';
+import { getSimulateHeaders } from './simulateRole';
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -21,9 +23,10 @@ export async function authGet<T>(path: string): Promise<ApiResult<T>> {
     const jwt = await getStoredJwt();
     if (!jwt) return { ok: false, expired: true };
 
+    const simHeaders = await getSimulateHeaders();
     const resp = await fetch(`${API}${path}`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${jwt}` },
+      headers: { Authorization: `Bearer ${jwt}`, ...simHeaders },
     });
 
     if (resp.status === 401) return { ok: false, expired: true };
@@ -45,11 +48,13 @@ export async function authPost<T>(path: string, body: unknown): Promise<ApiResul
     const jwt = await getStoredJwt();
     if (!jwt) return { ok: false, expired: true };
 
+    const simHeaders = await getSimulateHeaders();
     const resp = await fetch(`${API}${path}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${jwt}`,
         'Content-Type': 'application/json',
+        ...simHeaders,
       },
       body: JSON.stringify(body),
     });

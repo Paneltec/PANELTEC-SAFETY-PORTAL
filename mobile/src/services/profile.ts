@@ -1,15 +1,17 @@
 /**
- * Profile API service — v58.13.132g M6
+ * Profile API service — v58.13.132iu
  * Fetches worker profile, SWMS, fleet data from existing backend endpoints.
  */
 import axios from 'axios';
 import { getStoredJwt } from './auth';
+import { getSimulateHeaders } from './simulateRole';
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 async function authHeaders() {
   const jwt = await getStoredJwt();
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {};
+  const sim = await getSimulateHeaders();
+  return jwt ? { Authorization: `Bearer ${jwt}`, ...sim } : {};
 }
 
 // ── Types ──

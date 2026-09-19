@@ -1,5 +1,5 @@
 /**
- * Profile — v58.13.132dc
+ * Profile — v58.13.132iu
  * Wired to GET /api/auth/me (real endpoint). Falls back to stored session.
  */
 import React, { useEffect, useState, useCallback } from 'react';
@@ -14,6 +14,10 @@ import Wordmark from '../../src/components/Wordmark';
 import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet } from '../../src/services/apiClient';
 import { MOBILE_BUNDLE_VERSION } from '../../src/lib/version';
+import {
+  getSimulateRole, setSimulateRole, ROLE_OPTIONS,
+  type SimulateRoleId,
+} from '../../src/services/simulateRole';
 
 interface MeResponse {
   id: string;
@@ -36,9 +40,13 @@ export default function ProfileScreen() {
   const [roleLabel, setRoleLabel] = useState('');
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<'api' | 'stored' | 'none'>('none');
+  const [simRole, setSimRole] = useState<SimulateRoleId>('');
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
+    // Load simulate role
+    const sr = await getSimulateRole();
+    setSimRole(sr);
 
     // Try real /api/auth/me first
     const res = await authGet<MeResponse>('/api/auth/me');
@@ -208,6 +216,52 @@ export default function ProfileScreen() {
 
         <View style={s.divider} />
 
+        {/* Admin Tools — Role Simulator */}
+        {(user?.role_id === 'admin' || user?.role === 'admin') && (
+          <>
+            <View style={s.adminSection}>
+              <View style={s.adminSectionHeader}>
+                <Ionicons name="construct-outline" size={14} color={Colors.orange} />
+                <Text style={s.adminSectionTitle}>ADMIN TOOLS</Text>
+              </View>
+            </View>
+            <View testID="role-simulator" style={s.simCard}>
+              <Text style={s.simLabel}>Role Simulator</Text>
+              <Text style={s.simHint}>Test worker flows without leaving your admin account</Text>
+              <View style={s.simPills}>
+                {ROLE_OPTIONS.map((opt) => {
+                  const active = simRole === opt.id;
+                  return (
+                    <TouchableOpacity
+                      key={opt.id || 'off'}
+                      testID={`sim-role-${opt.id || 'off'}`}
+                      style={[s.simPill, active && s.simPillActive]}
+                      onPress={async () => {
+                        await setSimulateRole(opt.id);
+                        setSimRole(opt.id);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.simPillText, active && s.simPillTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {simRole !== '' && (
+                <View style={s.simActiveBanner}>
+                  <Ionicons name="flash" size={12} color="#7C3AED" />
+                  <Text style={s.simActiveText}>
+                    Active — API calls include X-Simulate-Role: {simRole}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={s.divider} />
+          </>
+        )}
+
         {/* Sign Out */}
         <TouchableOpacity testID="profile-logout-btn" style={s.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={Colors.error} />
@@ -295,6 +349,31 @@ const s = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: '700', color: Colors.warning },
 
   divider: { height: 8, backgroundColor: Colors.navy },
+
+  adminSection: { backgroundColor: Colors.surface, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+  adminSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  adminSectionTitle: { fontSize: 11, fontWeight: '800', color: Colors.orange, letterSpacing: 1.2 },
+  simCard: {
+    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingBottom: 14,
+  },
+  simLabel: { fontSize: 15, fontWeight: '700', color: Colors.ink, marginTop: 8 },
+  simHint: { fontSize: 12, color: Colors.textTertiary, marginTop: 2, marginBottom: 12 },
+  simPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  simPill: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bg,
+  },
+  simPillActive: {
+    borderColor: '#7C3AED', backgroundColor: '#F5F3FF',
+  },
+  simPillText: { fontSize: 12, fontWeight: '600', color: Colors.textTertiary },
+  simPillTextActive: { color: '#7C3AED' },
+  simActiveBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#F5F3FF', borderRadius: 8, padding: 8, marginTop: 10,
+    borderWidth: 1, borderColor: '#7C3AED20',
+  },
+  simActiveText: { fontSize: 10, fontWeight: '600', color: '#7C3AED', flex: 1 },
 
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

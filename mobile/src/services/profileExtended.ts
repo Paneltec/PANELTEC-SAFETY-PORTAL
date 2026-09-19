@@ -1,15 +1,17 @@
 /**
- * Extended profile API — v58.13.132i
+ * Extended profile API — v58.13.132iu
  * Adds self-edit, inductions matrix, QR/ID card endpoints.
  */
 import axios from 'axios';
 import { getStoredJwt } from './auth';
+import { getSimulateHeaders } from './simulateRole';
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 async function authHeaders() {
   const jwt = await getStoredJwt();
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {};
+  const sim = await getSimulateHeaders();
+  return jwt ? { Authorization: `Bearer ${jwt}`, ...sim } : {};
 }
 
 // ── Self-Edit ──

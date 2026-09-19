@@ -20,6 +20,7 @@ import {
   ErrorBoundary, CrashRecoveryGate,
   LAST_CRASH_KEY, LAST_REJECTION_KEY, BOOT_TRACE_KEY,
 } from '../src/components/ErrorBoundary';
+import { getSimulateRole, getCachedSimulateRole, ROLE_OPTIONS, type SimulateRoleId } from '../src/services/simulateRole';
 
 // v58.13.132cj — Sentry init: NATIVE DISABLED to avoid Android pre-JS crash.
 // JS-level capture still works for React errors + unhandled promises.
@@ -137,6 +138,25 @@ function PreviewBanner() {
   );
 }
 
+// Simulate-role banner (all platforms, admin-only)
+function SimulateBanner() {
+  const [role, setRole] = React.useState<SimulateRoleId>('');
+  useEffect(() => {
+    getSimulateRole().then(setRole);
+    const id = setInterval(() => { setRole(getCachedSimulateRole()); }, 2000);
+    return () => clearInterval(id);
+  }, []);
+  if (!role) return null;
+  const label = ROLE_OPTIONS.find(o => o.id === role)?.label || role;
+  return (
+    <View style={s.simBanner} pointerEvents="none">
+      <Text style={s.simBannerText} numberOfLines={1}>
+        ⚡ SIMULATING: {label.toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
 export default Sentry.wrap(RootLayout);
 
 function RootLayout() {
@@ -156,6 +176,7 @@ function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
           <PreviewBanner />
+          <SimulateBanner />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
@@ -178,5 +199,13 @@ const s = StyleSheet.create({
   },
   bannerText: {
     color: '#111', fontSize: 10, fontWeight: '800', letterSpacing: 1.2,
+  },
+  simBanner: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9998,
+    backgroundColor: '#7C3AED', paddingVertical: 4, paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  simBannerText: {
+    color: '#FFF', fontSize: 10, fontWeight: '800', letterSpacing: 1.2,
   },
 });

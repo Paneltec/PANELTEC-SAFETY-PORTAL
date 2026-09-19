@@ -886,7 +886,7 @@ export default function MobileModulesSection({ canEdit }) {
         <div className="shrink-0 w-10 h-10 rounded-xl bg-orange-50 text-orange-600 inline-flex items-center justify-center">
           <Phone20Regular />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="font-display text-xl font-semibold text-slate-900">Mobile App Modules</h2>
           <p className="text-sm text-slate-600 mt-1 max-w-2xl">
             Control which tabs and drawer entries appear in the Paneltec Civil
@@ -894,6 +894,24 @@ export default function MobileModulesSection({ canEdit }) {
             signs in or pulls-to-refresh on Profile. Admins always see everything.
           </p>
         </div>
+        {/* v58.13.132iu — Direct Android APK download for admin testing.
+            The endpoint (`/api/mobile/downloads/android/latest.apk`) has
+            existed since .132af but was only reachable via the tokenised
+            worker onboarding link. Surfacing it here so admins doing role-
+            simulator testing on a physical Android device can grab the
+            APK without hunting for an onboarding token. */}
+        <a
+          href="/api/mobile/downloads/android/latest.apk"
+          download
+          data-testid="mobile-modules-apk-download"
+          className="shrink-0 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium bg-slate-900 text-white hover:bg-slate-700 transition"
+          title="Download the latest Android APK. Sideload to install on any Android device."
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 3v14m0 0l-5-5m5 5l5-5M4 21h16" />
+          </svg>
+          Download Android APK
+        </a>
       </div>
 
       {/* Phase 4.4 — Two-column layout: matrix on the left, sticky
