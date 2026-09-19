@@ -43,4 +43,4 @@
 - MOBILE_BUNDLE_VERSION: paneltec-v160.3.9.57.13.132iy
 
 ## EAS build
-- Build ID: TBD (kicked off after commit)
+- Build ID: ca208091-f293-4268-8535-c4b456ed149f
