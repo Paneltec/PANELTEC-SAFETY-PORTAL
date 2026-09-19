@@ -44,9 +44,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "df0c866d-b261-4aff-a724-afdd6420389a"
+        "projectId": "4bbf4e6f-83fc-4c31-992c-3e93ef1788b1"
       }
     },
-    "owner": "stephenguy"
+    "owner": "emergent-em-user-a282a37b-6979-48a9-bf86-900307bbd186",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4bbf4e6f-83fc-4c31-992c-3e93ef1788b1"
+    }
   }
 }
