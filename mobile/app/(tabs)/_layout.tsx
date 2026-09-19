@@ -1,15 +1,19 @@
 /**
- * Tab layout — v58.13.132ds
- * 6 tabs: HOME · FORMS · QR SCAN · MY WORK · PROFILE · ASK AI
+ * Tab layout — v58.13.132jb
+ * 5 tabs: HOME · FORMS · FLEET · DOCS · SETTINGS
+ * Haptic feedback on tab switch.
+ * profile.tsx kept in (tabs) but hidden via href: null.
  */
 import React from 'react';
+import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../src/theme/colors';
+import { lightHaptic } from '../../src/services/haptics';
 
-function TabIcon({ name, focused, color, size }: {
+function TabIcon({ name, color, size }: {
   name: keyof typeof Ionicons.glyphMap;
-  focused: boolean;
   color: string;
   size: number;
 }) {
@@ -17,6 +21,9 @@ function TabIcon({ name, focused, color, size }: {
 }
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 8) : insets.bottom + 4;
+
   return (
     <Tabs
       screenOptions={{
@@ -27,24 +34,30 @@ export default function TabLayout() {
           backgroundColor: Colors.white,
           borderTopColor: Colors.border,
           borderTopWidth: 1,
-          paddingBottom: 6,
+          paddingBottom: bottomPad,
           paddingTop: 6,
-          height: 64,
+          height: 56 + bottomPad,
         },
         tabBarLabelStyle: {
-          fontSize: 9,
+          fontSize: 10,
           fontWeight: '700',
-          letterSpacing: 0.3,
-          textTransform: 'uppercase',
+          letterSpacing: 0.1,
         },
+        tabBarItemStyle: {
+          flex: 1,
+          minWidth: 0,
+        },
+      }}
+      screenListeners={{
+        tabPress: () => { lightHaptic(); },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'home' : 'home-outline'} focused={focused} color={color} size={22} />
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name={focused ? 'home' : 'home-outline'} color={color} size={22} />
           ),
         }}
       />
@@ -52,50 +65,40 @@ export default function TabLayout() {
         name="forms"
         options={{
           title: 'Forms',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'document-text' : 'document-text-outline'} focused={focused} color={color} size={22} />
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name={focused ? 'document-text' : 'document-text-outline'} color={color} size={22} />
           ),
         }}
       />
       <Tabs.Screen
-        name="qr-scan"
+        name="fleet"
         options={{
-          title: 'QR Scan',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'qr-code' : 'qr-code-outline'} focused={focused} color={color} size={22} />
-          ),
-        }}
-      />
-      {/* outbox + fleet hidden from tab bar but route files kept for deep links */}
-      <Tabs.Screen name="outbox" options={{ href: null }} />
-      <Tabs.Screen name="fleet" options={{ href: null }} />
-      <Tabs.Screen
-        name="my-work"
-        options={{
-          title: 'My Work',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'briefcase' : 'briefcase-outline'} focused={focused} color={color} size={22} />
+          title: 'Fleet',
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name={focused ? 'car' : 'car-outline'} color={color} size={22} />
           ),
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="docs"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'person' : 'person-outline'} focused={focused} color={color} size={22} />
+          title: 'Docs',
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name={focused ? 'folder-open' : 'folder-open-outline'} color={color} size={22} />
           ),
         }}
       />
       <Tabs.Screen
-        name="ask-ai"
+        name="settings"
         options={{
-          title: 'Ask AI',
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon name={focused ? 'sparkles' : 'sparkles-outline'} focused={focused} color={color} size={22} />
+          title: 'Settings',
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name={focused ? 'settings' : 'settings-outline'} color={color} size={22} />
           ),
         }}
       />
+      {/* Profile kept as hidden route for deep links from Settings */}
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }

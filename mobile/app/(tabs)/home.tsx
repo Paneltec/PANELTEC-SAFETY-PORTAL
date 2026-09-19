@@ -383,7 +383,7 @@ export default function HomeScreen() {
 
         {/* Quick Actions */}
         <View style={s.quickActions}>
-          <TouchableOpacity testID="home-action-prestart" style={s.actionTile} onPress={() => router.push('/(tabs)/qr-scan')}>
+          <TouchableOpacity testID="home-action-prestart" style={s.actionTile} onPress={() => router.push('/(screens)/qr-scan')}>
             <View style={[s.actionIcon, { backgroundColor: '#D1FAE5' }]}>
               <Ionicons name="checkbox-outline" size={24} color={Colors.success} />
             </View>
@@ -470,8 +470,8 @@ const s = StyleSheet.create({
     letterSpacing: 2, marginBottom: 10,
   },
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  greeting: { color: Colors.white, fontSize: 22, fontWeight: '800' },
-  roleLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '500', marginTop: 2, textTransform: 'capitalize' },
+  greeting: { color: Colors.white, fontSize: 24, fontWeight: '800' },
+  roleLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500', marginTop: 2, textTransform: 'capitalize' },
   bellBtn: { position: 'relative', padding: 6 },
   bellDot: {
     position: 'absolute', top: 4, right: 4, width: 8, height: 8,
@@ -514,8 +514,8 @@ const s = StyleSheet.create({
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   briefingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  briefingTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink, flex: 1 },
-  briefingSummary: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  briefingTitle: { fontSize: 16, fontWeight: '800', color: Colors.ink, flex: 1 },
+  briefingSummary: { fontSize: 15, color: Colors.textSecondary, lineHeight: 22 },
   briefingLoadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   briefingLoadingText: { fontSize: 12, color: Colors.textTertiary, fontStyle: 'italic' },
   briefingRetryWrap: {
@@ -529,28 +529,29 @@ const s = StyleSheet.create({
   // Quick Actions
   quickActions: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   actionTile: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: 16, padding: 14,
-    alignItems: 'center', gap: 8,
+    flex: 1, backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    alignItems: 'center', gap: 10, minHeight: 100,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
-  actionIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  actionLabel: { fontSize: 12, fontWeight: '700', color: Colors.ink, textAlign: 'center' },
+  actionIcon: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  actionLabel: { fontSize: 14, fontWeight: '700', color: Colors.ink, textAlign: 'center' },
 
   // Section
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 4 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink },
 
   // Compliance list
   complianceRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 8,
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 8,
+    minHeight: 64,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03, shadowRadius: 3, elevation: 1,
   },
   complianceDot: { width: 10, height: 10, borderRadius: 5 },
-  complianceTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink },
-  complianceSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  complianceTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },
+  complianceSub: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
   complianceStatusPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   complianceStatusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 
@@ -558,11 +559,12 @@ const s = StyleSheet.create({
   todayJobCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.surface, borderRadius: 14, padding: 16,
+    minHeight: 64,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
-  todayJobTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
-  todayJobSub: { fontSize: 12, color: Colors.textTertiary, marginTop: 2, textTransform: 'capitalize' },
+  todayJobTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink },
+  todayJobSub: { fontSize: 13, color: Colors.textTertiary, marginTop: 2, textTransform: 'capitalize' },
   noJobCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: Colors.successSoft, borderRadius: 14, padding: 16,

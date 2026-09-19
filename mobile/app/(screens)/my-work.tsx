@@ -214,15 +214,16 @@ const s = StyleSheet.create({
 
   groupCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 8,
+    backgroundColor: Colors.surface, borderRadius: 16, padding: 18, marginBottom: 8,
+    minHeight: 72,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
   groupIcon: {
-    width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
   },
-  groupLabel: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  groupCount: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
+  groupLabel: { fontSize: 16, fontWeight: '700', color: Colors.ink },
+  groupCount: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
 
   itemsContainer: {
     marginLeft: 20, marginBottom: 8, paddingLeft: 16,
@@ -230,10 +231,11 @@ const s = StyleSheet.create({
   },
   itemRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 12, padding: 12, marginBottom: 4,
+    backgroundColor: Colors.surface, borderRadius: 12, padding: 14, marginBottom: 4,
+    minHeight: 56,
   },
-  itemTitle: { fontSize: 13, fontWeight: '600', color: Colors.ink },
-  itemMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  itemTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink },
+  itemMeta: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
   statusPill: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
   moreText: {

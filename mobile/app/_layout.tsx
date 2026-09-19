@@ -181,6 +181,7 @@ function RootLayout() {
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="(screens)" />
             <Stack.Screen name="visitor" />
             <Stack.Screen name="forms" />
             <Stack.Screen name="profile" />

@@ -350,3 +350,20 @@
   - EAS Build: ca208091-f293-4268-8535-c4b456ed149f
 - **Files modified**: src/services/apiClient.ts, app/(tabs)/home.tsx, src/lib/version.ts, app.json
 - **Ship memo**: memory/v58_13_132iy_mobile_abortcontroller_intel_fallback.md
+
+
+
+## Iteration 19 — v58.13.132ja: EAS build fix + Update Banner + version sync
+- **Commit**: 82f714b653c51aae470e096386fbecd6bceddfc2
+- **Date**: 2026-09-19
+- **Changes**:
+  - Root-caused EAS build `ca208091` failure: Sentry Gradle plugin tried source map upload without org config. Profile `preview` lacked `SENTRY_DISABLE_AUTO_UPLOAD` env var.
+  - Fixed eas.json: added `SENTRY_DISABLE_AUTO_UPLOAD=true` + `SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD=true` to BOTH `preview` and `preview-apk` profiles
+  - Created `.easignore` to exclude `android/`, `ios/`, `.expo/`, `node_modules/.cache/`, `*.map`
+  - Updated runtimeVersion 1.0.16 → 1.0.18 in app.json
+  - Synced MOBILE_BUNDLE_VERSION to `paneltec-v160.3.9.58.13.132ja`
+  - Cancelled duplicate build `7ed7952f`
+  - Kicked new EAS build: `6604e1b3-8ad6-4be6-8a82-1adb1fdf8e54` (preview-apk, v1.0.18/140)
+  - In-app Update Banner + useUpdateCheck hook (implemented in prior iteration, verified here)
+- **Files modified**: eas.json, app.json, .easignore, src/lib/version.ts
+- **Ship memo**: memory/v58_13_132ja_mobile_update_banner.md

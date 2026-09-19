@@ -210,16 +210,16 @@ const s = StyleSheet.create({
 
   header: { backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18 },
   headerTitle: { color: Colors.white, fontSize: 26, fontWeight: '800' },
-  headerSub: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '500', marginTop: 2 },
+  headerSub: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500', marginTop: 2 },
 
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.surface, borderRadius: 14,
     marginHorizontal: 16, marginTop: 12, marginBottom: 8,
-    paddingHorizontal: 14, paddingVertical: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
     borderWidth: 1, borderColor: Colors.border,
   },
-  searchInput: { flex: 1, fontSize: 15, color: Colors.ink, padding: 0 },
+  searchInput: { flex: 1, fontSize: 16, color: Colors.ink, padding: 0 },
 
   emptyCard: { alignItems: 'center', padding: 40, gap: 8, marginHorizontal: 16, marginTop: 20 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.white },
@@ -229,12 +229,13 @@ const s = StyleSheet.create({
   catGrid: { paddingHorizontal: 16, paddingTop: 8 },
   catCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 10,
+    backgroundColor: Colors.surface, borderRadius: 16, padding: 18, marginBottom: 10,
+    minHeight: 72,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  catIcon: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  catName: { fontSize: 16, fontWeight: '800', color: Colors.ink, flex: 1 },
-  catCount: { fontSize: 12, color: Colors.textTertiary, fontWeight: '500' },
+  catIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  catName: { fontSize: 17, fontWeight: '800', color: Colors.ink, flex: 1 },
+  catCount: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500' },
   catChevron: { marginLeft: 4 },
 
   // Search results
@@ -242,11 +243,12 @@ const s = StyleSheet.create({
   searchLabel: { fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '600', marginBottom: 8, letterSpacing: 0.5 },
   resultCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 8,
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 8,
+    minHeight: 64,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
   resultInfo: { flex: 1 },
-  resultName: { fontSize: 14, fontWeight: '700', color: Colors.ink },
-  resultDesc: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
-  resultCat: { fontSize: 10, color: Colors.orange, fontWeight: '600', textTransform: 'capitalize', marginTop: 4 },
+  resultName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
+  resultDesc: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
+  resultCat: { fontSize: 11, color: Colors.orange, fontWeight: '600', textTransform: 'capitalize', marginTop: 4 },
 });
