@@ -320,3 +320,20 @@
   - Hermes bytecode skipped (container lacks compatible hermesc binary) — JS bundle used instead
 - **Files modified**: app.json, package.json, yarn.lock
 - **Note**: Original stephenguy project ID (df0c866d-b261-4aff-a724-afdd6420389a) was replaced. If Stephen needs to reclaim ownership, re-set owner + projectId in app.json.
+
+
+
+## Iteration 17 — SDK 57 upgrade + EAS republish
+- **Commit**: d3b99f6607b7ec36017cc0493b8e17def551a698
+- **Date**: 2026-09-19
+- **Changes**:
+  - Upgraded Expo SDK 54 → 57: expo@57.0.24, react-native@0.86.3, react@19.2.3
+  - All 39 Expo-managed dependencies updated to SDK 57 compatible versions
+  - @react-native-community/datetimepicker 8.4.4 → 9.1.0 (onChange deprecated but backward-compat)
+  - @sentry/react-native 6.14.0 → 7.11.0 (init API compatible, enableNative still false)
+  - react-native-reanimated 4.1.7 → 4.5.1, react-native-worklets 0.5.1 → 0.10.1
+  - typescript 5.9.3 → 6.0.3
+  - Republished to EAS Update branch `preview` — Update group ID: e9945324-f741-49d6-95f1-2d238f5f8f9f
+  - Version: v160.3.9.57.13.132iu
+- **Breaking changes encountered**: None — all existing code compatible
+- **Files modified**: package.json, yarn.lock, app.json (runtimeVersion added by eas), src/lib/version.ts
