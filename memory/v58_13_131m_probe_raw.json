@@ -1,0 +1,207 @@
+{
+  "results": [
+    {
+      "method": "Transactions:Read",
+      "status": "available",
+      "shape": "columnar[0 rows \u00d7 13 cols]",
+      "columns": [
+        "Date",
+        "Time",
+        "Card Number",
+        "Description",
+        "Registration",
+        "From",
+        "Litres",
+        "Fuel Type",
+        "Odometer",
+        "Total Price",
+        "Transaction Id",
+        "Driver Authorisation",
+        "Unit Price"
+      ],
+      "sample_row": null
+    },
+    {
+      "method": "Tank:Read",
+      "status": "available",
+      "shape": "columnar[2 rows \u00d7 13 cols]",
+      "columns": [
+        "Date",
+        "Time",
+        "DateTime",
+        "Unit Number",
+        "Tank Number",
+        "Record Type",
+        "Record Sub Type",
+        "Volume",
+        "Volumetric Units",
+        "Order Number",
+        "Cost Price/L",
+        "Delivery Price",
+        "Timezone"
+      ],
+      "sample_row": [
+        "2025-06-24",
+        "07:43:54",
+        "2025-06-24 07:43:54",
+        "5841",
+        "1",
+        "Delivery",
+        "1",
+        "300",
+        "Litres",
+        "1",
+        "0",
+        "0",
+        "Australia/Hobart"
+      ]
+    },
+    {
+      "method": "Tank:Level",
+      "status": "available",
+      "shape": "columnar[1 rows \u00d7 10 cols]",
+      "columns": [
+        "Unit Number",
+        "Tank Number",
+        "Description",
+        "Volume",
+        "Volume Percent",
+        "Capacity",
+        "Tank SFL",
+        "Status",
+        "Last Updated",
+        "Timezone"
+      ],
+      "sample_row": [
+        "5841",
+        "1",
+        "SmartFill 5841 Tank 1",
+        "355",
+        "0",
+        "0",
+        "0",
+        "Offline",
+        "1970-01-01 00:00:00",
+        "Australia/Hobart"
+      ]
+    },
+    {
+      "method": "Asset:Read",
+      "status": "error_code_3",
+      "message": "SmartFill Asset:Read \u2192 JSON-RPC error 3: Bad Request"
+    },
+    {
+      "method": "Driver:Read",
+      "status": "available",
+      "shape": "columnar[0 rows \u00d7 6 cols]",
+      "columns": [
+        "Authorisation Value",
+        "ISO Access",
+        "Sequence Number",
+        "Expiry",
+        "Name",
+        "Enabled"
+      ],
+      "sample_row": null
+    },
+    {
+      "method": "Transactions:Read",
+      "status": "available",
+      "shape": "columnar[0 rows \u00d7 13 cols]",
+      "columns": [
+        "Date",
+        "Time",
+        "Card Number",
+        "Description",
+        "Registration",
+        "From",
+        "Litres",
+        "Fuel Type",
+        "Odometer",
+        "Total Price",
+        "Transaction Id",
+        "Driver Authorisation",
+        "Unit Price"
+      ],
+      "sample_row": null,
+      "extra_params": {
+        "fromDate": "2026-01-01",
+        "toDate": "2026-01-31"
+      }
+    },
+    {
+      "method": "Transactions:Read",
+      "status": "available",
+      "shape": "columnar[0 rows \u00d7 13 cols]",
+      "columns": [
+        "Date",
+        "Time",
+        "Card Number",
+        "Description",
+        "Registration",
+        "From",
+        "Litres",
+        "Fuel Type",
+        "Odometer",
+        "Total Price",
+        "Transaction Id",
+        "Driver Authorisation",
+        "Unit Price"
+      ],
+      "sample_row": null,
+      "extra_params": {
+        "From Timestamp": "2026-01-01T00:00:00Z",
+        "To Timestamp": "2026-01-31T23:59:59Z"
+      }
+    },
+    {
+      "method": "Transactions:Read",
+      "status": "available",
+      "shape": "columnar[0 rows \u00d7 13 cols]",
+      "columns": [
+        "Date",
+        "Time",
+        "Card Number",
+        "Description",
+        "Registration",
+        "From",
+        "Litres",
+        "Fuel Type",
+        "Odometer",
+        "Total Price",
+        "Transaction Id",
+        "Driver Authorisation",
+        "Unit Price"
+      ],
+      "sample_row": null,
+      "extra_params": {
+        "range": {
+          "offset": 0,
+          "length": 10
+        }
+      }
+    },
+    {
+      "method": "Transactions:Read",
+      "status": "available",
+      "shape": "columnar[0 rows \u00d7 6 cols]",
+      "columns": [
+        "Timestamp",
+        "Transaction Id",
+        "Volume",
+        "Unit",
+        "Unit Price",
+        "Total Price"
+      ],
+      "sample_row": null,
+      "extra_params": {
+        "columns": [
+          "Timestamp",
+          "Transaction Id",
+          "Volume",
+          "Unit"
+        ]
+      }
+    }
+  ]
+}

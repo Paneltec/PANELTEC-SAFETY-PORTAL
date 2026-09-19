@@ -1,0 +1,39 @@
+{
+  "row_count": 1,
+  "columns": [
+    "Unit Number",
+    "Tank Number",
+    "Description",
+    "Volume",
+    "Volume Percent",
+    "Capacity",
+    "Tank SFL",
+    "Status",
+    "Last Updated",
+    "Timezone"
+  ],
+  "sample_row_types": {
+    "Unit Number": "str",
+    "Tank Number": "str",
+    "Description": "str",
+    "Volume": "str",
+    "Volume Percent": "str",
+    "Capacity": "str",
+    "Tank SFL": "str",
+    "Status": "str",
+    "Last Updated": "str",
+    "Timezone": "str"
+  },
+  "sample_row_lengths": {
+    "Unit Number": 4,
+    "Tank Number": 1,
+    "Description": 21,
+    "Volume": 3,
+    "Volume Percent": 1,
+    "Capacity": 1,
+    "Tank SFL": 1,
+    "Status": 7,
+    "Last Updated": 19,
+    "Timezone": 16
+  }
+}
