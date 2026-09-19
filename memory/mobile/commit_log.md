@@ -289,3 +289,19 @@
 - **Files modified**: app/(tabs)/profile.tsx, app/_layout.tsx
 - **Web files referenced**: Archive: app/_archived_pre_132cz/profile_stack/*
 - **No regressions**: Metro bundles clean, all lint passes, all 4 screens verified rendering with live API data
+
+
+
+## Iteration 15 — v58.13.132iu: Admin Role Simulator
+- **Commit**: 8a054849804893316fa2f46322ce24fa8ed6ddf2
+- **Date**: 2026-09-19
+- **Changes**:
+  - New `src/services/simulateRole.ts` — get/set simulated role, persisted in AsyncStorage (`paneltec_simulate_role`), in-memory cache for header injection
+  - `apiClient.ts` — `authGet` and `authPost` now call `getSimulateHeaders()` and merge `X-Simulate-Role` header into every request
+  - `profile.ts` + `profileExtended.ts` — `authHeaders()` also merges simulate headers (axios-based calls)
+  - `(tabs)/profile.tsx` — Admin Tools section with 4 pill buttons (Off / Paneltec Civil / Viatec Traffic / External Contractor), active state info banner
+  - `_layout.tsx` — SimulateBanner component (violet bar at top: "⚡ SIMULATING: PANELTEC CIVIL") visible when role sim is active, polls cached value every 2s
+  - Version bump: 132dx → 132iu
+- **Files created**: src/services/simulateRole.ts
+- **Files modified**: src/services/apiClient.ts, src/services/profile.ts, src/services/profileExtended.ts, app/(tabs)/profile.tsx, app/_layout.tsx, src/lib/version.ts
+- **No regressions**: Metro bundles clean, all lint passes, toggle visible + functional in screenshot
