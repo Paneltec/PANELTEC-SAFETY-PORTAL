@@ -337,3 +337,16 @@
   - Version: v160.3.9.57.13.132iu
 - **Breaking changes encountered**: None — all existing code compatible
 - **Files modified**: package.json, yarn.lock, app.json (runtimeVersion added by eas), src/lib/version.ts
+
+
+
+## Iteration 18 — v58.13.132iy: apiClient AbortController + Intelligence Briefing fallback
+- **Commit**: 8ef19bc42e03c0735d7badf5b624ad626752f62a
+- **Date**: 2026-09-19
+- **Changes**:
+  - Rewrote `apiClient.ts` with AbortController: authGet (20s default), authPost (45s default), overridable `{ timeoutMs }`, external signal chaining
+  - Intelligence Briefing card: 45s timeout, "Briefing unavailable — tap to retry" fallback, console.warn on failure
+  - Version: 1.0.17, versionCode 139, v160.3.9.57.13.132iy
+  - EAS Build: ca208091-f293-4268-8535-c4b456ed149f
+- **Files modified**: src/services/apiClient.ts, app/(tabs)/home.tsx, src/lib/version.ts, app.json
+- **Ship memo**: memory/v58_13_132iy_mobile_abortcontroller_intel_fallback.md
