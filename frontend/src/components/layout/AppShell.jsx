@@ -11,7 +11,7 @@ import AppsDirectoryModal from '@/components/AppsDirectoryModal';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
-  KeyRound as KeyRoundIcon, Zap, Upload, ShieldCheck, ShieldOff, Lock,
+  KeyRound as KeyRoundIcon, Zap, Upload, ShieldCheck, ShieldOff, Lock, Smartphone,
 } from 'lucide-react';
 // Phase 3.20 Wave 1 — sidebar nav migrated to @fluentui/react-icons.
 // Each NAV entry now carries `icon` (Regular outline) for the resting
@@ -453,6 +453,67 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
 
       <NotificationsBell />
       <OutboxBell />
+      {/* v58.13.132iv — Compact "Download app" chip. Admin-only. Sits
+          left of the notification bells so it doesn't jostle their
+          badge counts. Popover surfaces the Android APK direct link
+          (endpoint `/api/mobile/downloads/android/latest.apk` has
+          existed since .132af), an iOS placeholder, and a deep link
+          to the full Mobile App Modules admin page for advanced
+          controls. Added because users kept getting lost hunting for
+          the APK three levels deep in Settings → Permissions & Roles
+          → Mobile App Modules tab. */}
+      {user?.role === 'admin' && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              data-testid="topbar-download-app"
+              title="Download the mobile app"
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 text-white border border-slate-900 text-[11px] font-semibold uppercase tracking-wider hover:bg-slate-700 transition-colors"
+            >
+              <Smartphone size={12} />
+              Download app
+              <ChevronDown size={10} className="opacity-70" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72 p-3">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+              Paneltec Civil · Mobile app
+            </DropdownMenuLabel>
+            <p className="mt-1 mb-3 text-xs text-slate-600 leading-relaxed">
+              Install the mobile app for field workers, admins doing role-simulator testing, or QR sign-on stations.
+            </p>
+            <a
+              href="/api/mobile/downloads/android/latest.apk"
+              download
+              data-testid="topbar-download-app-android"
+              className="block w-full text-center rounded-xl px-3 py-2 text-sm font-medium bg-slate-900 text-white hover:bg-slate-700 transition mb-2"
+            >
+              ⬇ Download Android APK
+            </a>
+            <button
+              type="button"
+              disabled
+              data-testid="topbar-download-app-ios"
+              className="block w-full text-center rounded-xl px-3 py-2 text-sm font-medium bg-slate-100 text-slate-400 cursor-not-allowed mb-3"
+              title="iOS TestFlight setup pending — reach out to admin for status."
+            >
+              iOS install · Coming soon
+            </button>
+            <p className="text-[10px] text-slate-500 leading-relaxed mb-2">
+              Android: sideload the APK · enable "Install from unknown sources" on first install.
+            </p>
+            <DropdownMenuSeparator />
+            <Link
+              to="/app/settings/permission-presets"
+              data-testid="topbar-download-app-modules-link"
+              className="mt-2 block w-full text-center rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 border border-slate-200"
+            >
+              Manage mobile modules →
+            </Link>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       {/* v160.3.9.58.1 — persistent pill for in-flight bulk imports. */}
       <BulkImportPill />
 
