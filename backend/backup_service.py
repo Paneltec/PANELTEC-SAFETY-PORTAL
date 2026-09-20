@@ -76,6 +76,157 @@ from auth_helpers import verify_bearer_token  # shared helper — breaks the
 
 logger = logging.getLogger("backup")
 
+# ─────────────────────────────────────────────────────────────
+# v58.13.132jh — Backup routine circuit-breaker + retention caps.
+#
+# Emergent's infra team traced the recurring `/app` disk-full outages
+# to THIS module: `_do_snapshot` writes full-DB ZIPs (~400 MB each)
+# via GridFS into `bk_fs.files` + `bk_fs.chunks` — on the same 9.8 GB
+# partition it is dumping. Combined with a 4-way trigger fan-out
+# (POST /snapshots, APScheduler 6h, APScheduler COB, startup catch-up,
+# hourly watchdog) it fired 5+ times in a 10-minute window during boot
+# storms, and age-only retention couldn't cap the accumulated footprint.
+#
+# Circuit breaker: `BACKUPS_ENABLED` (default false). When false the
+# core snapshot routine short-circuits at the top of `_do_snapshot`
+# and every wrapper (guarded background task, HTTP endpoint,
+# scheduler jobs in server.py) logs a warning + returns without
+# writing anything.
+#
+# Trigger dedupe: 60-minute lock via a single-doc `system.backup_lock`
+# collection carrying `{last_run_at, in_progress, started_at}`.
+# Stale-lock reclaim after 2 h emits a distinct log line
+# (`backup_lock.stale_reclaimed after=2h`) so we can spot recurring
+# hangs in future.
+#
+# Retention caps: alongside the existing GFS age tiers we now enforce
+# a MAX_COUNT cap and a MAX_TOTAL_MB cap, both env-driven. Strictest
+# of {age, count, size} wins.
+# ─────────────────────────────────────────────────────────────
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+# Read on every access so a live `.env` edit + supervisor restart
+# takes effect without a code redeploy. Wrapped in helpers so the
+# behaviour is unit-testable via monkeypatch of `os.environ`.
+def _backups_enabled() -> bool:
+    return _env_bool("BACKUPS_ENABLED", default=False)
+
+def _snapshot_max_count() -> int:
+    return _env_int("SNAPSHOT_MAX_COUNT", default=7)
+
+def _snapshot_max_total_mb() -> int:
+    return _env_int("SNAPSHOT_MAX_TOTAL_MB", default=2000)
+
+# v58.13.132jh — LAN delivery drop-zone (filesystem, NOT Mongo).
+# Snapshots are written as `<uuid>.zip` under this directory. The Pi
+# agent downloads them via the existing `/api/backup/snapshots/{id}/data`
+# endpoint (now filesystem-backed) and posts back via `/agent/report`,
+# at which point we mark the row `shipped_at` and delete the on-disk
+# copy. This keeps the on-disk footprint bounded (≤ MAX_UNSHIPPED
+# unshipped ZIPs at any time; ~800 MB peak).
+def _lan_delivery_enabled() -> bool:
+    return _env_bool("LAN_DELIVERY_ENABLED", default=True)
+
+def _lan_drop_zone() -> str:
+    return os.environ.get("LAN_DELIVERY_DROP_ZONE", "/app/backups/outgoing")
+
+def _lan_max_unshipped() -> int:
+    return _env_int("LAN_DELIVERY_MAX_UNSHIPPED", default=2)
+
+def _lan_max_pending_hours() -> int:
+    return _env_int("LAN_DELIVERY_MAX_PENDING_HOURS", default=24)
+
+# Trigger-dedupe lock window. 60 min covers back-to-back reboots and
+# APScheduler misfire storms. 2 h stale-lock reclaim keeps a crashed
+# writer from wedging the lock forever.
+_BACKUP_LOCK_WINDOW_MIN = 60
+_BACKUP_LOCK_STALE_HOURS = 2
+_BACKUP_LOCK_DOC_ID = "backup_lock"
+
+
+async def _acquire_backup_lock(db_) -> Tuple[bool, str]:
+    """Atomic-ish acquire of the singleton backup lock.
+
+    Returns `(acquired, reason)`. Reason on skip is one of:
+      - "recent_run"     — a successful backup completed <60 min ago
+      - "in_progress"    — another writer is currently running
+      - "acquired"       — lock is ours; caller must release it
+    """
+    now = datetime.now(timezone.utc)
+    doc = await db_.system_backup_lock.find_one({"_id": _BACKUP_LOCK_DOC_ID}) or {}
+
+    # Stale-lock reclaim: if a writer says it's in-progress but the
+    # started_at is older than 2 h, treat it as crashed and take over.
+    started_raw = doc.get("started_at")
+    if doc.get("in_progress") and started_raw:
+        try:
+            started_dt = started_raw if isinstance(started_raw, datetime) else \
+                datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
+            if started_dt.tzinfo is None:
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            age_h = (now - started_dt).total_seconds() / 3600
+            if age_h >= _BACKUP_LOCK_STALE_HOURS:
+                logger.warning(
+                    "backup_lock.stale_reclaimed after=%.1fh started_at=%s",
+                    age_h, started_dt.isoformat(),
+                )
+                doc["in_progress"] = False  # fall through to acquire
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("backup_lock stale probe failed: %s", _e)
+
+    if doc.get("in_progress"):
+        return False, "in_progress"
+
+    last_raw = doc.get("last_run_at")
+    if last_raw:
+        try:
+            last_dt = last_raw if isinstance(last_raw, datetime) else \
+                datetime.fromisoformat(str(last_raw).replace("Z", "+00:00"))
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            age_min = (now - last_dt).total_seconds() / 60
+            if age_min < _BACKUP_LOCK_WINDOW_MIN:
+                return False, "recent_run"
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("backup_lock recency probe failed: %s", _e)
+
+    await db_.system_backup_lock.update_one(
+        {"_id": _BACKUP_LOCK_DOC_ID},
+        {"$set": {"in_progress": True, "started_at": now.isoformat()}},
+        upsert=True,
+    )
+    return True, "acquired"
+
+
+async def _release_backup_lock(db_, ok: bool):
+    """Release the singleton backup lock. On success we stamp
+    `last_run_at` so the 60-min recency window kicks in. On failure
+    we clear `in_progress` but do NOT stamp `last_run_at` so a
+    retry can fire immediately."""
+    now = datetime.now(timezone.utc)
+    updates: Dict[str, Any] = {"in_progress": False, "started_at": None}
+    if ok:
+        updates["last_run_at"] = now.isoformat()
+    try:
+        await db_.system_backup_lock.update_one(
+            {"_id": _BACKUP_LOCK_DOC_ID},
+            {"$set": updates},
+            upsert=True,
+        )
+    except Exception as _e:  # noqa: BLE001
+        logger.warning("backup_lock release failed: %s", _e)
+
+
 # Wired up to the same Mongo connection server.py uses. We import lazily
 # inside the router setup so this file can be imported before .env loads.
 _db = None
@@ -357,9 +508,51 @@ async def _apply_retention_policy(db_, fs_) -> Dict[str, Any]:
         {}, {"_id": 0, "id": 1, "created_at": 1, "gridfs_id": 1, "size": 1},
     ).to_list(None)
     keep_ids, drop_ids, debug = _compute_retention_decision(snapshots, policy)
+
+    # v58.13.132jh — Enforce env-driven MAX_COUNT and MAX_TOTAL_MB
+    # caps on top of the GFS age tiers. Strictest wins.
+    max_count = _snapshot_max_count()
+    max_total_bytes = _snapshot_max_total_mb() * 1024 * 1024
+    # Rebuild "kept" as a list preserving age order (newest first).
+    kept_rows = sorted(
+        [s for s in snapshots if s["id"] in set(keep_ids) and s.get("created_at")],
+        key=lambda s: s["created_at"],
+        reverse=True,
+    )
+    # Apply MAX_COUNT cap.
+    if max_count > 0 and len(kept_rows) > max_count:
+        over_by = len(kept_rows) - max_count
+        for s in kept_rows[max_count:]:
+            if s["id"] not in drop_ids:
+                drop_ids.append(s["id"])
+        kept_rows = kept_rows[:max_count]
+        debug["max_count_evicted"] = over_by
+        debug["max_count_cap"] = max_count
+    # Apply MAX_TOTAL_MB cap — walk newest first, evict oldest that
+    # push us over the budget.
+    if max_total_bytes > 0:
+        running = 0
+        cap_evicted = 0
+        new_kept: List[Dict[str, Any]] = []
+        for s in kept_rows:
+            sz = int(s.get("size") or 0)
+            if running + sz > max_total_bytes and new_kept:
+                # Push this and all remaining to drop.
+                if s["id"] not in drop_ids:
+                    drop_ids.append(s["id"])
+                cap_evicted += 1
+                continue
+            running += sz
+            new_kept.append(s)
+        kept_rows = new_kept
+        debug["max_total_mb_cap"] = _snapshot_max_total_mb()
+        debug["max_total_mb_evicted"] = cap_evicted
+    keep_ids = [s["id"] for s in kept_rows]
+
     bytes_freed = 0
+    drop_id_set = set(drop_ids)
     for s in snapshots:
-        if s["id"] not in drop_ids:
+        if s["id"] not in drop_id_set:
             continue
         gid = s.get("gridfs_id")
         if gid:
@@ -672,6 +865,87 @@ class AgentReport(BaseModel):
 api_router = APIRouter(prefix="/api/backup", tags=["backup"])
 
 
+# v58.13.132jh — Pod-side aggressive retention. Keeps the on-disk
+# drop-zone bounded by MAX_UNSHIPPED count AND MAX_PENDING_HOURS age.
+# Any pending row over either cap is evicted (row deleted + on-disk
+# file unlinked). Called before every new snapshot write and by a
+# periodic sweep (see server.py APScheduler wiring).
+async def _enforce_pod_side_retention(db_, reason: str = "") -> Dict[str, Any]:
+    max_unshipped = _lan_max_unshipped()
+    max_pending_h = _lan_max_pending_hours()
+    evicted_count = 0
+    evicted_bytes = 0
+    reasons: List[str] = []
+
+    # Pull all rows that carry a filepath and are not yet shipped.
+    pending = await db_.bk_snapshots.find(
+        {"filepath": {"$ne": None}, "shipped_at": None},
+        {"_id": 0, "id": 1, "filepath": 1, "created_at": 1, "size": 1},
+    ).sort("created_at", 1).to_list(None)  # oldest first
+
+    now = datetime.now(timezone.utc)
+
+    # 1. Age-based eviction: any pending row older than MAX_PENDING_HOURS.
+    still_pending: List[Dict[str, Any]] = []
+    for row in pending:
+        ca = row.get("created_at")
+        try:
+            dt = datetime.fromisoformat(str(ca).replace("Z", "+00:00")) if ca else None
+        except Exception:
+            dt = None
+        if dt and dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        age_h = (now - dt).total_seconds() / 3600 if dt else None
+        if age_h is not None and age_h >= max_pending_h:
+            fp = row.get("filepath")
+            try:
+                if fp and os.path.exists(fp):
+                    evicted_bytes += os.path.getsize(fp)
+                    os.unlink(fp)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("pod_retention unlink %s failed: %s", fp, e)
+            await db_.bk_snapshots.delete_one({"id": row["id"]})
+            evicted_count += 1
+            reasons.append(f"age>{max_pending_h}h")
+            logger.warning(
+                "backup.pod_retention EVICT id=%s age_h=%.1f reason=age (pi didn't collect)",
+                row["id"], age_h,
+            )
+        else:
+            still_pending.append(row)
+
+    # 2. Count-based eviction: keep only the newest N unshipped.
+    if max_unshipped > 0 and len(still_pending) > max_unshipped:
+        # Oldest-first list — evict the leading (len-N) entries.
+        over = still_pending[: len(still_pending) - max_unshipped]
+        for row in over:
+            fp = row.get("filepath")
+            try:
+                if fp and os.path.exists(fp):
+                    evicted_bytes += os.path.getsize(fp)
+                    os.unlink(fp)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("pod_retention unlink %s failed: %s", fp, e)
+            await db_.bk_snapshots.delete_one({"id": row["id"]})
+            evicted_count += 1
+            reasons.append(f"count>{max_unshipped}")
+            logger.warning(
+                "backup.pod_retention EVICT id=%s reason=count (>%d unshipped)",
+                row["id"], max_unshipped,
+            )
+
+    if evicted_count:
+        logger.info(
+            "backup.pod_retention.done reason=%s evicted=%d bytes=%d",
+            reason or "sweep", evicted_count, evicted_bytes,
+        )
+    return {
+        "evicted": evicted_count,
+        "bytes_freed": evicted_bytes,
+        "reasons": reasons,
+    }
+
+
 def install(app, db, require_admin):
     """Mount the backup endpoints. Called from server.py."""
     global _db
@@ -813,6 +1087,30 @@ def install(app, db, require_admin):
             logger.exception("[v39] local_agent destination migration "
                              "failed at startup: %s", e)
 
+    # v58.13.132jh — Startup announcement so ops can immediately see
+    # whether the in-app backup routine is armed or short-circuited.
+    @app.on_event("startup")
+    async def _v58_13_132jh_backup_status_log():
+        try:
+            if _backups_enabled():
+                logger.info(
+                    "backup.status ENABLED — writing snapshots to "
+                    "filesystem drop-zone at %s. Pod-side retention: "
+                    "max_unshipped=%d max_pending_h=%d. Historical "
+                    "caps: max_count=%d max_total_mb=%d.",
+                    _lan_drop_zone(),
+                    _lan_max_unshipped(), _lan_max_pending_hours(),
+                    _snapshot_max_count(), _snapshot_max_total_mb(),
+                )
+            else:
+                logger.warning(
+                    "backup.status DISABLED — BACKUPS_ENABLED=false. "
+                    "All snapshot writes will short-circuit. Live-data "
+                    "safety net is Emergent-managed backups + PITR."
+                )
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("backup status log failed: %s", _e)
+
     # ------------------------------------------------------------
     # SNAPSHOT  — admin: trigger; agent: list & download.
     # ------------------------------------------------------------
@@ -820,62 +1118,135 @@ def install(app, db, require_admin):
         """Core snapshot routine — reusable by both the admin-triggered
         POST endpoint AND the daily scheduler. Returns the result dict
         that the HTTP endpoint serialises back to the operator."""
+        # v58.13.132jh — Circuit breaker. When BACKUPS_ENABLED=false
+        # (default) short-circuit at the top; every entry point
+        # (POST /snapshots background task, APScheduler cron jobs,
+        # startup catch-up, hourly watchdog) collapses to a warning
+        # log + no-op. Live data safety net is Emergent-managed
+        # backups + PITR — see /app/memory/v58_13_132jh_backup_routine
+        # _externalize.md for the audit trail.
+        if not _backups_enabled():
+            logger.warning(
+                "backup.disabled — BACKUPS_ENABLED=false; skipping "
+                "snapshot. Live-data safety net is Emergent managed "
+                "backups + PITR. Flip BACKUPS_ENABLED=true in "
+                "backend/.env and wire an external destination "
+                "(S3-compatible or mount outside /app) to re-enable."
+            )
+            return {"ok": False, "skipped": True,
+                    "reason": "backups_disabled"}
+
+        # v58.13.132jh — Trigger dedupe. If a writer completed <60 min
+        # ago, or another writer is currently running, skip with a
+        # clear log line. Boot-storm scenarios (5 fires in 10 min
+        # during hot-reload cascades) now collapse to at most one
+        # write per hour.
+        acquired, reason = await _acquire_backup_lock(db)
+        if not acquired:
+            logger.warning(
+                "backup.skipped reason=%s window_min=%d — no snapshot written",
+                reason, _BACKUP_LOCK_WINDOW_MIN,
+            )
+            return {"ok": False, "skipped": True, "reason": reason}
+
         snap_id = str(uuid.uuid4())
         zbuf = io.BytesIO()
         included: List[str] = []
         total_docs = 0
 
-        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
-            collections = await db.list_collection_names()
-            for cname in sorted(collections):
-                if cname in EXCLUDE_COLLECTIONS or cname.startswith("system."):
-                    continue
-                if cname.startswith("bk_fs."):
-                    continue
-                cursor = db[cname].find({}, {"_id": 0})
-                rows = await cursor.to_list(length=None)
-                z.writestr(
-                    f"mongo/{cname}.json",
-                    json.dumps(rows, default=str, ensure_ascii=False),
-                )
-                included.append(cname)
-                total_docs += len(rows)
+        try:
+            with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
+                collections = await db.list_collection_names()
+                for cname in sorted(collections):
+                    if cname in EXCLUDE_COLLECTIONS or cname.startswith("system."):
+                        continue
+                    if cname.startswith("bk_fs."):
+                        continue
+                    cursor = db[cname].find({}, {"_id": 0})
+                    rows = await cursor.to_list(length=None)
+                    z.writestr(
+                        f"mongo/{cname}.json",
+                        json.dumps(rows, default=str, ensure_ascii=False),
+                    )
+                    included.append(cname)
+                    total_docs += len(rows)
 
-            manifest = {
-                "snapshot_id": snap_id,
+                manifest = {
+                    "snapshot_id": snap_id,
+                    "created_at": _now_iso(),
+                    "scope": "full",
+                    "collections": included,
+                    "total_documents": total_docs,
+                    "app": "paneltec-hub",
+                }
+                z.writestr("manifest.json", json.dumps(manifest, indent=2))
+
+            data = zbuf.getvalue()
+            sha = hashlib.sha256(data).hexdigest()
+
+            # v58.13.132jh — Filesystem drop-zone. Write the ZIP under
+            # LAN_DELIVERY_DROP_ZONE and register a metadata-only row
+            # in `bk_snapshots`. No GridFS write. Pod-side footprint
+            # is bounded by _enforce_pod_side_retention() below.
+            drop_zone = _lan_drop_zone()
+            os.makedirs(drop_zone, exist_ok=True)
+            filepath = os.path.join(drop_zone,
+                                    f"paneltec-snapshot-{snap_id}.zip")
+            # Before writing this snapshot, enforce the "≤ MAX_UNSHIPPED
+            # pending" cap by evicting the oldest pending file(s).
+            evicted = await _enforce_pod_side_retention(db, reason="pre-write")
+            if evicted:
+                logger.warning(
+                    "backup.pod_retention pre-write evicted=%s (max_unshipped=%d)",
+                    evicted, _lan_max_unshipped(),
+                )
+
+            # Atomic write: staging .part → rename so a partial write
+            # never confuses the Pi.
+            staging = filepath + ".part"
+            with open(staging, "wb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(staging, filepath)
+
+            await db.bk_snapshots.insert_one({
+                "id": snap_id,
                 "created_at": _now_iso(),
-                "scope": "full",
+                "size": len(data),
+                "sha256": sha,
                 "collections": included,
                 "total_documents": total_docs,
-                "app": "paneltec-hub",
-            }
-            z.writestr("manifest.json", json.dumps(manifest, indent=2))
+                # v58.13.132jh — new fields for filesystem drop-zone.
+                # `gridfs_id` is intentionally absent — the download
+                # endpoint prefers `filepath` and only falls back to
+                # `gridfs_id` for legacy pre-.132jh rows.
+                "filepath": filepath,
+                "storage": "filesystem",
+                "shipped_at": None,
+                "nas_path": None,
+                "status": "ready",
+            })
 
-        data = zbuf.getvalue()
-        sha = hashlib.sha256(data).hexdigest()
-        gridfs_id = await fs.upload_from_stream(
-            f"paneltec-snapshot-{snap_id}.zip",
-            io.BytesIO(data),
-            metadata={"snapshot_id": snap_id, "sha256": sha},
-        )
-        await db.bk_snapshots.insert_one({
-            "id": snap_id,
-            "created_at": _now_iso(),
-            "size": len(data),
-            "sha256": sha,
-            "collections": included,
-            "total_documents": total_docs,
-            "gridfs_id": str(gridfs_id),
-            "status": "ready",
-        })
+            # Apply retention policy (grandfather-father-son) for
+            # historical/metadata pruning + the size/count caps we
+            # added in .132jh. This does NOT clean up on-disk ZIPs
+            # for shipped snapshots — the /agent/report path does
+            # that immediately after a successful ship.
+            await _apply_retention_policy(db, fs)
 
-        # Apply retention policy (grandfather-father-son):
-        # keeps recent snapshots dense, older ones sparse, configurable.
-        await _apply_retention_policy(db, fs)
-
-        return {"ok": True, "snapshot_id": snap_id,
-                "size": len(data), "sha256": sha,
-                "documents": total_docs}
+            await _release_backup_lock(db, ok=True)
+            return {"ok": True, "snapshot_id": snap_id,
+                    "size": len(data), "sha256": sha,
+                    "documents": total_docs,
+                    "filepath": filepath}
+        except Exception:
+            # Release the lock on failure without stamping last_run_at
+            # so an immediate retry is allowed. Re-raise so the caller
+            # (guarded_snapshot's retry loop / direct HTTP path) sees
+            # the original error.
+            await _release_backup_lock(db, ok=False)
+            raise
 
     # Paneltec Civil (v143) — expose `_do_snapshot` on app.state so the
     # AsyncIOScheduler in server.py can register it as a cron job without
@@ -972,6 +1343,22 @@ def install(app, db, require_admin):
         of a truncated snapshot manifest + a 502 from the writer.
         """
         # v58.13.132gw — Pre-flight disk guard.
+        # v58.13.132jh — Circuit breaker: return 503 when backups
+        # are disabled so the FE surfaces a clear "disabled" state
+        # instead of a queued placeholder that never lands.
+        if not _backups_enabled():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Backups are disabled on this environment "
+                    "(BACKUPS_ENABLED=false). Live data is protected "
+                    "by Emergent-managed backups + PITR. To re-enable "
+                    "the in-app snapshot routine, wire an external "
+                    "destination (S3-compatible or a mount outside "
+                    "/app) and set BACKUPS_ENABLED=true in "
+                    "backend/.env."
+                ),
+            )
         try:
             import shutil as _shutil
             usage = _shutil.disk_usage("/app")
@@ -1373,8 +1760,42 @@ def install(app, db, require_admin):
         snap = await db.bk_snapshots.find_one({"id": snap_id})
         if not snap:
             raise HTTPException(404, "snapshot not found")
+
+        # v58.13.132jh — Prefer filesystem drop-zone. GridFS fallback
+        # kept for legacy pre-.132jh rows (which no longer exist after
+        # the one-shot purge, but the branch is cheap insurance in
+        # case a restore repopulates them).
+        filepath = snap.get("filepath")
+        if filepath and os.path.exists(filepath):
+            async def _stream_fs():
+                # Read in 1 MiB chunks so we don't materialize a 400 MB
+                # bytes object in memory.
+                with open(filepath, "rb") as f:
+                    while True:
+                        chunk = f.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        yield chunk
+            return StreamingResponse(
+                _stream_fs(),
+                media_type="application/zip",
+                headers={
+                    "Content-Disposition": f'attachment; filename="paneltec-snapshot-{snap_id}.zip"',
+                    "X-Snapshot-SHA256": snap.get("sha256") or "",
+                    "Content-Length": str(snap.get("size") or 0),
+                    "X-Snapshot-Storage": "filesystem",
+                },
+            )
+
+        # Legacy GridFS fallback.
+        gridfs_id_str = snap.get("gridfs_id")
+        if not gridfs_id_str:
+            raise HTTPException(
+                410,
+                "snapshot payload missing (no filepath or gridfs_id)",
+            )
         from bson import ObjectId
-        gridfs_id = ObjectId(snap["gridfs_id"])
+        gridfs_id = ObjectId(gridfs_id_str)
 
         async def _stream():
             grid_out = await fs.open_download_stream(gridfs_id)
@@ -1393,6 +1814,7 @@ def install(app, db, require_admin):
                 # sha256/size fields.
                 "X-Snapshot-SHA256": snap.get("sha256") or "",
                 "Content-Length": str(snap.get("size") or 0),
+                "X-Snapshot-Storage": "gridfs-legacy",
             },
         )
 
@@ -1825,27 +2247,108 @@ def install(app, db, require_admin):
         # mis-configured agent silently reporting "delivered" for a
         # path outside the intended target. SMB destinations keep
         # the previous behaviour (any ok report → bump).
-        if report.destination_id and report.status == "ok":
-            _dest = await db.bk_destinations.find_one(
-                {"id": report.destination_id},
-                {"_id": 0, "kind": 1, "local_path": 1},
-            )
+        #
+        # v58.13.132jh — Diagnosed: the Pi agent's report payload has
+        # NOT been setting `destination_id` since the .132ir SMB→
+        # local_agent migration on 03/08/2026. That silently pinned
+        # `bk_destinations.last_written_at` to that migration date
+        # and the "Last LAN Delivery" UI panel has read STALE ever
+        # since — even though 120 successful ships have happened.
+        # Fix: when `destination_id` is absent BUT the report is
+        # `status=ok` with a `target_path` that starts with an
+        # enabled `local_agent` destination's `local_path`, bump
+        # that destination anyway. Correlation is safe because there
+        # is only one enabled `local_agent` destination per org.
+        if report.status == "ok":
+            dest_row = None
+            if report.destination_id:
+                dest_row = await db.bk_destinations.find_one(
+                    {"id": report.destination_id},
+                    {"_id": 0, "id": 1, "kind": 1, "local_path": 1},
+                )
+            if dest_row is None and report.target_path:
+                # Correlate by longest matching local_path among
+                # enabled local_agent destinations.
+                candidates = await db.bk_destinations.find(
+                    {"enabled": True, "kind": "local_agent"},
+                    {"_id": 0, "id": 1, "kind": 1, "local_path": 1},
+                ).to_list(50)
+                best = None
+                best_len = -1
+                for c in candidates:
+                    lp = c.get("local_path") or "/data"
+                    if report.target_path.startswith(lp) and len(lp) > best_len:
+                        best = c
+                        best_len = len(lp)
+                if best is not None:
+                    dest_row = best
+                    logger.info(
+                        "[.132jh] destination_id inferred by target_path: "
+                        "id=%s target=%s",
+                        best["id"], report.target_path,
+                    )
             _should_bump = True
-            if _dest and _dest.get("kind") == "local_agent":
-                _lp = _dest.get("local_path") or "/data"
+            if dest_row and dest_row.get("kind") == "local_agent":
+                _lp = dest_row.get("local_path") or "/data"
                 _tp = report.target_path or ""
                 _should_bump = bool(_tp) and _tp.startswith(_lp)
                 if not _should_bump:
                     logger.info(
-                        "[v39] local_agent report from dest=%s ignored — "
+                        "[v39] local_agent report ignored — "
                         "target_path=%r does not start with local_path=%r",
-                        report.destination_id, _tp, _lp,
+                        _tp, _lp,
                     )
-            if _should_bump:
+            if _should_bump and dest_row:
                 await db.bk_destinations.update_one(
-                    {"id": report.destination_id},
+                    {"id": dest_row["id"]},
                     {"$set": {"last_written_at": _now_iso()}},
                 )
+
+            # v58.13.132jh — Mark snapshot as shipped AND delete the
+            # pod-side ZIP now that the Pi has it on the NAS. Only
+            # fires on ok reports with a real bytes_written payload
+            # (≥ 1 MB filters heartbeat-only rows). Idempotent — a
+            # second report for the same snapshot no-ops the unlink
+            # if the file's already gone.
+            snap_id_reported = report.snapshot_id
+            bytes_ok = (report.bytes_written or 0) >= 1_000_000
+            if (snap_id_reported
+                    and snap_id_reported != "none"
+                    and bytes_ok):
+                snap_row = await db.bk_snapshots.find_one(
+                    {"id": snap_id_reported},
+                    {"_id": 0, "id": 1, "filepath": 1, "shipped_at": 1},
+                )
+                if snap_row:
+                    updates: Dict[str, Any] = {
+                        "shipped_at": _now_iso(),
+                        "nas_path": report.target_path,
+                    }
+                    # Unlink the local ZIP so /app doesn't accumulate
+                    # 400 MB every 6 h. Best-effort — a missing file
+                    # is fine, we just log it.
+                    fp = snap_row.get("filepath")
+                    if fp:
+                        try:
+                            if os.path.exists(fp):
+                                sz = os.path.getsize(fp)
+                                os.unlink(fp)
+                                logger.info(
+                                    "backup.local_zip.deleted id=%s "
+                                    "path=%s bytes=%d (shipped to NAS)",
+                                    snap_id_reported, fp, sz,
+                                )
+                            updates["filepath"] = None
+                        except Exception as _e:  # noqa: BLE001
+                            logger.warning(
+                                "backup.local_zip.unlink failed id=%s "
+                                "path=%s err=%s",
+                                snap_id_reported, fp, _e,
+                            )
+                    await db.bk_snapshots.update_one(
+                        {"id": snap_id_reported},
+                        {"$set": updates},
+                    )
         return {"ok": True}
 
     @api_router.get("/agent-logs", dependencies=[Depends(require_admin)])
@@ -2084,7 +2587,11 @@ def install(app, db, require_admin):
           • never   — agent has never delivered a snapshot
           • down    — agent hasn't reported (any kind) for >30 min
         """
-        STALE_AFTER_H = 6.0    # warn after 6 h with no delivery
+        STALE_AFTER_H = 8.0    # v58.13.132jh — was 6.0. Snapshot cron
+                               # fires every 6 h, so 6.0 flagged EVERY
+                               # inter-snapshot window as stale. 8 h
+                               # gives a ~2 h grace which absorbs a
+                               # missed slot without a false alarm.
         DOWN_AFTER_MIN = 30    # agent heartbeat older than this = container down
 
         last_delivery = await db.bk_agent_logs.find_one(

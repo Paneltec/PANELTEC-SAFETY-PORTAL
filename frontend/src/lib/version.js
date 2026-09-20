@@ -13256,7 +13256,86 @@
 //     · Discovered Documents — same reason (no expiry).
 //     · Compliance folders (Doc Library) — user pre-approved the
 //       split into .132if.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132iz';
+// v58.13.132jh — Redirect backup snapshots to filesystem drop-zone
+//                 + fix LAN delivery contract ghost.
+//
+// Emergent-flagged root cause (verified live): `backup_service.py::
+// _do_snapshot` wrote 400 MB ZIPs INTO Mongo via GridFS on the same
+// 9.8 GB /app partition it was dumping. Age-based retention (GFS
+// 7-day / daily-30 / weekly-26) allowed ~28 recent snapshots × ~400 MB
+// ≈ 11 GB to accumulate. Result: 41 snapshots + 22623 chunks +
+// 4.94 GB of `bk_fs.chunks` at time of ship. /app 98% full. Mongo
+// FATAL → node_modules corruption cycle.
+//
+// Diagnostic surprise from the 48-day "Last LAN Delivery" STALE
+// panel: NOT actually stale. `bk_agent_logs` shows 120 successful
+// full-snapshot ships between 03/08 and 20/09, most recent 8.4 h
+// before this ship. The panel ghost was caused by the Pi agent's
+// report payload dropping `destination_id` post-.132ir migration,
+// which made `agent_report`'s `if report.destination_id and ...`
+// guard skip the `last_written_at` bump for 48 days straight even
+// though every ship succeeded. Fix: correlate by longest matching
+// `target_path.startswith(local_path)` when destination_id is
+// missing.
+//
+// Fix bundle (Option 2 — keep LAN backups working, fix contract):
+//   · Filesystem drop-zone: snapshots are now written as
+//     `<uuid>.zip` under `LAN_DELIVERY_DROP_ZONE` (default
+//     `/app/backups/outgoing`). `bk_snapshots` carries a
+//     `filepath` field; GridFS write path is deleted. Legacy
+//     `gridfs_id` rows are still served by the download endpoint
+//     as a fallback.
+//   · Aggressive pod-side retention: `LAN_DELIVERY_MAX_UNSHIPPED`
+//     (default 2) enforced pre-write; `LAN_DELIVERY_MAX_PENDING
+//     _HOURS` (default 24) enforced by hourly sweep. Confirmed
+//     ships (Pi POST /agent/report with matching target_path and
+//     bytes_written ≥ 1 MB) immediately delete the local ZIP,
+//     stamp `bk_snapshots.shipped_at` + `nas_path`.
+//   · Trigger dedupe: 60-min lock in `system.backup_lock` so
+//     boot-storm hot-reload cascades no longer fire 5 snapshots
+//     in 10 min. Stale-lock reclaim after 2 h with a distinct log
+//     line (`backup_lock.stale_reclaimed after=2h`).
+//   · Retention caps also added for the GFS tier
+//     (SNAPSHOT_MAX_COUNT / SNAPSHOT_MAX_TOTAL_MB) so a future
+//     re-enable of large retention windows can't ever re-fill the
+//     disk in the same way.
+//   · One-shot Python purge
+//     (`scripts/v58_13_132jh_purge_legacy_snapshots.py`) evicted
+//     41 rows + 22623 chunks + 4.9 GB before this ship, then
+//     `compact` returned 5.5 GB to the OS (/app 98% → 41%).
+//   · Persistent disk-hygiene cron: `.emergent/crons.yml`
+//     documents the canonical config; a backend startup hook
+//     re-installs `/etc/cron.d/paneltec-disk-hygiene` from
+//     `scripts/paneltec-disk-hygiene.cron.reference` on every
+//     boot so a fresh pod rebuild can't wipe the guard rail.
+//   · `BACKUPS_ENABLED` / `LAN_DELIVERY_ENABLED` env vars (both
+//     default true) exposed as emergency circuit breakers.
+//
+//   Files touched:
+//     · backend/backup_service.py — guards, lock, retention caps,
+//       filesystem drop-zone, pod-side retention helper, agent/
+//       report correlation-by-target_path + on-disk unlink, /
+//       snapshots/{id}/data filesystem-first with GridFS fallback.
+//     · backend/.env               — BACKUPS_ENABLED + LAN_DELIVERY_
+//       * + SNAPSHOT_MAX_* env vars.
+//     · backend/server.py          — cron install hook, hourly pod
+//       retention sweep, BACKUPS_ENABLED skip guard.
+//     · .emergent/crons.yml        — canonical cron registry (new).
+//     · scripts/v58_13_132jh_purge_legacy_snapshots.py — one-shot.
+//     · frontend/src/lib/version.js
+//     · frontend/public/service-worker.js
+//     · memory/v58_13_132jh_backup_routine_externalize.md — ship
+//       memo.
+//
+//   NOT changed:
+//     · /app/mobile/ — untouched. `.132jg` build in flight.
+//     · Pi agent code — untouched. The Pi's existing contract
+//       (poll /agent/pending, download /snapshots/{id}/data, POST
+//       /agent/report) still works — the hub-side fixes are
+//       transparent to the Pi.
+//     · `restore` endpoint — untouched (it accepts an uploaded
+//       ZIP, doesn't care where it came from).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132jh';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13277,7 +13356,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132iz';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132iz';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132jh';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

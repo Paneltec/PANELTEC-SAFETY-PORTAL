@@ -749,6 +749,39 @@ async def on_startup():
     except Exception as _e:  # noqa: BLE001
         log.warning("disk_panic.startup_guard failed: %s", _e)
 
+    # v58.13.132jh — Persistent disk-hygiene cron. Emergent's pod
+    # rebuild wipes /etc/cron.d/* on every fresh boot, which lets
+    # /app fill without any guard rail. We check the reference file
+    # (committed at /app/scripts/paneltec-disk-hygiene.cron.reference)
+    # into the repo, and copy it into place on every backend boot
+    # so the 2-min cache-purge job survives forever. Idempotent —
+    # only writes when the on-disk copy is missing or SHA differs.
+    try:
+        import hashlib as _hashlib
+        import shutil as _shutil2
+        _cron_ref = "/app/scripts/paneltec-disk-hygiene.cron.reference"
+        _cron_dst = "/etc/cron.d/paneltec-disk-hygiene"
+        if os.path.exists(_cron_ref):
+            with open(_cron_ref, "rb") as f:
+                _ref_bytes = f.read()
+            _ref_sha = _hashlib.sha256(_ref_bytes).hexdigest()
+            _dst_sha = None
+            if os.path.exists(_cron_dst):
+                with open(_cron_dst, "rb") as f:
+                    _dst_sha = _hashlib.sha256(f.read()).hexdigest()
+            if _dst_sha != _ref_sha:
+                with open(_cron_dst, "wb") as f:
+                    f.write(_ref_bytes)
+                os.chmod(_cron_dst, 0o644)
+                log.warning("disk_hygiene.cron installed at %s (was: %s)",
+                            _cron_dst, "missing" if _dst_sha is None else "stale")
+            else:
+                log.info("disk_hygiene.cron up-to-date at %s", _cron_dst)
+        else:
+            log.warning("disk_hygiene.cron reference file missing: %s", _cron_ref)
+    except Exception as _e:  # noqa: BLE001
+        log.warning("disk_hygiene.cron install failed: %s", _e)
+
     await ensure_indexes()
     # v58.13.132hf — Boot-trigger the doc_files extracted_text
     # backfill 5 minutes after startup. Admin can cancel via
@@ -1387,7 +1420,20 @@ async def on_startup():
             # skipped forever and the daily snapshot silently stopped happening.
             # Also fires a catch-up run at startup if the last snapshot is >25h
             # old so a restart storm can't leave the org without a fresh backup.
+            #
+            # v58.13.132jh — Skip all backup job registration when
+            # BACKUPS_ENABLED=false. In normal operation this stays
+            # true; setting it false is the "emergency circuit
+            # breaker" for a compromised disk scenario. The
+            # `_do_snap` wrapper still short-circuits internally so
+            # the guard is redundant-but-defensive.
             try:
+                _backups_on = os.environ.get("BACKUPS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+                if not _backups_on:
+                    log.warning("backup scheduler skipped — BACKUPS_ENABLED=false (see .132jh ship memo)")
+                    # Sentinel string caught silently at the outer except
+                    # so it doesn't emit "scheduler hook failed" noise.
+                    raise RuntimeError("__backup_scheduler_disabled__")
                 _do_snap = getattr(app.state, "bk_do_snapshot", None)
                 if _do_snap is None:
                     raise RuntimeError("bk_do_snapshot not attached — install_backup() must run first")
@@ -1504,8 +1550,43 @@ async def on_startup():
                 scheduler.add_job(_backup_watchdog, "interval", hours=1,
                                   id="backup_snapshot_watchdog", max_instances=1,
                                   coalesce=True, replace_existing=True)
+
+                # v58.13.132jh — Pod-side retention sweep, hourly.
+                # Enforces LAN_DELIVERY_MAX_UNSHIPPED + MAX_PENDING_HOURS
+                # on the on-disk drop-zone so a stopped Pi can't wedge
+                # /app back to full. Snapshot-creation path already
+                # runs this as a pre-write, but this belt-and-braces
+                # sweep covers the case where the scheduler is quiet
+                # (e.g. Pi failure keeps ships from happening).
+                async def _pod_retention_sweep():
+                    try:
+                        from backup_service import _enforce_pod_side_retention as _sweep
+                        _fs = getattr(app.state, "bk_fs", None)
+                        # _fs is unused by _enforce_pod_side_retention;
+                        # kept in signature for future symmetry.
+                        _ = _fs  # noqa: F841
+                        summary = await _sweep(_mongo_db, reason="periodic")
+                        if summary.get("evicted"):
+                            log.warning(
+                                "backup.pod_retention.periodic evicted=%d bytes=%d reasons=%s",
+                                summary["evicted"], summary["bytes_freed"],
+                                summary["reasons"],
+                            )
+                    except Exception as pe:
+                        log.warning("pod_retention_sweep failed: %s", pe)
+                scheduler.add_job(_pod_retention_sweep, "interval",
+                                  hours=1,
+                                  id="backup_pod_retention_sweep",
+                                  max_instances=1, coalesce=True,
+                                  replace_existing=True)
             except Exception as e:
-                log.warning("backup_snapshot scheduler hook failed: %s", e)
+                # v58.13.132jh — Sentinel from the BACKUPS_ENABLED=false
+                # short-circuit; swallow silently so we don't emit a
+                # misleading "failed" log line on a clean disable.
+                if str(e) == "__backup_scheduler_disabled__":
+                    pass
+                else:
+                    log.warning("backup_snapshot scheduler hook failed: %s", e)
             # v160.3.2 — Optional Simpro delta cron (opt-in via env).
             try:
                 register_simpro_cron(scheduler)
