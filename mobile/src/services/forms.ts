@@ -14,6 +14,22 @@ async function authHeaders() {
 
 // ── Types ──
 
+export interface FieldStyle {
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'none';
+  borderRadius?: number;
+  labelColor?: string;
+  labelBold?: boolean;
+  labelSize?: 'sm' | 'md' | 'lg' | null;
+  helpTextColor?: string;
+  hoverBackgroundColor?: string;  // web-only, mobile ignores
+  icon?: string | null;
+  paddingX?: number | null;
+  paddingY?: number | null;
+}
+
 export interface FormField {
   id: string;
   label: string;
@@ -22,6 +38,7 @@ export interface FormField {
   options: string[];
   placeholder: string;
   config?: Record<string, unknown>;
+  style?: FieldStyle;
 }
 
 export interface FormTemplate {

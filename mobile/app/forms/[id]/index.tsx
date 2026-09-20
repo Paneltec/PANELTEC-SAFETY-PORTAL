@@ -27,6 +27,7 @@ import {
   getCategoryMeta,
   type FormTemplate,
   type FormField,
+  type FieldStyle,
 } from '../../../src/services/forms';
 import { getStoredUser, isPreviewSession } from '../../../src/services/auth';
 import PhotoCapture from '../../../src/components/PhotoCapture';
@@ -41,6 +42,54 @@ type FieldValues = Record<string, unknown>;
 type Mode = 'fill' | 'review';
 
 const DRAFT_PREFIX = 'form_draft_';
+
+// ── Field style helpers (.132jl) ──
+
+const LABEL_SIZE_MAP: Record<string, number> = { sm: 13, md: 15, lg: 18 };
+const HEX_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+
+function isValidHex(v: unknown): v is string {
+  return typeof v === 'string' && HEX_RE.test(v);
+}
+
+/** Build a RN ViewStyle from the field.style schema. Returns {} if nothing to apply. */
+function buildFieldWrapperStyle(st?: FieldStyle): Record<string, unknown> {
+  if (!st || typeof st !== 'object') return {};
+  const out: Record<string, unknown> = {};
+
+  if (st.borderStyle === 'none') {
+    out.borderWidth = 0;
+  } else {
+    if (isValidHex(st.borderColor)) out.borderColor = st.borderColor;
+    if (typeof st.borderWidth === 'number' && st.borderWidth > 0) out.borderWidth = st.borderWidth;
+    if (st.borderStyle && st.borderStyle !== 'none') out.borderStyle = st.borderStyle;
+  }
+  if (isValidHex(st.backgroundColor)) out.backgroundColor = st.backgroundColor;
+  if (typeof st.borderRadius === 'number') out.borderRadius = st.borderRadius;
+  if (typeof st.paddingX === 'number') out.paddingHorizontal = st.paddingX;
+  if (typeof st.paddingY === 'number') out.paddingVertical = st.paddingY;
+
+  // Android dashed/dotted border quirk: needs overflow visible to avoid clipping
+  if (Platform.OS === 'android' && (st.borderStyle === 'dashed' || st.borderStyle === 'dotted')) {
+    out.overflow = 'visible';
+  }
+
+  return out;
+}
+
+/** Parse icon field: "emoji:⚠️" or "ion:warning" or null */
+function renderFieldIcon(icon?: string | null): React.ReactNode {
+  if (!icon) return null;
+  if (icon.startsWith('emoji:')) {
+    const emoji = icon.slice(6);
+    return <Text style={{ fontSize: 16, marginRight: 5 }}>{emoji}</Text>;
+  }
+  if (icon.startsWith('ion:')) {
+    const name = icon.slice(4) as keyof typeof Ionicons.glyphMap;
+    return <Ionicons name={name} size={16} color={Colors.textSecondary} style={{ marginRight: 5 }} />;
+  }
+  return null;
+}
 
 function draftKey(formId: string, workerId: string) {
   return `${DRAFT_PREFIX}${formId}_${workerId}`;
@@ -702,17 +751,33 @@ function FieldRenderer({
   field: FormField; value: unknown; onChange: (v: unknown) => void; hasError: boolean;
   allValues?: FieldValues; allFields?: FormField[];
 }) {
-  const borderStyle = hasError ? { borderWidth: 2, borderColor: Colors.error, borderRadius: 14 } : {};
+  const errorBorder = hasError ? { borderWidth: 2, borderColor: Colors.error, borderRadius: 14 } : {};
+  const wrapperStyle = buildFieldWrapperStyle(field.style);
+
+  // Label customisation from field.style
+  const st = field.style;
+  const labelStyle: Record<string, unknown> = {};
+  if (st?.labelColor && isValidHex(st.labelColor)) labelStyle.color = st.labelColor;
+  if (st?.labelBold) labelStyle.fontWeight = '700';
+  if (st?.labelSize && LABEL_SIZE_MAP[st.labelSize]) labelStyle.fontSize = LABEL_SIZE_MAP[st.labelSize];
+
+  const helpStyle: Record<string, unknown> = {};
+  if (st?.helpTextColor && isValidHex(st.helpTextColor)) helpStyle.color = st.helpTextColor;
+
+  const iconNode = renderFieldIcon(st?.icon);
 
   return (
-    <View testID={`form-field-${field.id}`} style={[s.fieldBlock, borderStyle]}>
+    <View testID={`form-field-${field.id}`} style={[s.fieldBlock, errorBorder, wrapperStyle]}>
       {field.type !== 'compliance' && (
         <>
-          <Text style={s.fieldLabel}>
-            {field.label}
-            {field.required && <Text style={s.required}> *</Text>}
-          </Text>
-          <Text style={s.fieldType}>{field.type}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {iconNode}
+            <Text style={[s.fieldLabel, labelStyle]}>
+              {field.label}
+              {field.required && <Text style={s.required}> *</Text>}
+            </Text>
+          </View>
+          <Text style={[s.fieldType, helpStyle]}>{field.type}</Text>
         </>
       )}
 
