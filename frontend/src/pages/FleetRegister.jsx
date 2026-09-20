@@ -222,7 +222,7 @@ function ServiceStatusPill({ block, assetId }) {
 // them. `Reset filters` now clears the tag selection alongside the
 // other dimensions. Retired/Sold + Data source + Service due bands
 // preserved verbatim.
-function FilterTree({ data, filter, setFilter, loading, serviceDueCount, sourceCounts, retiredData, distinctTags, tagsByVehicle, tagFilter, setTagFilter }) {
+function FilterTree({ data, filter, setFilter, loading, serviceDueCount, sourceCounts, retiredData, distinctTags, tagsByVehicle, tagFilter, setTagFilter, tagsReconnectHint, isAdmin }) {
   // v58.13.132dl — Per-tag row counts derived from the live
   // tagsByVehicle map. Falls back to zeros before the Navixy fetch
   // resolves so the skeleton stays quiet. Hooks must precede any
@@ -647,7 +647,7 @@ function SortableTh({ label, sortKey, currentKey, currentDir, onSort, className 
   );
 }
 
-function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset, registerQ, onClearSearch, tagsByVehicle, tagSourceByVehicle, tagsLoading, tagsError, distinctTags, tagFilter, setTagFilter, isAdmin }) {
+function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset, registerQ, onClearSearch, tagsByVehicle, tagSourceByVehicle, tagsLoading, tagsError, distinctTags, tagFilter, setTagFilter, isAdmin, tagsReconnectHint }) {
   const canDelete = useCan()('assets', 'delete');
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -1322,6 +1322,8 @@ export default function FleetRegister() {
             tagsByVehicle={tagsByVehicle}
             tagFilter={tagFilter}
             setTagFilter={(t) => { setTagFilter(t); setPage(1); }}
+            tagsReconnectHint={tagsReconnectHint}
+            isAdmin={isAdmin}
             sourceCounts={(() => {
               // v58.13.126 — Prefer server-authoritative counts from
               // `/api/fleet/categories.source_counts`. Falls back to
@@ -1424,6 +1426,7 @@ export default function FleetRegister() {
             tagFilter={tagFilter}
             setTagFilter={setTagFilter}
             isAdmin={isAdmin}
+            tagsReconnectHint={tagsReconnectHint}
           />
         </main>
       </div>
