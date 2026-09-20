@@ -13335,7 +13335,7 @@
 //       transparent to the Pi.
 //     · `restore` endpoint — untouched (it accepts an uploaded
 //       ZIP, doesn't care where it came from).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132jj';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132jk';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13356,7 +13356,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132jj';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132jj';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132jk';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

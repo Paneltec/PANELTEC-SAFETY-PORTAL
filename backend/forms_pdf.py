@@ -292,6 +292,97 @@ def _render_compliance_answer(story: list, field: dict, submission_id: str) -> N
         story.append(notes_table)
 
 
+def _hex_to_reportlab_color(hex_str: str):
+    """v58.13.132jk — Convert '#RRGGBB' / '#RGB' → reportlab color.
+    Falls back to None on malformed input (caller uses default look)."""
+    if not hex_str or not isinstance(hex_str, str):
+        return None
+    s = hex_str.strip()
+    if not s.startswith("#"):
+        return None
+    hexdigits = s[1:]
+    if len(hexdigits) == 3:
+        hexdigits = "".join(c * 2 for c in hexdigits)
+    if len(hexdigits) != 6:
+        return None
+    try:
+        r = int(hexdigits[0:2], 16) / 255.0
+        g = int(hexdigits[2:4], 16) / 255.0
+        b = int(hexdigits[4:6], 16) / 255.0
+    except ValueError:
+        return None
+    return colors.Color(r, g, b)
+
+
+def _styled_scalar_row(label: str, value_text: str, fs: dict):
+    """v58.13.132jk — Render a single scalar field row as its own
+    2-column table so per-field visual customization (background,
+    border, label colour, label bold/size) actually shows up in the
+    PDF. Falls back to the shared _kv_table look for absent
+    properties.
+
+    Supported: backgroundColor, borderColor, borderWidth,
+    borderStyle (solid/none — dashed/dotted rendered as solid due
+    to ReportLab Table BOX limitations), borderRadius (ignored —
+    ReportLab tables don't round), labelColor, labelBold, labelSize,
+    helpTextColor (applied to value cell text for lack of a
+    dedicated help-text row here).
+
+    NOT supported: hover (irrelevant), padding X/Y (ReportLab
+    padding is per-column not per-row; documented limitation),
+    non-emoji icons (icon libraries don't resolve in PDF).
+    """
+    label_font = STYLES["PtBody"].fontName
+    label_size = STYLES["PtBody"].fontSize
+    label_style = STYLES["PtBody"].clone("PtBodyStyled_" + label[:10])
+    if fs.get("labelBold"):
+        try:
+            label_style.fontName = label_font.replace("Regular", "Bold") if "Regular" in label_font else "Helvetica-Bold"
+        except Exception:
+            label_style.fontName = "Helvetica-Bold"
+    if fs.get("labelSize") == "sm":
+        label_style.fontSize = max(6, int(label_size * 0.85))
+    elif fs.get("labelSize") == "lg":
+        label_style.fontSize = int(label_size * 1.2)
+    lc = _hex_to_reportlab_color(fs.get("labelColor"))
+    if lc:
+        label_style.textColor = lc
+
+    value_style = STYLES["PtBody"].clone("PtValueStyled_" + label[:10])
+    hc = _hex_to_reportlab_color(fs.get("helpTextColor"))
+    if hc:
+        value_style.textColor = hc
+
+    label_para = Paragraph(label, label_style)
+    value_para = Paragraph((value_text or "—"), value_style)
+
+    tbl = Table(
+        [[label_para, value_para]],
+        colWidths=[2.0 * inch, None],
+    )
+    ts_cmds = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    bg = _hex_to_reportlab_color(fs.get("backgroundColor"))
+    if bg:
+        ts_cmds.append(("BACKGROUND", (0, 0), (-1, -1), bg))
+    border_c = _hex_to_reportlab_color(fs.get("borderColor"))
+    border_w = fs.get("borderWidth")
+    border_s = fs.get("borderStyle", "solid")
+    if border_s != "none" and (border_c or border_w is not None):
+        ts_cmds.append((
+            "BOX", (0, 0), (-1, -1),
+            border_w if isinstance(border_w, (int, float)) else 0.6,
+            border_c or colors.HexColor("#E5E7EB"),
+        ))
+    tbl.setStyle(TableStyle(ts_cmds))
+    return tbl
+
+
 def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
     buf = io.BytesIO()
     title = sub.get("template_name_snapshot") or template.get("name") or "Form submission"
@@ -352,6 +443,17 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
             label = _display_label(raw_label)
             ftype = f.get("type") or "text"
             val = f.get("value")
+            # v58.13.132jk — Per-field visual customization. Absence
+            # of a `style` dict falls back to the default look.
+            fs = f.get("style") or {}
+            # Emoji icon → prepend to label. Non-emoji prefixes
+            # (e.g. `ion:warning`) drop out silently in PDF (icon
+            # libraries only resolve in web + mobile). Documented
+            # limitation in the ship memo.
+            if fs.get("icon"):
+                icon_raw = str(fs["icon"])
+                if icon_raw.startswith("emoji:"):
+                    label = f"{icon_raw[len('emoji:'):]} {label}"
 
             # v160.3.0-adjust-16a (photo suppression) — Skip empty photo
             # fields entirely.
@@ -363,9 +465,20 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
                 if not has_photo:
                     continue
 
-            # Scalar → accumulate into two-column table.
+            # Scalar → accumulate into two-column table (default look).
+            # v58.13.132jk — Fields with a custom style break out of
+            # the accumulator and render as their own single-row Table
+            # so background / border / label colour honour the admin's
+            # config.
             if ftype in SCALAR_TYPES:
-                pending_rows.append((label, _scalar_value_str(val, ftype)))
+                if fs:
+                    _flush()
+                    story.append(_styled_scalar_row(
+                        label, _scalar_value_str(val, ftype), fs,
+                    ))
+                    story.append(Spacer(1, 3))
+                else:
+                    pending_rows.append((label, _scalar_value_str(val, ftype)))
                 continue
 
             # Complex field — flush the scalar table first, then render.
@@ -373,7 +486,22 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
             # v160.3.0-adjust-16b — Use Paragraph directly for the bold
             # label; `_para` HTML-escapes `<` and would render "<b>…</b>"
             # as literal text on the PDF.
-            story += [Spacer(1, 2), Paragraph(f"<b>{label}</b>", STYLES["PtBody"])]
+            # v58.13.132jk — Honour per-field labelColor / labelSize /
+            # labelBold when a style is set.
+            if fs:
+                lstyle = STYLES["PtBody"].clone("PtCLbl_" + (label[:10]))
+                if fs.get("labelBold", True):
+                    lstyle.fontName = "Helvetica-Bold"
+                if fs.get("labelSize") == "sm":
+                    lstyle.fontSize = max(6, int(lstyle.fontSize * 0.85))
+                elif fs.get("labelSize") == "lg":
+                    lstyle.fontSize = int(lstyle.fontSize * 1.2)
+                lc = _hex_to_reportlab_color(fs.get("labelColor"))
+                if lc:
+                    lstyle.textColor = lc
+                story += [Spacer(1, 2), Paragraph(label, lstyle)]
+            else:
+                story += [Spacer(1, 2), Paragraph(f"<b>{label}</b>", STYLES["PtBody"])]
 
             if ftype == "photo":
                 for ph in val:

@@ -1002,10 +1002,61 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
             // the user enters a valid value because `missingFields` is
             // reactively derived from `values`/`photoFiles`.
             const hasErr = submitAttempted && missingIds.has(f.id);
+            // v58.13.132jk — Apply per-field style customization
+            // (background/border/radius/padding). Absence = default look.
+            const fs = f.style || {};
+            const styleWrap = {
+              ...(fs.backgroundColor ? { backgroundColor: fs.backgroundColor } : null),
+              ...(fs.borderColor ? { borderColor: fs.borderColor } : null),
+              ...(fs.borderWidth !== undefined
+                ? { borderWidth: `${fs.borderWidth}px`, borderStyle: fs.borderStyle || 'solid' }
+                : null),
+              ...(fs.borderStyle && fs.borderWidth === undefined
+                ? { borderStyle: fs.borderStyle }
+                : null),
+              ...(fs.borderRadius !== undefined ? { borderRadius: `${fs.borderRadius}px` } : null),
+              ...(fs.paddingX !== undefined ? { paddingLeft: `${fs.paddingX}px`, paddingRight: `${fs.paddingX}px` } : null),
+              ...(fs.paddingY !== undefined ? { paddingTop: `${fs.paddingY}px`, paddingBottom: `${fs.paddingY}px` } : null),
+            };
+            const hasCustomStyle = Object.keys(styleWrap).length > 0;
+            const wrapClass = hasErr
+              ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 p-3 -mx-1'
+              : (hasCustomStyle ? 'rounded-xl border p-3 transition-colors' : '');
+            // Emit a scoped hover rule so `hoverBackgroundColor` works
+            // without cross-field state. Cheap: one <style> tag per
+            // custom-styled field.
+            const hoverCss = fs.hoverBackgroundColor
+              ? `[data-field-style-id="${f.id}"]:hover{background-color:${fs.hoverBackgroundColor} !important;}`
+              : '';
+            const labelStyle = {
+              ...(fs.labelColor ? { color: fs.labelColor } : null),
+              ...(fs.labelBold ? { fontWeight: 700 } : null),
+              ...(fs.labelSize === 'sm' ? { fontSize: '0.75rem' } : null),
+              ...(fs.labelSize === 'lg' ? { fontSize: '1rem' } : null),
+            };
+            // Icon parsing: `emoji:X` → literal, other prefixes render as
+            // small chip text so admins get feedback even when the icon
+            // lib doesn't resolve.
+            let iconGlyph = null;
+            if (fs.icon) {
+              if (fs.icon.startsWith('emoji:')) iconGlyph = fs.icon.slice('emoji:'.length);
+              else iconGlyph = fs.icon; // literal text fallback
+            }
             return (
             <div key={f.id} data-testid={`field-row-${f.id}`}
-              className={hasErr ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 p-3 -mx-1' : ''}>
-              <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-1.5">
+              data-field-style-id={hasCustomStyle || hoverCss ? f.id : undefined}
+              style={hasCustomStyle ? styleWrap : undefined}
+              className={wrapClass}>
+              {hoverCss && (
+                <style dangerouslySetInnerHTML={{ __html: hoverCss }} />
+              )}
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-1.5"
+                style={Object.keys(labelStyle).length ? labelStyle : undefined}>
+                {iconGlyph && (
+                  <span aria-hidden data-testid={`field-icon-${f.id}`} className="inline-block">
+                    {iconGlyph}
+                  </span>
+                )}
                 <span>{f.label}{f.required && <span className="text-rose-600 ml-1">*</span>}</span>
                 <span className="text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
                 {isLocked && (
@@ -1268,7 +1319,9 @@ function TemplateCard({ t, canEdit, onPreview, onFill, onDelete, onEdit, onOpenS
   return (
     <div className="group relative rounded-2xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:shadow-card transition-all flex flex-col overflow-hidden"
       data-testid={`template-card-${t.id}`}>
-      <div className={`absolute left-0 top-0 bottom-0 w-1 ${colour.stripe}`} aria-hidden />
+      {/* v58.13.132jk — LH stripe width tripled from w-1 (4px) to
+          w-3 (12px) per Stephen; colour + vertical extent preserved. */}
+      <div className={`absolute left-0 top-0 bottom-0 w-3 ${colour.stripe}`} aria-hidden />
       <div className="flex items-start gap-1.5 mb-2">
         <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${colour.chipBg} ${colour.chipText}`}>
           {categoryLabel(t.category)}

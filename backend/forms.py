@@ -155,6 +155,10 @@ def _clean_field(f: dict) -> dict:
     # the (i) info icon in the Compliance question widget. Capped at
     # 500 chars so it fits a tooltip without wrapping into a wall.
     help_text = str(f.get("help_text") or "").strip()[:500]
+    # v58.13.132jk — Optional per-field visual customization. Every
+    # sub-property is optional; missing keys fall back to the built-in
+    # look. Malformed hex or out-of-range numerics 400 the save.
+    style = _clean_field_style(f.get("style"))
     return {
         "id": str(f.get("id") or new_id())[:60],
         "label": str(f.get("label") or "").strip()[:200] or "Untitled",
@@ -164,7 +168,84 @@ def _clean_field(f: dict) -> dict:
         "placeholder": str(f.get("placeholder") or "")[:200],
         "help_text": help_text,
         "config": cfg,
+        "style": style,
     }
+
+
+# v58.13.132jk — Per-field visual customization validator.
+# Rejects malformed hex; clamps numeric ranges; canonicalises enum
+# values. Returns a normalized dict (never None) so downstream renderers
+# can rely on `field.get("style", {})`.
+_HEX_RE = __import__("re").compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+_ALLOWED_BORDER_STYLE = {"solid", "dashed", "dotted", "none"}
+_ALLOWED_LABEL_SIZE = {"sm", "md", "lg"}
+
+
+def _clean_field_style(raw) -> dict:
+    if raw is None or raw == "":
+        return {}
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "field.style must be an object")
+    out: dict = {}
+
+    def _hex(key):
+        v = raw.get(key)
+        if v is None or v == "":
+            return
+        if not isinstance(v, str) or not _HEX_RE.match(v.strip()):
+            raise HTTPException(
+                400, f"field.style.{key} must be a hex color like '#RRGGBB' or '#RGB' (got {v!r})",
+            )
+        out[key] = v.strip()
+
+    def _int(key, lo, hi):
+        v = raw.get(key)
+        if v is None or v == "":
+            return
+        try:
+            i = int(v)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"field.style.{key} must be an integer") from None
+        if i < lo or i > hi:
+            raise HTTPException(400, f"field.style.{key} must be between {lo} and {hi}")
+        out[key] = i
+
+    def _bool(key):
+        v = raw.get(key)
+        if v is None:
+            return
+        out[key] = bool(v)
+
+    def _enum(key, allowed):
+        v = raw.get(key)
+        if v is None or v == "":
+            return
+        if v not in allowed:
+            raise HTTPException(
+                400, f"field.style.{key} must be one of {sorted(allowed)} (got {v!r})",
+            )
+        out[key] = v
+
+    _hex("backgroundColor")
+    _hex("borderColor")
+    _hex("labelColor")
+    _hex("helpTextColor")
+    _hex("hoverBackgroundColor")
+    _int("borderWidth", 0, 8)
+    _int("borderRadius", 0, 32)
+    _int("paddingX", 0, 48)
+    _int("paddingY", 0, 48)
+    _enum("borderStyle", _ALLOWED_BORDER_STYLE)
+    _enum("labelSize", _ALLOWED_LABEL_SIZE)
+    _bool("labelBold")
+
+    icon = raw.get("icon")
+    if icon:
+        s = str(icon).strip()[:60]
+        if s:
+            out["icon"] = s
+
+    return out
 
 
 def _clean_cert_slugs(slugs) -> list[str]:

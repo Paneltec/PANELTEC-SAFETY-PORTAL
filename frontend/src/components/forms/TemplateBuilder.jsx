@@ -17,13 +17,15 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  AlertCircle, GripVertical, Loader2, Plus, Trash2, X, Save, Sparkles,
+  AlertCircle, GripVertical, Loader2, Plus, Trash2, X, Save, Sparkles, Palette,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { CATEGORIES, CAT_PILL, categoryLabel, FieldRunner } from '../../pages/Forms';
 // v160.3.7k — Inoculation sweep: lock body scroll while the template builder is open.
 import useLockBodyScroll from '../../lib/useLockBodyScroll';
+// v58.13.132jk — Per-field visual customization popover.
+import FieldStylePopover, { styleToWrapCss } from './FieldStylePopover';
 
 const FIELD_TYPES = [
   { key: 'text',      label: 'Short text' },
@@ -49,7 +51,7 @@ const newFieldId = () => `f${Date.now().toString(36)}${Math.random().toString(36
 
 const emptyField = () => ({
   id: newFieldId(), label: '', type: 'text', required: false, options: [],
-  placeholder: '', help_text: '',
+  placeholder: '', help_text: '', style: {},
 });
 
 function FieldEditor({ field, index, onChange, onRemove, error }) {
@@ -64,11 +66,22 @@ function FieldEditor({ field, index, onChange, onRemove, error }) {
   const update = (k, v) => onChange({ ...field, [k]: v });
   const optionsText = (field.options || []).join('\n');
 
+  // v58.13.132jk — Per-field style popover.
+  const [styleOpen, setStyleOpen] = React.useState(false);
+  const hasCustomStyle = field.style && Object.keys(field.style).length > 0;
+  // Build the outer-card overrides so the builder mirrors the runtime.
+  const cardOverride = hasCustomStyle ? styleToWrapCss(field.style) : {};
+
   return (
     <div ref={setNodeRef} style={style}
-      className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3"
+      className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 relative"
       data-testid={`builder-field-${field.id}`}>
-      <div className="flex items-start gap-2">
+      {hasCustomStyle && (
+        <div className="absolute inset-1 rounded-2xl pointer-events-none"
+             style={cardOverride}
+             aria-hidden />
+      )}
+      <div className="flex items-start gap-2 relative">
         <button type="button" {...attributes} {...listeners}
           className="mt-2 p-1.5 text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing"
           aria-label="Drag to reorder" data-testid={`drag-${field.id}`}>
@@ -123,12 +136,26 @@ function FieldEditor({ field, index, onChange, onRemove, error }) {
           )}
           {error?.label && <p className="text-xs text-rose-600 mt-1 inline-flex items-center gap-1"><AlertCircle size={11} /> {error.label}</p>}
         </div>
+        <button type="button" onClick={() => setStyleOpen(true)}
+          data-testid={`builder-style-${field.id}`}
+          className={`p-1.5 rounded-lg ${hasCustomStyle ? 'text-violet-600 bg-violet-50 hover:bg-violet-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+          aria-label="Customize field style"
+          title={hasCustomStyle ? 'Custom style applied — click to edit' : 'Customize field style'}>
+          <Palette size={14} />
+        </button>
         <button type="button" onClick={onRemove}
           data-testid={`builder-remove-${field.id}`}
           className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg" aria-label="Remove field">
           <Trash2 size={14} />
         </button>
       </div>
+      {styleOpen && (
+        <FieldStylePopover
+          style={field.style || {}}
+          fieldLabel={field.label}
+          onChange={(next) => update('style', next)}
+          onClose={() => setStyleOpen(false)} />
+      )}
     </div>
   );
 }
@@ -145,6 +172,7 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
           ...f, id: f.id || newFieldId(),
           options: f.options || [],
           help_text: f.help_text || '',
+          style: f.style || {},
         }))
       : [{ ...emptyField(), label: '' }],
   );
@@ -220,6 +248,8 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
           // v58.13.132ig — Persist per-question help_text.
           help_text: (f.help_text || '').trim().slice(0, 500),
           config: f.config || {},
+          // v58.13.132jk — Persist per-field visual customization.
+          style: f.style || {},
         })),
         // v160.3.0 — Only send the gate list on save; backend enforces
         // slug allowlist and silently drops anything unknown.
@@ -243,7 +273,7 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
   const previewTemplate = useMemo(() => ({
     name: name || (isEdit ? template.name : 'Untitled form'),
     category, description,
-    fields: fields.filter((f) => (f.label || '').trim()).map((f) => ({ ...f, options: f.options || [] })),
+    fields: fields.filter((f) => (f.label || '').trim()).map((f) => ({ ...f, options: f.options || [], style: f.style || {} })),
   }), [name, category, description, fields, isEdit, template]);
 
   return (
@@ -388,15 +418,34 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
                 <div className="text-xs text-slate-400 italic">Add fields to see the preview.</div>
               ) : (
                 <div className="space-y-4">
-                  {previewTemplate.fields.map((f) => (
-                    <div key={f.id}>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        {f.label}
-                        {f.required && <span className="text-rose-600 ml-1">*</span>}
+                  {previewTemplate.fields.map((f) => {
+                    // v58.13.132jk — Mirror the filler's styleWrap logic
+                    // so the admin sees background/border/radius/padding
+                    // in the preview.
+                    const fs = f.style || {};
+                    const wrap = styleToWrapCss(fs);
+                    const hasWrap = Object.keys(wrap).length > 0;
+                    const labelCss = {
+                      ...(fs.labelColor ? { color: fs.labelColor } : null),
+                      ...(fs.labelBold ? { fontWeight: 700 } : null),
+                      ...(fs.labelSize === 'sm' ? { fontSize: '0.7rem' } : null),
+                      ...(fs.labelSize === 'lg' ? { fontSize: '0.9rem' } : null),
+                    };
+                    const iconGlyph = fs.icon
+                      ? (fs.icon.startsWith('emoji:') ? fs.icon.slice(6) : fs.icon)
+                      : null;
+                    return (
+                    <div key={f.id}
+                         style={hasWrap ? wrap : undefined}
+                         className={hasWrap ? 'p-2' : ''}>
+                      <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1"
+                             style={Object.keys(labelCss).length ? labelCss : undefined}>
+                        {iconGlyph && <span aria-hidden>{iconGlyph}</span>}
+                        <span>{f.label}{f.required && <span className="text-rose-600 ml-1">*</span>}</span>
                       </label>
                       <FieldRunner field={f} value={null} onChange={() => {}} readOnly />
                     </div>
-                  ))}
+                  );})}
                 </div>
               )}
             </div>

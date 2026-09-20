@@ -472,3 +472,16 @@
   - `/app/mobile/app/(tabs)/settings.tsx`
   - `/app/mobile/src/lib/version.ts`
   - `/app/mobile/app.json`
+
+## Iteration .132ji — Unify Tab Background to Forms Navy, Lighten 10%
+- **Commit**: ab857fdae8c0b7cc896b1691dfa0576e9c12d9e3
+- **Date**: 2026-09-20
+- **Changes**:
+  - Added `navyLight: '#1C2C50'` color token (Forms navy #0F172A + 10 lightness = 21.2% L)
+  - Updated all 5 tab container backgrounds from mixed Colors.bg/Colors.navy to Colors.navyLight
+  - Added sceneContainerStyle to tab _layout.tsx for consistent bg behind transitions
+  - Fixed text colors: section titles, empty states, loading text changed to white/rgba for dark bg contrast
+  - Headers kept at original Colors.navy (#0F172A) for two-tone visual hierarchy
+  - Version 1.0.25, versionCode 147
+  - EAS build: 660864e7-3b36-4114-b689-64967d739609
+- **Files modified**: colors.ts, _layout.tsx, forms.tsx, home.tsx, fleet.tsx, docs.tsx, settings.tsx, version.ts, app.json
