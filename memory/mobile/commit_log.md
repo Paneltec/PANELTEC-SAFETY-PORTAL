@@ -399,3 +399,18 @@
   - EAS build kicked: 0d8db108-d2e8-4ecf-aa39-2cf1e92062ff (preview-apk)
 - **Files modified**: forms.tsx, category/[key].tsx, app.json, version.ts
 - **Ship memo**: memory/v58_13_132jc_forms_tab_wiring.md
+
+
+## Iteration 22 — v58.13.132jd: Fix Dead Signature Pad
+- **Commit**: b504b65b48fbd7571fde6820e75cffc1b3982391
+- **Date**: 2026-09-20
+- **Changes**:
+  - Root cause: Signature field was a static placeholder — no drawing canvas, no onPress handler. `react-native-signature-canvas` was installed but never used.
+  - Created `SignatureField.tsx` with full-screen Modal + `react-native-signature-canvas`: tap to open → draw → Done saves base64 → preview shown
+  - Replaced placeholder in Form Runner (`/forms/[id]/index.tsx`)
+  - Updated review mode: "Signed ✓" / "Not signed" based on actual data
+  - Added haptic: light on stroke end, medium on save
+  - Bumped to v1.0.21/143
+  - EAS build: 7056098d-32d6-4503-b8c8-df25d1eec613 (preview-apk)
+- **Files modified**: SignatureField.tsx (new), forms/[id]/index.tsx, app.json, version.ts
+- **Ship memo**: memory/v58_13_132jd_signature_fix.md
