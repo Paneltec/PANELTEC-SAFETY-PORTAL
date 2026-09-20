@@ -5,6 +5,7 @@
 export const Colors = {
   // ── Core brand ──
   navy:           '#0F172A',
+  navyLight:      '#1C2C50',   // navy +10 L — unified tab body bg (.132ji)
   orange:         '#F97316',
   orangeLight:    '#FDBA74',
   orangeSoft:     '#FFF7ED',

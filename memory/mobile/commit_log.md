@@ -453,3 +453,22 @@
   - `/app/mobile/app.json` (bg colors updated)
 - **Web files referenced**: None (used uploaded brand asset directly)
 - **Source asset**: `ThePaneltecGroup-Logo-Colour No Strapline.png` from get_assets_tool
+
+## Iteration .132jg — Fix Update-Check Version Comparison
+- **Commit**: 4234448db4b9ffccd8448df29dce4c0ab3ca028c
+- **Date**: 2026-09-20
+- **Changes**:
+  - BUGFIX: Settings "Check for Updates" always showed "Up to date" due to stale React closure in setTimeout
+  - useUpdateCheck.ts: check() now returns CheckResult directly so callers can await it
+  - settings.tsx: Replaced setTimeout-based check with async/await pattern
+  - Verbose alert messages showing both installed + server version/build info
+  - Added console.warn('[update-check]', {...}) logging for every check
+  - Added clearDismissedAndRecheck() function + triple-tap debug gesture on footer
+  - Version sub-text now uses Application.nativeApplicationVersion at runtime
+  - Version bumped to 1.0.24, versionCode 146
+  - EAS build submitted: 500ad6d0-f642-45ad-9682-8122e858b13d
+- **Files modified**:
+  - `/app/mobile/src/features/updates/useUpdateCheck.ts`
+  - `/app/mobile/app/(tabs)/settings.tsx`
+  - `/app/mobile/src/lib/version.ts`
+  - `/app/mobile/app.json`

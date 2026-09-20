@@ -356,7 +356,7 @@ function SettingsRow({
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.navyLight },
   header: { backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18 },
   headerTitle: { color: Colors.white, fontSize: 26, fontWeight: '800' },
   scrollContent: { paddingBottom: 32 },
@@ -382,7 +382,7 @@ const s = StyleSheet.create({
 
   // Section labels
   sectionLabel: {
-    fontSize: 12, fontWeight: '800', color: Colors.textTertiary,
+    fontSize: 12, fontWeight: '800', color: 'rgba(255,255,255,0.45)',
     letterSpacing: 1, marginTop: 20, marginBottom: 8,
     paddingHorizontal: 20,
   },
@@ -457,5 +457,5 @@ const s = StyleSheet.create({
 
   // Footer
   footer: { alignItems: 'center', marginTop: 24, gap: 6, opacity: 0.3 },
-  versionText: { fontSize: 11, color: Colors.textTertiary },
+  versionText: { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
 });

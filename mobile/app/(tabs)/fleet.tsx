@@ -281,7 +281,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.navyLight },
   header: { backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18 },
   headerTitle: { color: Colors.white, fontSize: 26, fontWeight: '800' },
   headerSub: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500', marginTop: 2 },
@@ -294,12 +294,12 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 16, color: Colors.ink, padding: 0 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
-  loadingText: { fontSize: 15, color: Colors.textTertiary, marginTop: 4 },
+  loadingText: { fontSize: 15, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
   errorText: { fontSize: 14, color: Colors.error, textAlign: 'center' },
   retryBtn: { backgroundColor: Colors.orange, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
   retryBtnText: { color: Colors.white, fontSize: 15, fontWeight: '700' },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
-  emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center' },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.white },
+  emptyText: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center' },
   listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
   assetRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -320,7 +320,7 @@ const s = StyleSheet.create({
 });
 
 const sd = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.navyLight },
   handle: {
     width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border,
     alignSelf: 'center', marginBottom: 8,

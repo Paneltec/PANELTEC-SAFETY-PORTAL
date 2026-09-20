@@ -340,7 +340,7 @@ export default function DocsScreen() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.navyLight },
   header: { backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
   backBtn: { padding: 4, marginRight: 8 },
@@ -361,9 +361,9 @@ const st = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 16, color: Colors.ink, padding: 0 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
-  loadingText: { fontSize: 15, color: Colors.textTertiary },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
-  emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center' },
+  loadingText: { fontSize: 15, color: 'rgba(255,255,255,0.7)' },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.white },
+  emptyText: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center' },
   listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

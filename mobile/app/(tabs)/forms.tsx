@@ -199,7 +199,7 @@ function SearchResultCard({ template, onPress }: {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navy },
+  container: { flex: 1, backgroundColor: Colors.navyLight },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
   scroll: { paddingBottom: 32 },

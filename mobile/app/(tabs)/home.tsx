@@ -461,7 +461,7 @@ export default function HomeScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.navyLight },
   header: {
     backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
   },
@@ -539,7 +539,7 @@ const s = StyleSheet.create({
 
   // Section
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 4 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
 
   // Compliance list
   complianceRow: {
@@ -604,7 +604,7 @@ const s = StyleSheet.create({
   },
   signOffText: { fontSize: 15, fontWeight: '600', color: Colors.error },
   signOnPrompt: {
-    color: Colors.textSecondary, fontSize: 14, fontWeight: '600', marginBottom: 12,
+    color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600', marginBottom: 12,
   },
   siteOptionCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
