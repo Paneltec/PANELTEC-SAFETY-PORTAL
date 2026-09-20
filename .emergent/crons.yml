@@ -1,0 +1,29 @@
+# Paneltec Civil — persistent cron registry (v58.13.132jh).
+#
+# Emergent's pod rebuild wipes /etc/cron.d/* on every fresh boot. To
+# survive that we (a) commit the canonical cron config into the repo
+# here, and (b) wire a backend startup hook (`server.py` — see the
+# _v58_13_132jh_install_disk_hygiene_cron block) that re-installs the
+# file at /etc/cron.d/paneltec-disk-hygiene on every boot from the
+# reference file at /app/scripts/paneltec-disk-hygiene.cron.reference.
+#
+# The startup hook ONLY writes the file if it is missing or the SHA-256
+# of the on-disk copy differs from the reference file — safe to run
+# every boot, no-ops on a matching install.
+#
+# Do NOT hand-edit the reference file directly; edit here first, keep
+# the two in sync in the same commit, and let the startup hook copy
+# the updated version on the next reload.
+#
+# Cadence: */2 * * * *   run purge_webpack_cache_if_full.sh
+# Guard  : script is a no-op unless /app usage >= 75% (see THRESHOLD
+#          env var inside the script).
+crons:
+  - name: paneltec-disk-hygiene
+    schedule: "*/2 * * * *"
+    reboot_run: true
+    command: /app/scripts/purge_webpack_cache_if_full.sh
+    log: /var/log/paneltec-disk-hygiene.log
+    installed_by: backend/server.py::_v58_13_132jh_install_disk_hygiene_cron
+    source_of_truth: /app/scripts/paneltec-disk-hygiene.cron.reference
+    ship: v58.13.132jh
