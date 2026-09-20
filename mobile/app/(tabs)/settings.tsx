@@ -20,8 +20,9 @@ import {
   getSimulateRole, setSimulateRole, ROLE_OPTIONS,
   type SimulateRoleId,
 } from '../../src/services/simulateRole';
-import { useUpdateCheck } from '../../src/features/updates/useUpdateCheck';
+import { useUpdateCheck, type CheckResult } from '../../src/features/updates/useUpdateCheck';
 import { warningHaptic, mediumHaptic } from '../../src/services/haptics';
+import * as Application from 'expo-application';
 
 interface MeResponse {
   id: string;
@@ -44,6 +45,7 @@ export default function SettingsScreen() {
   const [dataSource, setDataSource] = useState<'api' | 'stored' | 'none'>('none');
   const [simRole, setSimRole] = useState<SimulateRoleId>('');
   const [showSignOut, setShowSignOut] = useState(false);
+  const [debugTaps, setDebugTaps] = useState(0);
 
   const update = useUpdateCheck();
 
@@ -175,26 +177,28 @@ export default function SettingsScreen() {
         <TouchableOpacity
           testID="settings-check-updates"
           style={s.row}
-          onPress={() => {
-            update.manualCheck();
+          onPress={async () => {
             if (update.checking) return;
-            setTimeout(() => {
-              if (update.available) {
-                mediumHaptic();
-                Alert.alert(
-                  'Update Available',
-                  `v${update.serverVersion} is available. Install now?`,
-                  [
-                    { text: 'Later', style: 'cancel' },
-                    { text: 'Install', onPress: update.install },
-                  ],
-                );
-              } else if (update.manualError) {
-                Alert.alert('Check Failed', update.manualError);
-              } else {
-                Alert.alert('Up to Date', `You're on the latest version.`);
-              }
-            }, 2000);
+            mediumHaptic();
+            const result: CheckResult = await update.manualCheck();
+            if (result.error) {
+              Alert.alert('Check Failed', result.error);
+            } else if (result.available) {
+              mediumHaptic();
+              Alert.alert(
+                'Update Available',
+                `You are on v${result.installedVersion} (build ${result.installedBuildCode}).\n\nLatest available: v${result.serverVersion} (build ${result.serverBuildCode}).\n\nInstall now?`,
+                [
+                  { text: 'Later', style: 'cancel' },
+                  { text: 'Install', onPress: update.install },
+                ],
+              );
+            } else {
+              Alert.alert(
+                'Up to Date',
+                `You are on v${result.installedVersion} (build ${result.installedBuildCode}).\n\nLatest available: v${result.serverVersion} (build ${result.serverBuildCode}).\n\nYou are up to date.`,
+              );
+            }
           }}
           activeOpacity={0.7}
         >
@@ -204,7 +208,7 @@ export default function SettingsScreen() {
           <View style={s.rowContent}>
             <Text style={s.rowTitle}>Check for Updates</Text>
             <Text style={s.rowSub}>
-              v{require('../../app.json').expo.version} · build {require('../../app.json').expo.android.versionCode}
+              v{Application.nativeApplicationVersion || require('../../app.json').expo.version} · build {Application.nativeBuildVersion || require('../../app.json').expo.android.versionCode}
             </Text>
           </View>
           {update.checking ? (
@@ -269,11 +273,30 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Footer */}
-        <View style={s.footer}>
-          <Wordmark size="sm" color={Colors.border} showSubtitle={false} />
-          <Text style={s.versionText}>{MOBILE_BUNDLE_VERSION}</Text>
-        </View>
+        {/* Footer — triple-tap clears dismissed flag and rechecks */}
+        <TouchableOpacity
+          testID="settings-version-debug"
+          activeOpacity={1}
+          onPress={() => {
+            const next = debugTaps + 1;
+            setDebugTaps(next);
+            if (next >= 3) {
+              setDebugTaps(0);
+              mediumHaptic();
+              update.clearDismissedAndRecheck().then((result: CheckResult) => {
+                Alert.alert(
+                  'Debug: Update Check',
+                  `Dismissed flag cleared.\n\nInstalled: v${result.installedVersion} (build ${result.installedBuildCode})\nServer: v${result.serverVersion} (build ${result.serverBuildCode})\nHas update: ${result.available}\nError: ${result.error || 'none'}`,
+                );
+              });
+            }
+          }}
+        >
+          <View style={s.footer}>
+            <Wordmark size="sm" color={Colors.border} showSubtitle={false} />
+            <Text style={s.versionText}>{MOBILE_BUNDLE_VERSION}</Text>
+          </View>
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>

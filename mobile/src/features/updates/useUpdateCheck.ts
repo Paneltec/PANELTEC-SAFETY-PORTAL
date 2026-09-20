@@ -1,9 +1,13 @@
 /**
- * useUpdateCheck — v58.13.132ja
+ * useUpdateCheck — v58.13.132jg
  *
  * Background version check against /api/mobile/downloads/android/version.
- * Compares server version_code vs installed native versionCode.
+ * Compares server version_code (integer) vs installed native versionCode.
  * Stores "dismissed for version X" in AsyncStorage.
+ *
+ * .132jg fix: check() now returns a CheckResult so callers can await the
+ * actual result instead of reading stale closure state via setTimeout.
+ * Also adds console.warn logging and clearDismissed() for debugging.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Platform, Linking } from 'react-native';
@@ -25,20 +29,24 @@ interface VersionResponse {
 }
 
 export interface UpdateState {
-  /** Whether a newer version is available on server. */
   available: boolean;
-  /** Server version label (e.g. "1.0.18"). */
   serverVersion: string;
-  /** Server build number. */
   serverBuildCode: number;
-  /** Installed build number (native). */
   installedBuildCode: number;
-  /** User dismissed this specific version's banner. */
+  installedVersion: string;
   dismissed: boolean;
-  /** Loading state for manual check. */
   checking: boolean;
-  /** Error from the last manual check (null = no error / background failures hidden). */
   manualError: string | null;
+}
+
+/** Result returned by check() so callers can act on it directly. */
+export interface CheckResult {
+  available: boolean;
+  serverVersion: string;
+  serverBuildCode: number;
+  installedVersion: string;
+  installedBuildCode: number;
+  error: string | null;
 }
 
 function getInstalledBuildCode(): number {
@@ -47,38 +55,70 @@ function getInstalledBuildCode(): number {
   return raw ? parseInt(raw, 10) || 0 : 0;
 }
 
+function getInstalledVersion(): string {
+  if (Platform.OS === 'web') return '0.0.0';
+  return Application.nativeApplicationVersion || '0.0.0';
+}
+
 export function useUpdateCheck() {
   const installedBuildCode = getInstalledBuildCode();
+  const installedVersion = getInstalledVersion();
 
   const [state, setState] = useState<UpdateState>({
     available: false,
     serverVersion: '',
     serverBuildCode: 0,
     installedBuildCode,
+    installedVersion,
     dismissed: false,
     checking: false,
     manualError: null,
   });
 
-  /** Core check logic. manual=true surfaces errors. */
-  const check = useCallback(async (manual: boolean) => {
+  /**
+   * Core check logic. Returns CheckResult so manual callers can await it.
+   * manual=true surfaces errors in state; background failures are silent.
+   */
+  const check = useCallback(async (manual: boolean): Promise<CheckResult> => {
     if (manual) setState(s => ({ ...s, checking: true, manualError: null }));
+
+    const result: CheckResult = {
+      available: false,
+      serverVersion: '',
+      serverBuildCode: 0,
+      installedVersion,
+      installedBuildCode,
+      error: null,
+    };
 
     try {
       const res = await authGet<VersionResponse>(
         '/api/mobile/downloads/android/version',
-        { timeoutMs: 5_000 },
+        { timeoutMs: 8_000 },
       );
 
       if (!res.ok) {
-        if (manual) setState(s => ({ ...s, checking: false, manualError: 'error' in res ? res.error : 'Check failed' }));
+        const errMsg = 'error' in res ? (res as any).error : 'Check failed';
+        result.error = errMsg;
+        if (manual) setState(s => ({ ...s, checking: false, manualError: errMsg }));
         else setState(s => ({ ...s, checking: false }));
-        return;
+
+        console.warn('[update-check]', {
+          manual,
+          installedBuildCode,
+          installedVersion,
+          error: errMsg,
+        });
+        return result;
       }
 
       const server = res.data;
       const serverCode = server.version_code || 0;
       const isNewer = serverCode > installedBuildCode;
+
+      result.available = isNewer;
+      result.serverVersion = server.version || '';
+      result.serverBuildCode = serverCode;
 
       // Check if dismissed
       let dismissed = false;
@@ -92,15 +132,38 @@ export function useUpdateCheck() {
         available: isNewer,
         serverVersion: server.version || '',
         serverBuildCode: serverCode,
+        installedVersion,
         dismissed,
         checking: false,
         manualError: null,
       }));
-    } catch {
-      if (manual) setState(s => ({ ...s, checking: false, manualError: 'Network error' }));
+
+      console.warn('[update-check]', {
+        manual,
+        installedBuildCode,
+        installedVersion,
+        serverBuildCode: serverCode,
+        serverVersion: server.version,
+        hasUpdate: isNewer,
+        dismissed,
+      });
+
+      return result;
+    } catch (e: any) {
+      const errMsg = e?.message || 'Network error';
+      result.error = errMsg;
+      if (manual) setState(s => ({ ...s, checking: false, manualError: errMsg }));
       else setState(s => ({ ...s, checking: false }));
+
+      console.warn('[update-check]', {
+        manual,
+        installedBuildCode,
+        installedVersion,
+        error: errMsg,
+      });
+      return result;
     }
-  }, [installedBuildCode]);
+  }, [installedBuildCode, installedVersion]);
 
   /** Dismiss banner for the current server version. */
   const dismiss = useCallback(async () => {
@@ -114,8 +177,16 @@ export function useUpdateCheck() {
     Linking.openURL(url);
   }, []);
 
-  /** Manual check (from Settings). */
+  /** Manual check (from Settings). Returns the CheckResult directly. */
   const manualCheck = useCallback(() => check(true), [check]);
+
+  /** Clear the dismissed flag and retrigger check. For debug gesture. */
+  const clearDismissedAndRecheck = useCallback(async () => {
+    await AsyncStorage.removeItem(DISMISSED_KEY);
+    setState(s => ({ ...s, dismissed: false }));
+    console.warn('[update-check] Cleared dismissed flag, rechecking...');
+    return check(true);
+  }, [check]);
 
   /** Background check on mount (fire-and-forget). */
   useEffect(() => {
@@ -127,5 +198,6 @@ export function useUpdateCheck() {
     dismiss,
     install,
     manualCheck,
+    clearDismissedAndRecheck,
   };
 }
