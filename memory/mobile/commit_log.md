@@ -386,3 +386,16 @@
 - **Files modified**: _layout.tsx, home.tsx, forms.tsx, fleet.tsx, my-work.tsx, docs.tsx (new), settings.tsx (new), haptics.ts (new), (screens)/_layout.tsx (new), _layout.tsx (root), app.json, version.ts
 - **Ship memo**: memory/v58_13_132jb_mobile_ux_overhaul.md
 
+
+
+## Iteration 21 — v58.13.132jc: Wire Forms Tab to Form-Filling Screens
+- **Commit**: 04610f6d5c6228695ce2bbc180e63883003180d6
+- **Date**: 2026-09-20
+- **Changes**:
+  - Fixed SWMS templates routing: changed from broken `/profile/swms/[id]` to working `/forms/[id]` (standard form runner)
+  - Fixed in both: Forms tab search results (`forms.tsx`) and Category detail screen (`category/[key].tsx`)
+  - All 40 templates across 8 categories now route correctly to the form runner
+  - Bumped to v1.0.20/142
+  - EAS build kicked: 0d8db108-d2e8-4ecf-aa39-2cf1e92062ff (preview-apk)
+- **Files modified**: forms.tsx, category/[key].tsx, app.json, version.ts
+- **Ship memo**: memory/v58_13_132jc_forms_tab_wiring.md

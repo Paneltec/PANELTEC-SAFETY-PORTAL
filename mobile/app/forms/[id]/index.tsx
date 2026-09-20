@@ -30,6 +30,7 @@ import {
 } from '../../../src/services/forms';
 import { getStoredUser, isPreviewSession } from '../../../src/services/auth';
 import PhotoCapture from '../../../src/components/PhotoCapture';
+import SignatureField from '../../../src/components/SignatureField';
 import ComplianceQuestion from '../../../src/components/forms/ComplianceQuestion';
 import {
   WorkerPicker, VehicleNavixyPicker, CustomerPicker,
@@ -461,7 +462,8 @@ function ReviewField({ field, value }: { field: FormField; value: unknown }) {
         return { text: 'No photo', empty: true };
 
       case 'signature':
-        return { text: 'Signed ✓', empty: false };
+        if (typeof value === 'string' && value) return { text: 'Signed ✓', empty: false };
+        return { text: 'Not signed', empty: true };
 
       case 'gps':
         if (typeof value === 'object' && value !== null) {
@@ -804,11 +806,11 @@ function FieldRenderer({
       )}
 
       {field.type === 'signature' && (
-        <View style={s.sigPlaceholder}>
-          <Ionicons name="create-outline" size={24} color={Colors.textTertiary} />
-          <Text style={s.sigText}>Signature capture</Text>
-          <Text style={s.sigHint}>Tap to sign</Text>
-        </View>
+        <SignatureField
+          value={(value as string) || null}
+          onChange={(sig) => onChange(sig)}
+          label={field.label}
+        />
       )}
 
       {field.type === 'gps' && (
@@ -978,14 +980,7 @@ const s = StyleSheet.create({
   },
   gpsBtnText: { fontSize: 14, color: Colors.info, fontWeight: '500' },
 
-  // Signature placeholder
-  sigPlaceholder: {
-    alignItems: 'center', justifyContent: 'center', gap: 4,
-    backgroundColor: Colors.surface, borderRadius: 12, padding: 24,
-    borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
-  },
-  sigText: { fontSize: 14, fontWeight: '600', color: Colors.textTertiary },
-  sigHint: { fontSize: 11, color: Colors.textTertiary },
+  // Signature — now handled by SignatureField component
 
   // Unsupported
   unsupported: {
