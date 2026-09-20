@@ -367,3 +367,22 @@
   - In-app Update Banner + useUpdateCheck hook (implemented in prior iteration, verified here)
 - **Files modified**: eas.json, app.json, .easignore, src/lib/version.ts
 - **Ship memo**: memory/v58_13_132ja_mobile_update_banner.md
+
+## Iteration 20 — v58.13.132jb: Mobile UX Overhaul
+- **Commit**: 93da94871b573f7bb3644eede153cc6a7a5b203a
+- **Date**: 2026-09-19
+- **Changes**:
+  - Restructured tab bar from 6→5 tabs: Home, Forms, Fleet, Docs, Settings
+  - Created `(screens)` route group for non-tab screens (qr-scan, my-work, ask-ai, outbox)
+  - Built real Fleet tab calling `/api/fleet/register` (50 assets)
+  - Built real Docs tab calling `/api/document-library/folders` (nested navigation, breadcrumbs)
+  - Built Settings tab merging profile, update check, admin tools, sign-out
+  - Added haptic feedback on tab switch, form submit, sign-out
+  - Increased typography: body 14-16pt, headings 18pt, section 26pt
+  - Increased tap targets: card min-height 56-72dp, action tiles 100dp
+  - Fixed react-hooks/rules-of-hooks violation in docs.tsx
+  - Bumped to v1.0.19/141
+  - EAS build kicked: aa00d522-fba3-4cd0-92b5-cff68a064a64 (preview-apk)
+- **Files modified**: _layout.tsx, home.tsx, forms.tsx, fleet.tsx, my-work.tsx, docs.tsx (new), settings.tsx (new), haptics.ts (new), (screens)/_layout.tsx (new), _layout.tsx (root), app.json, version.ts
+- **Ship memo**: memory/v58_13_132jb_mobile_ux_overhaul.md
+

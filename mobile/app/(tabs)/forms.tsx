@@ -122,11 +122,7 @@ export default function FormsScreen() {
                     key={t.id}
                     template={t}
                     onPress={() => {
-                      if (t.is_swms) {
-                        router.push({ pathname: '/profile/swms/[id]', params: { id: t.id } } as never);
-                      } else {
-                        router.push({ pathname: '/forms/[id]', params: { id: t.id } } as never);
-                      }
+                      router.push({ pathname: '/forms/[id]', params: { id: t.id } } as never);
                     }}
                   />
                 ))}

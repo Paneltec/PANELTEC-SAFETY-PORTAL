@@ -62,13 +62,9 @@ export default function CategoryDetailScreen() {
               testID={`cat-form-${t.id}`}
               style={s.formCard}
               onPress={() => {
-                // v58.13.132l — SWMS rows open the existing viewer at
-                // /profile/swms/[id], not the standard form runner.
-                if (t.is_swms) {
-                  router.push({ pathname: '/profile/swms/[id]', params: { id: t.id } } as never);
-                } else {
-                  router.push({ pathname: '/forms/[id]', params: { id: t.id } } as never);
-                }
+                // Route all forms through the standard form runner.
+                // SWMS templates are bridged by backend into the same API.
+                router.push({ pathname: '/forms/[id]', params: { id: t.id } } as never);
               }}
               activeOpacity={0.7}
             >
