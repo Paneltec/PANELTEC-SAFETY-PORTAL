@@ -414,3 +414,42 @@
   - EAS build: 7056098d-32d6-4503-b8c8-df25d1eec613 (preview-apk)
 - **Files modified**: SignatureField.tsx (new), forms/[id]/index.tsx, app.json, version.ts
 - **Ship memo**: memory/v58_13_132jd_signature_fix.md
+
+
+## Iteration 23 — v58.13.132je: Replace App Icon with Paneltec Group P Logo
+- **Commit**: c125b05a8dea8d13ee9a357cd5062d67dc6af0cc
+- **Date**: 2026-09-20
+- **Changes**:
+  - Extracted brand orange #F57E25 from web frontend brand asset (icon-512.png)
+  - Generated 1024x1024 app icon: bold white P on Paneltec orange background
+  - Replaced: icon.png, adaptive-icon.png, splash-icon.png, favicon.png
+  - Updated app.json: adaptiveIcon.backgroundColor=#F57E25, splash.backgroundColor=#F57E25
+  - Bumped to v1.0.22/144
+  - EAS build: 7ed27984-569d-4044-96ac-fe04d33172d9 (preview-apk)
+- **Files modified**: icon.png, adaptive-icon.png, splash-icon.png, favicon.png, app.json, version.ts
+- **Ship memo**: memory/v58_13_132je_app_icon_paneltec_p.md
+
+## Iteration .132jf — Authentic Paneltec App Icon
+- **Commit**: c125b05a8dea (updated assets in-place, app.json updated)
+- **Date**: 2026-09-20
+- **Changes**:
+  - Downloaded authentic `ThePaneltecGroup-Logo-Colour No Strapline.png` from user-uploaded assets
+  - Used Python/PIL to extract the two-tone orange+grey P mark from the left side of the logo
+  - Generated 4 icon variants from the REAL logo (no AI generation):
+    - `icon.png` (1024x1024, P on white bg, RGB) — iOS App Store icon
+    - `adaptive-icon.png` (1024x1024, P on transparent bg) — Android adaptive foreground
+    - `splash-icon.png` (512x512, P on transparent bg) — Splash screen
+    - `favicon.png` (48x48, P on white bg) — Web favicon
+  - Updated `app.json`:
+    - Android adaptive icon backgroundColor changed from `#F57E25` to `#FFFFFF`
+    - Splash screen backgroundColor changed from `#0F172A` to `#FFFFFF`
+    - Splash plugin backgroundColor changed from `#0F172A` to `#FFFFFF`
+  - Verified app boots correctly after restart
+- **Files modified**:
+  - `/app/mobile/assets/icons/icon.png` (replaced)
+  - `/app/mobile/assets/icons/adaptive-icon.png` (replaced)
+  - `/app/mobile/assets/icons/splash-icon.png` (replaced)
+  - `/app/mobile/assets/images/favicon.png` (replaced)
+  - `/app/mobile/app.json` (bg colors updated)
+- **Web files referenced**: None (used uploaded brand asset directly)
+- **Source asset**: `ThePaneltecGroup-Logo-Colour No Strapline.png` from get_assets_tool
