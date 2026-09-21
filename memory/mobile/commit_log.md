@@ -582,3 +582,18 @@
   - Version string .132ju (app.json stays 1.0.32 build 154)
   - New EAS build: fa65ae01-b32c-4751-b5ec-4f7c54065109
 - **Files modified**: fleet.tsx, version.ts
+
+## Iteration .132jv — Wire QR Scanner + Asset Detail to /api/scan/{token} endpoints
+- **Commit**: 472e3a124280fd6e47fb4e171ca4b70368f96702
+- **Date**: 2026-09-21
+- **Changes**:
+  - Path A: qr-scan.tsx — scan-token first-pass lookup via GET /api/assets/scan/{token} before fleet register fallback
+  - Path A: extractIdentifier() now parses /scan/{token} URL paths
+  - Path B: fleet.tsx AssetDetailSheet — fetches curated forms from GET /api/scan/{token}/forms
+  - Path B: Renders curated tiles grouped by category with LH colour stripes
+  - Path B: Orange "Recommended" pill badge on form.recommended tiles
+  - Path B: Empty-assignments info banner + fallback to ASSET_ACTIONS tiles
+  - Version 1.0.33, versionCode 155
+  - Cancelled EAS build fa65ae01 (v1.0.32)
+  - New EAS build: 362b2214-4127-41fe-a80c-1199b035bd6a
+- **Files modified**: qr-scan.tsx, fleet.tsx, app.json, version.ts

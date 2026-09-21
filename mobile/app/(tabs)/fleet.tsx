@@ -525,9 +525,12 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
     <View testID="fleet-detail-sheet" style={[sd.container, { paddingTop: insets.top + 8 }]}>
       <View style={sd.handle} />
       <View style={sd.topBar}>
+        <TouchableOpacity testID="fleet-detail-back" onPress={onClose} style={sd.backBtn}>
+          <Ionicons name="chevron-back" size={26} color={Colors.textTertiary} />
+        </TouchableOpacity>
         <Text style={sd.title}>Asset Detail</Text>
         <TouchableOpacity testID="fleet-detail-close" onPress={onClose} style={sd.closeBtn}>
-          <Ionicons name="close" size={24} color={Colors.ink} />
+          <Ionicons name="close" size={24} color={Colors.textTertiary} />
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={sd.content}>
@@ -722,7 +725,8 @@ const sd = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   title: { fontSize: 18, fontWeight: '800', color: Colors.ink },
-  closeBtn: { padding: 4 },
+  closeBtn: { padding: 4, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  backBtn: { padding: 4, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 20 },
   heroCard: { alignItems: 'center', marginBottom: 20 },
   heroIcon: {
