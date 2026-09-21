@@ -1,13 +1,14 @@
 /**
- * QR Scanner — In-cabin vehicle workflow — v58.13.132jt
+ * QR Scanner — In-cabin vehicle workflow — v58.13.132jv
  *
- * Flow: Scan QR sticker → extract identifier → lookup in fleet register →
- *       navigate to Asset Detail (multi-action tiles from .132jr).
+ * Flow: Scan QR sticker → extract identifier → lookup via /api/assets/scan/{token}
+ *       (fallback: fleet register by rego/id) → navigate to Asset Detail.
  *
  * Supported QR formats:
  *   paneltec-mobile://asset/XT96AZ   (preferred — readable rego)
  *   paneltec-mobile://asset/{uuid}   (UUID variant)
- *   https://whs-compliance.preview.emergentagent.com/asset/XT96AZ
+ *   https://.../scan/{token}         (real QR sticker URLs)
+ *   https://.../asset/XT96AZ         (legacy)
  *   XT96AZ                           (plain rego string)
  *   {uuid}                           (plain UUID)
  */
@@ -52,17 +53,20 @@ function extractIdentifier(raw: string): string | null {
   const schemeMatch = trimmed.match(/^paneltec-mobile:\/\/asset\/(.+)$/i);
   if (schemeMatch) return schemeMatch[1];
 
-  // 2. Full URL — take last path segment
+  // 2. Full URL — extract from /scan/{token} or last path segment
   try {
     const url = new URL(trimmed);
     const segments = url.pathname.split('/').filter(Boolean);
+    // Prefer /scan/{token} path
+    const scanIdx = segments.indexOf('scan');
+    if (scanIdx >= 0 && segments[scanIdx + 1]) return segments[scanIdx + 1];
     if (segments.length > 0) return segments[segments.length - 1];
   } catch { /* not a URL */ }
 
-  // 3. Plain UUID
+  // 3. Plain UUID / MongoDB ObjectId
   if (UUID_RE.test(trimmed) || MONGO_OID_RE.test(trimmed)) return trimmed;
 
-  // 4. Plain rego string (letters, digits, spaces, hyphens — 2-20 chars)
+  // 4. Plain rego / scan token string (letters, digits, spaces, hyphens — 2-20 chars)
   if (/^[A-Za-z0-9 \-]{2,20}$/.test(trimmed)) return trimmed;
 
   return null;
@@ -71,7 +75,16 @@ function extractIdentifier(raw: string): string | null {
 // ── Fleet lookup ──
 
 async function lookupInFleet(identifier: string): Promise<FleetAsset | null> {
-  // Fetch fleet register and search by rego (case-insensitive), then by id
+  // .132jv — First try the public scan-token resolver.
+  // Real QR stickers encode /scan/{10-16 char token}, extracted by extractIdentifier().
+  try {
+    const scanRes = await authGet<FleetAsset>(`/api/assets/scan/${encodeURIComponent(identifier)}`);
+    if (scanRes.ok && scanRes.data && scanRes.data.id) return scanRes.data;
+  } catch {
+    // 404 = not a scan token, fall through to fleet register lookup
+  }
+
+  // Existing: fleet register fallback for rego/id/name plain scans
   const res = await authGet<{ items?: FleetAsset[]; assets?: FleetAsset[] } | FleetAsset[]>(
     '/api/fleet/register?limit=500&page=1',
   );

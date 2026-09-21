@@ -571,3 +571,14 @@
   - EAS build: ec7e62ee-eec3-48c0-82af-b7db5980dc2a
 - **Files modified**: qr-scan.tsx (rewrite), home.tsx, fleet.tsx, app.json, version.ts
 - **Web files referenced**: None (mobile-only)
+
+## Iteration .132ju — Hotfix: Fleet TDZ Crash (openAssetId ordering)
+- **Commit**: 1379120127767c4cdf8ba2468aa9850d0225b155
+- **Date**: 2026-09-21
+- **Changes**:
+  - BUGFIX: Moved openAssetId useEffect below const { data: assets } declaration to fix TDZ
+  - Added early-return guard for clarity
+  - Cancelled bugged EAS build ec7e62ee
+  - Version string .132ju (app.json stays 1.0.32 build 154)
+  - New EAS build: fa65ae01-b32c-4751-b5ec-4f7c54065109
+- **Files modified**: fleet.tsx, version.ts

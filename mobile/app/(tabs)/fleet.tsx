@@ -393,15 +393,33 @@ export default function FleetScreen() {
   );
 }
 
-// ── Action definitions ──
+// ── Curated form from scan endpoint ──
+
+interface CuratedForm {
+  template_id: string;
+  name: string;
+  description?: string;
+  category: string;
+  icon?: string;
+  field_count?: number;
+  recommended?: boolean;
+  match_reasons?: string[];
+}
+
+interface ScanFormsResponse {
+  asset: Record<string, unknown>;
+  forms: CuratedForm[];
+}
+
+// ── Action definitions (fallback) ──
 
 interface AssetAction {
   key: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
-  category?: string;       // filter by category
-  nameFilter?: string;     // regex filter by name
+  category?: string;
+  nameFilter?: string;
   pickerTitle: string;
 }
 
@@ -423,20 +441,49 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
   const insets = useSafeAreaInsets();
   const statusKey = (asset.status || 'active').toLowerCase();
   const sc = STATUS_COLORS[statusKey] || STATUS_COLORS.active;
+  const scanToken = (asset as any).scan_token as string | undefined;
 
-  // Check which actions have matching templates
+  // .132jv — Fetch curated forms via scan token when available
+  const { data: curatedRes, isLoading: curatedLoading } = useQuery<ScanFormsResponse>({
+    queryKey: ['scan-forms', scanToken],
+    queryFn: async () => {
+      const res = await authGet<ScanFormsResponse>(`/api/scan/${encodeURIComponent(scanToken!)}/forms`);
+      if (!res.ok) throw new Error('scan-forms-failed');
+      return res.data as ScanFormsResponse;
+    },
+    enabled: !!scanToken,
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  // Fallback: all-category templates (used when no scan_token or curated list empty)
   const { data: templates } = useQuery<FormTemplate[]>({
     queryKey: ['form-templates'],
     queryFn: fetchFormTemplates,
     staleTime: 60_000,
   });
 
+  const curatedForms = curatedRes?.forms || [];
+  const hasCuratedForms = curatedForms.length > 0;
+
+  // Category → colour mapping for curated tiles
+  const CATEGORY_COLOR: Record<string, string> = {
+    pre_start: '#3B82F6', inspection: '#06B6D4', incident: '#EF4444',
+    site_diary: '#F59E0B', general: '#10B981', swms: '#8B5CF6',
+    risk_assessment: '#EC4899',
+  };
+  const CATEGORY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+    pre_start: 'clipboard-outline', inspection: 'search-outline',
+    incident: 'warning-outline', site_diary: 'book-outline',
+    general: 'construct-outline', swms: 'shield-checkmark-outline',
+    risk_assessment: 'analytics-outline',
+  };
+
+  // Fallback action tiles (when no curated forms or scan_token absent)
   const availableActions = useMemo(() => {
-    if (!templates) return ASSET_ACTIONS; // Show all while loading
+    if (!templates) return ASSET_ACTIONS;
     return ASSET_ACTIONS.filter((action) => {
-      if (action.category) {
-        return templates.some((t) => t.category === action.category);
-      }
+      if (action.category) return templates.some((t) => t.category === action.category);
       if (action.nameFilter) {
         const re = new RegExp(action.nameFilter, 'i');
         return templates.some((t) => re.test(t.name) || re.test(t.description || ''));
@@ -463,6 +510,14 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
         nameFilter: action.nameFilter || '',
         title: action.pickerTitle,
       },
+    } as never);
+  };
+
+  const openCuratedForm = (form: CuratedForm) => {
+    onClose();
+    nav.push({
+      pathname: `/forms/${form.template_id}`,
+      params: assetParams,
     } as never);
   };
 
@@ -498,26 +553,75 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
           {asset.next_service && <DetailRow label="Next Service" value={new Date(asset.next_service).toLocaleDateString()} />}
         </View>
 
-        {/* Action tiles */}
-        <Text style={sd.actionsTitle}>ACTIONS</Text>
-        {availableActions.map((action) => (
-          <TouchableOpacity
-            key={action.key}
-            testID={`asset-action-${action.key}`}
-            style={sd.actionTile}
-            onPress={() => openPicker(action)}
-            activeOpacity={0.7}
-          >
-            <View style={[sd.actionStripe, { backgroundColor: action.color }]} />
-            <View style={sd.actionContent}>
-              <View style={[sd.actionIconWrap, { backgroundColor: action.color + '18' }]}>
-                <Ionicons name={action.icon} size={20} color={action.color} />
+        {/* Action tiles — curated from scan endpoint or fallback */}
+        <Text style={sd.actionsTitle}>{hasCuratedForms ? 'ASSIGNED FORMS' : 'ACTIONS'}</Text>
+
+        {curatedLoading && scanToken ? (
+          <View style={sd.curatedLoading}>
+            <ActivityIndicator size="small" color={Colors.orange} />
+            <Text style={sd.curatedLoadingText}>Loading assigned forms…</Text>
+          </View>
+        ) : hasCuratedForms ? (
+          <>
+            {curatedForms.map((form) => {
+              const tileColor = CATEGORY_COLOR[form.category] || '#6B7280';
+              const tileIcon = CATEGORY_ICON[form.category] || 'document-outline';
+              return (
+                <TouchableOpacity
+                  key={form.template_id}
+                  testID={`asset-curated-${form.template_id}`}
+                  style={sd.actionTile}
+                  onPress={() => openCuratedForm(form)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[sd.actionStripe, { backgroundColor: tileColor }]} />
+                  <View style={sd.actionContent}>
+                    <View style={[sd.actionIconWrap, { backgroundColor: tileColor + '18' }]}>
+                      <Ionicons name={tileIcon} size={20} color={tileColor} />
+                    </View>
+                    <View style={sd.actionLabelWrap}>
+                      <Text style={[sd.actionLabel, { color: tileColor }]} numberOfLines={1}>{form.name}</Text>
+                      {form.description ? <Text style={sd.actionDesc} numberOfLines={1}>{form.description}</Text> : null}
+                    </View>
+                    {form.recommended && (
+                      <View style={sd.recommendedPill}>
+                        <Text style={sd.recommendedText}>Recommended</Text>
+                      </View>
+                    )}
+                    <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            {scanToken && !curatedLoading && (
+              <View style={sd.noMappingBanner}>
+                <Ionicons name="information-circle-outline" size={16} color={Colors.info} />
+                <Text style={sd.noMappingText}>No forms mapped to this asset type yet. Ask admin to configure.</Text>
               </View>
-              <Text style={[sd.actionLabel, { color: action.color }]}>{action.label}</Text>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-            </View>
-          </TouchableOpacity>
-        ))}
+            )}
+            {availableActions.map((action) => (
+              <TouchableOpacity
+                key={action.key}
+                testID={`asset-action-${action.key}`}
+                style={sd.actionTile}
+                onPress={() => openPicker(action)}
+                activeOpacity={0.7}
+              >
+                <View style={[sd.actionStripe, { backgroundColor: action.color }]} />
+                <View style={sd.actionContent}>
+                  <View style={[sd.actionIconWrap, { backgroundColor: action.color + '18' }]}>
+                    <Ionicons name={action.icon} size={20} color={action.color} />
+                  </View>
+                  <Text style={[sd.actionLabel, { color: action.color }]}>{action.label}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -661,4 +765,23 @@ const sd = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   actionLabel: { flex: 1, fontSize: 15, fontWeight: '700' },
+  // .132jv — curated forms styles
+  actionLabelWrap: { flex: 1 },
+  actionDesc: { fontSize: 12, color: Colors.textTertiary, marginTop: 1 },
+  recommendedPill: {
+    backgroundColor: '#FFF7ED', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 3, marginRight: 4,
+  },
+  recommendedText: { fontSize: 11, fontWeight: '700', color: Colors.orange },
+  curatedLoading: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 20, justifyContent: 'center',
+  },
+  curatedLoadingText: { fontSize: 14, color: Colors.textTertiary },
+  noMappingBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.infoSoft, borderRadius: 12,
+    padding: 12, marginBottom: 12,
+  },
+  noMappingText: { flex: 1, fontSize: 13, color: Colors.info, lineHeight: 18 },
 });
