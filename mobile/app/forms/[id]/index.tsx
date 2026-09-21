@@ -37,6 +37,8 @@ import {
   WorkerPicker, VehicleNavixyPicker, CustomerPicker,
   SitePicker, JobPicker, AssetScanPicker, ContactPicker,
 } from '../../../src/components/pickers/PickerFields';
+import InlineChecklistRow from '../../../src/components/forms/InlineChecklistRow';
+import { buildFieldRenderPlan, type RenderEntry } from '../../../src/lib/checklistDetect';
 
 type FieldValues = Record<string, unknown>;
 type Mode = 'fill' | 'review';
@@ -451,20 +453,38 @@ export default function FormRunnerScreen() {
             </View>
           )}
 
-          {/* Fields */}
+          {/* Fields — .132kc: use render plan to detect checklist rows */}
           {mode === 'fill' ? (
-            (template.fields || []).map((field) => (
-              <FieldRenderer
-                key={field.id}
-                field={field}
-                value={values[field.id]}
-                onChange={(v) => setField(field.id, v)}
-                hasError={submitAttempted && missingFields.some((mf) => mf.id === field.id)}
-                allValues={values}
-                allFields={template.fields}
-                locked={lockedFieldIds.has(field.id)}
-              />
-            ))
+            buildFieldRenderPlan(template.fields || []).map((entry) => {
+              if (entry.kind === 'checklist_row') {
+                const { radio: r, notes: n } = entry;
+                return (
+                  <InlineChecklistRow
+                    key={r.id}
+                    radio={r}
+                    notes={n}
+                    radioValue={(values[r.id] as string) || null}
+                    notesValue={(values[n.id] as string) || ''}
+                    onRadioChange={(v) => setField(r.id, v)}
+                    onNotesChange={(v) => setField(n.id, v)}
+                    locked={lockedFieldIds.has(r.id)}
+                  />
+                );
+              }
+              const field = entry.field;
+              return (
+                <FieldRenderer
+                  key={field.id}
+                  field={field}
+                  value={values[field.id]}
+                  onChange={(v) => setField(field.id, v)}
+                  hasError={submitAttempted && missingFields.some((mf) => mf.id === field.id)}
+                  allValues={values}
+                  allFields={template.fields}
+                  locked={lockedFieldIds.has(field.id)}
+                />
+              );
+            })
           ) : (
             /* ── Review mode ── */
             <>
@@ -474,9 +494,24 @@ export default function FormRunnerScreen() {
                   Please review your answers below before submitting.
                 </Text>
               </View>
-              {(template.fields || []).map((field) => (
-                <ReviewField key={field.id} field={field} value={values[field.id]} />
-              ))}
+              {buildFieldRenderPlan(template.fields || []).map((entry) => {
+                if (entry.kind === 'checklist_row') {
+                  const { radio: r, notes: n } = entry;
+                  return (
+                    <InlineChecklistRow
+                      key={r.id}
+                      radio={r}
+                      notes={n}
+                      radioValue={(values[r.id] as string) || null}
+                      notesValue={(values[n.id] as string) || ''}
+                      onRadioChange={() => {}}
+                      onNotesChange={() => {}}
+                      readOnly
+                    />
+                  );
+                }
+                return <ReviewField key={entry.field.id} field={entry.field} value={values[entry.field.id]} />;
+              })}
             </>
           )}
         </ScrollView>
