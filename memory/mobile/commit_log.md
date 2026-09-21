@@ -530,3 +530,15 @@
   - Version 1.0.28, versionCode 150
   - EAS build: a003c8c9-a495-4120-bb82-646424310e32
 - **Files modified**: fleet.tsx (rewrite), docs.tsx (icon import), folderIcons.ts (new), version.ts, app.json
+
+## Iteration .132jq — Fix Fleet Limit in Correct File + Privacy Links
+- **Commit**: d80ef9cdf7e397ccf4364bca4efdaf7696d02798
+- **Date**: 2026-09-21
+- **Changes**:
+  - BUGFIX: fleet.tsx:70 fetchFleet() was calling /api/fleet/register with NO limit param (backend defaults to 50)
+  - Added ?limit=200&page=1 to the authGet URL in fleet.tsx
+  - Confirmed .132jp legal links (Privacy Policy + Terms of Service) are compiled in settings.tsx
+  - Both fleet/register call sites now have limit=200 (profile.ts via axios params, fleet.tsx via URL query)
+  - Version 1.0.30, versionCode 152
+  - EAS build: 5213347d-d9cc-42f6-a610-1fdbe9fca4a4
+- **Files modified**: fleet.tsx, version.ts, app.json

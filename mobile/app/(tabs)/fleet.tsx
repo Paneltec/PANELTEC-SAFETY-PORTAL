@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../../src/theme/colors';
 import { authGet } from '../../src/services/apiClient';
 import { clearSession } from '../../src/services/auth';
+import { fetchFormTemplates, type FormTemplate } from '../../src/services/forms';
 
 // ── Types ──
 
@@ -372,10 +373,7 @@ export default function FleetScreen() {
           <AssetDetailSheet
             asset={selectedAsset}
             onClose={() => setSelectedAsset(null)}
-            onStartPrestart={() => {
-              setSelectedAsset(null);
-              router.push('/(screens)/qr-scan');
-            }}
+            router={router}
           />
         )}
       </Modal>
@@ -383,16 +381,78 @@ export default function FleetScreen() {
   );
 }
 
+// ── Action definitions ──
+
+interface AssetAction {
+  key: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  category?: string;       // filter by category
+  nameFilter?: string;     // regex filter by name
+  pickerTitle: string;
+}
+
+const ASSET_ACTIONS: AssetAction[] = [
+  { key: 'pre_start',  label: 'Start Pre-Start',       icon: 'clipboard-outline', color: '#3B82F6', category: 'pre_start',  pickerTitle: 'Pre-Start' },
+  { key: 'service',    label: 'Start a Service',        icon: 'construct-outline', color: '#10B981', nameFilter: 'service|maintenance|equipment|pre-operation|pre-use', pickerTitle: 'Service / Equipment Check' },
+  { key: 'inspection', label: 'Conduct Inspection',     icon: 'search-outline',    color: '#06B6D4', category: 'inspection', pickerTitle: 'Inspection' },
+  { key: 'incident',   label: 'Report a Hazard',        icon: 'warning-outline',   color: '#EF4444', category: 'incident',   pickerTitle: 'Hazard / Incident' },
+  { key: 'site_diary', label: 'Add Site Diary Entry',   icon: 'book-outline',      color: '#F59E0B', category: 'site_diary', pickerTitle: 'Site Diary' },
+];
+
 // ── Asset Detail Sheet ──
 
-function AssetDetailSheet({ asset, onClose, onStartPrestart }: {
+function AssetDetailSheet({ asset, onClose, router: nav }: {
   asset: FleetAsset;
   onClose: () => void;
-  onStartPrestart: () => void;
+  router: ReturnType<typeof useRouter>;
 }) {
   const insets = useSafeAreaInsets();
   const statusKey = (asset.status || 'active').toLowerCase();
   const sc = STATUS_COLORS[statusKey] || STATUS_COLORS.active;
+
+  // Check which actions have matching templates
+  const { data: templates } = useQuery<FormTemplate[]>({
+    queryKey: ['form-templates'],
+    queryFn: fetchFormTemplates,
+    staleTime: 60_000,
+  });
+
+  const availableActions = useMemo(() => {
+    if (!templates) return ASSET_ACTIONS; // Show all while loading
+    return ASSET_ACTIONS.filter((action) => {
+      if (action.category) {
+        return templates.some((t) => t.category === action.category);
+      }
+      if (action.nameFilter) {
+        const re = new RegExp(action.nameFilter, 'i');
+        return templates.some((t) => re.test(t.name) || re.test(t.description || ''));
+      }
+      return true;
+    });
+  }, [templates]);
+
+  const assetParams = {
+    assetId: asset.id,
+    assetName: asset.name,
+    assetRego: asset.rego || asset.rego_serial || '',
+    assetTag: asset.tag || '',
+    assetNavixyId: String(asset.navixy_device_id || ''),
+  };
+
+  const openPicker = (action: AssetAction) => {
+    onClose();
+    nav.push({
+      pathname: '/forms/picker',
+      params: {
+        ...assetParams,
+        category: action.category || '',
+        nameFilter: action.nameFilter || '',
+        title: action.pickerTitle,
+      },
+    } as never);
+  };
 
   return (
     <View testID="fleet-detail-sheet" style={[sd.container, { paddingTop: insets.top + 8 }]}>
@@ -426,10 +486,26 @@ function AssetDetailSheet({ asset, onClose, onStartPrestart }: {
           {asset.next_service && <DetailRow label="Next Service" value={new Date(asset.next_service).toLocaleDateString()} />}
         </View>
 
-        <TouchableOpacity testID="fleet-start-prestart" style={sd.prestartBtn} onPress={onStartPrestart}>
-          <Ionicons name="clipboard-outline" size={20} color={Colors.white} />
-          <Text style={sd.prestartBtnText}>Start Pre-Start on This</Text>
-        </TouchableOpacity>
+        {/* Action tiles */}
+        <Text style={sd.actionsTitle}>ACTIONS</Text>
+        {availableActions.map((action) => (
+          <TouchableOpacity
+            key={action.key}
+            testID={`asset-action-${action.key}`}
+            style={sd.actionTile}
+            onPress={() => openPicker(action)}
+            activeOpacity={0.7}
+          >
+            <View style={[sd.actionStripe, { backgroundColor: action.color }]} />
+            <View style={sd.actionContent}>
+              <View style={[sd.actionIconWrap, { backgroundColor: action.color + '18' }]}>
+                <Ionicons name={action.icon} size={20} color={action.color} />
+              </View>
+              <Text style={[sd.actionLabel, { color: action.color }]}>{action.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+            </View>
+          </TouchableOpacity>
+        ))}
       </ScrollView>
     </View>
   );
@@ -552,9 +628,25 @@ const sd = StyleSheet.create({
   },
   rowLabel: { fontSize: 14, color: Colors.textTertiary, fontWeight: '500' },
   rowValue: { fontSize: 15, color: Colors.ink, fontWeight: '600' },
-  prestartBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 16,
+  // Action tiles
+  actionsTitle: {
+    fontSize: 12, fontWeight: '800', color: Colors.textTertiary,
+    letterSpacing: 1, marginBottom: 10,
   },
-  prestartBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+  actionTile: {
+    flexDirection: 'row', alignItems: 'stretch',
+    backgroundColor: Colors.surface, borderRadius: 14, marginBottom: 8,
+    minHeight: 56, overflow: 'hidden',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  actionStripe: { width: 8, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  actionContent: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 12, paddingHorizontal: 14,
+  },
+  actionIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  actionLabel: { flex: 1, fontSize: 15, fontWeight: '700' },
 });

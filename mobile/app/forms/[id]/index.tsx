@@ -98,7 +98,14 @@ function draftKey(formId: string, workerId: string) {
 export default function FormRunnerScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, assetId, assetName, assetRego, assetTag, assetNavixyId } = useLocalSearchParams<{
+    id: string;
+    assetId?: string;
+    assetName?: string;
+    assetRego?: string;
+    assetTag?: string;
+    assetNavixyId?: string;
+  }>();
   const [values, setValues] = useState<FieldValues>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -144,7 +151,52 @@ export default function FormRunnerScreen() {
     });
   }, [template, draftLoaded]);
 
-  // Load worker ID
+  // ── Asset context prefill (.132jr) ──
+  // When opened from Fleet → Asset Detail, prefill vehicle-related fields.
+  useEffect(() => {
+    if (!template?.fields || !draftLoaded || !assetId) return;
+    setValues((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const norm = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, '');
+      for (const f of template.fields) {
+        // Skip if already filled
+        if (next[f.id] && next[f.id] !== '' && next[f.id] !== null) continue;
+
+        const fid = norm(f.id);
+        const flabel = norm(f.label);
+        const combined = fid + ' ' + flabel;
+
+        // vehicle_navixy special field type: prefill with asset object
+        if (f.type === 'vehicle_navixy' && assetName) {
+          next[f.id] = { label: assetName, registration: assetRego || '', id: assetNavixyId || '' };
+          changed = true;
+          continue;
+        }
+
+        // Rego / registration fields
+        if (assetRego && /rego|registration|plate|vehiclereg/.test(combined)) {
+          next[f.id] = assetRego;
+          changed = true;
+          continue;
+        }
+
+        // Asset name / vehicle name / equipment fields
+        if (assetName && /vehiclename|assetname|equipment|machine|plantid|assetid|plantname/.test(combined)) {
+          next[f.id] = assetName;
+          changed = true;
+          continue;
+        }
+
+        // Tag field
+        if (assetTag && /\btag\b/.test(combined)) {
+          next[f.id] = assetTag;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [template, draftLoaded, assetId, assetName, assetRego, assetTag, assetNavixyId]);
   useEffect(() => {
     getStoredUser().then((u) => {
       if (u?.id) setWorkerId(u.id);

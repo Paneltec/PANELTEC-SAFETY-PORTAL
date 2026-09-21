@@ -65,7 +65,7 @@ export const MOCK_MY_RECORDS: RecordGroup[] = [
     type: 'pre_start', label: 'Pre-Starts', icon: 'checkbox-outline', color: '#10B981',
     count: 12,
     items: [
-      { id: 'ps1', title: 'CAT 320 Excavator', date: '2026-04-14', status: 'completed', site: 'Connector Park' },
+      { id: 'ps1', title: 'Heavy Equipment Pre-Start', date: '2026-04-14', status: 'completed', site: 'Connector Park' },
       { id: 'ps2', title: 'Volvo A30G Dump Truck', date: '2026-04-14', status: 'completed', site: 'Connector Park' },
       { id: 'ps3', title: 'Komatsu D65 Dozer', date: '2026-04-13', status: 'completed', site: 'Moorebank Depot' },
     ],

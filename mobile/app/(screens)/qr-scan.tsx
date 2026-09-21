@@ -48,7 +48,7 @@ export default function QRScanScreen() {
 
   const handleScan = (id: string) => {
     setAssetId(id);
-    setAssetName('CAT 320 Excavator'); // QR would populate this from backend
+    setAssetName(''); // Will be populated from QR payload or backend lookup
     setState('form');
   };
 
