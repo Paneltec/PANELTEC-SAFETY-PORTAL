@@ -17,6 +17,7 @@ import { Colors } from '../../src/theme/colors';
 import { authGet } from '../../src/services/apiClient';
 import { clearSession } from '../../src/services/auth';
 import { useRouter } from 'expo-router';
+import { folderIcon } from '../../src/lib/folderIcons';
 
 interface DocFolder {
   id: string;
@@ -201,6 +202,7 @@ export default function DocsScreen() {
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.type === 'folder') {
       const folder = item.data;
+      const fi = folderIcon(folder.name);
       return (
         <TouchableOpacity
           testID={`doc-folder-${folder.id}`}
@@ -208,8 +210,8 @@ export default function DocsScreen() {
           onPress={() => navigateToFolder(folder)}
           activeOpacity={0.7}
         >
-          <View style={st.folderIcon}>
-            <Ionicons name="folder" size={22} color="#F59E0B" />
+          <View style={[st.folderIcon, { backgroundColor: fi.tint + '18' }]}>
+            <Ionicons name={fi.icon} size={22} color={fi.tint} />
           </View>
           <View style={st.rowInfo}>
             <Text style={st.rowName} numberOfLines={1}>{folder.name}</Text>
