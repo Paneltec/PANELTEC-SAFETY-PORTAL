@@ -576,7 +576,7 @@ async def list_assignments(user: dict = Depends(get_current_user)):
     async for t in db.form_templates.find(
         {"org_id": user["org_id"], "deleted_at": None},
         {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1,
-         "applies_to": 1, "assigned_positions": 1},
+         "applies_to": 1, "assigned_positions": 1, "applies_to_meta": 1},
     ):
         rows.append({
             "id": t["id"], "name": t["name"],
@@ -590,6 +590,9 @@ async def list_assignments(user: dict = Depends(get_current_user)):
             # without the field return [] so the FE toggler treats them
             # as ungated (matches the OR-gate semantic in list_templates).
             "assigned_positions": t.get("assigned_positions") or [],
+            # v58.13.132jx — Auto-seed vs manual-override provenance so
+            # the FE can render a badge on each row.
+            "applies_to_meta": t.get("applies_to_meta") or {},
         })
     rows.sort(key=lambda r: (r["category"], r["name"].lower()))
 
@@ -704,7 +707,12 @@ async def update_applies_to(template_id: str, body: AppliesToIn,
     await db.form_templates.update_one(
         {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
         {"$set": {"applies_to": next_applies,
-                  "assigned_positions": next_positions}},
+                  "assigned_positions": next_positions,
+                  # v58.13.132jx — Mark as admin-edited so future
+                  # auto-seed runs won't overwrite this row.
+                  "applies_to_meta.manual": True,
+                  "applies_to_meta.manual_at": datetime.now(timezone.utc).isoformat(),
+                  "applies_to_meta.manual_by_user_id": user["id"]}},
     )
 
     # Phase 3.9c — fire email + SMS for newly-exposed workers.
@@ -760,7 +768,13 @@ async def bulk_save_assignments(body: BulkAssignmentsIn,
         await db.form_templates.update_one(
             {"id": entry.template_id, "org_id": user["org_id"], "deleted_at": None},
             {"$set": {"applies_to": next_applies,
-                      "assigned_positions": next_positions}},
+                      "assigned_positions": next_positions,
+                      # v58.13.132jx — Same manual-override stamp as
+                      # the single-template PUT so the bulk save also
+                      # protects rows from later auto-seed runs.
+                      "applies_to_meta.manual": True,
+                      "applies_to_meta.manual_at": datetime.now(timezone.utc).isoformat(),
+                      "applies_to_meta.manual_by_user_id": user["id"]}},
         )
         saved += 1
         diff = await dispatch_diff(

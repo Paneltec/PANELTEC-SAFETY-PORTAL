@@ -8,7 +8,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Loader2, Save, AlertTriangle, Check, Truck, Wrench, Hammer, Box, LayoutGrid, Circle, RotateCcw, Sparkles, CheckSquare, Square, HardHat, Users, Building2, X } from 'lucide-react';
+import { Loader2, Save, AlertTriangle, Check, Truck, Wrench, Hammer, Box, LayoutGrid, Circle, RotateCcw, Sparkles, CheckSquare, Square, HardHat, Users, Building2, X, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -85,6 +85,29 @@ export default function FormAssignmentsAdmin() {
   useLockBodyScroll(confirmOpen);
   const [workerSearch, setWorkerSearch] = useState('');
   const [workerResults, setWorkerResults] = useState([]);
+
+  // v58.13.132jx — Auto-seed heuristic runner.
+  const [autoSeeding, setAutoSeeding] = useState(false);
+  const runAutoSeed = useCallback(async () => {
+    if (!canEdit || autoSeeding) return;
+    if (!window.confirm(
+      'Auto-seed will scan every form template in this org and assign asset-types based on the template name (e.g. "Trailer Pre-start" → trailer, "Viatec Traffic Ute" → traffic_dept, "Site Diary" → universal).\n\n' +
+      'It will SKIP any template that\'s been manually edited, and will NEVER overwrite a template that already has specific asset-types assigned.\n\n' +
+      'Continue?'
+    )) return;
+    setAutoSeeding(true);
+    try {
+      const { data } = await api.post('/admin/forms/auto-seed-asset-types', { dry_run: false });
+      const unm = (data.unmatched_templates || []).length;
+      toast.success(
+        `Auto-seed complete: ${data.seeded_rows} updated, ${data.skipped_no_change} preserved, ${unm} left for manual review.`,
+        { duration: 6000 }
+      );
+      await load();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setAutoSeeding(false); }
+  }, [canEdit, autoSeeding, load]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -399,6 +422,16 @@ export default function FormAssignmentsAdmin() {
             className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold ${view === 'matrix' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
             data-testid="view-matrix"><LayoutGrid size={12} /> Matrix</button>
         </div>
+        <button onClick={runAutoSeed} disabled={!canEdit || autoSeeding}
+          data-testid="auto-seed-btn"
+          title="Auto-seed asset-type rules from template names. Preserves manual edits."
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm transition ${
+            canEdit ? 'bg-violet-600 text-white hover:bg-violet-700'
+              : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+          }`}>
+          {autoSeeding ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+          Auto-seed
+        </button>
         <button onClick={save} disabled={!canEdit || dirtyCount === 0 || saving}
           data-testid="save-changes"
           className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm transition ${
@@ -457,7 +490,22 @@ export default function FormAssignmentsAdmin() {
                       <Circle size={8} className={`mt-1.5 ${hasAssign ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-300 text-slate-300'}`} />
                       <div className="min-w-0 flex-1">
                         <div className="text-[13px] font-semibold text-slate-900 truncate">{t.name}</div>
-                        <div className="text-[10px] uppercase tracking-wider text-slate-400 mt-0.5">{t.category || 'general'}</div>
+                        <div className="text-[10px] uppercase tracking-wider text-slate-400 mt-0.5 flex items-center gap-1.5">
+                          <span>{t.category || 'general'}</span>
+                          {/* v58.13.132jx — Provenance badge for auto-seeded vs manual rows. */}
+                          {t.applies_to_meta?.manual ? (
+                            <span data-testid={`meta-badge-manual-${t.id}`}
+                              className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold normal-case tracking-normal">
+                              Manual
+                            </span>
+                          ) : t.applies_to_meta?.auto_seeded_at ? (
+                            <span data-testid={`meta-badge-autoseed-${t.id}`}
+                              title={`Auto-seeded ${t.applies_to_meta.auto_seeded_at}`}
+                              className="px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-800 text-[9px] font-bold normal-case tracking-normal">
+                              Auto-seeded
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </li>
