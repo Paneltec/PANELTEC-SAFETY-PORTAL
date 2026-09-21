@@ -34,8 +34,8 @@ from fleet_service_sheet_templates import (
 router = APIRouter(prefix="/admin/forms", tags=["admin-forms"])
 
 TEMPLATE_NAME = "Vehicle Service Inspection — Service Check Sheet"
-TEMPLATE_SOURCE = "service_check_sheet_v121_2"
-OLD_SOURCE = "service_check_sheet_v121_1"
+TEMPLATE_SOURCE = "service_check_sheet_v121_3"
+OLD_SOURCES = ["service_check_sheet_v121_1", "service_check_sheet_v121_2"]
 TEMPLATE_DESCRIPTION = (
     "Full vehicle service check sheet. Mirrors the Fleet & Service "
     "Register drawer's 'Log service (Check Sheet)' flow — 18 light-"
@@ -174,13 +174,19 @@ def _build_fields() -> list[dict]:
     fields.append({
         "id": _new_id(), "type": "select", "label": "Service Level",
         "required": True,
-        "config": {"options": [
+        # v58.13.132ka — Options MUST live at top level; the FormRunner
+        # (web `Forms.jsx::ColouredRadioGroup` line 227 + mobile
+        # `forms/[id]/index.tsx` line 924) read `field.options`, not
+        # `field.config.options`. Nesting broke every radio + select
+        # on `.132jz`.
+        "options": [
             "Custom (free-form)",
             "Minor · 5–10 000 km / 250 hrs",
             "Intermediate · 15–20 000 km / 500 hrs",
             "Major · 30–45 000 km / 1 000 hrs",
             "Heavy Overhaul · 90–100 000+ km / 2 000+ hrs",
-        ]},
+        ],
+        "config": {},
         "style": _section_header_style("blue"),
     })
 
@@ -198,7 +204,9 @@ def _build_fields() -> list[dict]:
             "id": _new_id(), "type": "radio",
             "label": f"{item}",
             "required": True,
-            "config": {"options": list(TRINARY_OPTS)},
+            # v58.13.132ka — top-level options (see comment above).
+            "options": list(TRINARY_OPTS),
+            "config": {},
             "style": row_style,
         })
         fields.append({
@@ -246,9 +254,9 @@ def _build_fields() -> list[dict]:
                 "id": _new_id(), "type": "radio",
                 "label": f"{item}{suffix}",
                 "required": False,  # optional — only mandatory when heavy
-                "config": {"options": list(TRINARY_OPTS),
-                           "heavy_truck_only": True,
-                           "sub_section": s_id},
+                # v58.13.132ka — top-level options.
+                "options": list(TRINARY_OPTS),
+                "config": {"heavy_truck_only": True, "sub_section": s_id},
                 "style": row_style,
             })
             fields.append({
@@ -356,13 +364,14 @@ class ImportIn(BaseModel):
 
 
 async def _retire_old_source(org_id: str, now: str) -> int:
-    """Soft-delete any .132jy templates left behind so scans don't
+    """Soft-delete any predecessor templates left behind so scans don't
     return duplicates. Returns count retired."""
     res = await db.form_templates.update_many(
-        {"org_id": org_id, "original_source": OLD_SOURCE, "deleted_at": None},
-        {"$set": {"deleted_at": now, "retired_by": "132jz",
-                  "retired_reason": "Superseded by service_check_sheet_v121_2 "
-                                    "(Tick/X/N-A + heavy truck section + colours)"}},
+        {"org_id": org_id, "original_source": {"$in": OLD_SOURCES},
+         "deleted_at": None},
+        {"$set": {"deleted_at": now, "retired_by": "132ka",
+                  "retired_reason": "Superseded by service_check_sheet_v121_3 "
+                                    "(top-level options key + reimport)"}},
     )
     return res.modified_count
 
@@ -393,7 +402,7 @@ async def _import_for_org(org_id: str) -> dict:
         "applies_to_meta": {
             "manual": False,
             "auto_seeded_at": now,
-            "seeded_by": "132jz",
+            "seeded_by": "132ka",
         },
         "assigned_positions": [],
         "required_certifications": [],
