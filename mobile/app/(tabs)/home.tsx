@@ -291,6 +291,14 @@ export default function HomeScreen() {
             <Text testID="home-greeting" style={s.greeting}>{greeting}</Text>
             <Text testID="home-role-label" style={s.roleLabel}>{roleLabel || userRole || 'Field Worker'}</Text>
           </View>
+          {/* .132jt — QR scan icon in top bar */}
+          <TouchableOpacity
+            testID="home-qr-scan-btn"
+            style={s.bellBtn}
+            onPress={() => router.push('/(screens)/qr-scan')}
+          >
+            <Ionicons name="qr-code-outline" size={22} color={Colors.orange} />
+          </TouchableOpacity>
           <TouchableOpacity
             testID="home-notification-btn"
             style={s.bellBtn}
@@ -381,9 +389,15 @@ export default function HomeScreen() {
           ) : null}
         </View>
 
-        {/* Quick Actions */}
+        {/* Quick Actions — .132jt: added Scan Vehicle QR tile */}
         <View style={s.quickActions}>
-          <TouchableOpacity testID="home-action-prestart" style={s.actionTile} onPress={() => router.push('/(screens)/qr-scan')}>
+          <TouchableOpacity testID="home-action-scan-qr" style={s.actionTile} onPress={() => router.push('/(screens)/qr-scan')}>
+            <View style={[s.actionIcon, { backgroundColor: '#FFF7ED' }]}>
+              <Ionicons name="qr-code-outline" size={24} color={Colors.orange} />
+            </View>
+            <Text style={s.actionLabel}>Scan Vehicle QR</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="home-action-prestart" style={s.actionTile} onPress={() => router.push({ pathname: '/forms/picker', params: { category: 'pre_start', title: 'Pre-Start' } } as never)}>
             <View style={[s.actionIcon, { backgroundColor: '#D1FAE5' }]}>
               <Ionicons name="checkbox-outline" size={24} color={Colors.success} />
             </View>
@@ -394,12 +408,6 @@ export default function HomeScreen() {
               <Ionicons name="log-in-outline" size={24} color={Colors.info} />
             </View>
             <Text style={s.actionLabel}>Sign On</Text>
-          </TouchableOpacity>
-          <TouchableOpacity testID="home-action-hazard" style={s.actionTile} onPress={() => {}}>
-            <View style={[s.actionIcon, { backgroundColor: '#FEF3C7' }]}>
-              <Ionicons name="warning-outline" size={24} color={Colors.warning} />
-            </View>
-            <Text style={s.actionLabel}>Hazard</Text>
           </TouchableOpacity>
         </View>
 

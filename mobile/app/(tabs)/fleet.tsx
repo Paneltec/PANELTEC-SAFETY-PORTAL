@@ -8,7 +8,7 @@ import {
   RefreshControl, ActivityIndicator, TextInput, Modal, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -90,6 +90,7 @@ async function fetchNavixyTags(): Promise<NavixyTagsResponse> {
 export default function FleetScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { openAssetId } = useLocalSearchParams<{ openAssetId?: string }>();
   const [search, setSearch] = useState('');
   const [selectedAsset, setSelectedAsset] = useState<FleetAsset | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -108,6 +109,18 @@ export default function FleetScreen() {
     if (tag) AsyncStorage.setItem(TAG_STORAGE_KEY, tag);
     else AsyncStorage.removeItem(TAG_STORAGE_KEY);
   }, []);
+
+  // .132jt — Auto-open asset detail when navigated from QR scanner
+  useEffect(() => {
+    if (openAssetId && assets && assets.length > 0) {
+      const match = assets.find((a) => a.id === openAssetId);
+      if (match) {
+        setSelectedAsset(match);
+        // Clear the param to prevent re-triggering
+        router.setParams({ openAssetId: '' });
+      }
+    }
+  }, [openAssetId, assets, router]);
 
   const { data: assets, isLoading, refetch, isRefetching, error } = useQuery<FleetAsset[]>({
     queryKey: ['fleet-register'],

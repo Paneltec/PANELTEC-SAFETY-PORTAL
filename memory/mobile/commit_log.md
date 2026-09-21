@@ -542,3 +542,14 @@
   - Version 1.0.30, versionCode 152
   - EAS build: 5213347d-d9cc-42f6-a610-1fdbe9fca4a4
 - **Files modified**: fleet.tsx, version.ts, app.json
+
+## Iteration .132js — Error-State UI + Focus Refetch for Forms & Docs Tabs
+- **Commit**: 516fd7e0ff1f84cfe7cdc8de058ff22e4503d77f
+- **Date**: 2026-09-21
+- **Changes**:
+  - forms.ts: Added SessionExpiredError class, 401 detection on all axios calls, authHeaders throws if no JWT
+  - forms.tsx: Error banner (cloud-offline + retry button), session expiry redirect, useFocusEffect refetch, skip retry on SessionExpiredError
+  - docs.tsx: Error/isError on all 3 queries (root, sub, files), unified session expiry detection, error banner with retry, useFocusEffect refetch
+  - _layout.tsx: Wired react-query focusManager to AppState for foreground refetch
+- **Files modified**: src/services/forms.ts, app/(tabs)/forms.tsx, app/(tabs)/docs.tsx, app/_layout.tsx
+- **Web files referenced**: None (mobile-only bugfix)

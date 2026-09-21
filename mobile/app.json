@@ -2,15 +2,15 @@
   "expo": {
     "name": "Paneltec Group Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.31",
+    "version": "1.0.32",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
-    "scheme": "paneltec",
+    "scheme": "paneltec-mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.whscompliance.fv5aib",
-      "buildNumber": "153"
+      "buildNumber": "154"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +18,7 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.emergent.whscompliance.fv5aib",
-      "versionCode": 153
+      "versionCode": 154
     },
     "web": {
       "bundler": "metro",

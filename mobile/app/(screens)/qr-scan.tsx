@@ -1,379 +1,475 @@
 /**
- * QR Scan — New Pre-Start screen — v58.13.132dc
- * Wired to POST /api/mobile/prestart/submit (real endpoint).
+ * QR Scanner — In-cabin vehicle workflow — v58.13.132jt
+ *
+ * Flow: Scan QR sticker → extract identifier → lookup in fleet register →
+ *       navigate to Asset Detail (multi-action tiles from .132jr).
+ *
+ * Supported QR formats:
+ *   paneltec-mobile://asset/XT96AZ   (preferred — readable rego)
+ *   paneltec-mobile://asset/{uuid}   (UUID variant)
+ *   https://whs-compliance.preview.emergentagent.com/asset/XT96AZ
+ *   XT96AZ                           (plain rego string)
+ *   {uuid}                           (plain UUID)
  */
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  Modal, ActivityIndicator, Linking, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../src/theme/colors';
-import { clearSession } from '../../src/services/auth';
-import { authPost } from '../../src/services/apiClient';
+import { authGet } from '../../src/services/apiClient';
 
-type PreStartState = 'scanner' | 'form' | 'submitting' | 'submitted';
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const RETICLE_SIZE = Math.round(SCREEN_W * 0.68);
 
-const CHECKLIST_ITEMS = [
-  'Engine oil level',
-  'Coolant level',
-  'Hydraulic fluid',
-  'Tyre condition & pressure',
-  'Lights & indicators',
-  'Mirrors & visibility',
-  'Seatbelt & ROPS',
-  'Fire extinguisher',
-  'Brakes — service & park',
-  'Reversing alarm / camera',
-];
+// ── Types ──
 
-interface SubmitResponse {
-  submission_id: string;
-  status: string;
+interface FleetAsset {
+  id: string;
+  name: string;
+  rego?: string;
+  rego_serial?: string;
+  status?: string;
+  tag?: string;
+  [key: string]: unknown;
 }
+
+// ── QR payload parser ──
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MONGO_OID_RE = /^[0-9a-f]{24}$/i;
+
+function extractIdentifier(raw: string): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+
+  // 1. paneltec-mobile://asset/{id}
+  const schemeMatch = trimmed.match(/^paneltec-mobile:\/\/asset\/(.+)$/i);
+  if (schemeMatch) return schemeMatch[1];
+
+  // 2. Full URL — take last path segment
+  try {
+    const url = new URL(trimmed);
+    const segments = url.pathname.split('/').filter(Boolean);
+    if (segments.length > 0) return segments[segments.length - 1];
+  } catch { /* not a URL */ }
+
+  // 3. Plain UUID
+  if (UUID_RE.test(trimmed) || MONGO_OID_RE.test(trimmed)) return trimmed;
+
+  // 4. Plain rego string (letters, digits, spaces, hyphens — 2-20 chars)
+  if (/^[A-Za-z0-9 \-]{2,20}$/.test(trimmed)) return trimmed;
+
+  return null;
+}
+
+// ── Fleet lookup ──
+
+async function lookupInFleet(identifier: string): Promise<FleetAsset | null> {
+  // Fetch fleet register and search by rego (case-insensitive), then by id
+  const res = await authGet<{ items?: FleetAsset[]; assets?: FleetAsset[] } | FleetAsset[]>(
+    '/api/fleet/register?limit=500&page=1',
+  );
+  if (!res.ok) return null;
+
+  const d = res.data;
+  const list: FleetAsset[] = Array.isArray(d)
+    ? d
+    : (d as any).items || (d as any).assets || [];
+
+  const idLower = identifier.toLowerCase();
+
+  // Try rego match first (case-insensitive, trimmed)
+  const byRego = list.find(
+    (a) =>
+      (a.rego || '').toLowerCase().trim() === idLower ||
+      (a.rego_serial || '').toLowerCase().trim() === idLower,
+  );
+  if (byRego) return byRego;
+
+  // Try ID match
+  const byId = list.find((a) => a.id === identifier || (a as any).asset_id === identifier);
+  if (byId) return byId;
+
+  // Try name partial match (last resort, exact)
+  const byName = list.find((a) => (a.name || '').toLowerCase() === idLower);
+  return byName || null;
+}
+
+// ── Screen ──
 
 export default function QRScanScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [state, setState] = useState<PreStartState>('scanner');
-  const [assetId, setAssetId] = useState('');
-  const [assetName, setAssetName] = useState('');
-  const [checks, setChecks] = useState<Record<number, 'pass' | 'fail' | null>>(
-    Object.fromEntries(CHECKLIST_ITEMS.map((_, i) => [i, null]))
-  );
-  const [submissionId, setSubmissionId] = useState('');
-  const [submitError, setSubmitError] = useState('');
+  const [camPermission, requestCamPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [showNoMatchModal, setShowNoMatchModal] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const [showManual, setShowManual] = useState(false);
+  const cooldownRef = useRef(false);
 
-  const handleScan = (id: string) => {
-    setAssetId(id);
-    setAssetName(''); // Will be populated from QR payload or backend lookup
-    setState('form');
-  };
-
-  const handleSubmit = async () => {
-    setState('submitting');
-    setSubmitError('');
-
-    const failedItems = CHECKLIST_ITEMS.filter((_, i) => checks[i] === 'fail');
-    const hazards = failedItems.length > 0 ? `Failed items: ${failedItems.join(', ')}` : 'None';
-
-    const res = await authPost<SubmitResponse>('/api/mobile/prestart/submit', {
-      vehicle_rego: assetId,
-      date: new Date().toISOString().split('T')[0],
-      crew_lead: 'Current User',
-      crew_members: [],
-      work_summary: `Pre-start check for ${assetName} (${assetId})`,
-      hazards,
-      sign_ons: [{ name: 'Current User', timestamp: new Date().toISOString() }],
-    });
-
-    if (res.ok) {
-      setSubmissionId(res.data.submission_id);
-      setState('submitted');
-    } else if ('expired' in res && res.expired) {
-      await clearSession();
-      router.replace('/(auth)/pin-entry');
-    } else {
-      const errMsg = 'error' in res ? res.error : 'Submission failed';
-      setSubmitError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
-      setState('form');
-      Alert.alert('Submission Error', typeof errMsg === 'string' ? errMsg : 'Please try again.');
+  // Request permission on mount
+  useEffect(() => {
+    if (camPermission && !camPermission.granted && camPermission.canAskAgain) {
+      requestCamPermission();
     }
+  }, [camPermission, requestCamPermission]);
+
+  const handleScanResult = useCallback(async (identifier: string) => {
+    if (cooldownRef.current || resolving) return;
+    cooldownRef.current = true;
+    setScanned(true);
+    setResolving(true);
+    setErrorMsg('');
+
+    try {
+      // Haptic feedback on scan
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+
+      const asset = await lookupInFleet(identifier);
+
+      if (asset) {
+        // Navigate to fleet tab with asset detail
+        // Close scanner and push to fleet screen — we'll open the asset detail modal
+        router.replace({
+          pathname: '/(tabs)/fleet',
+          params: { openAssetId: asset.id },
+        } as never);
+      } else {
+        setShowNoMatchModal(true);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      }
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Lookup failed');
+    } finally {
+      setResolving(false);
+      // Cooldown to prevent rapid re-scans
+      setTimeout(() => {
+        cooldownRef.current = false;
+        setScanned(false);
+      }, 2500);
+    }
+  }, [resolving, router]);
+
+  const handleBarcodeScan = useCallback(({ data }: { data: string }) => {
+    if (scanned || resolving || cooldownRef.current) return;
+    const identifier = extractIdentifier(data);
+    if (!identifier) {
+      setErrorMsg('Unrecognised QR format');
+      setTimeout(() => setErrorMsg(''), 2000);
+      return;
+    }
+    handleScanResult(identifier);
+  }, [scanned, resolving, handleScanResult]);
+
+  const handleManualSubmit = useCallback(() => {
+    const id = manualInput.trim();
+    if (!id) return;
+    setShowManual(false);
+    handleScanResult(id);
+  }, [manualInput, handleScanResult]);
+
+  const handleRetry = () => {
+    setShowNoMatchModal(false);
+    setScanned(false);
+    setErrorMsg('');
+    cooldownRef.current = false;
   };
 
-  const toggleCheck = (idx: number) => {
-    setChecks((prev) => ({
-      ...prev,
-      [idx]: prev[idx] === 'pass' ? 'fail' : prev[idx] === 'fail' ? null : 'pass',
-    }));
-  };
-
-  const resetForm = () => {
-    setState('scanner');
-    setAssetId('');
-    setAssetName('');
-    setSubmissionId('');
-    setSubmitError('');
-    setChecks(Object.fromEntries(CHECKLIST_ITEMS.map((_, i) => [i, null])));
-  };
-
-  const allChecked = Object.values(checks).every((v) => v !== null);
-
-  if (state === 'submitted') {
+  // ── Permission denied screen ──
+  if (camPermission && !camPermission.granted && !camPermission.canAskAgain) {
     return (
-      <View testID="prestart-submitted" style={[s.container, { paddingTop: insets.top }]}>
-        <View style={s.successCenter}>
-          <View style={s.successCircle}>
-            <Ionicons name="checkmark" size={48} color={Colors.success} />
+      <View testID="qr-scan-perm-denied" style={[st.container, { paddingTop: insets.top }]}>
+        <View style={st.permCard}>
+          <View style={st.permIconWrap}>
+            <Ionicons name="camera-outline" size={48} color={Colors.textTertiary} />
           </View>
-          <Text style={s.successTitle}>Pre-Start Submitted</Text>
-          <Text style={s.successSub}>{assetName} — {assetId}</Text>
-          {submissionId && (
-            <View style={s.submissionIdCard}>
-              <Text style={s.submissionIdLabel}>Submission ID</Text>
-              <Text testID="submission-id" style={s.submissionIdValue}>{submissionId.slice(0, 8)}...</Text>
-            </View>
-          )}
-          <TouchableOpacity testID="prestart-new-btn" style={s.newBtn} onPress={resetForm}>
-            <Text style={s.newBtnText}>Start Another</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  if (state === 'submitting') {
-    return (
-      <View testID="prestart-submitting" style={[s.container, { paddingTop: insets.top }]}>
-        <View style={s.successCenter}>
-          <ActivityIndicator size="large" color={Colors.orange} />
-          <Text style={s.submittingText}>Submitting pre-start...</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (state === 'form') {
-    return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View testID="prestart-form" style={[s.container, { paddingTop: insets.top }]}>
-          <View style={s.header}>
-            <TouchableOpacity testID="prestart-back" onPress={() => setState('scanner')} style={s.backBtn}>
-              <Ionicons name="chevron-back" size={24} color={Colors.white} />
-            </TouchableOpacity>
-            <Text style={s.headerTitle}>Pre-Start Check</Text>
-          </View>
-          <ScrollView contentContainerStyle={s.scrollContent}>
-            <View style={s.assetCard}>
-              <View style={s.assetIcon}>
-                <Ionicons name="car" size={24} color={Colors.orange} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.assetName}>{assetName}</Text>
-                <Text style={s.assetIdText}>ID: {assetId}</Text>
-              </View>
-              <View style={s.autoFillPill}>
-                <Text style={s.autoFillText}>QR Auto-fill</Text>
-              </View>
-            </View>
-
-            <Text style={s.checklistLabel}>INSPECTION CHECKLIST</Text>
-            {CHECKLIST_ITEMS.map((item, idx) => (
-              <TouchableOpacity
-                key={idx}
-                testID={`check-item-${idx}`}
-                style={s.checkRow}
-                onPress={() => toggleCheck(idx)}
-              >
-                <View style={[
-                  s.checkCircle,
-                  checks[idx] === 'pass' && { backgroundColor: Colors.success },
-                  checks[idx] === 'fail' && { backgroundColor: Colors.error },
-                ]}>
-                  {checks[idx] === 'pass' && <Ionicons name="checkmark" size={16} color={Colors.white} />}
-                  {checks[idx] === 'fail' && <Ionicons name="close" size={16} color={Colors.white} />}
-                </View>
-                <Text style={[s.checkText, checks[idx] !== null && { color: Colors.ink }]}>{item}</Text>
-                {checks[idx] === 'fail' && (
-                  <View style={s.failPill}>
-                    <Text style={s.failPillText}>FAIL</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-
-            {submitError ? (
-              <View style={s.errorBanner}>
-                <Ionicons name="alert-circle" size={14} color={Colors.error} />
-                <Text style={s.errorBannerText}>{submitError}</Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity
-              testID="prestart-submit-btn"
-              style={[s.submitBtn, !allChecked && s.submitBtnDisabled]}
-              onPress={handleSubmit}
-              disabled={!allChecked}
-            >
-              <Text style={s.submitBtnText}>Submit Pre-Start</Text>
-            </TouchableOpacity>
-            <View style={{ height: 32 }} />
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    );
-  }
-
-  // Scanner view
-  return (
-    <View testID="qr-scan-screen" style={[s.container, { paddingTop: insets.top }]}>
-      <View style={s.header}>
-        <Text style={s.headerTitle}>Scan Asset QR</Text>
-      </View>
-      <View style={s.scannerArea}>
-        <View style={s.scanFrame}>
-          <View style={[s.scanCorner, s.scanTL]} />
-          <View style={[s.scanCorner, s.scanTR]} />
-          <View style={[s.scanCorner, s.scanBL]} />
-          <View style={[s.scanCorner, s.scanBR]} />
-          <Ionicons name="scan-outline" size={80} color="rgba(255,255,255,0.15)" />
-          <Text style={s.scanHint}>
-            {Platform.OS === 'web'
-              ? 'Camera not available on web preview'
-              : 'Point camera at asset QR code'}
+          <Text style={st.permTitle}>Camera Access Required</Text>
+          <Text style={st.permText}>
+            Grant camera access to scan vehicle QR stickers. Open Settings and enable Camera for Paneltec.
           </Text>
-        </View>
-      </View>
-
-      <View style={s.manualSection}>
-        <Text style={s.manualLabel}>Or enter asset ID manually</Text>
-        <View style={s.manualRow}>
-          <TextInput
-            testID="asset-id-input"
-            style={s.manualInput}
-            value={assetId}
-            onChangeText={setAssetId}
-            placeholder="e.g. AST-001"
-            placeholderTextColor="rgba(255,255,255,0.3)"
-            autoCapitalize="characters"
-          />
           <TouchableOpacity
-            testID="manual-scan-btn"
-            style={[s.goBtn, !assetId.trim() && s.goBtnDisabled]}
-            onPress={() => handleScan(assetId.trim() || 'AST-001')}
-            disabled={!assetId.trim()}
+            testID="qr-scan-open-settings"
+            style={st.permBtn}
+            onPress={() => Linking.openSettings()}
           >
-            <Ionicons name="arrow-forward" size={22} color={Colors.white} />
+            <Ionicons name="settings-outline" size={18} color={Colors.white} />
+            <Text style={st.permBtnText}>Open Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="qr-scan-close-perm"
+            style={st.closeTextBtn}
+            onPress={() => router.back()}
+          >
+            <Text style={st.closeTextBtnLabel}>Go back</Text>
           </TouchableOpacity>
         </View>
       </View>
+    );
+  }
 
-      <TouchableOpacity testID="demo-scan-btn" style={s.demoBtn} onPress={() => handleScan('AST-001')}>
-        <Ionicons name="flash-outline" size={16} color={Colors.orange} />
-        <Text style={s.demoBtnText}>Quick demo scan</Text>
+  // ── Main scanner ──
+  return (
+    <View testID="qr-scan-screen" style={st.container}>
+      {/* Camera fills entire screen */}
+      {camPermission?.granted ? (
+        <CameraView
+          testID="qr-scan-camera"
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={scanned ? undefined : handleBarcodeScan}
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, st.camLoading]}>
+          <ActivityIndicator size="large" color={Colors.white} />
+          <Text style={st.camLoadingText}>Requesting camera…</Text>
+        </View>
+      )}
+
+      {/* Dimmed overlay with transparent reticle */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {/* Top dim */}
+        <View style={st.dimTop} />
+        {/* Middle row: left dim + reticle + right dim */}
+        <View style={st.midRow}>
+          <View style={st.dimSide} />
+          <View style={st.reticle}>
+            <View style={[st.corner, st.cornerTL]} />
+            <View style={[st.corner, st.cornerTR]} />
+            <View style={[st.corner, st.cornerBL]} />
+            <View style={[st.corner, st.cornerBR]} />
+          </View>
+          <View style={st.dimSide} />
+        </View>
+        {/* Bottom dim */}
+        <View style={st.dimBottom} />
+      </View>
+
+      {/* Close button (top-left) */}
+      <TouchableOpacity
+        testID="qr-scan-close"
+        style={[st.closeBtn, { top: insets.top + 12 }]}
+        onPress={() => router.back()}
+      >
+        <Ionicons name="close" size={28} color={Colors.white} />
       </TouchableOpacity>
+
+      {/* Manual entry button (top-right) */}
+      <TouchableOpacity
+        testID="qr-scan-manual-btn"
+        style={[st.manualBtn, { top: insets.top + 12 }]}
+        onPress={() => setShowManual(true)}
+      >
+        <Ionicons name="keypad-outline" size={20} color={Colors.white} />
+        <Text style={st.manualBtnText}>Manual</Text>
+      </TouchableOpacity>
+
+      {/* Bottom hint + resolving indicator */}
+      <View style={[st.bottomBar, { paddingBottom: insets.bottom + 20 }]}>
+        {resolving ? (
+          <View style={st.resolvingRow}>
+            <ActivityIndicator size="small" color={Colors.orange} />
+            <Text style={st.resolvingText}>Looking up vehicle…</Text>
+          </View>
+        ) : errorMsg ? (
+          <View style={st.errorRow}>
+            <Ionicons name="alert-circle" size={16} color={Colors.warning} />
+            <Text style={st.errorText}>{errorMsg}</Text>
+          </View>
+        ) : (
+          <Text style={st.hintText}>Point at the QR sticker inside the vehicle door</Text>
+        )}
+      </View>
+
+      {/* No-match modal */}
+      <Modal visible={showNoMatchModal} transparent animationType="fade" onRequestClose={handleRetry}>
+        <View style={st.modalBackdrop}>
+          <View style={st.modalCard}>
+            <View style={st.modalIconWrap}>
+              <Ionicons name="help-circle-outline" size={48} color={Colors.warning} />
+            </View>
+            <Text style={st.modalTitle}>Unknown Vehicle</Text>
+            <Text style={st.modalBody}>
+              {"QR code doesn't match any asset in your fleet register. Please contact admin."}
+            </Text>
+            <TouchableOpacity testID="qr-scan-retry" style={st.modalRetryBtn} onPress={handleRetry}>
+              <Ionicons name="scan-outline" size={18} color={Colors.white} />
+              <Text style={st.modalRetryText}>Scan Again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity testID="qr-scan-modal-close" style={st.modalCloseBtn} onPress={() => { setShowNoMatchModal(false); router.back(); }}>
+              <Text style={st.modalCloseText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Manual input modal */}
+      <Modal visible={showManual} transparent animationType="slide" onRequestClose={() => setShowManual(false)}>
+        <View style={st.modalBackdrop}>
+          <View style={st.manualCard}>
+            <Text style={st.manualTitle}>Enter Rego or Asset ID</Text>
+            <TextInput
+              testID="qr-scan-manual-input"
+              style={st.manualInput}
+              value={manualInput}
+              onChangeText={setManualInput}
+              placeholder="e.g. XT96AZ"
+              placeholderTextColor={Colors.textTertiary}
+              autoCapitalize="characters"
+              autoFocus
+              returnKeyType="go"
+              onSubmitEditing={handleManualSubmit}
+            />
+            <View style={st.manualActions}>
+              <TouchableOpacity style={st.manualCancelBtn} onPress={() => setShowManual(false)}>
+                <Text style={st.manualCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="qr-scan-manual-go"
+                style={[st.manualGoBtn, !manualInput.trim() && { opacity: 0.4 }]}
+                onPress={handleManualSubmit}
+                disabled={!manualInput.trim()}
+              >
+                <Ionicons name="search" size={18} color={Colors.white} />
+                <Text style={st.manualGoText}>Look Up</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navy },
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
-  },
-  backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { color: Colors.white, fontSize: 18, fontWeight: '700' },
-  scrollContent: { padding: 16 },
+// ── Styles ──
 
-  scannerArea: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
-  scanFrame: {
-    width: 240, height: 240, alignItems: 'center', justifyContent: 'center', gap: 16,
-    position: 'relative',
-  },
-  scanCorner: {
-    position: 'absolute', width: 32, height: 32,
-    borderColor: Colors.orange, borderWidth: 3,
-  },
-  scanTL: { top: 0, left: 0, borderBottomWidth: 0, borderRightWidth: 0 },
-  scanTR: { top: 0, right: 0, borderBottomWidth: 0, borderLeftWidth: 0 },
-  scanBL: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0 },
-  scanBR: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 },
-  scanHint: { color: 'rgba(255,255,255,0.35)', fontSize: 12, textAlign: 'center', lineHeight: 18 },
+const RETICLE_TOP = Math.round((SCREEN_H - RETICLE_SIZE) / 2) - 40;
+const DIM_BG = 'rgba(0,0,0,0.55)';
 
-  manualSection: { paddingHorizontal: 24, marginBottom: 12 },
-  manualLabel: {
-    color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '600',
-    letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8,
-  },
-  manualRow: { flexDirection: 'row', gap: 10 },
-  manualInput: {
-    flex: 1, backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-    color: Colors.white, fontSize: 15,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-  },
-  goBtn: {
-    width: 52, height: 52, borderRadius: 14,
-    backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center',
-  },
-  goBtnDisabled: { opacity: 0.4 },
+const st = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#000' },
 
-  demoBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginHorizontal: 24, marginBottom: 32, paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1.5, borderColor: 'rgba(249,115,22,0.3)',
-    backgroundColor: 'rgba(249,115,22,0.06)',
-  },
-  demoBtnText: { color: Colors.orange, fontSize: 14, fontWeight: '700' },
+  // Camera loading
+  camLoading: { alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.navy, gap: 12 },
+  camLoadingText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
 
-  assetCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
-  },
-  assetIcon: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center',
-  },
-  assetName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  assetIdText: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
-  autoFillPill: {
-    backgroundColor: Colors.successSoft, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
-  },
-  autoFillText: { fontSize: 10, fontWeight: '700', color: Colors.success },
+  // Overlay dims
+  dimTop: { width: '100%', height: RETICLE_TOP, backgroundColor: DIM_BG },
+  midRow: { flexDirection: 'row', height: RETICLE_SIZE },
+  dimSide: { flex: 1, backgroundColor: DIM_BG },
+  dimBottom: { flex: 1, backgroundColor: DIM_BG },
 
-  checklistLabel: {
-    color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '700',
-    letterSpacing: 0.8, marginBottom: 10,
-  },
-  checkRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 12, padding: 14, marginBottom: 6,
-  },
-  checkCircle: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: Colors.border, alignItems: 'center', justifyContent: 'center',
-  },
-  checkText: { fontSize: 14, color: Colors.textSecondary, flex: 1, fontWeight: '500' },
-  failPill: { backgroundColor: Colors.errorSoft, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  failPillText: { fontSize: 9, fontWeight: '800', color: Colors.error },
+  // Reticle
+  reticle: { width: RETICLE_SIZE, height: RETICLE_SIZE, position: 'relative' },
+  corner: { position: 'absolute', width: 28, height: 28, borderColor: Colors.orange, borderWidth: 3 },
+  cornerTL: { top: 0, left: 0, borderBottomWidth: 0, borderRightWidth: 0, borderTopLeftRadius: 6 },
+  cornerTR: { top: 0, right: 0, borderBottomWidth: 0, borderLeftWidth: 0, borderTopRightRadius: 6 },
+  cornerBL: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0, borderBottomLeftRadius: 6 },
+  cornerBR: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0, borderBottomRightRadius: 6 },
 
-  submitBtn: {
-    backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 16,
-    alignItems: 'center', marginTop: 16,
+  // Close button
+  closeBtn: {
+    position: 'absolute', left: 16, zIndex: 10,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
   },
-  submitBtnDisabled: { opacity: 0.4 },
-  submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '800' },
 
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginTop: 8,
-    borderWidth: 1, borderColor: '#FECACA',
+  // Manual entry trigger
+  manualBtn: {
+    position: 'absolute', right: 16, zIndex: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  errorBannerText: { fontSize: 11, fontWeight: '600', color: '#DC2626', flex: 1 },
+  manualBtnText: { color: Colors.white, fontSize: 13, fontWeight: '600' },
 
-  successCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  successCircle: {
+  // Bottom bar
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    alignItems: 'center', paddingTop: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  hintText: {
+    color: 'rgba(255,255,255,0.8)', fontSize: 15, fontWeight: '600',
+    textAlign: 'center', paddingHorizontal: 32,
+  },
+  resolvingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  resolvingText: { color: Colors.orange, fontSize: 15, fontWeight: '600' },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  errorText: { color: Colors.warning, fontSize: 14, fontWeight: '600' },
+
+  // Permission denied
+  permCard: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  permIconWrap: {
     width: 96, height: 96, borderRadius: 48,
-    backgroundColor: Colors.successSoft, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center',
     marginBottom: 20,
   },
-  successTitle: { fontSize: 22, fontWeight: '800', color: Colors.white, marginBottom: 6 },
-  successSub: { fontSize: 14, color: 'rgba(255,255,255,0.55)', marginBottom: 16 },
-  submissionIdCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 12,
-    alignItems: 'center', marginBottom: 12, width: '100%',
+  permTitle: { color: Colors.white, fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  permText: { color: 'rgba(255,255,255,0.6)', fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  permBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.orange, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 14, minHeight: 48,
   },
-  submissionIdLabel: { fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 },
-  submissionIdValue: { fontSize: 14, color: Colors.white, fontWeight: '700', fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }) },
-  submittingText: { color: Colors.white, fontSize: 16, fontWeight: '600', marginTop: 16 },
-  newBtn: {
-    backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32,
-    marginTop: 8,
+  permBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+  closeTextBtn: { marginTop: 16 },
+  closeTextBtnLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
+
+  // No-match modal
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
   },
-  newBtnText: { color: Colors.white, fontSize: 15, fontWeight: '700' },
+  modalCard: {
+    backgroundColor: Colors.surface, borderRadius: 24, padding: 28,
+    width: '100%', maxWidth: 340, alignItems: 'center',
+  },
+  modalIconWrap: { marginBottom: 16 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink, marginBottom: 8 },
+  modalBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  modalRetryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.orange, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 14, minHeight: 48, width: '100%',
+    justifyContent: 'center',
+  },
+  modalRetryText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+  modalCloseBtn: { marginTop: 12 },
+  modalCloseText: { color: Colors.textTertiary, fontSize: 14, fontWeight: '600' },
+
+  // Manual input modal
+  manualCard: {
+    backgroundColor: Colors.surface, borderRadius: 24, padding: 24,
+    width: '100%', maxWidth: 360,
+  },
+  manualTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink, marginBottom: 16 },
+  manualInput: {
+    backgroundColor: Colors.bg, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 18, fontWeight: '700', color: Colors.ink, letterSpacing: 1,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: 16,
+  },
+  manualActions: { flexDirection: 'row', gap: 10 },
+  manualCancelBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 14,
+    backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
+    minHeight: 48,
+  },
+  manualCancelText: { color: Colors.textSecondary, fontSize: 15, fontWeight: '600' },
+  manualGoBtn: {
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 14, backgroundColor: Colors.orange,
+    minHeight: 48,
+  },
+  manualGoText: { color: Colors.white, fontSize: 15, fontWeight: '700' },
 });
