@@ -485,3 +485,21 @@
   - Version 1.0.25, versionCode 147
   - EAS build: 660864e7-3b36-4114-b689-64967d739609
 - **Files modified**: colors.ts, _layout.tsx, forms.tsx, home.tsx, fleet.tsx, docs.tsx, settings.tsx, version.ts, app.json
+
+## Iteration .132jl — Mobile Form Runner Consumes Per-Field style Schema (Phase 2)
+- **Commit**: 535385cec47e004b2434789303e09736a9c284d0
+- **Date**: 2026-09-20
+- **Changes**:
+  - Added FieldStyle interface to forms.ts with all 13 schema properties
+  - Form Runner FieldRenderer now reads field.style and applies:
+    - Container: backgroundColor, borderColor, borderWidth, borderStyle, borderRadius, paddingX/Y
+    - Label: labelColor, labelBold, labelSize (sm/md/lg → 13/15/18px)
+    - Help text: helpTextColor
+    - Icon: emoji:X or ion:name prepended before label
+  - hoverBackgroundColor silently ignored (web-only)
+  - Hex validation with regex before applying any color
+  - Android dashed/dotted border quirk handled with overflow:visible
+  - Missing style or {} → zero regression, default rendering preserved
+  - Version 1.0.26, versionCode 148
+  - EAS build: cf57dddf-2360-4599-9fa8-0d53d79c183a
+- **Files modified**: forms.ts, forms/[id]/index.tsx, version.ts, app.json

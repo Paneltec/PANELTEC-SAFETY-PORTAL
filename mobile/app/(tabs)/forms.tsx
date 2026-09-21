@@ -1,11 +1,11 @@
 /**
  * Forms tab — Category-first navigation.
- * v58.13.132di — role_id fix: reads role_id first, falls back to role.
+ * v58.13.132jm — coloured category icons + LH stripe on tiles.
  */
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, TextInput,
+  RefreshControl, ActivityIndicator, TextInput, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import {
   type CategoryMeta,
 } from '../../src/services/forms';
 import { getStoredUser } from '../../src/services/auth';
+import { categoryPalette } from '../../src/lib/categoryColors';
 
 export default function FormsScreen() {
   const insets = useSafeAreaInsets();
@@ -29,7 +30,6 @@ export default function FormsScreen() {
 
   React.useEffect(() => {
     getStoredUser().then((u) => {
-      // v58.13.132di — FIX: read role_id first (canonical), fall back to role
       const role = u?.role_id || u?.role;
       if (role) setUserRole(role);
     });
@@ -50,7 +50,6 @@ export default function FormsScreen() {
 
   const isSearching = search.trim().length > 0;
 
-  // Search results: flat list across all categories
   const searchResults = useMemo(() => {
     if (!templates || !isSearching) return [];
     const q = search.trim().toLowerCase();
@@ -59,7 +58,6 @@ export default function FormsScreen() {
     );
   }, [templates, search, isSearching]);
 
-  // Category cards (when not searching)
   const grouped = useMemo(
     () => groupByCategory(templates || [], userRole),
     [templates, userRole],
@@ -107,7 +105,6 @@ export default function FormsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
         >
           {isSearching ? (
-            /* ── Search results ── */
             searchResults.length === 0 ? (
               <View testID="forms-search-empty" style={s.emptyCard}>
                 <Ionicons name="search" size={32} color={Colors.textTertiary} />
@@ -129,7 +126,6 @@ export default function FormsScreen() {
               </View>
             )
           ) : (
-            /* ── Category grid ── */
             grouped.length === 0 ? (
               <View testID="forms-empty" style={s.emptyCard}>
                 <Ionicons name="document-text-outline" size={32} color={Colors.textTertiary} />
@@ -157,11 +153,13 @@ export default function FormsScreen() {
   );
 }
 
-// ── Category Card ──
+// ── Category Card with LH stripe + coloured icon ──
 
 function CategoryCard({ meta, formCount, onPress }: {
   meta: CategoryMeta; formCount: number; onPress: () => void;
 }) {
+  const palette = categoryPalette(meta.key);
+
   return (
     <TouchableOpacity
       testID={`cat-card-${meta.key}`}
@@ -169,31 +167,43 @@ function CategoryCard({ meta, formCount, onPress }: {
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <View style={[s.catIcon, { backgroundColor: meta.bgColor }]}>
-        <Ionicons name={meta.icon as keyof typeof Ionicons.glyphMap} size={28} color={meta.color} />
+      {/* LH colour stripe */}
+      <View style={[s.catStripe, { backgroundColor: palette.stripe }]} />
+
+      {/* Content area */}
+      <View style={s.catContent}>
+        <Image source={palette.icon} style={s.catIcon} />
+        <View style={s.catTextWrap}>
+          <Text style={[s.catName, { color: palette.chipText }]}>{meta.label}</Text>
+          <Text style={s.catCount}>{formCount} form{formCount !== 1 ? 's' : ''}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
       </View>
-      <Text style={s.catName}>{meta.label}</Text>
-      <Text style={s.catCount}>{formCount} form{formCount !== 1 ? 's' : ''}</Text>
-      <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} style={s.catChevron} />
     </TouchableOpacity>
   );
 }
 
-// ── Search Result Card ──
+// ── Search Result Card with LH stripe ──
 
 function SearchResultCard({ template, onPress }: {
   template: FormTemplate; onPress: () => void;
 }) {
+  const palette = categoryPalette(template.category);
+
   return (
     <TouchableOpacity testID={`search-result-${template.id}`} style={s.resultCard} onPress={onPress} activeOpacity={0.7}>
-      <View style={s.resultInfo}>
-        <Text style={s.resultName} numberOfLines={1}>{template.name}</Text>
-        {template.description ? (
-          <Text style={s.resultDesc} numberOfLines={1}>{template.description}</Text>
-        ) : null}
-        <Text style={s.resultCat}>{template.category.replace('_', ' ')}</Text>
+      {/* LH stripe */}
+      <View style={[s.resultStripe, { backgroundColor: palette.stripe }]} />
+      <View style={s.resultContent}>
+        <View style={s.resultInfo}>
+          <Text style={s.resultName} numberOfLines={1}>{template.name}</Text>
+          {template.description ? (
+            <Text style={s.resultDesc} numberOfLines={1}>{template.description}</Text>
+          ) : null}
+          <Text style={[s.resultCat, { color: palette.chipText }]}>{template.category.replace('_', ' ')}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
       </View>
-      <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
     </TouchableOpacity>
   );
 }
@@ -224,27 +234,37 @@ const s = StyleSheet.create({
   // Category grid
   catGrid: { paddingHorizontal: 16, paddingTop: 8 },
   catCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 18, marginBottom: 10,
-    minHeight: 72,
+    flexDirection: 'row', alignItems: 'stretch',
+    backgroundColor: Colors.surface, borderRadius: 16, marginBottom: 10,
+    minHeight: 72, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  catIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  catName: { fontSize: 17, fontWeight: '800', color: Colors.ink, flex: 1 },
-  catCount: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500' },
-  catChevron: { marginLeft: 4 },
+  catStripe: { width: 8, borderTopLeftRadius: 16, borderBottomLeftRadius: 16 },
+  catContent: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 14, paddingHorizontal: 16,
+  },
+  catIcon: { width: 48, height: 48, borderRadius: 12 },
+  catTextWrap: { flex: 1 },
+  catName: { fontSize: 17, fontWeight: '800' },
+  catCount: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500', marginTop: 2 },
 
   // Search results
   searchResults: { paddingHorizontal: 16, paddingTop: 4 },
   searchLabel: { fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '600', marginBottom: 8, letterSpacing: 0.5 },
   resultCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 8,
-    minHeight: 64,
+    flexDirection: 'row', alignItems: 'stretch',
+    backgroundColor: Colors.surface, borderRadius: 14, marginBottom: 8,
+    minHeight: 64, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+  },
+  resultStripe: { width: 6, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  resultContent: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, paddingHorizontal: 14,
   },
   resultInfo: { flex: 1 },
   resultName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   resultDesc: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
-  resultCat: { fontSize: 11, color: Colors.orange, fontWeight: '600', textTransform: 'capitalize', marginTop: 4 },
+  resultCat: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize', marginTop: 4 },
 });
