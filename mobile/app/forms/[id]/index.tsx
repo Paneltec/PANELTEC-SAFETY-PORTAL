@@ -920,12 +920,21 @@ function FieldRenderer({
       )}
 
       {(field.type === 'select' || field.type === 'radio') && (
-        <View style={s.optionsWrap}>
+        <View style={s.optionsWrap} pointerEvents={locked ? 'none' : 'auto'}>
           {(field.options || []).map((opt) => {
             const isSelected = value === opt;
-            const isYes = opt.toLowerCase() === 'yes';
-            const isNo = opt.toLowerCase() === 'no';
-            const isNA = opt.toLowerCase() === 'n/a' || opt.toLowerCase() === 'na';
+            const n = opt.toLowerCase();
+            // v58.13.132jz — Recognise Tick/Check/✓ + Cross/Repair/✗/X
+            // variants for the Service Check Sheet trinary widget in
+            // addition to Yes/No.
+            const isYes = n === 'yes'
+              || n.includes('✓') || n.includes('tick')
+              || n.startsWith('check') || n === '✓ check';
+            const isNo = n === 'no' || n === 'defective' || n.startsWith('fail')
+              || n.includes('✗') || n.includes('cross')
+              || n.startsWith('repair') || n === '✗ repair'
+              || n === 'x';
+            const isNA = n === 'n/a' || n === 'na' || n === 'not applicable';
 
             let selectedBg = Colors.orange;
             let selectedText = Colors.white;
@@ -943,7 +952,8 @@ function FieldRenderer({
                   s.optionBtn,
                   isSelected && { backgroundColor: selectedBg, borderColor: selectedBg },
                 ]}
-                onPress={() => onChange(isSelected ? null : opt)}
+                onPress={() => !locked && onChange(isSelected ? null : opt)}
+                disabled={locked}
               >
                 <Text style={[s.optionText, isSelected && { color: selectedText }]}>
                   {opt}

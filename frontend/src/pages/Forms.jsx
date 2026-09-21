@@ -199,10 +199,19 @@ function ColouredRadioGroup({ field, value, onChange, readOnly }) {
   const style = (opt, selected) => {
     const norm = String(opt).toLowerCase();
     let palette;
-    if (norm === 'yes') palette = selected
+    // v58.13.132jz — Also match Tick/Check/✓ (emerald) + Cross/Repair/✗/X (rose)
+    // for the Service Check Sheet trinary widget.
+    const isCheck = norm === 'yes'
+      || norm.includes('✓') || norm.includes('tick')
+      || norm.startsWith('check') || norm === '✓ check';
+    const isCross = norm === 'no' || norm === 'defective' || norm.startsWith('fail')
+      || norm.includes('✗') || norm.includes('cross')
+      || norm.startsWith('repair') || norm === '✗ repair'
+      || norm === 'x';
+    if (isCheck) palette = selected
       ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-200'
       : 'bg-white border-emerald-300 text-emerald-700 hover:bg-emerald-50';
-    else if (norm === 'no' || norm === 'defective' || norm.startsWith('fail')) palette = selected
+    else if (isCross) palette = selected
       ? 'bg-rose-50 border-rose-500 text-rose-700 ring-2 ring-rose-200'
       : 'bg-white border-rose-300 text-rose-700 hover:bg-rose-50';
     else if (norm === 'n/a' || norm === 'na' || norm === 'not applicable') palette = selected
