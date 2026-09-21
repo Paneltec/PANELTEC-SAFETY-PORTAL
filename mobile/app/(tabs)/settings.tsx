@@ -6,7 +6,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
-  ActivityIndicator, Modal,
+  ActivityIndicator, Modal, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -171,6 +171,22 @@ export default function SettingsScreen() {
           icon="sparkles-outline" iconColor="#7C3AED" iconBg="#F5F3FF"
           title="Ask AI"
           onPress={() => router.push('/(screens)/ask-ai')}
+        />
+
+        {/* v58.13.132jp — Legal links required for Google Play + Apple
+            TestFlight submission. Both open in system browser. */}
+        <Text style={s.sectionLabel}>LEGAL</Text>
+        <SettingsRow
+          testID="settings-privacy-policy"
+          icon="shield-checkmark-outline" iconColor="#0EA5E9" iconBg="#E0F2FE"
+          title="Privacy Policy"
+          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/legal/privacy-policy.html')}
+        />
+        <SettingsRow
+          testID="settings-terms-of-service"
+          icon="document-text-outline" iconColor="#64748B" iconBg="#F1F5F9"
+          title="Terms of Service"
+          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/legal/terms-of-service.html')}
         />
 
         {/* Updates */}

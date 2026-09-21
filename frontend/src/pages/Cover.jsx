@@ -181,6 +181,22 @@ export default function Cover() {
                   · All rights reserved
                 </span>
               </div>
+              {/* v58.13.132jp — Legal links required for Google Play +
+                  Apple TestFlight submission. Publicly reachable static
+                  HTML under /legal/. */}
+              <div className="mt-2 text-[10px] tracking-[0.12em] opacity-80"
+                   style={{ color: 'var(--paneltec-gold)' }}
+                   data-testid="cover-legal-links">
+                <a href="/legal/privacy-policy.html"
+                   data-testid="cover-privacy-link"
+                   className="hover:underline"
+                   target="_blank" rel="noopener">Privacy</a>
+                <span className="mx-2">·</span>
+                <a href="/legal/terms-of-service.html"
+                   data-testid="cover-terms-link"
+                   className="hover:underline"
+                   target="_blank" rel="noopener">Terms</a>
+              </div>
             </div>
           </div>
         </div>
