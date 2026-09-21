@@ -597,3 +597,10 @@
   - Cancelled EAS build fa65ae01 (v1.0.32)
   - New EAS build: 362b2214-4127-41fe-a80c-1199b035bd6a
 - **Files modified**: qr-scan.tsx, fleet.tsx, app.json, version.ts
+
+## Iteration .132jw — Add back-arrow escape on Asset Detail header
+- **Commit**: 459ba73e
+- **Date**: 2026-09-21
+- **Changes**: Added chevron-back icon left of "Asset Detail" title, 44dp tap target, same onClose behaviour as X
+- **Files modified**: fleet.tsx, app.json (v1.0.34/156), version.ts
+- **Cancelled EAS**: 362b2214 | **New EAS**: da85a6aa-7cbf-4030-8f81-f56bcec32f98
