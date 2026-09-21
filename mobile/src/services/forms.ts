@@ -1,15 +1,25 @@
 /**
- * Forms API service — v58.13.132h M6-reset
+ * Forms API service — v58.13.132js
  * Fetches form templates (categorised), runs submissions against existing backend.
+ * .132js — 401 detection: throws SessionExpiredError on expired JWT.
  */
 import axios from 'axios';
 import { getStoredJwt } from './auth';
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
 
+/** Thrown when the backend returns 401 (JWT expired or invalid). */
+export class SessionExpiredError extends Error {
+  constructor() {
+    super('SESSION_EXPIRED');
+    this.name = 'SessionExpiredError';
+  }
+}
+
 async function authHeaders() {
   const jwt = await getStoredJwt();
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {};
+  if (!jwt) throw new SessionExpiredError();
+  return { Authorization: `Bearer ${jwt}` };
 }
 
 // ── Types ──
@@ -113,34 +123,58 @@ export function getCategoryMeta(key: string): CategoryMeta {
 // ── API Calls ──
 
 export async function fetchFormTemplates(): Promise<FormTemplate[]> {
-  const headers = await authHeaders();
-  const { data } = await axios.get(`${API}/api/forms/templates`, { headers });
-  return Array.isArray(data) ? data : [];
+  try {
+    const headers = await authHeaders();
+    const { data } = await axios.get(`${API}/api/forms/templates`, { headers });
+    return Array.isArray(data) ? data : [];
+  } catch (e: any) {
+    if (e instanceof SessionExpiredError) throw e;
+    if (e?.response?.status === 401) throw new SessionExpiredError();
+    throw e;
+  }
 }
 
 export async function fetchFormTemplate(templateId: string): Promise<FormTemplate> {
-  const headers = await authHeaders();
-  const { data } = await axios.get(`${API}/api/forms/templates/${templateId}`, { headers });
-  return data;
+  try {
+    const headers = await authHeaders();
+    const { data } = await axios.get(`${API}/api/forms/templates/${templateId}`, { headers });
+    return data;
+  } catch (e: any) {
+    if (e instanceof SessionExpiredError) throw e;
+    if (e?.response?.status === 401) throw new SessionExpiredError();
+    throw e;
+  }
 }
 
 export async function checkTemplateAccess(templateId: string): Promise<AccessCheckResult> {
-  const headers = await authHeaders();
-  const { data } = await axios.get(`${API}/api/forms/templates/${templateId}/access-check`, { headers });
-  return data;
+  try {
+    const headers = await authHeaders();
+    const { data } = await axios.get(`${API}/api/forms/templates/${templateId}/access-check`, { headers });
+    return data;
+  } catch (e: any) {
+    if (e instanceof SessionExpiredError) throw e;
+    if (e?.response?.status === 401) throw new SessionExpiredError();
+    throw e;
+  }
 }
 
 export async function submitForm(
   templateId: string,
   fields: { id: string; label: string; type: string; value: unknown }[],
 ): Promise<FormSubmission> {
-  const headers = await authHeaders();
-  const { data } = await axios.post(
-    `${API}/api/forms/templates/${templateId}/submissions`,
-    { fields },
-    { headers },
-  );
-  return data;
+  try {
+    const headers = await authHeaders();
+    const { data } = await axios.post(
+      `${API}/api/forms/templates/${templateId}/submissions`,
+      { fields },
+      { headers },
+    );
+    return data;
+  } catch (e: any) {
+    if (e instanceof SessionExpiredError) throw e;
+    if (e?.response?.status === 401) throw new SessionExpiredError();
+    throw e;
+  }
 }
 
 export async function uploadFormPhotos(

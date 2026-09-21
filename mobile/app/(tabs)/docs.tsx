@@ -1,6 +1,7 @@
 /**
- * Docs tab — v58.13.132jb
+ * Docs tab — v58.13.132js
  * Document library with folder navigation.
+ * .132js — error-state UI + focus refetch + session expiry redirect.
  * GET /api/document-library/folders → folder list
  * GET /api/document-library/folders/{id}/files → files in folder
  * GET /api/document-library/folders/{id}/subfolders → subfolders
@@ -16,7 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Colors } from '../../src/theme/colors';
 import { authGet } from '../../src/services/apiClient';
 import { clearSession } from '../../src/services/auth';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { folderIcon } from '../../src/lib/folderIcons';
 
 interface DocFolder {
@@ -107,26 +108,44 @@ export default function DocsScreen() {
 
   const currentFolderId = breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].id : null;
 
-  const { data: rootFolders, isLoading: rootLoading, refetch: refetchRoot, isRefetching: rootRefreshing, error: rootError } = useQuery<DocFolder[]>({
+  const { data: rootFolders, isLoading: rootLoading, isError: rootIsError, refetch: refetchRoot, isRefetching: rootRefreshing, error: rootError } = useQuery<DocFolder[]>({
     queryKey: ['doc-folders-root'],
     queryFn: fetchRootFolders,
     staleTime: 60_000,
-    retry: 2,
+    retry: (failureCount, err) => {
+      if (err?.message === 'SESSION_EXPIRED') return false;
+      return failureCount < 2;
+    },
   });
 
-  const { data: subfolders, isLoading: subLoading, refetch: refetchSub, isRefetching: subRefreshing } = useQuery<DocFolder[]>({
+  const { data: subfolders, isLoading: subLoading, isError: subIsError, error: subError, refetch: refetchSub, isRefetching: subRefreshing } = useQuery<DocFolder[]>({
     queryKey: ['doc-subfolders', currentFolderId],
     queryFn: () => fetchSubfolders(currentFolderId!),
     enabled: !!currentFolderId,
     staleTime: 60_000,
+    retry: (failureCount, err) => {
+      if (err?.message === 'SESSION_EXPIRED') return false;
+      return failureCount < 2;
+    },
   });
 
-  const { data: files, isLoading: filesLoading, refetch: refetchFiles, isRefetching: filesRefreshing } = useQuery<DocFile[]>({
+  const { data: files, isLoading: filesLoading, isError: filesIsError, error: filesError, refetch: refetchFiles, isRefetching: filesRefreshing } = useQuery<DocFile[]>({
     queryKey: ['doc-files', currentFolderId],
     queryFn: () => fetchFiles(currentFolderId!),
     enabled: !!currentFolderId,
     staleTime: 60_000,
+    retry: (failureCount, err) => {
+      if (err?.message === 'SESSION_EXPIRED') return false;
+      return failureCount < 2;
+    },
   });
+
+  // Refetch root when tab gains focus (tabs don't unmount)
+  useFocusEffect(
+    useCallback(() => {
+      refetchRoot();
+    }, [refetchRoot]),
+  );
 
   const handleExpired = useCallback(async () => {
     await clearSession();
@@ -137,6 +156,15 @@ export default function DocsScreen() {
   const folders = isRoot ? rootFolders : subfolders;
   const isLoading = isRoot ? rootLoading : (subLoading || filesLoading);
   const isRefreshing = isRoot ? rootRefreshing : (subRefreshing || filesRefreshing);
+
+  // Unified error detection across all queries
+  const anySessionExpired = [rootError, subError, filesError].some(e => e?.message === 'SESSION_EXPIRED');
+  const hasNonSessionError = isRoot
+    ? (rootIsError && rootError?.message !== 'SESSION_EXPIRED')
+    : ((subIsError && subError?.message !== 'SESSION_EXPIRED') || (filesIsError && filesError?.message !== 'SESSION_EXPIRED'));
+  const activeErrorMsg = isRoot
+    ? rootError?.message
+    : (subError?.message || filesError?.message);
 
   const onRefresh = useCallback(async () => {
     if (isRoot) await refetchRoot();
@@ -171,7 +199,7 @@ export default function DocsScreen() {
   }, [filteredFolders, filteredFiles, isRoot]);
 
   // Handle session expiry AFTER all hooks
-  if (rootError?.message === 'SESSION_EXPIRED') {
+  if (anySessionExpired) {
     handleExpired();
     return null;
   }
@@ -308,6 +336,16 @@ export default function DocsScreen() {
           <ActivityIndicator size="large" color={Colors.orange} />
           <Text style={st.loadingText}>Loading documents...</Text>
         </View>
+      ) : hasNonSessionError && !folders?.length ? (
+        <View testID="docs-error" style={st.center}>
+          <Ionicons name="cloud-offline-outline" size={48} color={Colors.error} />
+          <Text style={st.errorTitle}>Failed to load documents</Text>
+          <Text style={st.errorText}>{activeErrorMsg || 'Network error — check your connection'}</Text>
+          <TouchableOpacity testID="docs-retry-btn" style={st.retryBtn} onPress={onRefresh} activeOpacity={0.7}>
+            <Ionicons name="refresh" size={18} color={Colors.white} />
+            <Text style={st.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       ) : listData.length === 0 ? (
         <View style={st.center}>
           <Ionicons name="folder-open-outline" size={48} color={Colors.textTertiary} />
@@ -366,6 +404,17 @@ const st = StyleSheet.create({
   loadingText: { fontSize: 15, color: 'rgba(255,255,255,0.7)' },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.white },
   emptyText: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center' },
+
+  // Error state
+  errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.white, marginTop: 8 },
+  errorText: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center' },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.orange, borderRadius: 12,
+    paddingHorizontal: 24, paddingVertical: 14, marginTop: 16,
+    minHeight: 48,
+  },
+  retryBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
   listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

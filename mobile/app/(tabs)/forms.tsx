@@ -1,6 +1,6 @@
 /**
  * Forms tab — Category-first navigation.
- * v58.13.132jm — coloured category icons + LH stripe on tiles.
+ * v58.13.132js — error-state UI + focus refetch + session expiry redirect.
  */
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -8,17 +8,18 @@ import {
   RefreshControl, ActivityIndicator, TextInput, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '../../src/theme/colors';
 import {
   fetchFormTemplates,
   groupByCategory,
+  SessionExpiredError,
   type FormTemplate,
   type CategoryMeta,
 } from '../../src/services/forms';
-import { getStoredUser } from '../../src/services/auth';
+import { getStoredUser, clearSession } from '../../src/services/auth';
 import { categoryPalette } from '../../src/lib/categoryColors';
 
 export default function FormsScreen() {
@@ -35,12 +36,30 @@ export default function FormsScreen() {
     });
   }, []);
 
-  const { data: templates, isLoading, refetch } = useQuery<FormTemplate[]>({
+  const { data: templates, isLoading, isError, error, refetch } = useQuery<FormTemplate[]>({
     queryKey: ['form-templates'],
     queryFn: fetchFormTemplates,
     staleTime: 60_000,
-    retry: 2,
+    retry: (failureCount, err) => {
+      // Don't retry on session expiry
+      if (err instanceof SessionExpiredError) return false;
+      return failureCount < 2;
+    },
   });
+
+  // Refetch when tab gains focus (tabs don't unmount)
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
+
+  // Session expiry redirect
+  React.useEffect(() => {
+    if (isError && error instanceof SessionExpiredError) {
+      clearSession().then(() => router.replace('/(auth)/pin-entry'));
+    }
+  }, [isError, error, router]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -97,6 +116,16 @@ export default function FormsScreen() {
         <View testID="forms-loading" style={s.center}>
           <ActivityIndicator size="large" color={Colors.orange} />
           <Text style={s.loadingText}>Loading forms...</Text>
+        </View>
+      ) : isError && !(error instanceof SessionExpiredError) ? (
+        <View testID="forms-error" style={s.center}>
+          <Ionicons name="cloud-offline-outline" size={48} color={Colors.error} />
+          <Text style={s.errorTitle}>Failed to load forms</Text>
+          <Text style={s.errorText}>{error?.message || 'Network error — check your connection'}</Text>
+          <TouchableOpacity testID="forms-retry-btn" style={s.retryBtn} onPress={() => refetch()} activeOpacity={0.7}>
+            <Ionicons name="refresh" size={18} color={Colors.white} />
+            <Text style={s.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -230,6 +259,17 @@ const s = StyleSheet.create({
   emptyCard: { alignItems: 'center', padding: 40, gap: 8, marginHorizontal: 16, marginTop: 20 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.white },
   emptyText: { fontSize: 13, color: 'rgba(255,255,255,0.55)', textAlign: 'center' },
+
+  // Error state
+  errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.white, marginTop: 8 },
+  errorText: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center', paddingHorizontal: 32 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.orange, borderRadius: 12,
+    paddingHorizontal: 24, paddingVertical: 14, marginTop: 16,
+    minHeight: 48,
+  },
+  retryBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 
   // Category grid
   catGrid: { paddingHorizontal: 16, paddingTop: 8 },

@@ -9,10 +9,11 @@
  *   - No expo-notifications init at module scope
  */
 import React, { useEffect } from 'react';
-import { Platform, View, Text, StyleSheet } from 'react-native';
+import { AppState, Platform, View, Text, StyleSheet } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Sentry from '@sentry/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +22,14 @@ import {
   LAST_CRASH_KEY, LAST_REJECTION_KEY, BOOT_TRACE_KEY,
 } from '../src/components/ErrorBoundary';
 import { getSimulateRole, getCachedSimulateRole, ROLE_OPTIONS, type SimulateRoleId } from '../src/services/simulateRole';
+
+// .132js — Wire react-query focusManager to AppState.
+// When the app returns from background, mark as focused → triggers refetches.
+function onAppStateChange(status: AppStateStatus) {
+  if (Platform.OS !== 'web') {
+    focusManager.setFocused(status === 'active');
+  }
+}
 
 // v58.13.132cj — Sentry init: NATIVE DISABLED to avoid Android pre-JS crash.
 // JS-level capture still works for React errors + unhandled promises.
@@ -160,6 +169,12 @@ function SimulateBanner() {
 export default Sentry.wrap(RootLayout);
 
 function RootLayout() {
+  // .132js — focusManager: refetch stale queries when app returns to foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
+  }, []);
+
   useEffect(() => {
     (async () => {
       await traceStep('root-layout-mounted', async () => true);
