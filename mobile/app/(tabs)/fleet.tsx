@@ -67,7 +67,7 @@ const TAG_STORAGE_KEY = 'paneltec_fleet_selected_tag';
 
 async function fetchFleet(): Promise<FleetAsset[]> {
   const res = await authGet<{ items?: FleetAsset[]; assets?: FleetAsset[] } | FleetAsset[]>(
-    '/api/fleet/register',
+    '/api/fleet/register?limit=200&page=1',
   );
   if (!res.ok) {
     if ('expired' in res && res.expired) throw new Error('SESSION_EXPIRED');

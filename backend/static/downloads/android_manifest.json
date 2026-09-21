@@ -1,13 +1,13 @@
 {
-  "filename": "paneltec-field-app-eas-baa0ccf3-2743-40a6-af5e-9de5e142c333.apk",
-  "version": "1.0.27",
-  "version_code": 149,
-  "size_bytes": 148404754,
-  "sha256": "fb82d2496bbe70f9c18ce015f0c25e2cbf2e2f3b937d000bb10bc13139d6bacb",
-  "built_at": "2026-09-21T03:30:51.476Z",
-  "eas_build_id": "baa0ccf3-2743-40a6-af5e-9de5e142c333",
+  "filename": "paneltec-field-app-eas-09534d6e-d6e1-40ad-8631-3571cbad3296.apk",
+  "version": "1.0.29",
+  "version_code": 151,
+  "size_bytes": 148412834,
+  "sha256": "59f3e1e41989541a78f1918aea4c17f190e134d5299e85f96f4abed9e8bd043d",
+  "built_at": "2026-09-21T04:42:13.552Z",
+  "eas_build_id": "09534d6e-d6e1-40ad-8631-3571cbad3296",
   "bundle_id": "com.emergent.whscompliance.fv5aib",
-  "git_commit": "f4034af111ee0a09ebc19e082800665df6b3ec9d",
-  "synced_at": "2026-09-21T03:37:57.046969+00:00",
+  "git_commit": "c255ce7a5e987de38b6196718a1925a6d94ff64c",
+  "synced_at": "2026-09-21T05:09:48.844332+00:00",
   "synced_by_user_id": "808cb7de-985a-4c49-8554-9c67e5e86313"
 }
