@@ -239,6 +239,171 @@ function ColouredRadioGroup({ field, value, onChange, readOnly }) {
   );
 }
 
+// v58.13.132kb — Strict inline row layout for Service-Check-Sheet-style
+// checklists. When a `radio` field carries the trinary option set
+// (✓ Check / ✗ Repair / N/A in any tick/cross/na variant) AND is
+// immediately followed by a `text` field whose label matches
+// `${radio.label} — notes`, we render them together on a single
+// horizontal row: label · pill · pill · pill · notes. Row background
+// tints to rose-50 / emerald-50 / slate-100 based on the selected pill.
+//
+// Applies only when the pattern is detected — every other radio + text
+// pair in the codebase (Pre-starts, Toolbox, Incidents, etc.) keeps
+// its default stacked ColouredRadioGroup rendering.
+function isTrinaryChecklistRadio(f) {
+  if (!f || f.type !== 'radio') return false;
+  const opts = Array.isArray(f.options) ? f.options : [];
+  if (opts.length !== 3) return false;
+  let hasCheck = false, hasCross = false, hasNa = false;
+  for (const o of opts) {
+    const n = String(o).toLowerCase();
+    if (n.includes('✓') || n.includes('tick') || n.startsWith('check') || n === 'yes') hasCheck = true;
+    else if (n.includes('✗') || n.includes('cross') || n.startsWith('repair') || n === 'x' || n === 'no' || n.startsWith('fail')) hasCross = true;
+    else if (n === 'n/a' || n === 'na' || n === 'not applicable') hasNa = true;
+  }
+  return hasCheck && hasCross && hasNa;
+}
+function findPairedNotesField(radio, allFields, idx) {
+  const next = allFields[idx + 1];
+  if (!next || next.type !== 'text') return null;
+  const rl = String(radio.label || '').trim();
+  const nl = String(next.label || '').trim();
+  // Accept " — notes" (em-dash), " – notes" (en-dash), " - notes"
+  const suffixOk = /^ ?[—–-] ?notes$/i.test(nl.slice(rl.length));
+  return (nl.startsWith(rl) && suffixOk) ? next : null;
+}
+function classifyTrinaryOption(opt) {
+  const n = String(opt || '').toLowerCase();
+  if (n.includes('✓') || n.includes('tick') || n.startsWith('check') || n === 'yes') return 'check';
+  if (n.includes('✗') || n.includes('cross') || n.startsWith('repair') || n === 'x' || n === 'no' || n.startsWith('fail')) return 'cross';
+  if (n === 'n/a' || n === 'na' || n === 'not applicable') return 'na';
+  return null;
+}
+function findTrinaryOption(field, kind) {
+  return (field.options || []).find((o) => classifyTrinaryOption(o) === kind) || null;
+}
+function buildFieldRenderPlan(fields) {
+  const plan = [];
+  const skip = new Set();
+  (fields || []).forEach((f, i) => {
+    if (skip.has(f.id)) return;
+    if (isTrinaryChecklistRadio(f)) {
+      const notes = findPairedNotesField(f, fields, i);
+      if (notes) {
+        skip.add(notes.id);
+        plan.push({ kind: 'checklist_row', id: f.id, radio: f, notes });
+        return;
+      }
+    }
+    plan.push({ kind: 'field', id: f.id, field: f });
+  });
+  return plan;
+}
+
+// Row-level tint based on selected pill. Falls back to the field.style
+// zebra background from .132jz when nothing is selected.
+function checklistRowStateTint(selectedKind) {
+  if (selectedKind === 'check') return { backgroundColor: '#ECFDF5', borderColor: '#10B981' }; // emerald-50 / 500
+  if (selectedKind === 'cross') return { backgroundColor: '#FFF1F2', borderColor: '#F43F5E' }; // rose-50 / 500
+  if (selectedKind === 'na') return { backgroundColor: '#F1F5F9', borderColor: '#64748B' };    // slate-100 / 500
+  return null;
+}
+
+function InlineChecklistRow({
+  radio, notes, radioValue, notesValue, onRadioChange, onNotesChange, readOnly,
+}) {
+  const optCheck = findTrinaryOption(radio, 'check');
+  const optCross = findTrinaryOption(radio, 'cross');
+  const optNa = findTrinaryOption(radio, 'na');
+  const selectedKind = classifyTrinaryOption(radioValue);
+
+  // Compose wrapper style: start from field.style (zebra + border from
+  // .132jz), then override with state tint when a value is selected.
+  const fs = radio.style || {};
+  const baseStyle = {
+    ...(fs.backgroundColor ? { backgroundColor: fs.backgroundColor } : null),
+    ...(fs.borderColor ? { borderColor: fs.borderColor } : null),
+    ...(fs.borderWidth !== undefined ? { borderWidth: `${fs.borderWidth}px`, borderStyle: fs.borderStyle || 'solid' } : null),
+    ...(fs.borderRadius !== undefined ? { borderRadius: `${fs.borderRadius}px` } : null),
+  };
+  const stateTint = checklistRowStateTint(selectedKind);
+  const wrapStyle = stateTint ? { ...baseStyle, ...stateTint, borderWidth: '1px', borderStyle: 'solid' } : baseStyle;
+
+  const pillBase = 'inline-flex items-center justify-center h-9 min-w-[42px] px-2 rounded-md border text-sm font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed';
+  const pillFor = (kind, isSelected) => {
+    if (isSelected) {
+      if (kind === 'check') return `${pillBase} bg-emerald-500 border-emerald-500 text-white shadow-sm`;
+      if (kind === 'cross') return `${pillBase} bg-rose-500 border-rose-500 text-white shadow-sm`;
+      if (kind === 'na')    return `${pillBase} bg-slate-600 border-slate-600 text-white shadow-sm`;
+    }
+    return `${pillBase} bg-white border-slate-200 text-slate-700 hover:bg-slate-50`;
+  };
+  const togglePill = (opt) => {
+    if (readOnly) return;
+    onRadioChange(radioValue === opt ? null : opt);
+  };
+
+  return (
+    <div
+      data-testid={`checklist-row-${radio.id}`}
+      data-checklist-state={selectedKind || 'unset'}
+      style={Object.keys(wrapStyle).length ? wrapStyle : undefined}
+      className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-3 items-center py-2 px-3 rounded-xl"
+    >
+      {/* Label — 40% on desktop */}
+      <label
+        htmlFor={`notes-${notes.id}`}
+        className="md:col-span-5 text-sm font-semibold text-slate-800 leading-snug"
+      >
+        {radio.label}
+        {radio.required && <span className="text-rose-600 ml-1">*</span>}
+      </label>
+
+      {/* Trinary pills — ~24% */}
+      <div className="md:col-span-3 flex items-center gap-1.5" data-testid={`checklist-pills-${radio.id}`}>
+        {optCross && (
+          <button type="button" disabled={readOnly} onClick={() => togglePill(optCross)}
+            data-testid={`checklist-cross-${radio.id}`}
+            aria-pressed={selectedKind === 'cross'}
+            className={pillFor('cross', selectedKind === 'cross')}>
+            <span aria-hidden>✗</span>
+          </button>
+        )}
+        {optCheck && (
+          <button type="button" disabled={readOnly} onClick={() => togglePill(optCheck)}
+            data-testid={`checklist-check-${radio.id}`}
+            aria-pressed={selectedKind === 'check'}
+            className={pillFor('check', selectedKind === 'check')}>
+            <span aria-hidden>✓</span>
+          </button>
+        )}
+        {optNa && (
+          <button type="button" disabled={readOnly} onClick={() => togglePill(optNa)}
+            data-testid={`checklist-na-${radio.id}`}
+            aria-pressed={selectedKind === 'na'}
+            className={pillFor('na', selectedKind === 'na')}>
+            NA
+          </button>
+        )}
+      </div>
+
+      {/* Notes — 36% */}
+      <div className="md:col-span-4">
+        <input
+          id={`notes-${notes.id}`}
+          type="text"
+          data-testid={`checklist-notes-${notes.id}`}
+          value={notesValue || ''}
+          onChange={(e) => onNotesChange(e.target.value)}
+          disabled={readOnly}
+          placeholder="Notes"
+          className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+        />
+      </div>
+    </div>
+  );
+}
+
 // Vehicle (Navixy) — searchable dropdown of org's fleet trackers. When a
 // sibling `select` field labelled "Vehicle Type" / "Plant Type" /
 // "Equipment Type" is filled in, the fleet list filters to vehicles whose
@@ -1003,7 +1168,31 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
           {(template.fields || []).length === 0 ? (
             <div className="text-sm text-slate-500 italic">This template has no fields yet.</div>
-          ) : (template.fields || []).map((f) => {
+          ) : buildFieldRenderPlan(template.fields || []).map((entry) => {
+            // v58.13.132kb — Inline checklist row (radio + paired notes)
+            if (entry.kind === 'checklist_row') {
+              const r = entry.radio, n = entry.notes;
+              const hasErr = submitAttempted && missingIds.has(r.id);
+              return (
+                <div key={r.id} data-testid={`field-row-${r.id}`}
+                  className={hasErr ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 -mx-1' : ''}>
+                  <InlineChecklistRow radio={r} notes={n}
+                    radioValue={values[r.id]}
+                    notesValue={values[n.id]}
+                    onRadioChange={(v) => setField(r.id, v)}
+                    onNotesChange={(v) => setField(n.id, v)}
+                    readOnly={!!lockedFields[r.id]} />
+                  {hasErr && (
+                    <div data-testid={`field-error-${r.id}`}
+                      className="mt-1 mx-3 flex items-center gap-1.5 text-xs font-semibold text-rose-600">
+                      <span aria-hidden>⚠</span>
+                      <span>This field is required</span>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            const f = entry.field;
             const isLocked = !!lockedFields[f.id];
             // v160.1.5 — Persistent per-field error state after a failed
             // submit. Adds a red 2px border + inline "This field is
@@ -1165,16 +1354,29 @@ function PreviewModal({ template, onClose, onFill }) {
           </button>
         </div>
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
-          {(template.fields || []).map((f) => (
-            <div key={f.id}>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
-                {f.label}
-                {f.required && <span className="text-rose-600 ml-1">*</span>}
-                <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
-              </label>
-              <FieldRunner field={f} value={null} onChange={() => {}} readOnly />
-            </div>
-          ))}
+          {buildFieldRenderPlan(template.fields || []).map((entry) => {
+            // v58.13.132kb — Inline checklist row in preview too.
+            if (entry.kind === 'checklist_row') {
+              const r = entry.radio, n = entry.notes;
+              return (
+                <InlineChecklistRow key={r.id} radio={r} notes={n}
+                  radioValue={null} notesValue={''}
+                  onRadioChange={() => {}} onNotesChange={() => {}}
+                  readOnly />
+              );
+            }
+            const f = entry.field;
+            return (
+              <div key={f.id}>
+                <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                  {f.label}
+                  {f.required && <span className="text-rose-600 ml-1">*</span>}
+                  <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
+                </label>
+                <FieldRunner field={f} value={null} onChange={() => {}} readOnly />
+              </div>
+            );
+          })}
         </div>
         <div className="px-4 sm:px-6 py-3 border-t border-slate-200 bg-white flex items-center gap-2">
           <div className="flex-1" />
