@@ -135,11 +135,23 @@ export async function fetchMySwms(workerId: string): Promise<SwmsDoc[]> {
 }
 
 export async function fetchFleetRegister(): Promise<FleetAsset[]> {
+  // v58.13.132jo — Bumped `limit` 50 → 200 so the mobile Fleet tab
+  // matches the web Compliance/Fleet & Service Register master
+  // source. 200 is the backend's hard cap (`fleet.py::register`
+  // `Query(50, ge=1, le=200)`) — 500 was rejected with 422. 200 is
+  // comfortably above the current 115-asset register with headroom.
+  // The 50-cap was truncating the register down to page 1
+  // alphabetically, which then made the client-side tag enrichment
+  // under-count every tag (e.g. Vac Truck Dumping showed 4 instead
+  // of the real 14). The Navixy tag map (from
+  // `/api/fleet/navixy/tags`) was already correct — the only
+  // missing piece was letting the mobile see all 115 assets so the
+  // tag mapping could land on every one of them.
   const headers = await authHeaders();
   try {
     const { data } = await axios.get(`${API}/api/fleet/register`, {
       headers,
-      params: { limit: 50, page: 1 },
+      params: { limit: 200, page: 1 },
     });
     return data.items || [];
   } catch {

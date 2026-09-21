@@ -503,3 +503,30 @@
   - Version 1.0.26, versionCode 148
   - EAS build: cf57dddf-2360-4599-9fa8-0d53d79c183a
 - **Files modified**: forms.ts, forms/[id]/index.tsx, version.ts, app.json
+
+## Iteration .132jm — Coloured Category Icons + LH Stripe on Forms Tiles
+- **Commit**: f4034af111ee0a09ebc19e082800665df6b3ec9d
+- **Date**: 2026-09-21
+- **Changes**:
+  - Created categoryColors.ts palette module with 12 category entries + fallback
+  - Downloaded 8 nano-banana icons, downscaled to 256×256 PNG (541 KB total)
+  - Redesigned CategoryCard with 8dp LH colour stripe + Image icon (48×48) + chipText label colour
+  - SearchResultCard also gets 6dp LH stripe + chipText category label
+  - Removed old Ionicons from category tiles (replaced by Image source)
+  - Version 1.0.27, versionCode 149
+  - EAS build: baa0ccf3-2743-40a6-af5e-9de5e142c333
+- **Files modified**: forms.tsx (full rewrite), categoryColors.ts (new), 8 PNG icons (new), version.ts, app.json
+- **Fleet tab**: Skipped — flat asset list, no category tiles
+
+## Iteration .132jn — Fleet Tag Filter + 2-Line Asset Names + Folder Icons
+- **Commit**: fd84c41bee6c7e2c7683ac4287aef3d5ef07aca4
+- **Date**: 2026-09-21
+- **Changes**:
+  - Fleet: Tag dropdown filter from /api/fleet/navixy/tags, matched by UUID (50/50 assets tagged)
+  - Fleet: Asset names wrap to 2 lines at 14pt, sub-text shows rego · tag · site
+  - Fleet: Tag persisted in AsyncStorage, combined with search filter
+  - Docs: folderIcons.ts with 18 regex rules mapping folder names to Ionicons + tints
+  - Docs: Each folder gets unique icon (flask for SDS, school for Training, etc.)
+  - Version 1.0.28, versionCode 150
+  - EAS build: a003c8c9-a495-4120-bb82-646424310e32
+- **Files modified**: fleet.tsx (rewrite), docs.tsx (icon import), folderIcons.ts (new), version.ts, app.json
