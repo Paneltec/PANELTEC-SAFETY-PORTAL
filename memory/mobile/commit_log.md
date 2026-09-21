@@ -553,3 +553,21 @@
   - _layout.tsx: Wired react-query focusManager to AppState for foreground refetch
 - **Files modified**: src/services/forms.ts, app/(tabs)/forms.tsx, app/(tabs)/docs.tsx, app/_layout.tsx
 - **Web files referenced**: None (mobile-only bugfix)
+
+## Iteration .132jt — QR Scanner In-Cabin Workflow: Scan Sticker → Asset Detail
+- **Commit**: 8d92788b11b9b4035a2972b544735e998980c4ba
+- **Date**: 2026-09-21
+- **Changes**:
+  - REWROTE qr-scan.tsx: full-screen expo-camera scanner with fleet register lookup
+  - QR formats: paneltec-mobile://asset/{rego|uuid}, full URL, plain rego, plain UUID
+  - Fleet lookup: rego match (case-insensitive) → id match → no-match modal
+  - Home: orange QR icon in top header bar, "Scan Vehicle QR" tile replacing no-op Hazard
+  - Home: "New Pre-Start" now routes to /forms/picker?category=pre_start (not old qr-scan)
+  - Fleet: accepts openAssetId param from scanner → auto-opens Asset Detail modal
+  - Deep link scheme: paneltec → paneltec-mobile in app.json
+  - Haptic feedback on scan success/failure
+  - Camera permission denied screen with "Open Settings" link
+  - Version 1.0.32, versionCode 154
+  - EAS build: ec7e62ee-eec3-48c0-82af-b7db5980dc2a
+- **Files modified**: qr-scan.tsx (rewrite), home.tsx, fleet.tsx, app.json, version.ts
+- **Web files referenced**: None (mobile-only)

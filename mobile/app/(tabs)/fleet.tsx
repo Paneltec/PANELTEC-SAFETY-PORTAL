@@ -110,18 +110,6 @@ export default function FleetScreen() {
     else AsyncStorage.removeItem(TAG_STORAGE_KEY);
   }, []);
 
-  // .132jt — Auto-open asset detail when navigated from QR scanner
-  useEffect(() => {
-    if (openAssetId && assets && assets.length > 0) {
-      const match = assets.find((a) => a.id === openAssetId);
-      if (match) {
-        setSelectedAsset(match);
-        // Clear the param to prevent re-triggering
-        router.setParams({ openAssetId: '' });
-      }
-    }
-  }, [openAssetId, assets, router]);
-
   const { data: assets, isLoading, refetch, isRefetching, error } = useQuery<FleetAsset[]>({
     queryKey: ['fleet-register'],
     queryFn: fetchFleet,
@@ -135,6 +123,17 @@ export default function FleetScreen() {
     staleTime: 120_000,
     retry: 1,
   });
+
+  // .132jt/.132ju — Auto-open asset detail when navigated from QR scanner
+  // MUST be after assets declaration to avoid TDZ
+  useEffect(() => {
+    if (!openAssetId || !assets || assets.length === 0) return;
+    const match = assets.find((a) => a.id === openAssetId);
+    if (match) {
+      setSelectedAsset(match);
+      router.setParams({ openAssetId: '' });
+    }
+  }, [openAssetId, assets, router]);
 
   // Build tag → vehicle_id mapping
   const tagMap = useMemo(() => {
