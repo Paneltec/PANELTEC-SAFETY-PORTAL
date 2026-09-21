@@ -112,6 +112,10 @@ export default function FormRunnerScreen() {
   const [mode, setMode] = useState<Mode>('fill');
   const [workerId, setWorkerId] = useState<string>('');
   const [draftLoaded, setDraftLoaded] = useState(false);
+  // v58.13.132jy — Track fields that were prefilled from QR-scan asset
+  // context so we can render them read-only. Worker can't accidentally
+  // change the vehicle rego / name after arriving from an asset scan.
+  const [lockedFieldIds, setLockedFieldIds] = useState<Set<string>>(new Set());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -151,10 +155,13 @@ export default function FormRunnerScreen() {
     });
   }, [template, draftLoaded]);
 
-  // ── Asset context prefill (.132jr) ──
-  // When opened from Fleet → Asset Detail, prefill vehicle-related fields.
+  // ── Asset context prefill (.132jr / .132jy locked mode) ──
+  // When opened from Fleet → Asset Detail or QR scan, prefill AND
+  // lock vehicle-related fields so the worker can't accidentally
+  // change the asset context.
   useEffect(() => {
     if (!template?.fields || !draftLoaded || !assetId) return;
+    const locked = new Set<string>();
     setValues((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -170,6 +177,7 @@ export default function FormRunnerScreen() {
         // vehicle_navixy special field type: prefill with asset object
         if (f.type === 'vehicle_navixy' && assetName) {
           next[f.id] = { label: assetName, registration: assetRego || '', id: assetNavixyId || '' };
+          locked.add(f.id);
           changed = true;
           continue;
         }
@@ -177,6 +185,7 @@ export default function FormRunnerScreen() {
         // Rego / registration fields
         if (assetRego && /rego|registration|plate|vehiclereg/.test(combined)) {
           next[f.id] = assetRego;
+          locked.add(f.id);
           changed = true;
           continue;
         }
@@ -184,6 +193,7 @@ export default function FormRunnerScreen() {
         // Asset name / vehicle name / equipment fields
         if (assetName && /vehiclename|assetname|equipment|machine|plantid|assetid|plantname/.test(combined)) {
           next[f.id] = assetName;
+          locked.add(f.id);
           changed = true;
           continue;
         }
@@ -191,11 +201,13 @@ export default function FormRunnerScreen() {
         // Tag field
         if (assetTag && /\btag\b/.test(combined)) {
           next[f.id] = assetTag;
+          locked.add(f.id);
           changed = true;
         }
       }
       return changed ? next : prev;
     });
+    if (locked.size > 0) setLockedFieldIds(locked);
   }, [template, draftLoaded, assetId, assetName, assetRego, assetTag, assetNavixyId]);
   useEffect(() => {
     getStoredUser().then((u) => {
@@ -406,6 +418,18 @@ export default function FormRunnerScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
+        {/* v58.13.132jy — Sticky asset-context header when opened via QR/Asset Detail. */}
+        {assetId && assetName ? (
+          <View testID="asset-context-header" style={s.assetContextHeader}>
+            <Ionicons name="lock-closed" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.assetContextLabel}>Filling for</Text>
+              <Text style={s.assetContextValue} numberOfLines={1}>
+                {assetName}{assetRego ? ` · ${assetRego}` : ''}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <ScrollView ref={scrollRef} contentContainerStyle={s.scroll}>
           {/* Category + description */}
           {catMeta && (
@@ -438,6 +462,7 @@ export default function FormRunnerScreen() {
                 hasError={submitAttempted && missingFields.some((mf) => mf.id === field.id)}
                 allValues={values}
                 allFields={template.fields}
+                locked={lockedFieldIds.has(field.id)}
               />
             ))
           ) : (
@@ -798,12 +823,13 @@ function TimePickerField({ fieldId, value, onChange }: { fieldId: string; value:
 // ── Field Renderer (editable) ──
 
 function FieldRenderer({
-  field, value, onChange, hasError, allValues, allFields,
+  field, value, onChange, hasError, allValues, allFields, locked,
 }: {
   field: FormField; value: unknown; onChange: (v: unknown) => void; hasError: boolean;
-  allValues?: FieldValues; allFields?: FormField[];
+  allValues?: FieldValues; allFields?: FormField[]; locked?: boolean;
 }) {
   const errorBorder = hasError ? { borderWidth: 2, borderColor: Colors.error, borderRadius: 14 } : {};
+  const lockedBorder = locked ? { borderWidth: 1, borderColor: '#F17222', borderRadius: 14, backgroundColor: '#FFF7ED' } : {};
   const wrapperStyle = buildFieldWrapperStyle(field.style);
 
   // Label customisation from field.style
@@ -818,8 +844,12 @@ function FieldRenderer({
 
   const iconNode = renderFieldIcon(st?.icon);
 
+  // v58.13.132jy — When locked, wrap the field in a no-touch overlay
+  // and swap onChange to a no-op so children can't mutate the value.
+  const effectiveOnChange = locked ? () => {} : onChange;
+
   return (
-    <View testID={`form-field-${field.id}`} style={[s.fieldBlock, errorBorder, wrapperStyle]}>
+    <View testID={`form-field-${field.id}`} style={[s.fieldBlock, errorBorder, lockedBorder, wrapperStyle]}>
       {field.type !== 'compliance' && (
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -828,17 +858,26 @@ function FieldRenderer({
               {field.label}
               {field.required && <Text style={s.required}> *</Text>}
             </Text>
+            {locked && (
+              <View testID={`field-locked-badge-${field.id}`} style={s.lockedBadge}>
+                <Ionicons name="lock-closed" size={10} color="#FFFFFF" />
+                <Text style={s.lockedBadgeText}>Locked</Text>
+              </View>
+            )}
           </View>
-          <Text style={[s.fieldType, helpStyle]}>{field.type}</Text>
+          <Text style={[s.fieldType, helpStyle]}>
+            {locked ? 'Locked from QR scan' : field.type}
+          </Text>
         </>
       )}
 
       {field.type === 'text' && (
         <TextInput
           testID={`field-input-${field.id}`}
-          style={s.textInput}
+          style={[s.textInput, locked && s.lockedInput]}
           value={(value as string) || ''}
-          onChangeText={onChange}
+          onChangeText={effectiveOnChange}
+          editable={!locked}
           placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
           placeholderTextColor={Colors.textTertiary}
         />
@@ -847,9 +886,10 @@ function FieldRenderer({
       {field.type === 'textarea' && (
         <TextInput
           testID={`field-input-${field.id}`}
-          style={[s.textInput, s.textArea]}
+          style={[s.textInput, s.textArea, locked && s.lockedInput]}
           value={(value as string) || ''}
-          onChangeText={onChange}
+          onChangeText={effectiveOnChange}
+          editable={!locked}
           placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
           placeholderTextColor={Colors.textTertiary}
           multiline
@@ -861,9 +901,10 @@ function FieldRenderer({
       {field.type === 'number' && (
         <TextInput
           testID={`field-input-${field.id}`}
-          style={s.textInput}
+          style={[s.textInput, locked && s.lockedInput]}
           value={(value as string) || ''}
-          onChangeText={onChange}
+          onChangeText={effectiveOnChange}
+          editable={!locked}
           placeholder={field.placeholder || '0'}
           placeholderTextColor={Colors.textTertiary}
           keyboardType="numeric"
@@ -955,25 +996,29 @@ function FieldRenderer({
       )}
 
       {field.type === 'worker_picker' && (
-        <WorkerPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+        <View pointerEvents={locked ? 'none' : 'auto'} style={locked && { opacity: 0.75 }}>
+          <WorkerPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
+        </View>
       )}
       {field.type === 'vehicle_navixy' && (
-        <VehicleNavixyPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+        <View pointerEvents={locked ? 'none' : 'auto'} style={locked && { opacity: 0.75 }}>
+          <VehicleNavixyPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
+        </View>
       )}
       {field.type === 'customer_picker' && (
-        <CustomerPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+        <CustomerPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
       )}
       {field.type === 'site_picker' && (
-        <SitePicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+        <SitePicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
       )}
       {field.type === 'job_picker' && (
-        <JobPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+        <JobPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
       )}
       {field.type === 'asset_scan' && (
-        <AssetScanPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+        <AssetScanPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
       )}
       {field.type === 'contact_picker' && (
-        <ContactPicker field={field} value={value} onChange={onChange} allValues={allValues} allFields={allFields} />
+        <ContactPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
       )}
 
       {field.type === 'compliance' && (
@@ -1153,4 +1198,34 @@ const s = StyleSheet.create({
   certDot: { width: 8, height: 8, borderRadius: 4 },
   certLabel: { fontSize: 14, color: Colors.ink, flex: 1 },
   certStatus: { fontSize: 12, fontWeight: '600' },
+
+  // v58.13.132jy — Locked-from-QR-scan header + field styles.
+  assetContextHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F17222',
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: '#D65D0E',
+  },
+  assetContextLabel: {
+    fontSize: 10, fontWeight: '700', color: '#FFFFFF',
+    letterSpacing: 1, textTransform: 'uppercase', opacity: 0.9,
+  },
+  assetContextValue: {
+    fontSize: 15, fontWeight: '800', color: '#FFFFFF', marginTop: 1,
+  },
+  lockedInput: {
+    backgroundColor: '#FFF7ED',
+    color: '#7C2D12',
+    borderColor: '#FED7AA',
+  },
+  lockedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: '#F17222',
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 8, marginLeft: 8,
+  },
+  lockedBadgeText: {
+    color: '#FFFFFF', fontSize: 9, fontWeight: '800',
+    letterSpacing: 0.4, textTransform: 'uppercase',
+  },
 });
