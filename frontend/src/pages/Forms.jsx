@@ -17,7 +17,7 @@ import useLockBodyScroll from '../lib/useLockBodyScroll';
 import {
   Camera, CheckCircle2, Download, Eraser, FilePlus, FileText, Loader2, MapPin,
   Pencil, Phone, Plus, RefreshCw, Search, Share2, Sparkles, Trash2, Truck, Upload,
-  UploadCloud, X, ChevronDown,
+  UploadCloud, X, ChevronDown, ChevronRight, Gauge, ClipboardList, CheckCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -283,7 +283,8 @@ function findTrinaryOption(field, kind) {
   return (field.options || []).find((o) => classifyTrinaryOption(o) === kind) || null;
 }
 function buildFieldRenderPlan(fields) {
-  const plan = [];
+  // Pass 1 — collapse radio + " — notes" pairs into inline checklist rows (.132kb).
+  const flat = [];
   const skip = new Set();
   (fields || []).forEach((f, i) => {
     if (skip.has(f.id)) return;
@@ -291,13 +292,59 @@ function buildFieldRenderPlan(fields) {
       const notes = findPairedNotesField(f, fields, i);
       if (notes) {
         skip.add(notes.id);
-        plan.push({ kind: 'checklist_row', id: f.id, radio: f, notes });
+        flat.push({ kind: 'checklist_row', id: f.id, radio: f, notes });
         return;
       }
     }
-    plan.push({ kind: 'field', id: f.id, field: f });
+    flat.push({ kind: 'field', id: f.id, field: f });
   });
-  return plan;
+  // Pass 2 — fold section_header fields plus their subsequent block into
+  // collapsible `section_group` nodes. Only when the block contains
+  // checklist rows OR heavy-truck-only measurement fields (.132kd).
+  const grouped = [];
+  let i = 0;
+  while (i < flat.length) {
+    const e = flat[i];
+    const cfg = (e.kind === 'field') ? (e.field.config || {}) : null;
+    if (e.kind === 'field' && cfg && cfg.section_header) {
+      let j = i + 1;
+      const block = [];
+      while (j < flat.length) {
+        const nx = flat[j];
+        const nxCfg = (nx.kind === 'field') ? (nx.field.config || {}) : null;
+        if (nx.kind === 'field' && nxCfg && nxCfg.section_header) break;
+        block.push(nx);
+        j++;
+      }
+      const hasChecklist = block.some((b) => b.kind === 'checklist_row');
+      const hasHeavyMeasure = block.some(
+        (b) => b.kind === 'field' && ((b.field.config || {}).heavy_truck_only)
+      );
+      if ((hasChecklist || hasHeavyMeasure) && block.length > 0) {
+        const label = e.field.label || '';
+        const letterMatch = label.match(/^([A-K])\.\s/);
+        const letter = letterMatch ? letterMatch[1] : null;
+        let icon = null;
+        if (/tread/i.test(label)) icon = 'gauge';
+        else if (!letter && hasChecklist) icon = 'clipboard';
+        const key = cfg.sub_section
+          || (letter ? `sub-${letter}` : `hdr-${(e.field.id || '').slice(0, 8)}`);
+        grouped.push({
+          kind: 'section_group',
+          key,
+          header: e.field,
+          letter,
+          icon,
+          entries: block,
+        });
+        i = j;
+        continue;
+      }
+    }
+    grouped.push(e);
+    i += 1;
+  }
+  return grouped;
 }
 
 // Row-level tint based on selected pill. Falls back to the field.style
@@ -399,6 +446,343 @@ function InlineChecklistRow({
           placeholder="Notes"
           className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
         />
+      </div>
+    </div>
+  );
+}
+
+// v58.13.132kd — Collapsible section groups for Service Check Sheet.
+// Palette per A-K letter; K wraps to amber (same as A) per .132jz backend.
+const SCS_SECTION_PALETTE = {
+  A: { badge: '#F59E0B', tint: '#FFFBEB', accent: '#F59E0B' }, // amber
+  B: { badge: '#0EA5E9', tint: '#F0F9FF', accent: '#0EA5E9' }, // sky
+  C: { badge: '#06B6D4', tint: '#ECFEFF', accent: '#06B6D4' }, // cyan
+  D: { badge: '#8B5CF6', tint: '#F5F3FF', accent: '#8B5CF6' }, // violet
+  E: { badge: '#10B981', tint: '#ECFDF5', accent: '#10B981' }, // emerald
+  F: { badge: '#F43F5E', tint: '#FFF1F2', accent: '#F43F5E' }, // rose
+  G: { badge: '#6366F1', tint: '#EEF2FF', accent: '#6366F1' }, // indigo
+  H: { badge: '#3B82F6', tint: '#EFF6FF', accent: '#3B82F6' }, // blue
+  I: { badge: '#14B8A6', tint: '#F0FDFA', accent: '#14B8A6' }, // teal
+  J: { badge: '#64748B', tint: '#F8FAFC', accent: '#64748B' }, // slate
+  K: { badge: '#F59E0B', tint: '#FFFBEB', accent: '#F59E0B' },
+};
+const SCS_NEUTRAL_PALETTE = { badge: '#64748B', tint: '#F8FAFC', accent: '#64748B' };
+
+function paletteForSection(group) {
+  if (group.letter && SCS_SECTION_PALETTE[group.letter]) return SCS_SECTION_PALETTE[group.letter];
+  // Try to read backend-provided colours from the header's style
+  const st = group.header?.style || {};
+  if (st.borderColor && st.backgroundColor) {
+    return { badge: st.borderColor, tint: st.backgroundColor, accent: st.borderColor };
+  }
+  return SCS_NEUTRAL_PALETTE;
+}
+
+// Compute section status pill from the entries + current values.
+function computeSectionStatus(entries, values) {
+  let total = 0;
+  let answered = 0;
+  let anyCross = false;
+  for (const en of entries) {
+    if (en.kind === 'checklist_row') {
+      total += 1;
+      const v = values[en.radio.id];
+      const kind = classifyTrinaryOption(v);
+      if (kind === 'cross') anyCross = true;
+      if (kind) answered += 1;
+    } else if (en.kind === 'field') {
+      const t = en.field.type;
+      // Only count measurement / textarea / number as "counting" fields.
+      if (t === 'number' || t === 'text' || t === 'textarea' || t === 'select' || t === 'date') {
+        total += 1;
+        const v = values[en.field.id];
+        if (v !== undefined && v !== null && v !== '') answered += 1;
+      }
+    }
+  }
+  if (anyCross) return { key: 'ATTENTION', bg: '#FEE2E2', fg: '#B91C1C' };
+  if (total === 0) return { key: 'NOT STARTED', bg: '#F1F5F9', fg: '#64748B' };
+  if (answered === 0) return { key: 'NOT STARTED', bg: '#F1F5F9', fg: '#64748B' };
+  if (answered < total) return { key: 'IN PROGRESS', bg: '#FEF3C7', fg: '#B45309' };
+  return { key: 'COMPLETE', bg: '#D1FAE5', fg: '#047857' };
+}
+
+// sessionStorage-backed expansion state. Fresh session → all collapsed.
+function useSectionExpansion(templateId) {
+  const storageKey = `scs-expansion-${templateId || 'default'}`;
+  const [openKeys, setOpenKeys] = React.useState(() => {
+    try {
+      const raw = sessionStorage.getItem(storageKey);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+  const persist = React.useCallback((next) => {
+    try { sessionStorage.setItem(storageKey, JSON.stringify(Array.from(next))); } catch {}
+  }, [storageKey]);
+  const toggle = React.useCallback((key) => {
+    setOpenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+  const setAll = React.useCallback((keys, isOpen) => {
+    setOpenKeys((prev) => {
+      const next = new Set(prev);
+      if (isOpen) keys.forEach((k) => next.add(k));
+      else keys.forEach((k) => next.delete(k));
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+  return { openKeys, toggle, setAll };
+}
+
+function CollapsibleSectionGroup({
+  group, expanded, onToggle, values, setField, readOnly,
+  customRows, addCustomRow, updateCustomRow, deleteCustomRow, markAllChecked,
+}) {
+  const palette = paletteForSection(group);
+  const customRowsForKey = customRows[group.key] || [];
+  // Include synthetic entries for status computation
+  const entriesForStatus = React.useMemo(() => {
+    const extra = customRowsForKey.map((r) => ({
+      kind: 'checklist_row',
+      radio: { id: `custom-answer-${r.id}` },
+      notes: { id: `custom-notes-${r.id}` },
+    }));
+    return [...group.entries, ...extra];
+  }, [group.entries, customRowsForKey]);
+  const status = computeSectionStatus(entriesForStatus, values);
+
+  // Strip the leading letter prefix from the label since we render the badge separately.
+  const displayLabel = React.useMemo(() => {
+    const raw = group.header?.label || '';
+    if (group.letter) return raw.replace(/^[A-K]\.\s*/, '');
+    return raw.replace(/^▪\s*/, '');
+  }, [group.header, group.letter]);
+
+  // ✓ ALL handler — fill every empty trinary in this section with the check option.
+  const handleCheckAll = (e) => {
+    e.stopPropagation();
+    if (readOnly) return;
+    let filled = 0;
+    for (const en of group.entries) {
+      if (en.kind === 'checklist_row') {
+        const current = values[en.radio.id];
+        if (!current) {
+          const checkOpt = findTrinaryOption(en.radio, 'check');
+          if (checkOpt) { setField(en.radio.id, checkOpt); filled += 1; }
+        }
+      }
+    }
+    for (const r of customRowsForKey) {
+      if (!r.value) {
+        markAllChecked(group.key, r.id, '✓ Check');
+        filled += 1;
+      }
+    }
+    if (filled > 0) toast.success(`${filled} item${filled === 1 ? '' : 's'} marked ✓`);
+  };
+
+  const handleAddCustom = (e) => {
+    e.stopPropagation();
+    if (readOnly) return;
+    addCustomRow(group.key);
+  };
+
+  return (
+    <div
+      data-testid={`section-group-${group.key}`}
+      data-section-status={status.key}
+      className="rounded-xl border overflow-hidden mb-3"
+      style={{
+        backgroundColor: expanded ? '#FFFFFF' : palette.tint,
+        borderColor: palette.accent + '55',
+        borderLeftWidth: '4px',
+        borderLeftColor: palette.accent,
+      }}
+    >
+      {/* Header row (click to toggle) */}
+      <button
+        type="button"
+        onClick={onToggle}
+        data-testid={`section-toggle-${group.key}`}
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-black/[0.02] transition-colors"
+      >
+        {/* Chevron */}
+        <span className="flex-shrink-0 text-slate-500">
+          {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+        </span>
+        {/* Letter badge OR icon */}
+        {group.letter ? (
+          <span
+            data-testid={`section-badge-${group.key}`}
+            className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-md font-black text-sm text-white shadow-sm"
+            style={{ backgroundColor: palette.badge }}
+          >
+            {group.letter}
+          </span>
+        ) : group.icon === 'gauge' ? (
+          <span className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-md text-white shadow-sm"
+            style={{ backgroundColor: palette.badge }}>
+            <Gauge size={16} />
+          </span>
+        ) : group.icon === 'clipboard' ? (
+          <span className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-md text-white shadow-sm"
+            style={{ backgroundColor: palette.badge }}>
+            <ClipboardList size={16} />
+          </span>
+        ) : null}
+        {/* Label */}
+        <span className="flex-1 min-w-0 text-sm sm:text-base font-bold text-slate-800 truncate">
+          {displayLabel}
+        </span>
+        {/* Status pill */}
+        <span
+          data-testid={`section-status-${group.key}`}
+          className="hidden sm:inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase"
+          style={{ backgroundColor: status.bg, color: status.fg }}
+        >
+          {status.key}
+        </span>
+        {/* + ADD */}
+        {!readOnly && (
+          <span
+            role="button" tabIndex={0}
+            data-testid={`section-add-${group.key}`}
+            onClick={handleAddCustom}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleAddCustom(e); }}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black tracking-wider uppercase bg-violet-100 text-violet-700 hover:bg-violet-200 cursor-pointer"
+          >
+            <Plus size={12} /> ADD
+          </span>
+        )}
+        {/* ✓ ALL */}
+        {!readOnly && (
+          <span
+            role="button" tabIndex={0}
+            data-testid={`section-check-all-${group.key}`}
+            onClick={handleCheckAll}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCheckAll(e); }}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black tracking-wider uppercase bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer"
+          >
+            <CheckCheck size={12} /> ALL
+          </span>
+        )}
+      </button>
+      {/* Body */}
+      {expanded && (
+        <div data-testid={`section-body-${group.key}`} className="px-2 pb-2 pt-1 space-y-1.5">
+          {group.entries.map((en) => {
+            if (en.kind === 'checklist_row') {
+              const r = en.radio, n = en.notes;
+              return (
+                <InlineChecklistRow key={r.id} radio={r} notes={n}
+                  radioValue={values[r.id]} notesValue={values[n.id]}
+                  onRadioChange={(v) => setField(r.id, v)}
+                  onNotesChange={(v) => setField(n.id, v)}
+                  readOnly={readOnly} />
+              );
+            }
+            // Regular field inside a collapsible section (e.g. tread numbers)
+            return (
+              <div key={en.field.id} className="px-3 py-2 bg-white/70 rounded-lg">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {en.field.label}
+                  {en.field.required && <span className="text-rose-600 ml-1">*</span>}
+                </label>
+                <FieldRunner field={en.field} value={values[en.field.id]}
+                  onChange={(v) => setField(en.field.id, v)} readOnly={readOnly} />
+              </div>
+            );
+          })}
+          {/* Custom rows added via + ADD */}
+          {customRowsForKey.map((row) => (
+            <CustomChecklistRow key={row.id}
+              sectionKey={group.key} row={row}
+              onLabelChange={(newLabel) => updateCustomRow(group.key, row.id, { label: newLabel })}
+              onValueChange={(v) => updateCustomRow(group.key, row.id, { value: v })}
+              onNotesChange={(v) => updateCustomRow(group.key, row.id, { notes: v })}
+              onDelete={() => deleteCustomRow(group.key, row.id)}
+              readOnly={readOnly} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomChecklistRow({ sectionKey, row, onLabelChange, onValueChange, onNotesChange, onDelete, readOnly }) {
+  const [editing, setEditing] = React.useState(!row.label);
+  const [draft, setDraft] = React.useState(row.label || '');
+  const commit = () => {
+    setEditing(false);
+    if (draft !== row.label) onLabelChange(draft);
+  };
+  const selectedKind = classifyTrinaryOption(row.value);
+  const stateTint = checklistRowStateTint(selectedKind);
+  const wrapStyle = stateTint ? { ...stateTint, borderWidth: '1px', borderStyle: 'solid' } : {};
+  const pillBase = 'inline-flex items-center justify-center h-9 min-w-[42px] px-2 rounded-md border text-sm font-bold transition-all disabled:opacity-60';
+  const pillCls = (kind) => {
+    const selected = selectedKind === kind;
+    if (selected) {
+      if (kind === 'check') return `${pillBase} bg-emerald-500 border-emerald-500 text-white shadow-sm`;
+      if (kind === 'cross') return `${pillBase} bg-rose-500 border-rose-500 text-white shadow-sm`;
+      return `${pillBase} bg-slate-600 border-slate-600 text-white shadow-sm`;
+    }
+    return `${pillBase} bg-white border-slate-200 text-slate-700 hover:bg-slate-50`;
+  };
+  const toggle = (opt, kind) => {
+    if (readOnly) return;
+    onValueChange(row.value === opt ? null : opt);
+  };
+  return (
+    <div
+      data-testid={`custom-row-${row.id}`}
+      style={Object.keys(wrapStyle).length ? wrapStyle : undefined}
+      className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-3 items-center py-2 px-3 rounded-xl group"
+    >
+      <div className="md:col-span-5 flex items-center gap-2 min-w-0">
+        {editing ? (
+          <input autoFocus type="text" value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+            placeholder="Custom item…"
+            className="flex-1 h-8 px-2 rounded-md border border-violet-300 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-200"
+            data-testid={`custom-label-input-${row.id}`} />
+        ) : (
+          <button type="button" onClick={() => !readOnly && setEditing(true)}
+            className="flex-1 text-left text-sm font-semibold text-slate-800 leading-snug hover:text-violet-700 min-w-0 truncate"
+            data-testid={`custom-label-${row.id}`}>
+            {row.label || <span className="italic text-slate-400">Custom item…</span>}
+          </button>
+        )}
+        {!readOnly && (
+          <button type="button" onClick={onDelete}
+            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition-opacity"
+            data-testid={`custom-delete-${row.id}`}
+            title="Delete custom item">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      <div className="md:col-span-3 flex items-center gap-1.5">
+        <button type="button" disabled={readOnly} onClick={() => toggle('✗ Repair', 'cross')}
+          className={pillCls('cross')} data-testid={`custom-cross-${row.id}`}>✗</button>
+        <button type="button" disabled={readOnly} onClick={() => toggle('✓ Check', 'check')}
+          className={pillCls('check')} data-testid={`custom-check-${row.id}`}>✓</button>
+        <button type="button" disabled={readOnly} onClick={() => toggle('N/A', 'na')}
+          className={pillCls('na')} data-testid={`custom-na-${row.id}`}>NA</button>
+      </div>
+      <div className="md:col-span-4">
+        <input type="text" value={row.notes || ''} placeholder="Notes"
+          disabled={readOnly}
+          onChange={(e) => onNotesChange(e.target.value)}
+          data-testid={`custom-notes-${row.id}`}
+          className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400" />
       </div>
     </div>
   );
@@ -895,6 +1279,46 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
     setTouched((p) => ({ ...p, [fid]: true }));
     setValues((p) => ({ ...p, [fid]: v }));
   }, []);
+  // v58.13.132kd — Section expansion (sessionStorage-backed) + custom
+  // checklist rows added via the section header's "+ ADD" button.
+  const sectionExpansion = useSectionExpansion(template?.id);
+  const [customChecklistRows, setCustomChecklistRows] = useState(() => {
+    // Rehydrate from values if a prior draft stashed them under this key.
+    try {
+      const raw = values.__custom_checklist_rows__;
+      return raw && typeof raw === 'object' ? raw : {};
+    } catch { return {}; }
+  });
+  // Persist custom rows into `values` so they ride along with draft
+  // autosave + submission serialisation.
+  useEffect(() => {
+    setValues((p) => ({ ...p, __custom_checklist_rows__: customChecklistRows }));
+  }, [customChecklistRows]);
+  const addCustomRow = useCallback((sectionKey) => {
+    setDirty(true);
+    setCustomChecklistRows((p) => {
+      const list = p[sectionKey] || [];
+      const id = `${sectionKey}-${Date.now().toString(36)}-${list.length}`;
+      return { ...p, [sectionKey]: [...list, { id, label: '', value: null, notes: '' }] };
+    });
+  }, []);
+  const updateCustomRow = useCallback((sectionKey, rowId, patch) => {
+    setDirty(true);
+    setCustomChecklistRows((p) => {
+      const list = (p[sectionKey] || []).map((r) => (r.id === rowId ? { ...r, ...patch } : r));
+      return { ...p, [sectionKey]: list };
+    });
+  }, []);
+  const deleteCustomRow = useCallback((sectionKey, rowId) => {
+    setDirty(true);
+    setCustomChecklistRows((p) => {
+      const list = (p[sectionKey] || []).filter((r) => r.id !== rowId);
+      return { ...p, [sectionKey]: list };
+    });
+  }, []);
+  const markCustomChecked = useCallback((sectionKey, rowId, value) => {
+    updateCustomRow(sectionKey, rowId, { value });
+  }, [updateCustomRow]);
   const setPhotoField = useCallback((fid, files) => {
     setDirty(true);
     setTouched((p) => ({ ...p, [fid]: true }));
@@ -945,6 +1369,91 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
     () => new Set(missingFields.map((f) => f.id)),
     [missingFields],
   );
+
+  // v58.13.132kd — Regular-field renderer extracted so it can be
+  // reused both at top level AND inside CollapsibleSectionGroup.
+  const renderRegularField = (entry) => {
+    const f = entry.field;
+    const isLocked = !!lockedFields[f.id];
+    const hasErr = submitAttempted && missingIds.has(f.id);
+    const fs = f.style || {};
+    const styleWrap = {
+      ...(fs.backgroundColor ? { backgroundColor: fs.backgroundColor } : null),
+      ...(fs.borderColor ? { borderColor: fs.borderColor } : null),
+      ...(fs.borderWidth !== undefined
+        ? { borderWidth: `${fs.borderWidth}px`, borderStyle: fs.borderStyle || 'solid' }
+        : null),
+      ...(fs.borderStyle && fs.borderWidth === undefined
+        ? { borderStyle: fs.borderStyle }
+        : null),
+      ...(fs.borderRadius !== undefined ? { borderRadius: `${fs.borderRadius}px` } : null),
+      ...(fs.paddingX !== undefined ? { paddingLeft: `${fs.paddingX}px`, paddingRight: `${fs.paddingX}px` } : null),
+      ...(fs.paddingY !== undefined ? { paddingTop: `${fs.paddingY}px`, paddingBottom: `${fs.paddingY}px` } : null),
+    };
+    const hasCustomStyle = Object.keys(styleWrap).length > 0;
+    const wrapClass = hasErr
+      ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 p-3 -mx-1'
+      : (hasCustomStyle ? 'rounded-xl border p-3 transition-colors' : '');
+    const hoverCss = fs.hoverBackgroundColor
+      ? `[data-field-style-id="${f.id}"]:hover{background-color:${fs.hoverBackgroundColor} !important;}`
+      : '';
+    const labelStyle = {
+      ...(fs.labelColor ? { color: fs.labelColor } : null),
+      ...(fs.labelBold ? { fontWeight: 700 } : null),
+      ...(fs.labelSize === 'sm' ? { fontSize: '0.75rem' } : null),
+      ...(fs.labelSize === 'lg' ? { fontSize: '1rem' } : null),
+    };
+    let iconGlyph = null;
+    if (fs.icon) {
+      if (fs.icon.startsWith('emoji:')) iconGlyph = fs.icon.slice('emoji:'.length);
+      else iconGlyph = fs.icon;
+    }
+    return (
+      <div key={f.id} data-testid={`field-row-${f.id}`}
+        data-field-style-id={hasCustomStyle || hoverCss ? f.id : undefined}
+        style={hasCustomStyle ? styleWrap : undefined}
+        className={wrapClass}>
+        {hoverCss && (
+          <style dangerouslySetInnerHTML={{ __html: hoverCss }} />
+        )}
+        <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-1.5"
+          style={Object.keys(labelStyle).length ? labelStyle : undefined}>
+          {iconGlyph && (
+            <span aria-hidden data-testid={`field-icon-${f.id}`} className="inline-block">
+              {iconGlyph}
+            </span>
+          )}
+          <span>{f.label}{f.required && <span className="text-rose-600 ml-1">*</span>}</span>
+          <span className="text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
+          {isLocked && (
+            <button type="button" onClick={() => overrideField(f.id)}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+              data-testid={`override-${f.id}`}>Override</button>
+          )}
+        </label>
+        <FieldRunner field={f}
+          value={values[f.id]}
+          onChange={(v) => setField(f.id, v)}
+          photoFiles={photoFiles[f.id]}
+          onPhotoChange={(files) => setPhotoField(f.id, files)}
+          onStageChange={(fid, files) => setAttachmentFiles((prev) => ({ ...prev, [fid]: files }))}
+          complianceStagedPhotos={compliancePhotoFiles[f.id]}
+          onComplianceStagePhotos={(files) => stageCompliancePhotos(f.id, files)}
+          onComplianceUnstagePhoto={(idx) => unstageCompliancePhoto(f.id, idx)}
+          allFields={template.fields || []}
+          allValues={values}
+          templateName={template.name}
+          readOnly={isLocked} />
+        {hasErr && (
+          <div data-testid={`field-error-${f.id}`}
+            className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-rose-600">
+            <span aria-hidden>⚠</span>
+            <span>This field is required</span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const onSubmitClick = () => {
     if (!requiredOk) {
@@ -1168,123 +1677,68 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
           {(template.fields || []).length === 0 ? (
             <div className="text-sm text-slate-500 italic">This template has no fields yet.</div>
-          ) : buildFieldRenderPlan(template.fields || []).map((entry) => {
-            // v58.13.132kb — Inline checklist row (radio + paired notes)
-            if (entry.kind === 'checklist_row') {
-              const r = entry.radio, n = entry.notes;
-              const hasErr = submitAttempted && missingIds.has(r.id);
-              return (
-                <div key={r.id} data-testid={`field-row-${r.id}`}
-                  className={hasErr ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 -mx-1' : ''}>
-                  <InlineChecklistRow radio={r} notes={n}
-                    radioValue={values[r.id]}
-                    notesValue={values[n.id]}
-                    onRadioChange={(v) => setField(r.id, v)}
-                    onNotesChange={(v) => setField(n.id, v)}
-                    readOnly={!!lockedFields[r.id]} />
-                  {hasErr && (
-                    <div data-testid={`field-error-${r.id}`}
-                      className="mt-1 mx-3 flex items-center gap-1.5 text-xs font-semibold text-rose-600">
-                      <span aria-hidden>⚠</span>
-                      <span>This field is required</span>
-                    </div>
-                  )}
-                </div>
-              );
-            }
-            const f = entry.field;
-            const isLocked = !!lockedFields[f.id];
-            // v160.1.5 — Persistent per-field error state after a failed
-            // submit. Adds a red 2px border + inline "This field is
-            // required" line below the field. Auto-clears the moment
-            // the user enters a valid value because `missingFields` is
-            // reactively derived from `values`/`photoFiles`.
-            const hasErr = submitAttempted && missingIds.has(f.id);
-            // v58.13.132jk — Apply per-field style customization
-            // (background/border/radius/padding). Absence = default look.
-            const fs = f.style || {};
-            const styleWrap = {
-              ...(fs.backgroundColor ? { backgroundColor: fs.backgroundColor } : null),
-              ...(fs.borderColor ? { borderColor: fs.borderColor } : null),
-              ...(fs.borderWidth !== undefined
-                ? { borderWidth: `${fs.borderWidth}px`, borderStyle: fs.borderStyle || 'solid' }
-                : null),
-              ...(fs.borderStyle && fs.borderWidth === undefined
-                ? { borderStyle: fs.borderStyle }
-                : null),
-              ...(fs.borderRadius !== undefined ? { borderRadius: `${fs.borderRadius}px` } : null),
-              ...(fs.paddingX !== undefined ? { paddingLeft: `${fs.paddingX}px`, paddingRight: `${fs.paddingX}px` } : null),
-              ...(fs.paddingY !== undefined ? { paddingTop: `${fs.paddingY}px`, paddingBottom: `${fs.paddingY}px` } : null),
-            };
-            const hasCustomStyle = Object.keys(styleWrap).length > 0;
-            const wrapClass = hasErr
-              ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 p-3 -mx-1'
-              : (hasCustomStyle ? 'rounded-xl border p-3 transition-colors' : '');
-            // Emit a scoped hover rule so `hoverBackgroundColor` works
-            // without cross-field state. Cheap: one <style> tag per
-            // custom-styled field.
-            const hoverCss = fs.hoverBackgroundColor
-              ? `[data-field-style-id="${f.id}"]:hover{background-color:${fs.hoverBackgroundColor} !important;}`
-              : '';
-            const labelStyle = {
-              ...(fs.labelColor ? { color: fs.labelColor } : null),
-              ...(fs.labelBold ? { fontWeight: 700 } : null),
-              ...(fs.labelSize === 'sm' ? { fontSize: '0.75rem' } : null),
-              ...(fs.labelSize === 'lg' ? { fontSize: '1rem' } : null),
-            };
-            // Icon parsing: `emoji:X` → literal, other prefixes render as
-            // small chip text so admins get feedback even when the icon
-            // lib doesn't resolve.
-            let iconGlyph = null;
-            if (fs.icon) {
-              if (fs.icon.startsWith('emoji:')) iconGlyph = fs.icon.slice('emoji:'.length);
-              else iconGlyph = fs.icon; // literal text fallback
-            }
+          ) : (() => {
+            const plan = buildFieldRenderPlan(template.fields || []);
+            const groupKeys = plan.filter((p) => p.kind === 'section_group').map((p) => p.key);
+            const allExpanded = groupKeys.length > 0 && groupKeys.every((k) => sectionExpansion.openKeys.has(k));
             return (
-            <div key={f.id} data-testid={`field-row-${f.id}`}
-              data-field-style-id={hasCustomStyle || hoverCss ? f.id : undefined}
-              style={hasCustomStyle ? styleWrap : undefined}
-              className={wrapClass}>
-              {hoverCss && (
-                <style dangerouslySetInnerHTML={{ __html: hoverCss }} />
-              )}
-              <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-1.5"
-                style={Object.keys(labelStyle).length ? labelStyle : undefined}>
-                {iconGlyph && (
-                  <span aria-hidden data-testid={`field-icon-${f.id}`} className="inline-block">
-                    {iconGlyph}
-                  </span>
+              <>
+                {groupKeys.length > 0 && (
+                  <div className="flex items-center justify-end gap-3 -mt-2 mb-1 text-xs">
+                    <button type="button"
+                      data-testid="section-expand-all"
+                      onClick={() => sectionExpansion.setAll(groupKeys, !allExpanded)}
+                      className="font-semibold text-blue-600 hover:text-blue-800 hover:underline">
+                      {allExpanded ? 'Collapse all' : 'Expand all'}
+                    </button>
+                  </div>
                 )}
-                <span>{f.label}{f.required && <span className="text-rose-600 ml-1">*</span>}</span>
-                <span className="text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
-                {isLocked && (
-                  <button type="button" onClick={() => overrideField(f.id)}
-                    className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
-                    data-testid={`override-${f.id}`}>Override</button>
-                )}
-              </label>
-              <FieldRunner field={f}
-                value={values[f.id]}
-                onChange={(v) => setField(f.id, v)}
-                photoFiles={photoFiles[f.id]}
-                onPhotoChange={(files) => setPhotoField(f.id, files)}
-                onStageChange={(fid, files) => setAttachmentFiles((prev) => ({ ...prev, [fid]: files }))}
-                complianceStagedPhotos={compliancePhotoFiles[f.id]}
-                onComplianceStagePhotos={(files) => stageCompliancePhotos(f.id, files)}
-                onComplianceUnstagePhoto={(idx) => unstageCompliancePhoto(f.id, idx)}
-                allFields={template.fields || []}
-                allValues={values}
-                templateName={template.name}
-                readOnly={isLocked} />
-              {hasErr && (
-                <div data-testid={`field-error-${f.id}`}
-                  className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-rose-600">
-                  <span aria-hidden>⚠</span>
-                  <span>This field is required</span>
-                </div>
-              )}
-            </div>
-          );})}
+                {plan.map((entry) => {
+                  // v58.13.132kd — Section group
+                  if (entry.kind === 'section_group') {
+                    return (
+                      <CollapsibleSectionGroup
+                        key={entry.key} group={entry}
+                        expanded={sectionExpansion.openKeys.has(entry.key)}
+                        onToggle={() => sectionExpansion.toggle(entry.key)}
+                        values={values} setField={setField}
+                        readOnly={false}
+                        customRows={customChecklistRows}
+                        addCustomRow={addCustomRow}
+                        updateCustomRow={updateCustomRow}
+                        deleteCustomRow={deleteCustomRow}
+                        markAllChecked={markCustomChecked}
+                      />
+                    );
+                  }
+                  // v58.13.132kb — Inline checklist row (radio + paired notes)
+                  if (entry.kind === 'checklist_row') {
+                    const r = entry.radio, n = entry.notes;
+                    const hasErr = submitAttempted && missingIds.has(r.id);
+                    return (
+                      <div key={r.id} data-testid={`field-row-${r.id}`}
+                        className={hasErr ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 -mx-1' : ''}>
+                        <InlineChecklistRow radio={r} notes={n}
+                          radioValue={values[r.id]}
+                          notesValue={values[n.id]}
+                          onRadioChange={(v) => setField(r.id, v)}
+                          onNotesChange={(v) => setField(n.id, v)}
+                          readOnly={!!lockedFields[r.id]} />
+                        {hasErr && (
+                          <div data-testid={`field-error-${r.id}`}
+                            className="mt-1 mx-3 flex items-center gap-1.5 text-xs font-semibold text-rose-600">
+                            <span aria-hidden>⚠</span>
+                            <span>This field is required</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return renderRegularField(entry);
+                })}
+              </>
+            );
+          })()}
         </div>
         <div className="px-4 sm:px-6 py-3 border-t border-slate-200 bg-white flex items-center gap-2 sticky bottom-0">
           {progress && <span className="text-xs text-slate-500 flex-1 truncate" data-testid="submit-progress">{progress}</span>}
@@ -1355,6 +1809,16 @@ function PreviewModal({ template, onClose, onFill }) {
         </div>
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
           {buildFieldRenderPlan(template.fields || []).map((entry) => {
+            // v58.13.132kd — Section groups render as always-expanded read-only.
+            if (entry.kind === 'section_group') {
+              return (
+                <CollapsibleSectionGroup key={entry.key} group={entry}
+                  expanded readOnly onToggle={() => {}}
+                  values={{}} setField={() => {}}
+                  customRows={{}} addCustomRow={() => {}} updateCustomRow={() => {}}
+                  deleteCustomRow={() => {}} markAllChecked={() => {}} />
+              );
+            }
             // v58.13.132kb — Inline checklist row in preview too.
             if (entry.kind === 'checklist_row') {
               const r = entry.radio, n = entry.notes;
