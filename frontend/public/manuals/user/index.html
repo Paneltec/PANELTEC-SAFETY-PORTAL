@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Paneltec Civil — Mobile App User Manual</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  :root {
+    --brand: #2C6BFF;
+    --brand-dark: #1e4fd8;
+    --amber: #F59E0B;
+    --amber-bg: #FEF3C7;
+    --amber-border: #FDE68A;
+    --slate-900: #0f172a;
+    --slate-700: #334155;
+    --slate-500: #64748b;
+    --slate-200: #e2e8f0;
+    --slate-100: #f1f5f9;
+    --slate-50: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--slate-900);
+    background: var(--slate-50);
+    padding: 0 0 96px;
+  }
+  header.hero {
+    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+    color: #fff;
+    padding: 40px 20px 36px;
+  }
+  header.hero .wrap { max-width: 780px; margin: 0 auto; }
+  header.hero .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.88; font-weight: 600; }
+  header.hero h1 { font-size: clamp(28px, 5vw, 40px); margin: 6px 0 6px; letter-spacing: -0.02em; line-height: 1.15; }
+  header.hero .sub { font-size: 15px; opacity: 0.94; margin: 0; }
+  main { max-width: 780px; margin: 0 auto; padding: 0 20px; }
+  nav.toc {
+    background: #fff;
+    border: 1px solid var(--slate-200);
+    border-radius: 16px;
+    padding: 18px 20px;
+    margin: -20px 0 28px;
+    box-shadow: 0 8px 24px -12px rgba(15, 23, 42, 0.15);
+  }
+  nav.toc h2 { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--slate-500); margin: 0 0 10px; font-weight: 700; }
+  nav.toc ol { margin: 0; padding-left: 20px; color: var(--slate-700); font-size: 14px; }
+  nav.toc li { margin: 4px 0; }
+  nav.toc a { color: var(--brand); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  h2.section {
+    font-size: 22px; letter-spacing: -0.01em;
+    margin: 44px 0 14px;
+    padding-top: 4px;
+    scroll-margin-top: 20px;
+  }
+  h3 { font-size: 16px; margin: 22px 0 6px; }
+  p { margin: 0 0 12px; color: var(--slate-700); }
+  ol.steps, ul.bullets { padding-left: 22px; color: var(--slate-700); }
+  ol.steps li, ul.bullets li { margin: 6px 0; }
+  code, kbd { background: var(--slate-100); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  .callout {
+    display: flex; gap: 12px;
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 18px 0;
+  }
+  .callout .icon { font-size: 20px; line-height: 1.2; }
+  .callout .body { flex: 1; font-size: 14px; color: #78350f; }
+  .callout .body strong { color: #78350f; }
+  .callout.info { background: #eff6ff; border-color: #bfdbfe; }
+  .callout.info .body { color: #1e3a8a; }
+  .card { background: #fff; border: 1px solid var(--slate-200); border-radius: 14px; padding: 18px 20px; margin: 14px 0; }
+  .grid-2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 600px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+  footer.foot {
+    max-width: 780px; margin: 60px auto 0; padding: 24px 20px;
+    color: var(--slate-500); font-size: 12px; border-top: 1px solid var(--slate-200);
+  }
+  footer.foot .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .pill { display: inline-block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--slate-100); color: var(--slate-700); }
+  .print-btn {
+    display: inline-block; margin-top: 12px;
+    background: #fff; color: var(--brand); border: 1px solid #fff;
+    padding: 10px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    cursor: pointer; text-decoration: none;
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+    header.hero { background: #fff !important; color: #000 !important; padding: 20px 0; }
+    .print-btn, nav.toc { display: none !important; }
+    .card, .callout { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Paneltec Civil · Mobile app</div>
+    <h1>Field-worker user manual</h1>
+    <p class="sub">Everything you'll do from your phone on-site — sign-on, forms, SWMS, docs, and troubleshooting.</p>
+    <button class="print-btn" onclick="window.print()">Print / save as PDF</button>
+  </div>
+</header>
+
+<main>
+  <nav class="toc" aria-label="Table of contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#signing-in">Signing in</a></li>
+      <li><a href="#home">Home tab</a></li>
+      <li><a href="#forms">Forms tab</a></li>
+      <li><a href="#swms">SWMS viewer & acknowledgement</a></li>
+      <li><a href="#docs">Docs tab (SDS &amp; reference library)</a></li>
+      <li><a href="#site-qr">Site QR &amp; visitor sign-in</a></li>
+      <li><a href="#ai">Ask AI</a></li>
+      <li><a href="#updates">App updates &amp; offline drafts</a></li>
+      <li><a href="#signing-out">Signing out</a></li>
+      <li><a href="#issues">Common issues</a></li>
+      <li><a href="#help">Getting help</a></li>
+    </ol>
+  </nav>
+
+  <div class="callout">
+    <span class="icon">⚠</span>
+    <div class="body">
+      <strong>WHS Reminder — White Card.</strong> A White Card (Construction Induction) is required by
+      Australian law for anyone performing construction work. The app does not currently enforce
+      certification gates, but you must still hold current certifications before undertaking regulated
+      work. Ask your supervisor if unsure.
+    </div>
+  </div>
+
+  <h2 id="signing-in" class="section">1. Signing in</h2>
+  <p>Most workers are auto-provisioned by their site admin — you'll receive an SMS or email with a sign-in link. Open the link on your phone.</p>
+  <ol class="steps">
+    <li>Open the Paneltec Civil app.</li>
+    <li>Tap <strong>Sign in</strong>.</li>
+    <li>Enter the email address your admin registered for you.</li>
+    <li>Enter the temporary password from your onboarding message and tap <strong>Continue</strong>.</li>
+    <li>Set your own password when prompted (min 8 characters, mix letters and numbers).</li>
+  </ol>
+  <div class="callout info">
+    <span class="icon">ℹ</span>
+    <div class="body">If you don't have credentials yet, ask your site supervisor — you'll appear in the Simpro-synced worker list within a few minutes of being added.</div>
+  </div>
+
+  <h2 id="home" class="section">2. Home tab</h2>
+  <p>The Home tab shows four action tiles above your workday tasks:</p>
+  <div class="grid-2">
+    <div class="card"><h3>Scan QR</h3><p>Opens the camera to scan asset tags, site gate QRs, or worker cards. Fastest way to log meter readings, start a pre-start, or record who's on site.</p></div>
+    <div class="card"><h3>New Pre-Start</h3><p>Starts a pre-operational safety check on any plant or vehicle assigned to you. Photos, signatures, and defect notes are captured inline.</p></div>
+    <div class="card"><h3>Incident Report</h3><p>Report an injury, near-miss, or hazard. Photos are attached automatically to the form.</p></div>
+    <div class="card"><h3>Sign On</h3><p>Sign on to the current site for the day. Records your arrival time + GPS on the site diary.</p></div>
+  </div>
+
+  <h2 id="forms" class="section">3. Forms tab</h2>
+  <p>The Forms tab lists every form your admin has assigned to your role. Categories run down the left; scroll to find the one you need.</p>
+  <ol class="steps">
+    <li>Tap a form card to open the form runner.</li>
+    <li>Fill each field. Required questions are marked with a red asterisk.</li>
+    <li>For checklists (like Service Check Sheets), tap the trinary buttons: <strong>✓</strong> Pass, <strong>✗</strong> Fail, or <strong>NA</strong> Not applicable. Add notes on any failed item.</li>
+    <li>Sections group related questions. Tap a section header to collapse or expand it. Sections with unanswered required questions show an <strong>ATTENTION</strong> badge; completed sections show <strong>COMPLETE</strong>.</li>
+    <li>Sign at the bottom and tap <strong>Submit</strong>.</li>
+  </ol>
+  <div class="callout info">
+    <span class="icon">ℹ</span>
+    <div class="body">Drafts auto-save every 30 seconds. If you lose signal mid-form, keep filling it in — everything queues locally and syncs the moment you reconnect.</div>
+  </div>
+
+  <h2 id="swms" class="section">4. SWMS viewer &amp; acknowledgement</h2>
+  <p>Every SWMS your role covers is listed on the SWMS tab. Tap any card to read the document; scroll to the bottom to acknowledge.</p>
+  <ol class="steps">
+    <li>Open a SWMS. The full document renders inline — no separate PDF download needed.</li>
+    <li>Read all sections. Each section is chunked so you can page through on a phone.</li>
+    <li>Scroll to the bottom, tap <strong>I acknowledge</strong>, then sign.</li>
+    <li>Your acknowledgement is timestamped and available on the admin dashboard immediately.</li>
+  </ol>
+
+  <h2 id="docs" class="section">5. Docs tab (SDS &amp; reference library)</h2>
+  <p>The Docs tab now surfaces every shared reference folder your admin has flagged as worker-visible. This includes:</p>
+  <ul class="bullets">
+    <li><strong>SDS (Safety Data Sheets)</strong> — chemical safety data for anything you'll handle on site.</li>
+    <li><strong>Chemical Storage &amp; Handling</strong></li>
+    <li><strong>Australian Standards</strong></li>
+    <li><strong>Toolbox Talks</strong></li>
+    <li><strong>Company Policies, Manuals &amp; Procedures</strong></li>
+    <li><strong>WHS / Environment / Quality / Management procedure sets</strong></li>
+  </ul>
+  <p>Tap any folder to open it, then tap a file to view or download.</p>
+
+  <h2 id="site-qr" class="section">6. Site QR &amp; visitor sign-in</h2>
+  <p>Every site has a QR sticker at the gate. Anyone (worker or visitor) can scan it to sign in:</p>
+  <ol class="steps">
+    <li>Point your phone camera at the site QR.</li>
+    <li>Tap the notification. If you're already signed in, you'll go straight to the site kiosk. If you're a visitor with no app account, you'll see the visitor sign-in form.</li>
+    <li>Fill in name, company, host, purpose, vehicle rego (optional). Tick the safety induction acknowledgement.</li>
+    <li>Tap <strong>Sign in</strong>. You'll see a welcome screen with site-specific safety info.</li>
+  </ol>
+  <div class="callout info">
+    <span class="icon">ℹ</span>
+    <div class="body">If a scanner shows a login prompt instead of the visitor form, the phone may still have an old cached login. Close the app, clear browser cookies for the site (see <a href="#issues">Common issues</a>), then re-scan.</div>
+  </div>
+
+  <h2 id="ai" class="section">7. Ask AI</h2>
+  <p>Tap the sparkle icon in the top bar of any tab to open Ask AI. Use it to:</p>
+  <ul class="bullets">
+    <li>Look up compliance details for a task ("What does AS 2601 say about excavation shoring?").</li>
+    <li>Draft a SWMS entry, incident narrative, or toolbox talk from a couple of sentences.</li>
+    <li>Interpret an SDS ("What's the recommended PPE for this chemical?").</li>
+  </ul>
+  <p>Close the panel with the <strong>✕</strong> button in the top-right or by tapping the backdrop.</p>
+
+  <h2 id="updates" class="section">8. App updates &amp; offline drafts</h2>
+  <h3>Updates</h3>
+  <p>When a new APK is available you'll see an amber <strong>Update available</strong> banner at the top of the app. Tap <strong>Update now</strong> to download and install; the app will reopen on the new version.</p>
+  <h3>Offline drafts</h3>
+  <p>Every form auto-saves as you type. If you lose reception mid-form, keep working — drafts are stored on the phone. The moment reception returns, submissions sync automatically. You can see queued drafts in the Forms tab under <strong>Pending</strong>.</p>
+
+  <h2 id="signing-out" class="section">9. Signing out</h2>
+  <ol class="steps">
+    <li>Open the Profile tab (bottom-right icon).</li>
+    <li>Tap <strong>Sign out</strong> at the bottom of the profile screen.</li>
+    <li>Confirm. All local drafts sync before sign-out completes.</li>
+  </ol>
+
+  <h2 id="issues" class="section">10. Common issues</h2>
+  <div class="card">
+    <h3>Stale login / stuck on sign-in page</h3>
+    <p><strong>iOS Safari:</strong> Settings → Safari → Clear History and Website Data. Reopen the app.</p>
+    <p><strong>Android Chrome:</strong> Chrome → Settings → Privacy and security → Clear browsing data → "All time" → tick Cookies + Cached images → Clear data.</p>
+  </div>
+  <div class="card">
+    <h3>SDS folder empty</h3>
+    <p>Fixed in v.132km. If you still see an empty SDS folder, force-refresh the app (pull down on the Docs tab), then contact your admin.</p>
+  </div>
+  <div class="card">
+    <h3>"Access Restricted" screen on a form</h3>
+    <p>Certification gates are DISABLED by default in the current build. If you see this screen, an admin has explicitly re-enabled the gate for that form and the global feature flag is on. Ask your supervisor.</p>
+  </div>
+  <div class="card">
+    <h3>"Previous crash detected" toast</h3>
+    <p>The app recovered gracefully — tap Dismiss. Your work was preserved. If it repeats within a session, sign out and back in.</p>
+  </div>
+  <div class="card">
+    <h3>Preview mode caveats</h3>
+    <p>If you're viewing the app inside the admin preview panel as a "Generic preview user", per-user overrides (site pinning, personal certs) don't apply. Real workers see the correct scoped data on their own phone.</p>
+  </div>
+
+  <h2 id="help" class="section">11. Getting help</h2>
+  <div class="card">
+    <p><strong>Email:</strong> <a href="mailto:support@paneltec.com.au">support@paneltec.com.au</a></p>
+    <p><strong>Expected response:</strong> within one business day (AEST). Urgent WHS matters flagged as <em>[URGENT WHS]</em> in the subject line are triaged same-day.</p>
+    <p><strong>WHS Regulator resources:</strong></p>
+    <ul class="bullets">
+      <li><a href="https://www.safeworkaustralia.gov.au/">Safe Work Australia</a></li>
+      <li><a href="https://www.safework.nsw.gov.au/">SafeWork NSW</a></li>
+      <li><a href="https://www.worksafe.qld.gov.au/">WorkSafe QLD</a></li>
+      <li><a href="https://www.worksafe.vic.gov.au/">WorkSafe VIC</a></li>
+    </ul>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="row">
+    <div>
+      <span class="pill">v58.13.132kq</span> · Updated 2026-09-22 · Mobile field-worker manual
+    </div>
+    <div>
+      <a href="/manuals/admin" style="color: var(--brand); text-decoration: none;">Web admin manual →</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Paneltec Civil — Web / Admin User Manual</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  :root {
+    --brand: #2C6BFF;
+    --brand-dark: #1e4fd8;
+    --amber: #F59E0B;
+    --amber-bg: #FEF3C7;
+    --amber-border: #FDE68A;
+    --emerald: #10B981;
+    --emerald-bg: #D1FAE5;
+    --slate-900: #0f172a;
+    --slate-700: #334155;
+    --slate-500: #64748b;
+    --slate-200: #e2e8f0;
+    --slate-100: #f1f5f9;
+    --slate-50: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif; color: var(--slate-900); background: var(--slate-50); padding: 0 0 96px; }
+  header.hero { background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%); color: #fff; padding: 44px 20px 40px; }
+  header.hero .wrap { max-width: 900px; margin: 0 auto; }
+  header.hero .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.88; font-weight: 600; }
+  header.hero h1 { font-size: clamp(30px, 5vw, 44px); margin: 6px 0 6px; letter-spacing: -0.02em; line-height: 1.15; }
+  header.hero .sub { font-size: 15px; opacity: 0.94; margin: 0; max-width: 640px; }
+  main { max-width: 900px; margin: 0 auto; padding: 0 20px; }
+  nav.toc { background: #fff; border: 1px solid var(--slate-200); border-radius: 16px; padding: 20px 22px; margin: -22px 0 30px; box-shadow: 0 8px 24px -12px rgba(15, 23, 42, 0.15); }
+  nav.toc h2 { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--slate-500); margin: 0 0 10px; font-weight: 700; }
+  nav.toc .cols { columns: 2; column-gap: 32px; }
+  @media (max-width: 640px) { nav.toc .cols { columns: 1; } }
+  nav.toc a { color: var(--brand); text-decoration: none; display: block; padding: 4px 0; font-size: 14px; break-inside: avoid; }
+  nav.toc a:hover { text-decoration: underline; }
+  h2.section { font-size: 24px; letter-spacing: -0.01em; margin: 48px 0 14px; scroll-margin-top: 20px; }
+  h3 { font-size: 17px; margin: 24px 0 6px; }
+  p { margin: 0 0 12px; color: var(--slate-700); }
+  ol.steps, ul.bullets { padding-left: 22px; color: var(--slate-700); }
+  ol.steps li, ul.bullets li { margin: 6px 0; }
+  code, kbd { background: var(--slate-100); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  .callout { display: flex; gap: 12px; background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 14px; padding: 14px 16px; margin: 18px 0; }
+  .callout .icon { font-size: 20px; line-height: 1.2; }
+  .callout .body { flex: 1; font-size: 14px; color: #78350f; }
+  .callout.info { background: #eff6ff; border-color: #bfdbfe; }
+  .callout.info .body { color: #1e3a8a; }
+  .callout.legal { background: var(--emerald-bg); border-color: var(--emerald); }
+  .callout.legal .body { color: #064e3b; }
+  .card { background: #fff; border: 1px solid var(--slate-200); border-radius: 14px; padding: 18px 20px; margin: 14px 0; }
+  .grid-2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 700px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--slate-200); vertical-align: top; }
+  th { background: var(--slate-100); font-weight: 700; color: var(--slate-700); }
+  .changelog-ver { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--slate-100); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  footer.foot { max-width: 900px; margin: 60px auto 0; padding: 24px 20px; color: var(--slate-500); font-size: 12px; border-top: 1px solid var(--slate-200); }
+  footer.foot .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .pill { display: inline-block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--slate-100); color: var(--slate-700); }
+  .print-btn { display: inline-block; margin-top: 12px; background: #fff; color: var(--brand); border: 1px solid #fff; padding: 10px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    header.hero { background: #fff !important; color: #000 !important; padding: 20px 0; }
+    .print-btn, nav.toc { display: none !important; }
+    .card, .callout { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Paneltec Civil · Web / Admin</div>
+    <h1>Platform administrator manual</h1>
+    <p class="sub">A working reference for HSEQ leads, supervisors, and admins running compliance workflows on the Paneltec Civil web platform.</p>
+    <button class="print-btn" onclick="window.print()">Print / save as PDF</button>
+  </div>
+</header>
+
+<main>
+  <nav class="toc" aria-label="Table of contents">
+    <h2>Contents</h2>
+    <div class="cols">
+      <a href="#dashboard">1. Intelligence Centre (dashboard)</a>
+      <a href="#forms-admin">2. Forms — templates &amp; assignments</a>
+      <a href="#cert-gate">3. Certification gate (default OFF)</a>
+      <a href="#swms-admin">4. SWMS — authoring &amp; visibility</a>
+      <a href="#documents-admin">5. Documents &amp; shared reference folders</a>
+      <a href="#compliance-exports">6. Compliance / Audit exports</a>
+      <a href="#site-qr-admin">7. Site QR &amp; visitor sign-in</a>
+      <a href="#pdf-import">8. PDF upload &amp; layered matcher</a>
+      <a href="#service-check">9. Service Check Sheet layout</a>
+      <a href="#preview">10. Live preview mode</a>
+      <a href="#users">11. Users &amp; roles</a>
+      <a href="#integrations">12. Integrations</a>
+      <a href="#issues">13. Common issues</a>
+      <a href="#changelog">14. Changelog (recent ships)</a>
+      <a href="#help">15. Getting help</a>
+    </div>
+  </nav>
+
+  <div class="callout legal">
+    <span class="icon">⚖</span>
+    <div class="body">
+      <strong>WHS obligations don't stop at the platform boundary.</strong> Paneltec Civil captures
+      evidence of compliance — SWMS acknowledgements, pre-starts, incident reports, cert records —
+      but the underlying legal duty to induct workers, verify certifications, and provide safe work
+      environments rests with the PCBU. See <a href="https://www.safeworkaustralia.gov.au/">Safe
+      Work Australia</a> for the current Model WHS Regulations.
+    </div>
+  </div>
+
+  <h2 id="dashboard" class="section">1. Intelligence Centre (dashboard)</h2>
+  <p>The Intelligence Centre at <code>/app/dashboard</code> is your live compliance snapshot. It shows monitoring scope, records needing attention, workspace scope, and a compliance attention score.</p>
+  <ul class="bullets">
+    <li><strong>Create &amp; Capture</strong> — six action tiles for the most common flows (AI SWMS, Pre-Starts, Site Diary AI, Hazard reports from photos, Incident reports, Inspection reports).</li>
+    <li><strong>Compliance Snapshot</strong> — metrics for the current quarter with the compliance attention score.</li>
+    <li><strong>Ask Intelligence</strong> — natural-language querying of preserved compliance evidence.</li>
+    <li><strong>Quick actions</strong> — four highlight tiles for org-wide oversight.</li>
+  </ul>
+
+  <h2 id="forms-admin" class="section">2. Forms — templates &amp; assignments</h2>
+  <p>Manage form templates at <code>/app/forms</code>. Every template belongs to a category (SWMS, pre-start, hazard, incident, inspection, risk assessment, site diary, general).</p>
+  <h3>Creating &amp; editing</h3>
+  <ol class="steps">
+    <li>Click <strong>New Template</strong> (or <strong>Build with AI</strong> for an AI-assisted draft).</li>
+    <li>Set name, category, description.</li>
+    <li>Add fields. Each field has label, type (text, number, date, select, radio, checkbox, photo, signature, GPS, worker picker, site picker, asset scan), help text, per-field style overrides.</li>
+    <li>Group related fields under section headers by inserting a <code>section_header</code> field type. Collapsible section groups appear on both web and mobile.</li>
+    <li>Save. Templates are versioned in-place.</li>
+  </ol>
+  <h3>Assignments matrix</h3>
+  <p>Open <strong>Form Assignments</strong> under Settings to tag each template with a kinds/asset-types/roles/companies matrix. Workers only see the forms tagged for their role or asset assignment. Auto-seed heuristic handles obvious matches (e.g. "Trailer Pre-start" → trailer asset-type); admin override wins.</p>
+
+  <h2 id="cert-gate" class="section">3. Certification gate (default OFF)</h2>
+  <p>As of <span class="changelog-ver">v.132kp</span> the certification gate is <strong>disabled by default</strong>. Every worker can open every form regardless of cert status.</p>
+  <h3>Truth table</h3>
+  <table>
+    <thead><tr><th>Global env <code>FORM_CERT_GATE_ENABLED</code></th><th>Per-template toggle</th><th>Enforcement</th></tr></thead>
+    <tbody>
+      <tr><td>unset / off (default)</td><td>anything</td><td>OPEN</td></tr>
+      <tr><td>on</td><td>off</td><td>OPEN</td></tr>
+      <tr><td>on</td><td>on + empty required certs</td><td>OPEN</td></tr>
+      <tr><td>on</td><td>on + required certs configured</td><td>GATED</td></tr>
+    </tbody>
+  </table>
+  <h3>Re-enabling the gate</h3>
+  <ol class="steps">
+    <li>Add <code>FORM_CERT_GATE_ENABLED=1</code> to <code>/app/backend/.env</code>.</li>
+    <li>Restart backend (<code>sudo supervisorctl restart backend</code>).</li>
+    <li>In each template editor, tick "Require certifications to open this form" under <strong>Access control</strong>.</li>
+    <li>Select the required cert slugs in the qualification picker.</li>
+  </ol>
+  <div class="callout">
+    <span class="icon">⚠</span>
+    <div class="body">
+      A White Card (Construction Induction) is required by AU law for construction work.
+      Every worker was auto-seeded with a placeholder White Card record on ship <span class="changelog-ver">v.132kp</span>;
+      admins should verify and fill real issue / expiry dates in the certifications matrix. Placeholders carry <code>status: "seeded"</code>.
+    </div>
+  </div>
+
+  <h2 id="swms-admin" class="section">4. SWMS — authoring &amp; visibility</h2>
+  <p>Author SWMS at <code>/app/swms</code>. Assign visibility per SWMS via the <code>applies_to</code> matrix (roles, worker IDs, company IDs, asset types).</p>
+  <p>Workers only see SWMS that match their assignment matrix or are legacy-null (see <span class="changelog-ver">v.132kn</span> in the changelog for the visibility contract). Admin audit widget for un-tagged SWMS is a queued follow-up.</p>
+
+  <h2 id="documents-admin" class="section">5. Documents &amp; shared reference folders</h2>
+  <p>At <code>/app/document-library</code>. Two visibility modes for folders:</p>
+  <ul class="bullets">
+    <li><strong>Private</strong> (default) — worker sees only files they uploaded or that are assigned to them.</li>
+    <li><strong>Shared reference</strong> — visible to every worker in the org. Auto-seeded on well-known names (SDS, Chemical Register, Australian Standards, Toolbox Talks, Company Policies, Procedures). Toggle manually via the Globe icon in the folder card hover strip (grid view) or via the SHARED pill in the tree view.</li>
+  </ul>
+  <p>Confirmation dialog fires when disarming a shared folder with ≥50 files to prevent accidental worker lockout.</p>
+
+  <h2 id="compliance-exports" class="section">6. Compliance / Audit exports</h2>
+  <p>At <code>/app/compliance/audit-exports</code>. Every export is a signed PDF or CSV with the timestamp, initiator, and record IDs baked in. Post-<span class="changelog-ver">v.132ke</span> the list uses a responsive flex-card layout instead of a horizontal-scrolling table — safe on any viewport.</p>
+
+  <h2 id="site-qr-admin" class="section">7. Site QR &amp; visitor sign-in</h2>
+  <p>Each site record carries a rotating <code>scan_token</code>. The site QR PDF (available from the site detail page) encodes the public URL <code>/scan/site/&lt;token&gt;</code>. Anyone scanning the QR from a phone browser lands on:</p>
+  <ul class="bullets">
+    <li>The kiosk / worker sign-on screen if they're already signed in.</li>
+    <li>The public visitor sign-in form if they have no session.</li>
+  </ul>
+  <p>Fixed in <span class="changelog-ver">v.132kl</span>: stale JWTs on public routes no longer bounce visitors to the sign-in page — the axios interceptor now clears the poisoned token and reloads once (single-flight guard) so the visitor form renders cleanly.</p>
+
+  <h2 id="pdf-import" class="section">8. PDF upload &amp; layered matcher</h2>
+  <p>Upload PDFs of scanned or exported forms via the <strong>Upload PDF</strong> flow in the admin captures area. The <span class="changelog-ver">v.132kh</span> matcher runs five layered stages:</p>
+  <ol class="steps">
+    <li><strong>Filename regex</strong> — anchored patterns for common shapes (<code>^incident[-_ ]</code>, <code>[-_ ]ssra[-_ ]</code>, etc.).</li>
+    <li><strong>Title-token overlap</strong> — first content line matched against template names.</li>
+    <li><strong>PDF metadata</strong> — <code>/Title</code>, <code>/Subject</code>, <code>/Author</code> scan.</li>
+    <li><strong>Text-scan keyword scoring</strong> — per-category anchor keyword count (threshold ≥ 3 distinct hits).</li>
+    <li><strong>LLM fallback</strong> — Claude Sonnet 4.5 classifies unknown PDFs when stages 1–4 miss. Cached per SHA.</li>
+  </ol>
+  <p>Every upload emits a <code>[pdf-match]</code> log line with file, sha, stage, matched template ID, and top-3 candidate scores — grep <code>/var/log/supervisor/backend.err.log</code> for diagnostics.</p>
+
+  <h2 id="service-check" class="section">9. Service Check Sheet layout</h2>
+  <p>The Service Check Sheet template renders as a horizontal inline row — <code>[Label] [✗] [✓] [NA] [Notes]</code> — grouped into collapsible sections (Tires, Steering, Brakes, etc.) with live <strong>ATTENTION</strong> / <strong>COMPLETE</strong> pills per section. Sections with only regular fields fold cleanly under the section header (fix in <span class="changelog-ver">v.132kd1</span>).</p>
+
+  <h2 id="preview" class="section">10. Live preview mode</h2>
+  <p>The admin console at <code>/app/settings/preview</code> previews the mobile app as any role or specific worker. Preview JWTs carry <code>preview: true</code> and default to <code>role: worker</code> when "role-only" is selected.</p>
+  <p>Caveats: preview mode uses a synthetic user id. Per-user overrides (site pinning, personal cert dates) don't apply. Real workers see their own scoped data on their own phone.</p>
+
+  <h2 id="users" class="section">11. Users &amp; roles</h2>
+  <p>Manage at <code>/app/settings/users</code>. Roles: admin, hseq_lead, supervisor, manager, hseq_manager (+ read-only / creator variants), responsible_manager, report_emailing_admin, general_user, worker, contractor_rep, paneltec_civil, viatec_traffic, auditor.</p>
+  <p>See the permissions matrix at <code>/app/settings/permissions</code> for the granular view/edit/email/delete grants per role.</p>
+
+  <h2 id="integrations" class="section">12. Integrations</h2>
+  <p>Configured at <code>/app/settings/integrations</code>: Simpro (staff sync + jobs), Microsoft 365 (email), TextMagic (SMS), Navixy (vehicle tracking). Each integration surfaces a Not connected / Connected pill on the card.</p>
+
+  <h2 id="issues" class="section">13. Common issues</h2>
+  <div class="card">
+    <h3>Worker sees empty SDS folder on mobile</h3>
+    <p>Fixed in <span class="changelog-ver">v.132km</span>. If the folder is still empty for a specific worker, confirm the folder is flagged <strong>Shared reference</strong> (SHARED pill visible in the tree view). If not, click the Globe toggle to flip it ON.</p>
+  </div>
+  <div class="card">
+    <h3>Worker sees empty SWMS list on mobile</h3>
+    <p>Fixed in <span class="changelog-ver">v.132kn</span>. If it recurs, curl the endpoint with the worker's JWT: <code>curl -H "Authorization: Bearer &lt;jwt&gt;" $URL/api/swms</code>. Empty response = <code>applies_to</code> matrix excludes the worker; admin needs to add their role or worker ID to the SWMS.</p>
+  </div>
+  <div class="card">
+    <h3>QR scan bounces to login instead of visitor form</h3>
+    <p>Fixed in <span class="132kl">v.132kl</span>. Confirm the worker's phone has the latest build; force cache clear if not.</p>
+  </div>
+  <div class="card">
+    <h3>PDF upload returns "Unmatched template"</h3>
+    <p>Check the <code>[pdf-match]</code> log line. If <code>stage=none matched=None</code>, the PDF genuinely has no matching template signature. If <code>top3</code> shows a candidate with score 1 or 2, tune <code>_CATEGORY_KEYWORDS</code> in <code>backend/imports.py</code>.</p>
+  </div>
+
+  <h2 id="changelog" class="section">14. Changelog (recent ships)</h2>
+  <table>
+    <thead><tr><th>Version</th><th>Summary</th></tr></thead>
+    <tbody>
+      <tr><td><span class="changelog-ver">.132kq</span></td><td>Web + mobile user manuals published at stable public URLs.</td></tr>
+      <tr><td><span class="changelog-ver">.132kp</span></td><td>Certification gate default OFF, per-form toggle, White Card auto-seed, amber WHS reminder banner on Forms admin page.</td></tr>
+      <tr><td><span class="changelog-ver">.132kn</span></td><td>SWMS visibility uses <code>applies_to</code> matrix instead of creator-based team-scoping (WHS Reg 39 compliance).</td></tr>
+      <tr><td><span class="changelog-ver">.132km</span></td><td>Shared reference folders visible to workers; SDS, Chemical Register, Australian Standards, Toolbox Talks auto-flagged (WHS Reg 344 compliance).</td></tr>
+      <tr><td><span class="changelog-ver">.132kl</span></td><td>Axios interceptor honours public-route allow-list on 401 jwt-expired — visitors no longer bounce to sign-in.</td></tr>
+      <tr><td><span class="changelog-ver">.132kj</span></td><td>Public visitor form for site QR scans wired end-to-end.</td></tr>
+      <tr><td><span class="changelog-ver">.132kh</span></td><td>Layered PDF-to-template matcher (filename → title tokens → PDF metadata → text scan → Claude LLM).</td></tr>
+      <tr><td><span class="changelog-ver">.132ke1</span></td><td>Internal — FormAssignmentsAdmin TDZ crash on mount fixed (load hoisting).</td></tr>
+      <tr><td><span class="changelog-ver">.132ke</span></td><td>Compliance / Audit exports list refactored from overflowing table to responsive flex-card layout.</td></tr>
+      <tr><td><span class="changelog-ver">.132kd, .132kd1</span></td><td>Collapsible section groups on Service Check Sheet with live ATTENTION / COMPLETE status pills; regular-field sections fold cleanly.</td></tr>
+      <tr><td><span class="changelog-ver">.132kb, .132kc</span></td><td>Service Check Sheet inline row layout: <code>[Label] [✗] [✓] [NA] [Notes]</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="help" class="section">15. Getting help</h2>
+  <div class="card">
+    <p><strong>Email:</strong> <a href="mailto:support@paneltec.com.au">support@paneltec.com.au</a></p>
+    <p><strong>Expected response:</strong> within one business day (AEST). Urgent WHS matters flagged as <em>[URGENT WHS]</em> in the subject line are triaged same-day.</p>
+    <p><strong>WHS Regulator resources:</strong></p>
+    <ul class="bullets">
+      <li><a href="https://www.safeworkaustralia.gov.au/">Safe Work Australia (Model Regulations)</a></li>
+      <li><a href="https://www.safework.nsw.gov.au/">SafeWork NSW</a></li>
+      <li><a href="https://www.worksafe.qld.gov.au/">WorkSafe QLD</a></li>
+      <li><a href="https://www.worksafe.vic.gov.au/">WorkSafe VIC</a></li>
+    </ul>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="row">
+    <div><span class="pill">v58.13.132kq</span> · Updated 2026-09-22 · Web / admin manual</div>
+    <div><a href="/manuals/user" style="color: var(--brand); text-decoration: none;">← Mobile field-worker manual</a></div>
+  </div>
+</footer>
+
+</body>
+</html>

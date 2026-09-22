@@ -112,6 +112,11 @@ const PLATFORM_AUTH_REASONS = new Set([
 const PUBLIC_ROUTE_PREFIXES = [
   '/', '/onboard', '/m/onboard/', '/reset', '/renew/', '/scan/',
   '/print/worker-id-card/', '/apps-directory',
+  // v58.13.132kq — Public user manuals. Served as static HTML from
+  // `public/manuals/user/` and `public/manuals/admin/` (directory
+  // index resolves the extensionless URLs `/manuals/user` and
+  // `/manuals/admin` that ship in `.132kr` mobile settings links).
+  '/manuals/',
 ];
 
 function _isPublicRoute(pathname) {
