@@ -1,7 +1,8 @@
 /**
- * Ask AI — v58.13.132dc
+ * Ask AI — v58.13.132kr
  * Wired to POST /api/mobile/ai/ask (real endpoint).
  * Handles 429 rate limit with retry-after countdown.
+ * Added back arrow + X close buttons in header.
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -93,8 +94,24 @@ export default function AskAIScreen() {
     >
       <View testID="ask-ai-screen" style={[s.container, { paddingTop: insets.top }]}>
         <View style={s.header}>
+          <TouchableOpacity
+            testID="ask-ai-back-btn"
+            style={s.headerBtn}
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="arrow-back" size={22} color={Colors.white} />
+          </TouchableOpacity>
           <Ionicons name="sparkles" size={20} color={Colors.orange} />
           <Text style={s.headerTitle}>Ask AI</Text>
+          <TouchableOpacity
+            testID="ask-ai-close-btn"
+            style={s.headerBtn}
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={22} color={Colors.white} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
@@ -202,6 +219,11 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
   },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800', flex: 1 },
+  headerBtn: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
 
   scrollContent: { padding: 16, paddingBottom: 100 },
 

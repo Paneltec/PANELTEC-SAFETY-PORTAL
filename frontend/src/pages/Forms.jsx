@@ -34,6 +34,57 @@ import ComplianceQuestion from '../components/forms/ComplianceQuestion';
 // v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
+// v58.13.132kp — Dismissible amber WHS reminder banner. Reappears once
+// per week (7-day cool-off) so newly-onboarded workers still see it and
+// long-term admins aren't nagged. Renders above the toolbar on the
+// Forms Templates page for both admins and workers.
+function WhsReminderBanner(_props) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('whs_reminder_dismissed_at');
+      if (!raw) { setVisible(true); return; }
+      const then = Date.parse(raw);
+      if (!Number.isFinite(then)) { setVisible(true); return; }
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      setVisible(Date.now() - then > weekMs);
+    } catch (_) { setVisible(true); }
+  }, []);
+  if (!visible) return null;
+  const dismiss = () => {
+    try { localStorage.setItem('whs_reminder_dismissed_at', new Date().toISOString()); } catch (_) {}
+    setVisible(false);
+  };
+  return (
+    <div
+      data-testid="whs-reminder-banner"
+      className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3"
+    >
+      <span aria-hidden="true" className="text-amber-600 text-xl leading-6">⚠</span>
+      <div className="flex-1 text-[13px] leading-snug text-amber-900">
+        <div className="font-semibold mb-0.5">Australian WHS Reminder</div>
+        <p>
+          A <strong>White Card (Construction Induction)</strong> is required by law for anyone
+          performing construction work in Australia. Certification gates are currently
+          <span className="font-semibold"> DISABLED</span> in this platform, but workers must still
+          hold current certifications before undertaking regulated work. See the
+          <span className="font-semibold"> Access control</span> section on any template to re-enable
+          in-app enforcement.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        data-testid="whs-reminder-dismiss"
+        className="p-1 -m-1 rounded hover:bg-amber-100 text-amber-700 shrink-0"
+        title="Dismiss for 7 days"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 // Pastel pills per the new spec: tint background + ink text.
 export const CATEGORIES = [
   { key: 'all',        label: 'All categories', pill: 'bg-slate-100 text-slate-700' },
@@ -2275,6 +2326,12 @@ export default function Forms() {
         <h1 className="font-display text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">Form Templates</h1>
         <p className="mt-1 text-sm text-slate-500">Choose a form to fill, build your own, or generate with AI</p>
       </div>
+
+      {/* v58.13.132kp — WHS reminder banner. Dismissible per-user with a
+          7-day cool-off (localStorage key `whs_reminder_dismissed_at`).
+          Shown to admins + workers on this page; a corresponding note
+          lives in the mobile manual for phone workers. */}
+      <WhsReminderBanner canEdit={canEdit} />
 
       {/* Toolbar */}
       <div className="mb-3 flex flex-wrap items-center gap-2">

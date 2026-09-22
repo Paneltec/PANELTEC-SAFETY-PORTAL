@@ -182,6 +182,14 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
   const [requiredCertifications, setRequiredCertifications] = useState(
     template?.required_certifications || [],
   );
+  // v58.13.132kp — Per-form cert-gate switch. Default OFF (user
+  // directive — cert gating globally disabled at ship time). Toggling
+  // ON here only takes effect if the backend env `FORM_CERT_GATE_ENABLED`
+  // is also truthy; the switch is preserved regardless so admins can
+  // stage the gate configuration ahead of a global re-enable.
+  const [certGateEnabled, setCertGateEnabled] = useState(
+    !!template?.certification_gate_enabled,
+  );
   const [certKinds, setCertKinds] = useState([]);
   useEffect(() => {
     let alive = true;
@@ -254,6 +262,8 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
         // v160.3.0 — Only send the gate list on save; backend enforces
         // slug allowlist and silently drops anything unknown.
         required_certifications: requiredCertifications,
+        // v58.13.132kp — Per-form cert-gate switch (default OFF).
+        certification_gate_enabled: certGateEnabled,
       };
       if (isEdit) {
         const { data } = await api.patch(`/forms/templates/${template.id}`, payload);
@@ -313,8 +323,35 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
               data-testid="builder-description"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700" />
             {errors.name && <p className="text-xs text-rose-600 inline-flex items-center gap-1"><AlertCircle size={11} /> {errors.name}</p>}
+            {/* v58.13.132kp — Access control section. Master switch above
+                the cert picker. Cert-gate is DISABLED globally by default
+                (user directive); this toggle lets admins pre-configure
+                per-form enforcement for a future global re-enable. */}
+            <div className="mt-2 pt-2 border-t border-slate-100" data-testid="builder-access-control">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">
+                  Access control
+                </span>
+              </div>
+              <label className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="builder-cert-gate-toggle"
+                  checked={certGateEnabled}
+                  onChange={(e) => setCertGateEnabled(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-blue focus:ring-brand-blue"
+                />
+                <span className="leading-snug">
+                  Require certifications to open this form
+                  <span className="block text-[10px] text-slate-400 mt-0.5">
+                    OFF by default. Takes effect only when both this toggle and the
+                    global cert-gate feature flag are enabled.
+                  </span>
+                </span>
+              </label>
+            </div>
             {/* v160.3.0 — Qualification requirements picker */}
-            <div className="mt-2 pt-2 border-t border-slate-100" data-testid="builder-cert-gate">
+            <div className={`mt-2 pt-2 border-t border-slate-100 ${certGateEnabled ? '' : 'opacity-60'}`} data-testid="builder-cert-gate">
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">
                   Qualification requirements

@@ -851,6 +851,18 @@ async def on_startup():
         log.info("shared_reference startup seed: %s", _sr)
     except Exception as e:  # noqa: BLE001
         log.warning("shared_reference startup seed failed: %s", e)
+    # v58.13.132kp — Auto-seed a placeholder `worker_certifications`
+    # row for every worker who doesn't already have a White Card
+    # (Construction Induction). Preserves the AU WHS Reg 316A audit
+    # trail even though the cert-open gate is disabled by default in
+    # .132kp. Idempotent — safe on every boot; skips workers with any
+    # pre-existing White-Card-flavoured cert.
+    try:
+        from white_card_seed import seed_white_card_on_startup
+        _wc = await seed_white_card_on_startup()
+        log.info("white_card startup seed: %s", _wc)
+    except Exception as e:  # noqa: BLE001
+        log.warning("white_card startup seed failed: %s", e)
     # v160.3.9.58.13.47 — TTL + query indexes for capture-density
     # telemetry. Best-effort, silent on failure (idempotent).
     try:

@@ -1,7 +1,7 @@
 /**
- * Settings tab — v58.13.132jb
+ * Settings tab — v58.13.132kr
  * Profile info, app version, updates, admin tools, sign out.
- * Merged from former Profile tab.
+ * Added Help & Support section with manual links.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -187,6 +187,21 @@ export default function SettingsScreen() {
           icon="document-text-outline" iconColor="#64748B" iconBg="#F1F5F9"
           title="Terms of Service"
           onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/legal/terms-of-service.html')}
+        />
+
+        {/* Help & Support */}
+        <Text style={s.sectionLabel}>HELP & SUPPORT</Text>
+        <SettingsRow
+          testID="settings-user-manual"
+          icon="book-outline" iconColor="#0891B2" iconBg="#CFFAFE"
+          title="User Manual (Phone)"
+          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/manuals/user')}
+        />
+        <SettingsRow
+          testID="settings-admin-manual"
+          icon="desktop-outline" iconColor="#3B82F6" iconBg="#DBEAFE"
+          title="App / Admin Manual"
+          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/manuals/admin')}
         />
 
         {/* Updates */}

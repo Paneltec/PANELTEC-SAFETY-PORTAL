@@ -51,6 +51,7 @@ Worker allowlist by `migrate_v160_2_6cat_categorize.py`.
 """
 from __future__ import annotations
 import io
+import os
 import re
 import uuid
 from pathlib import Path
@@ -276,6 +277,14 @@ class TemplateIn(BaseModel):
     # calls `/access-check` before opening the fill screen and blocks
     # if the worker is missing or expired on any listed slug.
     required_certifications: list[str] = Field(default_factory=list)
+    # v58.13.132kp — Per-form cert-gate switch. Default OFF (user
+    # directive — cert gate globally disabled for MVP UX flow).
+    # When True AND the global `FORM_CERT_GATE_ENABLED` env is truthy,
+    # the `required_certifications` list is enforced. When False (default)
+    # the list stays in the schema for future re-enablement but no
+    # runtime enforcement occurs. Both flags must be True for the gate
+    # to fire — see `.132kp` ship memo for the rationale.
+    certification_gate_enabled: bool = False
     # v58.12.13 — Simpro-position gating. When non-empty, the template
     # is ADDITIONALLY visible to callers whose `workers.position` is in
     # the list (OR-gate with the existing role_form_allowlist path in
@@ -292,6 +301,9 @@ class TemplatePatch(BaseModel):
     # v160.3.0 — Allow admins to add / remove cert gates without
     # re-uploading the whole template. Empty list = ungated.
     required_certifications: Optional[list[str]] = None
+    # v58.13.132kp — Toggle the per-form cert gate on/off. `None` on
+    # PATCH means "leave unchanged"; `True/False` flips the switch.
+    certification_gate_enabled: Optional[bool] = None
     # v58.12.13 — See TemplateIn.assigned_positions. Explicit `None` on
     # PATCH = leave unchanged; empty list = clear the gate.
     assigned_positions: Optional[list[str]] = None
@@ -873,6 +885,21 @@ async def get_template(template_id: str, user: dict = Depends(get_current_user))
 GATE_BYPASS_ROLES: frozenset[str] = frozenset({"admin", "hseq_lead"})
 
 
+def _global_cert_gate_enabled() -> bool:
+    """v58.13.132kp — Global kill-switch for the certification gate.
+
+    Reads env `FORM_CERT_GATE_ENABLED` (accepts `1`/`true`/`yes` case
+    insensitively). When falsy (which is the DEFAULT per user
+    directive), every template opens without cert enforcement even
+    if the template itself carries `required_certifications` and has
+    its per-form `certification_gate_enabled` flag ON. This preserves
+    the `required_certifications` data for future re-enablement
+    without deleting it. See `memory/v58_13_132kp_cert_gate_default_off.md`.
+    """
+    val = (os.environ.get("FORM_CERT_GATE_ENABLED") or "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
 @router.get("/cert-kinds")
 async def list_cert_kinds(user: dict = Depends(get_current_user)):
     """v160.3.0 — Canonical cert-kind vocabulary.
@@ -915,20 +942,38 @@ async def template_access_check(template_id: str,
     """
     tpl = await db.form_templates.find_one(
         {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
-        {"_id": 0, "id": 1, "required_certifications": 1, "name": 1},
+        {"_id": 0, "id": 1, "required_certifications": 1, "name": 1,
+         "certification_gate_enabled": 1},
     )
     if not tpl:
         raise HTTPException(404, "Template not found")
 
     from cert_kinds import KIND_LABELS, SATISFYING_STATUSES, summarise_worker_certs
 
+    # v58.13.132kp — Gate short-circuit. Both the global env flag AND
+    # the per-template flag must be True for enforcement to occur.
+    # Default posture is `no_gate` so every worker can open every form
+    # without carrying certification data. `required_certifications` is
+    # still exposed in the response so the FE admin preview can show
+    # what WOULD be required if the gate were re-enabled.
+    global_gate = _global_cert_gate_enabled()
+    template_gate = bool(tpl.get("certification_gate_enabled"))
+    enforce = global_gate and template_gate
+
     required = list(tpl.get("required_certifications") or [])
-    if not required:
+    if not required or not enforce:
         return {
-            "ok": True, "mode": "no_gate",
+            "ok": True,
+            "mode": "no_gate",
             "template_id": template_id,
             "worker_id": None,
             "required": [],
+            # v58.13.132kp — surface flag state for the FE preview.
+            "gate_config": {
+                "global_enabled": global_gate,
+                "template_enabled": template_gate,
+                "required_certifications": required,
+            },
         }
 
     # Resolve the caller's linked worker row + their active certs.
@@ -1001,6 +1046,8 @@ async def create_template(body: TemplateIn, user: dict = Depends(get_current_use
         # v160.3.0 — Only accept slugs we know. Silently drops unknown
         # entries so a hand-crafted request can't poison the gate.
         "required_certifications": _clean_cert_slugs(body.required_certifications),
+        # v58.13.132kp — Per-form cert gate switch, default OFF.
+        "certification_gate_enabled": bool(body.certification_gate_enabled),
         # v58.12.13 — Simpro-position gating. Whitespace-strip + drop
         # blank entries (matches the FE `.filter(Boolean)` derivation).
         "assigned_positions": [p.strip() for p in (body.assigned_positions or []) if p and p.strip()],
@@ -1026,6 +1073,10 @@ async def update_template(template_id: str, body: TemplatePatch,
     if "required_certifications" in payload and payload["required_certifications"] is not None:
         # v160.3.0 — Same slug allowlist enforced on PATCH.
         payload["required_certifications"] = _clean_cert_slugs(payload["required_certifications"])
+    # v58.13.132kp — Persist the per-form cert-gate switch when supplied.
+    # `None` on the incoming body means "leave unchanged"; True/False flips.
+    if "certification_gate_enabled" in payload and payload["certification_gate_enabled"] is not None:
+        payload["certification_gate_enabled"] = bool(payload["certification_gate_enabled"])
     payload["updated_at"] = now_iso()
     row = await db.form_templates.find_one_and_update(
         {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
