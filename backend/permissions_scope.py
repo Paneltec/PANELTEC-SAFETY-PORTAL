@@ -211,3 +211,117 @@ def require_scoped_access(user: dict, resource: str, record: Optional[dict]) -> 
             status_code=403,
             detail=f"Permission denied: {resource}.scope",
         )
+
+
+# ─────────────────────────────────────────────────────────────
+# v58.13.132kn — SWMS visibility filter (async — reads worker links).
+# ─────────────────────────────────────────────────────────────
+#
+# Why an async helper (not a `scope_filter("swms")` branch):
+#   The canonical `scope_filter` is a pure sync function. Deciding
+#   which SWMS a worker can see requires reading the worker's
+#   own assignment records from Mongo (their `assigned_asset_ids`,
+#   `assigned_asset_type_ids`, `simpro_company_id`), so it needs
+#   async I/O. Making the whole `scope_filter` async would touch
+#   every consumer of the sync API; instead we expose a targeted
+#   async helper called only from the SWMS list endpoint.
+#
+# SWMS visibility contract:
+#   A worker can see a SWMS when ANY of the following are true:
+#     1. `applies_to` is null / missing / empty                   (legacy default → visible)
+#     2. `applies_to.roles` contains the worker's role_id or role (case-insensitive)
+#     3. `applies_to.worker_ids` contains the worker's user id
+#     4. `applies_to.asset_types` intersects the worker's assigned asset-type slugs
+#     5. `applies_to.company_ids` contains the worker's simpro_company_id (contractors)
+#
+# Sites are NOT currently a first-class facet of the SWMS
+# assignment matrix (`_clean_applies_to` in `swms_extras.py` omits
+# them). If/when site-scoping is added, extend this helper.
+#
+# Rationale (legal): AU WHS Regulation 39 requires that a worker
+# who will perform work covered by a SWMS has access to the SWMS
+# before starting the work. The v159.0 team-scoping fix hid every
+# admin-created SWMS from every worker — a compliance gap. See
+# `memory/v58_13_132kn_swms_applies_to_scope.md` for the audit
+# distribution (13/14 of Paneltec Civil SWMS carry legacy null
+# applies_to and rely on branch 1 today).
+
+
+def _lower_norm(x: Any) -> str:
+    return str(x or "").strip().lower()
+
+
+async def swms_visibility_filter(user: dict) -> Dict[str, Any]:
+    """Return a Mongo filter fragment restricting a non-privileged
+    caller to the SWMS they can lawfully see. Callers MUST AND this
+    into the standard `{org_id, deleted_at}` query.
+
+    Privileged callers should short-circuit BEFORE invoking this
+    helper (see `crud.py::_list_impl` for the branch). Passing a
+    privileged user still returns a valid — but redundant — filter.
+    """
+    uid = (user or {}).get("id")
+    if not uid:
+        return _UNSATISFIABLE
+
+    role_id = _lower_norm(user.get("role_id"))
+    legacy_role = _lower_norm(user.get("role"))
+    # Roles a SWMS might target the worker via — accept BOTH the
+    # granular role_id (`worker`, `contractor_rep`) and the legacy
+    # role string. Deduplicated + empty-stripped.
+    role_candidates = sorted({r for r in {role_id, legacy_role} if r})
+
+    # Best-effort worker enrichment. Read the worker record keyed by
+    # `user_id` so we can pull assigned asset types + simpro company.
+    # If no linked worker row exists (preview synthetic users, freshly
+    # invited users), we still let them through on branches 1 + 2 —
+    # the applies_to legacy-null + role match are the majority.
+    asset_type_slugs: list[str] = []
+    company_id: Optional[str] = None
+    try:
+        # Local import to avoid a circular at module load (db imports
+        # config which may import permissions).
+        from db import db  # noqa: WPS433
+        w = await db.workers.find_one(
+            {"user_id": uid, "deleted_at": None},
+            {"_id": 0, "assigned_asset_type_ids": 1,
+             "assigned_asset_ids": 1,
+             "simpro_company_id": 1, "company_id": 1},
+        )
+        if w:
+            asset_type_slugs = [
+                _lower_norm(x)
+                for x in (w.get("assigned_asset_type_ids") or [])
+                if x
+            ]
+            company_id = w.get("simpro_company_id") or w.get("company_id")
+    except Exception:  # noqa: BLE001 - defensive; visibility must not crash the list
+        pass
+
+    branches: list[Dict[str, Any]] = [
+        # Branch 1 — legacy / unset applies_to.
+        {"applies_to": None},
+        {"applies_to": {"$exists": False}},
+        {"applies_to": {}},
+        # Branch 3 — worker directly enumerated.
+        {"applies_to.worker_ids": uid},
+    ]
+
+    # Branch 2 — role match. Mongo doesn't offer a case-insensitive
+    # array `$in` cheaply, so we send BOTH raw + lowercased tokens.
+    # Callers who normalise on write (`_clean_applies_to` stringifies
+    # only) will land here.
+    if role_candidates:
+        raw_role_set = {r for r in {user.get("role_id"), user.get("role")} if r}
+        combined = sorted({*role_candidates, *raw_role_set})
+        branches.append({"applies_to.roles": {"$in": combined}})
+
+    # Branch 4 — asset-type intersection.
+    if asset_type_slugs:
+        branches.append({"applies_to.asset_types": {"$in": asset_type_slugs}})
+
+    # Branch 5 — contractor company match.
+    if company_id:
+        branches.append({"applies_to.company_ids": company_id})
+
+    return {"$or": branches}

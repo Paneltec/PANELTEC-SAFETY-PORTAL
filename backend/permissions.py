@@ -37,8 +37,15 @@ ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view",
 # role defaults below, so their behavior is unchanged.
 # v160.0 — added `inductions` (induction matrix is admin-oriented; worker
 # phone sees only their own row via a dedicated endpoint).
+# v58.13.132kn — REMOVED `swms` from the team-scoped set. SWMS visibility
+# is now driven by the `applies_to` assignment matrix (roles/worker_ids/
+# company_ids/asset_types) via `swms_visibility_filter()` in
+# `permissions_scope.py`, matching real WHS semantics. Creator-based
+# narrowing was hiding admin-uploaded SWMS from every mobile worker,
+# which is a WHS Reg 39 compliance gap. See ship memo
+# `memory/v58_13_132kn_swms_applies_to_scope.md`.
 TEAM_SCOPED_RESOURCES: set[str] = {
-    "swms", "pre_starts", "site_diary", "hazards", "incidents", "inspections",
+    "pre_starts", "site_diary", "hazards", "incidents", "inspections",
     "inductions", "workers",
 }
 

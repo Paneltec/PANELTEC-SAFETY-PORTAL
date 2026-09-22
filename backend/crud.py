@@ -20,6 +20,7 @@ from models import (
     SwmsReview, new_id, now_iso,
 )
 from permissions import require_permission, require_module, resolve_team_scope
+from permissions_scope import _is_privileged, swms_visibility_filter
 
 logger = logging.getLogger("paneltec.crud")
 
@@ -216,6 +217,24 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         offset: int = 0,
     ):
         q = _scoped(user, workspace_id)
+        # v58.13.132kn — SWMS visibility. Non-privileged callers get
+        # `applies_to`-driven scoping (roles / worker_ids / asset_types /
+        # company_ids / legacy-null). Replaces the pre-.132kn
+        # `TEAM_SCOPED_RESOURCES` creator-only narrowing which hid every
+        # admin-created SWMS from workers — a WHS Reg 39 gap. See
+        # `permissions_scope.swms_visibility_filter` and
+        # `memory/v58_13_132kn_swms_applies_to_scope.md`.
+        if collection == "swms" and not _is_privileged(user):
+            _swms_scope = await swms_visibility_filter(user)
+            if _swms_scope.get("__scope_no_match__"):
+                return [], 0, 0
+            # Merge without stomping any existing `$or` on `q` (there
+            # isn't one today, but keep defensive: if a future ship
+            # adds one, use `$and` to compose).
+            if "$or" in q:
+                q = {"$and": [q, _swms_scope]}
+            else:
+                q.update(_swms_scope)
         # v159.2 — team-scoping. If the caller lacks `team_view` on this
         # resource (or explicitly asked `?scope=me`), narrow the query to
         # records they created themselves.
