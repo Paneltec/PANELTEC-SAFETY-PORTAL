@@ -298,15 +298,24 @@ function buildFieldRenderPlan(fields) {
     }
     flat.push({ kind: 'field', id: f.id, field: f });
   });
-  // Pass 2 — fold section_header fields plus their subsequent block into
-  // collapsible `section_group` nodes. Only when the block contains
-  // checklist rows OR heavy-truck-only measurement fields (.132kd).
+  // Pass 2 — fold section headers + subsequent block into collapsible
+  // `section_group` nodes.
+  //
+  // v58.13.132kd1 — Fold EVERY section header, regardless of block
+  // content type (checklist rows OR regular fields) UNLESS the header
+  // label matches the "flat zone" regex — those render as ungrouped
+  // regular section-styled fields (Vehicle Details, Service Level,
+  // Consumables, Attachments, Sign-Off, etc.).
+  const FLAT_ZONE_RE = /(vehicle details|service level|consumables|parts used|attachments|sign.?off|signatures|follow.?up)/i;
   const grouped = [];
   let i = 0;
   while (i < flat.length) {
     const e = flat[i];
     const cfg = (e.kind === 'field') ? (e.field.config || {}) : null;
-    if (e.kind === 'field' && cfg && cfg.section_header) {
+    const label = (e.kind === 'field') ? (e.field.label || '') : '';
+    const isHeader = e.kind === 'field' && cfg && cfg.section_header;
+    const isFlatZone = isHeader && FLAT_ZONE_RE.test(label);
+    if (isHeader && !isFlatZone) {
       let j = i + 1;
       const block = [];
       while (j < flat.length) {
@@ -316,19 +325,18 @@ function buildFieldRenderPlan(fields) {
         block.push(nx);
         j++;
       }
-      const hasChecklist = block.some((b) => b.kind === 'checklist_row');
-      const hasHeavyMeasure = block.some(
-        (b) => b.kind === 'field' && ((b.field.config || {}).heavy_truck_only)
-      );
-      if ((hasChecklist || hasHeavyMeasure) && block.length > 0) {
-        const label = e.field.label || '';
+      if (block.length > 0) {
         const letterMatch = label.match(/^([A-K])\.\s/);
         const letter = letterMatch ? letterMatch[1] : null;
         let icon = null;
         if (/tread/i.test(label)) icon = 'gauge';
-        else if (!letter && hasChecklist) icon = 'clipboard';
+        else if (!letter) icon = 'clipboard';
         const key = cfg.sub_section
           || (letter ? `sub-${letter}` : `hdr-${(e.field.id || '').slice(0, 8)}`);
+        // v58.13.132kd1 — Hide +ADD / ✓ALL when the section has no
+        // trinary checklist rows (custom rows + fill-all only make
+        // sense for trinary-radio sections).
+        const hasTrinary = block.some((b) => b.kind === 'checklist_row');
         grouped.push({
           kind: 'section_group',
           key,
@@ -336,6 +344,7 @@ function buildFieldRenderPlan(fields) {
           letter,
           icon,
           entries: block,
+          hasTrinary,
         });
         i = j;
         continue;
@@ -647,8 +656,8 @@ function CollapsibleSectionGroup({
         >
           {status.key}
         </span>
-        {/* + ADD */}
-        {!readOnly && (
+        {/* + ADD (trinary-only sections) */}
+        {!readOnly && group.hasTrinary && (
           <span
             role="button" tabIndex={0}
             data-testid={`section-add-${group.key}`}
@@ -659,8 +668,8 @@ function CollapsibleSectionGroup({
             <Plus size={12} /> ADD
           </span>
         )}
-        {/* ✓ ALL */}
-        {!readOnly && (
+        {/* ✓ ALL (trinary-only sections) */}
+        {!readOnly && group.hasTrinary && (
           <span
             role="button" tabIndex={0}
             data-testid={`section-check-all-${group.key}`}

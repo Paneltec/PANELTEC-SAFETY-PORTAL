@@ -604,3 +604,17 @@
 - **Changes**: Added chevron-back icon left of "Asset Detail" title, 44dp tap target, same onClose behaviour as X
 - **Files modified**: fleet.tsx, app.json (v1.0.34/156), version.ts
 - **Cancelled EAS**: 362b2214 | **New EAS**: da85a6aa-7cbf-4030-8f81-f56bcec32f98
+
+## Iteration .132kc — Inline SCS row layout on tablet + supervisor check
+- **Commit**: 9f5025ddb772d89f076281a28bcf83e3cef207e5
+- **Date**: 2026-09-21
+- **Changes**:
+  - NEW: src/lib/checklistDetect.ts — trinary radio detection, paired notes, render plan builder
+  - NEW: src/components/forms/InlineChecklistRow.tsx — responsive inline (≥600dp) / stacked (<600dp)
+  - Form runner: fill + review modes use buildFieldRenderPlan(), paired notes absorbed
+  - Pill states: rose-500 (✗), emerald-500 (✓), slate-600 (NA), row tints matching web
+  - Supervisor was already RUNNING — no fix needed
+  - Version 1.0.37, versionCode 159, bundle .132kc
+  - EAS build 4edbbaaa (v1.0.36/158) already finished — not cancelled
+- **Files modified**: checklistDetect.ts (new), InlineChecklistRow.tsx (new), forms/[id]/index.tsx, app.json, version.ts
+- **Web files referenced**: frontend/src/pages/Forms.jsx (InlineChecklistRow, isTrinaryChecklistRadio, buildFieldRenderPlan)
