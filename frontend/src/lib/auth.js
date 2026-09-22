@@ -62,6 +62,30 @@ export function getUser() {
   }
 }
 
+// v58.13.132kt — Shared admin-role gate used by the web dashboard's
+// "User Manual" affordance and any other admin-only UI hints. Mirrors
+// the mobile Settings screen's `ADMIN_QUALIFYING_ROLES` list (shipped
+// in .132ku) so admin visibility is consistent across platforms and
+// matches the backend `_is_privileged` seed (admin, hseq_lead,
+// hseq_manager, hseq_manager_2, responsible_manager,
+// report_emailing_admin, supervisor, manager). Tolerant of both
+// `role_id` and `role` fields on the user record.
+export const ADMIN_QUALIFYING_ROLES = Object.freeze([
+  'admin',
+  'hseq_lead',
+  'hseq_manager',
+  'hseq_manager_2',
+  'responsible_manager',
+  'report_emailing_admin',
+  'supervisor',
+  'manager',
+]);
+
+export function isAdminRole(user) {
+  const r = (user?.role_id || user?.role || '').toString().toLowerCase();
+  return ADMIN_QUALIFYING_ROLES.includes(r);
+}
+
 function persist(token, user) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));

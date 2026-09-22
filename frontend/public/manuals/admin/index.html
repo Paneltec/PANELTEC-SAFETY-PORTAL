@@ -70,6 +70,44 @@
 </head>
 <body>
 
+<!-- v58.13.132kt — Soft audience notice for readers who reach this
+     manual without the admin-context hint. The `/manuals/admin`
+     HTML is intentionally public (mobile WebView + copy-paste
+     resilience per .132kq), so we can't hard-gate by role from a
+     static file. Instead: show a friendly redirect chip. Suppressed
+     when the dashboard's admin button appends `?ctx=admin`. -->
+<aside id="audience-notice" role="note"
+       style="max-width:900px;margin:12px auto 0;padding:10px 14px;
+              background:#FEF3C7;border:1px solid #FDE68A;
+              border-radius:12px;color:#78350F;font-size:13px;
+              display:flex;gap:10px;align-items:center;line-height:1.45;"
+       data-testid="admin-manual-audience-notice">
+  <span aria-hidden="true" style="font-size:16px;">ℹ️</span>
+  <span>
+    This manual is written for platform administrators. If you're a
+    field worker, see the
+    <a href="/manuals/user" style="color:#78350F;text-decoration:underline;font-weight:600;"
+       data-testid="admin-manual-worker-link">Field Worker Manual</a>
+    instead.
+  </span>
+  <button type="button" onclick="document.getElementById('audience-notice').style.display='none';"
+          aria-label="Dismiss"
+          style="margin-left:auto;background:none;border:0;color:#78350F;
+                 font-size:16px;cursor:pointer;line-height:1;padding:0 4px;"
+          data-testid="admin-manual-notice-dismiss">×</button>
+</aside>
+<script>
+  // Hide the notice when the dashboard admin button opened this
+  // tab (it passes `?ctx=admin`). Silent no-op otherwise.
+  try {
+    var q = new URLSearchParams(window.location.search);
+    if (q.get('ctx') === 'admin') {
+      var n = document.getElementById('audience-notice');
+      if (n) n.style.display = 'none';
+    }
+  } catch (_) { /* older browsers: leave notice visible */ }
+</script>
+
 <header class="hero">
   <div class="wrap">
     <div class="eyebrow">Paneltec Civil · Web / Admin</div>

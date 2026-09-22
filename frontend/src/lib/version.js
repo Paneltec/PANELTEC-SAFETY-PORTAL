@@ -13379,7 +13379,46 @@
 //   · `/app/mobile/` code — untouched (mobile edit ban).
 //   · `_BACKUP_LOCK_WINDOW_MIN = 60` (60-min post-success dedupe)
 //     — unchanged.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ks';
+// v58.13.132kt — Web: admin-only User Manual button on the Live
+// Compliance Dashboard + soft audience notice on `/manuals/admin`.
+//
+// USER PAIN (Stephen, 2026-09-22, with screenshots): Two "User Manual"
+// buttons were rendering on the dashboard — one orange in the "Good
+// afternoon, Stephen" greeting band, one white-outlined on the "Live
+// Compliance Dashboard" hero card. The hero-card one "won't open in a
+// pdf" because both were wired to the legacy `.132ge` PIN-gated
+// `.docx` streamer, not the new `.132kq` HTML manual. Additionally,
+// the button had no role gate — every worker saw it.
+//
+// Fixes in .132kt:
+//   · Consolidated to a SINGLE button (orange, greeting band).
+//     Duplicate on the hero card removed.
+//   · Rewired the remaining button from `UserManualDownloader`
+//     (PIN + docx blob) to a plain anchor →
+//     `/manuals/admin?ctx=admin` opening in a new tab with
+//     `rel="noopener noreferrer"`. Users can print-to-PDF from the
+//     browser (Print button already ships in the HTML per .132kq).
+//   · Client-side RBAC gate: button only renders when
+//     `isAdminRole(user)` — new helper on `lib/auth.js` sharing the
+//     `ADMIN_QUALIFYING_ROLES` list with mobile's `.132ku` gate
+//     (admin, hseq_lead, hseq_manager, hseq_manager_2,
+//     responsible_manager, report_emailing_admin, supervisor,
+//     manager).
+//   · `/manuals/admin` HTML gains a soft amber audience notice:
+//       "This manual is written for platform administrators. If
+//        you're a field worker, see the Field Worker Manual instead."
+//     Notice auto-hides when the URL carries `?ctx=admin` (which the
+//     dashboard button appends), so admins arriving via the button
+//     see a clean page. Notice is dismissible for anyone else who
+//     wants to read on. Not gating the HTML entirely because mobile
+//     WebView + copy-paste resilience require it to remain public
+//     (per `.132kq`).
+//
+// Follow-up candidate (not shipped in .132kt): native `.pdf` binary
+// download for readers who prefer a file over print-to-PDF. Deferred
+// because the current print-to-PDF path avoids stale-PDF drift and
+// keeps a single source of truth for manual content.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kt';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13400,7 +13439,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ks';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ks';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kt';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

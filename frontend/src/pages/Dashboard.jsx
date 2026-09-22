@@ -8,10 +8,12 @@ import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 import HowThisWorks from '../components/help/HowThisWorks';
 import PlatformOverviewInteractive from '../components/help/PlatformOverviewInteractive';   // v58.13.132ge
-import UserManualDownloader from '../components/help/UserManualDownloader';                  // v58.13.132ge
+// v58.13.132kt — UserManualDownloader (PIN-gated .docx download) removed
+// from this page; the User Manual affordance is now a plain anchor to
+// `/manuals/admin` in a new tab (see greeting-band button below).
 import PaletteSwitcher from '../components/civil/PaletteSwitcher';   // v58.13.67-palette-switcher
 import { AnimatedNumber, TrendDelta } from '../components/ui/polish';
-import { getUser } from '../lib/auth';
+import { getUser, isAdminRole } from '../lib/auth';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -668,13 +670,32 @@ export default function Dashboard() {
                     : `${m.records_needing_attention} record${m.records_needing_attention === 1 ? '' : 's'} need attention — quick review recommended.`)}
             </p>
           </div>
-          <UserManualDownloader
-            testId="dashboard-user-manual-btn-v157"
-            className="btn-primary-gradient self-start sm:self-end shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs sm:text-sm"
-          >
-            <BookOpen20Regular />
-            User Manual
-          </UserManualDownloader>
+          {/* v58.13.132kt — Consolidated User Manual affordance.
+              Previously we rendered TWO buttons on this page (one here
+              in the greeting band, one on the "Live Compliance
+              Dashboard" hero card below). Both were wired to the
+              legacy `.docx` PIN-gated downloader (`.132ge`), so the
+              user saw a broken flow ("this board won't open in a
+              pdf"). This ship:
+                · Removes the duplicate on the hero card.
+                · Retains this single orange button in the greeting band.
+                · Rewires it to open the new HTML admin manual
+                  (`.132kq`, `/manuals/admin`) in a new tab, letting the
+                  user print-to-PDF from the browser's print dialog.
+                · Gates it behind the shared admin-role check
+                  (`isAdminRole`) so field workers no longer see it. */}
+          {isAdminRole(getUser()) && (
+            <a
+              href="/manuals/admin?ctx=admin"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="dashboard-user-manual-btn-v157"
+              className="btn-primary-gradient self-start sm:self-end shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs sm:text-sm no-underline"
+            >
+              <BookOpen20Regular />
+              User Manual
+            </a>
+          )}
         </div>
       </div>
 
@@ -706,13 +727,10 @@ export default function Dashboard() {
             <p className="mt-3 text-slate-700 max-w-2xl hidden md:block">Organisation-wide monitoring feeds your single source of truth.</p>
             <p className="mt-2 md:hidden text-sm text-civil-bitumen opacity-75">Status and actions for your site.</p>
           </div>
-          <UserManualDownloader
-            testId="dashboard-user-manual-btn"
-            className="self-start shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white border border-slate-200 text-slate-700 hover:text-orange-600 text-xs sm:text-sm font-semibold shadow-sm transition-colors"
-          >
-            <BookOpen20Regular />
-            User Manual
-          </UserManualDownloader>
+          {/* v58.13.132kt — Duplicate "User Manual" button removed
+              from this hero card. The single source of truth for the
+              User Manual CTA is the orange pill in the greeting band
+              above (see the JSDoc there for the rationale). */}
         </div>
       </div>
 
