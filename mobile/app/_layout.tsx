@@ -200,6 +200,8 @@ function RootLayout() {
             <Stack.Screen name="visitor" />
             <Stack.Screen name="forms" />
             <Stack.Screen name="profile" />
+            <Stack.Screen name="scan" />
+            <Stack.Screen name="swms" />
           </Stack>
         </QueryClientProvider>
       </CrashRecoveryGate>
