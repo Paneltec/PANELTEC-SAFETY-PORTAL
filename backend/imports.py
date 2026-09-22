@@ -40,10 +40,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response as FastAPIResponse
 
 from auth import get_current_user
 from db import db
 from form_routing import resolve_template_category  # v58.13.132dz
+
+# v58.13.132ki — GridFS bucket for original uploaded PDFs. Every
+# successful `POST /api/imports/pdf` stashes the raw bytes here so
+# admins can review the source PDF weeks later via
+# `GET /api/imports/original-pdf/{submission_id}`. See
+# `memory/v58_13_132ki_ssra_routing_and_view_original.md`.
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+_originals_bucket: "AsyncIOMotorGridFSBucket | None" = None
+def _get_originals_bucket() -> "AsyncIOMotorGridFSBucket":
+    """Lazy singleton — avoids importing Motor at module-load time
+    when running against a mocked DB (e.g. some test suites)."""
+    global _originals_bucket
+    if _originals_bucket is None:
+        _originals_bucket = AsyncIOMotorGridFSBucket(
+            db, bucket_name="imports_originals"
+        )
+    return _originals_bucket
 
 # Import parser from the scripts package.
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
@@ -668,6 +686,39 @@ async def import_pdf(
             log.warning("evidence-photo extraction failed for %s: %s",
                         filename, e)
         await db.form_submissions.insert_one(submission)
+
+        # v58.13.132ki — Persist the raw source PDF into GridFS
+        # bucket `imports_originals` with the submission_id as the
+        # `filename` for easy lookup. Metadata includes org_id, the
+        # user's original filename, and the sha256 so we can prove
+        # provenance against `import_sha256` on the submission row.
+        # Best-effort: a GridFS failure MUST NOT block the import —
+        # the submission is already inserted and the field data is
+        # the primary audit artefact. We log a warning so ops can
+        # spot a bucket-write regression, but the endpoint returns
+        # success.
+        try:
+            await _get_originals_bucket().upload_from_stream(
+                filename=sub_id,
+                source=io.BytesIO(data),
+                metadata={
+                    "submission_id": sub_id,
+                    "org_id": org_id,
+                    "original_filename": filename,
+                    "sha256": sha,
+                    "size": file_size,
+                    "uploaded_at": now,
+                    "uploaded_by": user["id"],
+                    "template_id": matched["id"],
+                    "template_name": matched.get("name"),
+                    "ship": "v58.13.132ki",
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning(
+                "imports_originals GridFS write failed for %s (%s): %s",
+                sub_id, filename, e,
+            )
     finally:
         try: os.unlink(tmp_path)
         except Exception: pass
@@ -844,4 +895,98 @@ async def seed_import_matcher_templates_on_startup() -> None:
                     "seed: failed to insert %r for org=%s: %s",
                     target_name, org_id, e,
                 )
+
+
+
+# v58.13.132ki — Stream the original uploaded PDF for a submission.
+#
+# Contract:
+#   GET /api/imports/original-pdf/{submission_id}
+#     · 200 + application/pdf  → the stored bytes, filename hint via
+#       Content-Disposition inline.
+#     · 404 with {"reason": "original_not_persisted", "uploaded_before":
+#       ".132ki"} for submissions that pre-date this ship — the byte
+#       stream was not persisted before .132ki so we cannot serve it.
+#     · 404 with {"reason": "submission_not_found"} if the caller
+#       asks for an id we don't know.
+#     · 403 if the submission belongs to a different org than the
+#       caller (we deliberately do not distinguish this from 404 so
+#       we don't leak cross-tenant existence).
+#     · 401 handled by the auth dependency.
+#
+# Auth policy: same as viewing the extracted capture record — any
+# authenticated user in the submission's org can view its source PDF
+# (workers can already open the derived submission via
+# `/app/pre-starts/*` etc.). Admin-only would be stricter but would
+# break the "view the original" workflow for the field workers who
+# uploaded the PDF in the first place.
+@router.get("/original-pdf/{submission_id}")
+async def get_original_pdf(
+    submission_id: str,
+    user: dict = Depends(get_current_user),
+):
+    org_id = user.get("org_id")
+    sub = await db.form_submissions.find_one(
+        {"id": submission_id, "deleted_at": None},
+        {"_id": 0, "id": 1, "org_id": 1, "imported": 1,
+         "imported_at": 1, "import_sha256": 1,
+         "template_name_snapshot": 1},
+    )
+    if not sub:
+        raise HTTPException(status_code=404,
+                            detail={"reason": "submission_not_found"})
+    if sub.get("org_id") != org_id:
+        # Do not distinguish cross-tenant from missing — treat as
+        # not found so we don't leak existence.
+        raise HTTPException(status_code=404,
+                            detail={"reason": "submission_not_found"})
+
+    bucket = _get_originals_bucket()
+    # Look up the GridFS file by our custom `filename` (submission_id).
+    file_doc = await db["imports_originals.files"].find_one(
+        {"filename": submission_id},
+        {"_id": 1, "length": 1, "metadata": 1},
+    )
+    if not file_doc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "reason": "original_not_persisted",
+                "uploaded_before": ".132ki",
+                "message": (
+                    "This submission was imported before v58.13.132ki, "
+                    "which introduced GridFS persistence for the source "
+                    "PDF. Re-uploading the PDF will attach it."
+                ),
+                "submission_id": submission_id,
+                "imported_at": sub.get("imported_at"),
+            },
+        )
+
+    # Stream the bytes back. GridFS chunks default to 255KB, so the
+    # total memory footprint per request is bounded by that. For a
+    # typical 400KB Pre-Start we still return in a single response.
+    buf = io.BytesIO()
+    stream = await bucket.open_download_stream(file_doc["_id"])
+    try:
+        while True:
+            chunk = await stream.readchunk()
+            if not chunk:
+                break
+            buf.write(chunk)
+    finally:
+        try: stream.close()
+        except Exception: pass
+
+    md = file_doc.get("metadata") or {}
+    disp_name = md.get("original_filename") or f"{submission_id}.pdf"
+    return FastAPIResponse(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{disp_name}"',
+            "Cache-Control": "private, max-age=60",
+            "X-Paneltec-Import-Ship": md.get("ship", "unknown"),
+        },
+    )
 

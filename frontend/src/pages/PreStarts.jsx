@@ -8,6 +8,7 @@ import CaptureDensityControl from '../components/CaptureDensityControl';
 import TotalCountChip from '../components/TotalCountChip';  // v58.13.132eb
 import ShowArchivedToggle from '../components/ShowArchivedToggle';  // v58.13.132ec
 import ArchiveDialog from '../components/ArchiveDialog';  // v58.13.132ee
+import ViewOriginalPdfButton from '../components/ViewOriginalPdfButton';  // v58.13.132ki
 import PaginationBar, { usePersistedPageSize } from '../components/PaginationBar';  // v58.13.132eh
 import useArchiveActions from '../lib/useArchiveActions';  // v58.13.132ec
 import useCaptureDensity from '../lib/useCaptureDensity';
@@ -584,6 +585,19 @@ export default function PreStartsList() {
                           title={p.imported_from_pdf}>
                           <FileText size={10} className="shrink-0 text-slate-400" />
                           <span className="truncate">Source: {p.imported_from_pdf}</span>
+                        </div>
+                      )}
+                      {/* v58.13.132ki — View original PDF button.
+                          Opens the source upload in a new tab via
+                          `GET /api/imports/original-pdf/{id}`. Legacy
+                          submissions (pre-.132ki) 404 with a friendly
+                          toast. */}
+                      {p.imported && (
+                        <div className="mt-0.5 flex">
+                          <ViewOriginalPdfButton
+                            submissionId={p.id}
+                            testid={`prestarts-view-original-${p.id}`}
+                          />
                         </div>
                       )}
                       </div>

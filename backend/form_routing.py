@@ -84,6 +84,55 @@ SEED_RULES: list[dict[str, Any]] = [
 ]
 
 
+# v58.13.132ki — Name-pattern seed rules.
+#
+# Historically we hand-maintained one `SEED_RULES` entry per
+# template_id. That doesn't scale: the same logical form (e.g.
+# "Viatec Traffic Solutions SSRA") ships once per org, so a single
+# rule needs to be materialised as N template-id-scoped rows.
+#
+# Additionally, Stephen's org had SSRA templates whose
+# `form_templates.category` field was still `pre_start` even after
+# routing rules pointed them at `risk_assessment` — the routing rule
+# handled submission-time correctly, but list queries that filtered
+# by the template's own `category` (e.g. Capture/Daily Pre-Starts)
+# leaked SSRAs in. This ship fixes both.
+#
+# `NAME_PATTERN_SEED_RULES` describes a logical rule keyed by an
+# exact `name` match on `form_templates`. On `ensure_form_routing_rules()`
+# we resolve each pattern to every matching template_id across every
+# org and upsert an equivalent `form_routing_rules` row per match.
+# We also flip `form_templates.category` in the same pass so the
+# list queries agree.
+NAME_PATTERN_SEED_RULES: list[dict[str, Any]] = [
+    {
+        "name_exact": "Construction & Excavation SSRA",
+        "destination_category": "risk_assessment",
+        "reason": (
+            "v58.13.132ki — SSRA templates route to Risk Assessments "
+            "regardless of the per-org `form_templates.category` value. "
+            "Extends `.132dz` (single-template-id rule) to all orgs."
+        ),
+    },
+    {
+        "name_exact": "Viatec Traffic Solutions SSRA",
+        "destination_category": "risk_assessment",
+        "reason": (
+            "v58.13.132ki — Viatec SSRA routes to Risk Assessments. "
+            "Was mis-categorised as `pre_start` on Stephen's org."
+        ),
+    },
+    {
+        "name_exact": "Drain Cleaning SSRA",
+        "destination_category": "risk_assessment",
+        "reason": (
+            "v58.13.132ki — Drain Cleaning SSRA routes to Risk Assessments. "
+            "Was mis-categorised as `pre_start` on Stephen's org."
+        ),
+    },
+]
+
+
 # ── Cache ──────────────────────────────────────────────────────
 _CACHE: dict[str, str] = {}          # template_id -> destination_category
 _CACHE_LOADED_AT: float = 0.0        # monotonic() timestamp
@@ -174,6 +223,86 @@ async def ensure_form_routing_rules() -> None:
                 "created_at": _now_iso(),
                 "created_by": "system",
             })
+
+    # v58.13.132ki — Name-pattern pass. For each logical pattern,
+    # resolve every matching `form_templates` row across all orgs
+    # and (a) upsert a routing rule per match, (b) flip that row's
+    # own `category` field to the destination category so downstream
+    # list queries that read `form_templates.category` directly
+    # agree with the routing rule. Emits a summary log line per
+    # org so operators can see exactly what got flipped.
+    per_org_flipped: dict[str, list[str]] = {}
+    for pattern in NAME_PATTERN_SEED_RULES:
+        matches = await db.form_templates.find(
+            {"name": pattern["name_exact"], "deleted_at": None},
+            {"_id": 0, "id": 1, "name": 1, "category": 1, "org_id": 1},
+        ).to_list(500)
+        for t in matches:
+            tid = t.get("id")
+            org_id = t.get("org_id") or "unknown"
+            dst = pattern["destination_category"]
+            hint = pattern["name_exact"]
+            reason = pattern["reason"]
+
+            # (a) upsert routing rule
+            existing = await db.form_routing_rules.find_one(
+                {"template_id": tid}
+            )
+            if existing:
+                if existing.get("destination_category") != dst:
+                    await db.form_routing_rules.update_one(
+                        {"template_id": tid},
+                        {"$set": {
+                            "destination_category": dst,
+                            "template_name_hint": hint,
+                            "reason": reason,
+                            "active": True,
+                            "updated_at": _now_iso(),
+                        }},
+                    )
+            else:
+                await db.form_routing_rules.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "template_id": tid,
+                    "destination_category": dst,
+                    "template_name_hint": hint,
+                    "reason": reason,
+                    "active": True,
+                    "created_at": _now_iso(),
+                    "created_by": "system",
+                })
+
+            # (b) flip form_templates.category if it disagrees.
+            # `general` is a placeholder — we don't rewrite it. Any
+            # other value (`pre_start`, `hazard`, `daily_start`, …)
+            # gets moved to `risk_assessment` so list views agree.
+            current_cat = t.get("category")
+            if current_cat != dst:
+                await db.form_templates.update_one(
+                    {"id": tid},
+                    {"$set": {"category": dst,
+                              "category_flipped_at": _now_iso(),
+                              "category_flipped_from": current_cat,
+                              "category_flip_reason": (
+                                  "v58.13.132ki name-pattern migration"),
+                              }},
+                )
+                per_org_flipped.setdefault(org_id, []).append(
+                    f"{hint} ({current_cat}→{dst})"
+                )
+
+    if per_org_flipped:
+        for org_id, names in per_org_flipped.items():
+            log.warning(
+                "[migrate-ssra-routing] org=%s flipped=%s",
+                org_id, names,
+            )
+    else:
+        log.info(
+            "[migrate-ssra-routing] no template categories needed "
+            "flipping — all SSRA templates already route to "
+            "risk_assessment on the template row itself."
+        )
 
     # Warm the cache immediately so the first submission after boot
     # picks up the rule without waiting for the 60s TTL.

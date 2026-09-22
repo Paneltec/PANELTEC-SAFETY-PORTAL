@@ -34,6 +34,7 @@ import ShowArchivedToggle from '../../components/ShowArchivedToggle';
 import PaginationBar, { usePersistedPageSize } from '../../components/PaginationBar';
 import useArchiveActions from '../../lib/useArchiveActions';
 import useCaptureDensity from '../../lib/useCaptureDensity';
+import ViewOriginalPdfButton from '../../components/ViewOriginalPdfButton';  // v58.13.132ki
 import { PageHeader, EmptyState } from '../../components/capture/Ui';
 import PdfImportModal from '../../components/imports/PdfImportModal';
 import { getUser } from '@/lib/auth';
@@ -180,6 +181,17 @@ export default function SsraCapture() {
                     title={r.imported_from_pdf}>
                     <FileText size={10} className="shrink-0 text-slate-400" />
                     <span className="truncate">Source: {r.imported_from_pdf}</span>
+                  </div>
+                )}
+                {/* v58.13.132ki — View original PDF (opens the source
+                    upload in a new tab). Shown on every imported row;
+                    404 surfaces a friendly toast for the backfill case. */}
+                {r.imported && (
+                  <div className="mt-0.5 flex">
+                    <ViewOriginalPdfButton
+                      submissionId={r.id}
+                      testid={`capture-ssra-view-original-${r.id}`}
+                    />
                   </div>
                 )}
               </div>

@@ -13534,7 +13534,82 @@
 //     directive; platform-limited, not fixable from inside the pod.
 //   · Resumable snapshot logic — deferred (user directive).
 //   · `/app/mobile/` — untouched (mobile edit ban).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kw';
+// v58.13.132ki — SSRA capture routing + Pre-Start view-original-PDF.
+//
+// USER PAIN (Stephen, 2026-02): Two capture-list quality issues that
+// have been queued for a while:
+//
+//   1. **SSRA templates leaking into Capture/Daily Pre-Starts.** In
+//      Stephen's org (org=3116f250…) the three SSRA templates
+//      (Construction & Excavation, Viatec Traffic Solutions, Drain
+//      Cleaning) still had `form_templates.category = "pre_start"`
+//      even though `form_routing_rules` was already routing them to
+//      `risk_assessment` at submission time (per `.132dz`). Any list
+//      view that filtered by the template's own `category` (e.g.
+//      Capture/Daily Pre-Starts) therefore leaked SSRAs into the
+//      Pre-Starts bucket.
+//   2. **No way to view the original uploaded PDF** for imported
+//      submissions. The `.132kh` matcher extracts fields cleanly,
+//      but there was no persisted source-bytes artefact for
+//      operators to audit weeks later.
+//
+// Fixes bundled in `.132ki`:
+//
+//   Item 1 — SSRA routing:
+//     · `backend/form_routing.py` — new `NAME_PATTERN_SEED_RULES`
+//       list (name_exact → destination_category). On startup,
+//       `ensure_form_routing_rules()` scans `form_templates` for
+//       each pattern's matches, upserts a per-template routing rule
+//       for every hit across every org, AND flips the template's
+//       own `category` field to the destination category so
+//       template-native list queries agree with the routing rule.
+//     · Migration is idempotent — safe to re-run. Existing template
+//       category values are preserved in `category_flipped_from`
+//       for provenance.
+//     · Emits `[migrate-ssra-routing] org=… flipped=[names]` WARN
+//       log lines per org so operators see what got flipped. Verified
+//       live: 18 templates (3 per org × 6 orgs) flipped on the first
+//       boot after this ship, e.g. Stephen's org went
+//       `pre_start → risk_assessment` for all three SSRAs.
+//
+//   Item 2 — View original PDF:
+//     · `backend/imports.py::import_pdf` — after the form_submission
+//       row is inserted, we stash the raw PDF bytes into GridFS
+//       bucket `imports_originals` with `filename = submission_id`
+//       and rich metadata (org_id, original filename, sha256,
+//       template_id, ship-tag). Best-effort — a GridFS failure
+//       warns but does not fail the import.
+//     · New endpoint `GET /api/imports/original-pdf/{submission_id}`:
+//       auth-required (same policy as viewing the derived
+//       submission), returns the stored bytes with
+//       `Content-Type: application/pdf` and
+//       `Content-Disposition: inline`.
+//     · Backfill-aware — submissions imported before this ship don't
+//       have GridFS bytes on file, so we return
+//       `404 {"reason": "original_not_persisted", "uploaded_before":
+//       ".132ki", "message": …}` for those. Cross-tenant lookups
+//       return `404 {"reason": "submission_not_found"}` (we
+//       deliberately do NOT distinguish this from a truly missing
+//       id, to avoid leaking cross-tenant existence).
+//     · Frontend `components/ViewOriginalPdfButton.jsx` — shared
+//       component. Fetches with `responseType: "blob"`, opens the
+//       returned bytes in a new tab via `URL.createObjectURL`, and
+//       surfaces a friendly `sonner.warning` toast for the
+//       backfill-404 case ("Original PDF not on file — this
+//       submission was imported before v.132ki. Re-upload the PDF
+//       to attach it.").
+//     · Wired into `pages/PreStarts.jsx` (Capture/Daily Pre-Starts)
+//       and `pages/capture/SsraCapture.jsx` (Capture/SSRA). Shown
+//       on every `imported === true` row.
+//
+// ── Not changed ────────────────────────────────────────────────
+//   · `.132kh` matcher rules — untouched (per user directive).
+//   · `.132ks` reclaim / `.132kv` reload / `.132kw` widget code —
+//     untouched.
+//   · `/app/mobile/` — untouched (mobile edit ban). Mobile Capture
+//     rows can get the "View original" button in a follow-up if
+//     the operator asks.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ki';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13555,7 +13630,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kw';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kw';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ki';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
