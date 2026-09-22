@@ -13465,7 +13465,76 @@
 //     placeholder is only sed-substituted on a *clean* config, and
 //     because our edit removes the placeholder markers entirely,
 //     subsequent pod reboots do not re-inject `--reload`.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kv';
+// v58.13.132kw — Backup widget rebuild: reflect LAN delivery health
+//                 (not local snapshot cadence) + Emergent pod
+//                 instability diagnostic bundle.
+//
+// USER PAIN (Stephen, 2026-09-22): The backup pill on the header +
+// hero card on `/app/settings/backup` were flipping to DOWN whenever
+// the LOCAL snapshot on the Hub was >25h old, even when the LAN
+// agent → Office UGREEN tower NAS pipeline itself was healthy. The
+// user's actual data safety question — "did a real snapshot land on
+// the NAS?" — was being drowned out by the misleading DOWN pill.
+//
+// Fixes bundled in .132kw:
+//   · `backend/backup_service.py::get_summary` (drives
+//     `/api/backup/summary` → pill + hero) now uses
+//     **delivery age** as the sole trigger for the pill's
+//     traffic-light state:
+//       - ok         : last real delivery < 8h old (DELIVERY_ATTENTION_H)
+//       - attention  : 8h <= delivery age < 24h (DELIVERY_DOWN_H)
+//       - down       : delivery age >= 24h OR any agent silent >25h
+//                      OR no delivery ever
+//     Local snapshot age is displayed but never triggers `down` on
+//     its own — the reason string demotes it to a secondary metric
+//     with the "(this widget reflects delivery health, not snapshot
+//     cadence)" tail.
+//   · Heartbeat rows (`snapshot_id="none"`, `bytes_written<1MB`) are
+//     now filtered out of the "last delivery" lookup — a heartbeat
+//     was previously being counted as a delivery, which would have
+//     given the pill a false green in exactly the scenario the user
+//     is worried about. Mirrors the filter already in
+//     `/api/backup/lan-status`.
+//   · When BOTH pipelines are stale (real end-to-end outage) the
+//     reason string surfaces both ages on a single line:
+//     "Both delivery ({X}h) and local snapshot ({Y}h) are stale —
+//     check LAN agent + backend." — makes the outage visible with
+//     one glance.
+//   · When status is `healthy` the reason string reads
+//     "Backup pipeline OK — data delivered to NAS → {destination}
+//     {N}h ago." — removes the misleading "backups are running on
+//     schedule" copy that shipped in earlier releases.
+//   · Frontend `TopbarPills.jsx` `BackupPill`: reordered the popover
+//     rows so "Last delivery" is FIRST + emphasised (data-testid
+//     `backup-pill-last-delivery`), "Last snapshot" is demoted with a
+//     "context only" tag, and a small explanatory footer note
+//     (data-testid `backup-pill-delivery-note`) reads: "Pill reflects
+//     LAN-side delivery health, not local snapshot cadence." The
+//     hover tooltip on the pill button carries the same clarification.
+//   · Frontend `pages/settings/BackupStatusHero.jsx`: same reorder +
+//     same "context only" tag on the snapshot row, at 75 % opacity
+//     so the eye lands on the delivery row first.
+//
+// ── Emergent pod instability diagnostic ────────────────────────────
+// User asked us to hand Emergent support a diagnostic bundle
+// summarising the pod-level restart cycling that has been blocking
+// snapshot completion (44 supervisord respawns on 2026-09-22
+// between 04:00-10:10 UTC alone, on a container whose kernel
+// /proc/uptime says the pod itself has NOT been recycled — only
+// PID N=supervisord is being SIGTERM'd). Two artifacts landed:
+//   · `memory/emergent_pod_instability_diagnostic_2026-09-22.md`
+//     — full copy-pasteable bundle with TL;DR at the top.
+//   · `memory/emergent_pod_instability_TLDR.txt`
+//     — 20-line one-pager for pasting into an Emergent support form.
+//
+// ── Not changed ────────────────────────────────────────────────
+//   · `.132ks` reclaim / WARN / health-surface code paths — untouched.
+//   · `.132kv` `--reload` fix on supervisor config — untouched.
+//   · Retry loop for `POST /api/backup/snapshots` — dropped per user
+//     directive; platform-limited, not fixable from inside the pod.
+//   · Resumable snapshot logic — deferred (user directive).
+//   · `/app/mobile/` — untouched (mobile edit ban).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kw';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13486,7 +13555,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kv';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kv';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kw';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

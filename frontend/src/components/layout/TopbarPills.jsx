@@ -194,7 +194,11 @@ export function BackupPill() {
       <button
         onClick={() => setOpen((v) => !v)}
         data-testid="backup-pill"
-        title={`Backup status\n${data?.health_reason || detailBits.join(' · ') || 'Latest backup timestamp and destination. Green means backups are running on schedule.'}`}
+        // v58.13.132kw — Tooltip clarifies that the pill reflects
+        // LAN-side delivery health, not local snapshot cadence. So an
+        // operator seeing "healthy" while local snapshots are stalled
+        // knows the data itself is still safe on the NAS.
+        title={`Backup status — reflects actual data safety via LAN-side delivery (not local snapshot cadence).\n${data?.health_reason || detailBits.join(' · ') || 'Latest backup delivery timestamp and destination. Green means data is reaching the NAS on schedule.'}`}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-[0.15em] transition-transform duration-200 hover:-translate-y-0.5 ${tone.chip}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} />
         <DatabaseArrowUp20Regular className="w-3 h-3 -mx-0.5" /> Backup
@@ -224,15 +228,22 @@ export function BackupPill() {
               )}
 
               <div className="grid grid-cols-1 gap-1.5 px-1">
-                <SummaryRow label="Last snapshot" testid="backup-pill-last-snap"
-                  value={snap?.created_at ? `${humanAgo(snap.created_at)}` : '—'}
-                  sub={snap?.size ? `${humanSize(snap.size)}${snap.total_documents ? ` · ${snap.total_documents.toLocaleString()} docs` : ''}` : ''}/>
+                {/* v58.13.132kw — Reordered: LAST DELIVERY first (this
+                    is the source of truth for "is data safe?"), local
+                    snapshot demoted to a secondary/context row. */}
                 <SummaryRow label="Last delivery" testid="backup-pill-last-delivery"
                   value={deliv?.received_at ? humanAgo(deliv.received_at) : 'never'}
                   sub={deliv?.dest_name ? `→ ${deliv.dest_name}${deliv.agent_name ? ` via ${deliv.agent_name}` : ''}` : ''}/>
+                <SummaryRow label="Last snapshot" testid="backup-pill-last-snap"
+                  value={snap?.created_at ? `${humanAgo(snap.created_at)}` : '—'}
+                  sub={snap?.size ? `${humanSize(snap.size)}${snap.total_documents ? ` · ${snap.total_documents.toLocaleString()} docs` : ''} · context only` : 'context only'}/>
                 <SummaryRow label="Next snapshot" testid="backup-pill-next"
                   value={humanFuture(data.next_snapshot_at)}
                   sub={`${data.agent_count || 0} agent${data.agent_count === 1 ? '' : 's'} · ${data.destination_count || 0} destination${data.destination_count === 1 ? '' : 's'}`}/>
+              </div>
+              <div className="px-2 pt-1 text-[10px] leading-snug text-slate-400"
+                   data-testid="backup-pill-delivery-note">
+                Pill reflects LAN-side delivery health, not local snapshot cadence.
               </div>
             </div>
           )}

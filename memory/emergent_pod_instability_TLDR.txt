@@ -1,0 +1,23 @@
+EMERGENT PREVIEW POD INSTABILITY — TL;DR (2026-09-22)
+Pod slug: whs-compliance | https://whs-compliance.preview.emergentagent.com
+
+SYMPTOM: supervisord inside our container is being killed + respawned every
+5-8 min. 44 respawn events on 2026-09-22 04:00-10:10 UTC alone. Kernel
+/proc/uptime = 2h+ so it's NOT a full pod recycle — only supervisord PID is
+being SIGTERM'd. Backend/frontend/mongod/expo all restart every cycle.
+
+IMPACT: Data is safe (last LAN delivery to Office UGREEN tower confirmed,
+14.37 TB free) but the daily backup snapshot writer cannot complete
+in-container (needs ~90s-5min uninterrupted). No fresh snapshot since
+2026-09-21T02:03 UTC.
+
+TENANT-SIDE RULED OUT:
+* App OOM (cgroup oom_kill=0)
+* App exceptions (log clean)
+* Disk exhaustion (69% used, 3.1 GB free)
+* uvicorn --reload storm (fixed in ship .132kv)
+
+ASK: Pull the platform-side eviction reason for pod whs-compliance in the
+2026-09-21T22:00 → 2026-09-22T22:00 UTC window, plus the liveness-probe
+path/timeout/miss-threshold config. Full bundle at
+/app/memory/emergent_pod_instability_diagnostic_2026-09-22.md

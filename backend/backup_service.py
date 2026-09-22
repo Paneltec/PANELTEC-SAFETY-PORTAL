@@ -1578,8 +1578,19 @@ def install(app, db, require_admin):
         )
 
         # ---- Latest successful LAN delivery
+        # v58.13.132kw — Filter out heartbeat log rows so we don't
+        # confuse a "container is alive" ping with an actual snapshot
+        # landing on the NAS. Mirrors the filter already in
+        # `/api/backup/lan-status` (see line ~2647):
+        #   • `snapshot_id != "none"` — heartbeat rows use "none"
+        #   • `bytes_written >= 1 MB` — a real snapshot ZIP is
+        #     150-200 MB; anything under 1 MB is almost certainly
+        #     a diagnostic or a truncated write.
         delivery = await db.bk_agent_logs.find_one(
-            {"status": "ok"}, {"_id": 0}, sort=[("received_at", -1)],
+            {"status": "ok",
+             "snapshot_id": {"$ne": "none"},
+             "bytes_written": {"$gte": 1_000_000}},
+            {"_id": 0}, sort=[("received_at", -1)],
         )
 
         # ---- Agents + destinations
@@ -1637,7 +1648,29 @@ def install(app, db, require_admin):
         }
         setup["complete"] = all(setup.values())
 
-        # ---- Traffic-light health
+        # ---- Traffic-light health (v58.13.132kw — delivery-centric)
+        #
+        # The pill previously flipped to `down` whenever the LOCAL
+        # snapshot was >25h old, even if the LAN agent → NAS delivery
+        # pipeline was healthy. That misled operators: on 2026-09-21/22
+        # the local Hub snapshot got stuck (see `.132ks` reclaim
+        # investigation) but the last delivery to Office UGREEN tower
+        # was still fresh — the pill screamed "DOWN" while the data
+        # itself was safe.
+        #
+        # New rule: **delivery age is the source of truth**. Snapshot
+        # age is displayed but demoted to a secondary metric that
+        # never triggers `down` on its own.
+        #
+        # Thresholds:
+        #   • ok (green)     — last delivery <  DELIVERY_ATTENTION_H (8h)
+        #   • attention (amber) — 8h <= delivery age < DELIVERY_DOWN_H (24h)
+        #   • down (red)     — delivery age >= 24h OR agent silent >30 min
+        #                      OR heartbeat missing entirely
+        #   • setup          — one of the four setup checks incomplete
+        DELIVERY_ATTENTION_H = 8.0     # amber threshold
+        DELIVERY_DOWN_H      = 24.0    # red threshold
+        AGENT_SILENT_H       = 25.0    # unchanged — matches prior "agent silent" behaviour
         snap_age_h = _age_h(snap.get("created_at")) if snap else None
         del_age_h  = _age_h(delivery.get("received_at")) if delivery else None
 
@@ -1645,36 +1678,53 @@ def install(app, db, require_admin):
             if a.get("last_seen_at") is None:
                 return True   # never checked in
             age = _age_h(a.get("last_seen_at"))
-            return age is not None and age > 25.0
+            return age is not None and age > AGENT_SILENT_H
         any_silent = agents and any(_agent_silent(a) for a in agents)
+
+        # Helper to compose "last snapshot X — for context only" tails.
+        def _snap_tail():
+            if snap_age_h is None:
+                return ""
+            return f" Last local snapshot: {snap_age_h:.1f}h ago (this widget reflects delivery health, not snapshot cadence)."
 
         if not setup["complete"]:
             health, why = "setup", "Backup setup is incomplete."
-        elif (snap_age_h is not None and snap_age_h > 25) \
-             or (del_age_h is not None and del_age_h > 25) \
-             or any_silent:
+        elif del_age_h is None:
+            # No delivery ever recorded — genuine outage.
+            health = "down"
+            why = ("No LAN delivery has ever landed on the NAS. Check the "
+                   "LAN agent and its destination configuration."
+                   + _snap_tail())
+        elif del_age_h >= DELIVERY_DOWN_H or any_silent:
             reasons = []
-            if snap_age_h is not None and snap_age_h > 25:
-                reasons.append(f"last snapshot is {snap_age_h:.1f}h old")
-            if del_age_h is not None and del_age_h > 25:
-                reasons.append(f"last delivery is {del_age_h:.1f}h old")
+            if del_age_h >= DELIVERY_DOWN_H:
+                reasons.append(f"last delivery is {del_age_h:.1f}h old (threshold {DELIVERY_DOWN_H:.0f}h)")
             if any_silent:
                 silent = [a.get("name") or "agent" for a in agents if _agent_silent(a)]
                 reasons.append(f"agent silent: {', '.join(silent)}")
             health = "down"
-            why = "Down because " + "; ".join(reasons) + "."
-        elif (snap_age_h is not None and snap_age_h > 7) \
-             or (del_age_h is not None and del_age_h > 7):
-            reasons = []
-            if snap_age_h is not None and snap_age_h > 7:
-                reasons.append(f"last snapshot is {snap_age_h:.1f}h old")
-            if del_age_h is not None and del_age_h > 7:
-                reasons.append(f"last delivery is {del_age_h:.1f}h old")
+            # If BOTH pipelines are stale, surface both ages on the
+            # first line so ops know the outage is real end-to-end.
+            if snap_age_h is not None and snap_age_h >= DELIVERY_DOWN_H:
+                why = (f"Both delivery ({del_age_h:.1f}h) and local snapshot "
+                       f"({snap_age_h:.1f}h) are stale — check LAN agent + backend. "
+                       + "; ".join(reasons) + ".")
+            else:
+                why = "Down because " + "; ".join(reasons) + "." + _snap_tail()
+        elif del_age_h >= DELIVERY_ATTENTION_H:
             health = "attention"
-            why = "Attention: " + "; ".join(reasons) + "."
+            why = (f"Last delivery is {del_age_h:.1f}h old — approaching the "
+                   f"{DELIVERY_DOWN_H:.0f}h down threshold." + _snap_tail())
         else:
             health = "healthy"
-            why = "Snapshots landing on the NAS as expected."
+            # v58.13.132kw — Reference the actual destination in the OK
+            # copy so the operator can see WHERE the data landed at a
+            # glance, per the user's brief.
+            dest_tag = ""
+            if last_delivery_out and last_delivery_out.get("dest_name"):
+                dest_tag = f" → {last_delivery_out['dest_name']}"
+            why = (f"Backup pipeline OK — data delivered to NAS{dest_tag} "
+                   f"{del_age_h:.1f}h ago." + _snap_tail())
 
         return {
             "health": health,

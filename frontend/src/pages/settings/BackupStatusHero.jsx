@@ -214,25 +214,33 @@ export default function BackupStatusHero() {
         gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
         gap: '6px 20px', fontSize: 13, color: p.fg, lineHeight: 1.5,
       }}>
-        <div data-testid="backup-status-last-snapshot">
+        {/* v58.13.132kw — "Last delivery" is the source of truth for
+            the health pill. Rendered first + emphasised; the local
+            snapshot row is demoted to context-only. */}
+        <div data-testid="backup-status-last-delivery">
+          <strong>Last delivery:</strong>{' '}
+          {del ? (
+            <>
+              {fmtAge(del.received_at)}
+              {del.dest_name ? <> · → {del.dest_name}</> : null}
+              {del.agent_name ? <> · via {del.agent_name}</> : null}
+              {del.bytes_written ? <> · {fmtBytes(del.bytes_written)}</> : null}
+            </>
+          ) : 'never'}
+        </div>
+        <div data-testid="backup-status-last-snapshot"
+             style={{ opacity: 0.75 }}>
           <strong>Last snapshot:</strong>{' '}
           {snap ? (
             <>
               {fmtAge(snap.created_at)}
               {snap.size ? <> · {fmtBytes(snap.size)}</> : null}
               {snap.total_documents ? <> · {snap.total_documents.toLocaleString()} docs</> : null}
+              <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>
+                (context only — pill reflects delivery health)
+              </span>
             </>
           ) : 'never'}
-        </div>
-        <div data-testid="backup-status-last-delivery">
-          <strong>Last delivery:</strong>{' '}
-          {del ? (
-            <>
-              {fmtAge(del.received_at)}
-              {del.dest_name ? <> → {del.dest_name}</> : null}
-              {del.agent_name ? <> via {del.agent_name}</> : null}
-            </>
-          ) : 'no deliveries yet'}
         </div>
         <div data-testid="backup-status-next-snapshot">
           <strong>Next snapshot:</strong>{' '}
