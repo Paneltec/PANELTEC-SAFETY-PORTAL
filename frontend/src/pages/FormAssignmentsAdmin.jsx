@@ -86,29 +86,11 @@ export default function FormAssignmentsAdmin() {
   const [workerSearch, setWorkerSearch] = useState('');
   const [workerResults, setWorkerResults] = useState([]);
 
-  // v58.13.132jx — Auto-seed heuristic runner.
-  const [autoSeeding, setAutoSeeding] = useState(false);
-  const runAutoSeed = useCallback(async () => {
-    if (!canEdit || autoSeeding) return;
-    if (!window.confirm(
-      'Auto-seed will scan every form template in this org and assign asset-types based on the template name (e.g. "Trailer Pre-start" → trailer, "Viatec Traffic Ute" → traffic_dept, "Site Diary" → universal).\n\n' +
-      'It will SKIP any template that\'s been manually edited, and will NEVER overwrite a template that already has specific asset-types assigned.\n\n' +
-      'Continue?'
-    )) return;
-    setAutoSeeding(true);
-    try {
-      const { data } = await api.post('/admin/forms/auto-seed-asset-types', { dry_run: false });
-      const unm = (data.unmatched_templates || []).length;
-      toast.success(
-        `Auto-seed complete: ${data.seeded_rows} updated, ${data.skipped_no_change} preserved, ${unm} left for manual review.`,
-        { duration: 6000 }
-      );
-      await load();
-    } catch (e) {
-      toast.error(apiError(e));
-    } finally { setAutoSeeding(false); }
-  }, [canEdit, autoSeeding, load]);
-
+  // v58.13.132ke1 — TDZ fix: `load` must be declared BEFORE `runAutoSeed`
+  // because `runAutoSeed` references `load` in its body + deps array.
+  // Previously `runAutoSeed` was above `load`, causing an
+  // "Cannot access 'load' before initialization" runtime crash on mount
+  // (const/useCallback bindings are hoisted but not initialized).
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -141,6 +123,29 @@ export default function FormAssignmentsAdmin() {
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // v58.13.132jx — Auto-seed heuristic runner.
+  const [autoSeeding, setAutoSeeding] = useState(false);
+  const runAutoSeed = useCallback(async () => {
+    if (!canEdit || autoSeeding) return;
+    if (!window.confirm(
+      'Auto-seed will scan every form template in this org and assign asset-types based on the template name (e.g. "Trailer Pre-start" → trailer, "Viatec Traffic Ute" → traffic_dept, "Site Diary" → universal).\n\n' +
+      'It will SKIP any template that\'s been manually edited, and will NEVER overwrite a template that already has specific asset-types assigned.\n\n' +
+      'Continue?'
+    )) return;
+    setAutoSeeding(true);
+    try {
+      const { data } = await api.post('/admin/forms/auto-seed-asset-types', { dry_run: false });
+      const unm = (data.unmatched_templates || []).length;
+      toast.success(
+        `Auto-seed complete: ${data.seeded_rows} updated, ${data.skipped_no_change} preserved, ${unm} left for manual review.`,
+        { duration: 6000 }
+      );
+      await load();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setAutoSeeding(false); }
+  }, [canEdit, autoSeeding, load]);
 
   // Filter the left rail.
   const filteredTemplates = useMemo(() => {

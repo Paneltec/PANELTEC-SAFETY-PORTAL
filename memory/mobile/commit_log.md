@@ -618,3 +618,14 @@
   - EAS build 4edbbaaa (v1.0.36/158) already finished — not cancelled
 - **Files modified**: checklistDetect.ts (new), InlineChecklistRow.tsx (new), forms/[id]/index.tsx, app.json, version.ts
 - **Web files referenced**: frontend/src/pages/Forms.jsx (InlineChecklistRow, isTrinaryChecklistRadio, buildFieldRenderPlan)
+
+## Iteration .132kf — Home tiles: add Incident Report, remove Site Induction + Toolbox Meeting
+- **Commit**: 6e14b2b4ccc03989e0b89ccbc8b08045897af7df
+- **Date**: 2026-09-22
+- **Changes**:
+  - Added Incident Report tile (warning-outline, rose, → /forms/picker?category=incident)
+  - Removed Toolbox Meeting Sign-off from MOCK_COMPLIANCE_LIST
+  - Removed Site Induction — New Starter from MOCK_COMPLIANCE_LIST
+  - Quick actions grid: 3-col row → 2×2 wrap (width: 47%)
+  - Version 1.0.38, versionCode 160, bundle .132kf
+- **Files modified**: home.tsx, mockData.ts, app.json, version.ts
