@@ -1,0 +1,171 @@
+=== date UTC ===
+2026-09-22T08:34:22Z
+=== uvicorn uptime ===
+    110       07:52 /root/.venv/bin/python /root/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8001 --workers 1
+=== disk ===
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n2    9.8G  6.7G  3.1G  69% /app
+=== mem ===
+               total        used        free      shared  buff/cache   available
+Mem:           64185       10463       32642          44       21752       53722
+Swap:              0           0           0
+=== load ===
+ 08:34:22 up  2:36,  0 user,  load average: 0.89, 1.23, 1.14
+=== cgroup memory ===
+5435047936
+
+low 0
+high 0
+max 0
+oom 0
+oom_kill 0
+oom_group_kill 0
+=== supervisor status ===
+backend                          RUNNING   pid 110, uptime 0:07:52
+code-server                      STOPPED   Not started
+frontend                         RUNNING   pid 113, uptime 0:07:52
+mobile                           RUNNING   pid 116, uptime 0:07:52
+mongodb                          RUNNING   pid 117, uptime 0:07:52
+nginx-code-proxy                 RUNNING   pid 108, uptime 0:07:52
+webhook-crond                    RUNNING   pid 118, uptime 0:07:52
+=== last 15 supervisord restarts ===
+2026-09-22 07:05:23,045 INFO supervisord started with pid 94
+2026-09-22 07:11:26,185 INFO supervisord started with pid 94
+2026-09-22 07:14:27,447 INFO supervisord started with pid 94
+2026-09-22 07:20:26,186 INFO supervisord started with pid 94
+2026-09-22 07:26:29,434 INFO supervisord started with pid 94
+2026-09-22 07:29:43,927 INFO supervisord started with pid 94
+2026-09-22 07:36:23,254 INFO supervisord started with pid 94
+2026-09-22 07:44:44,390 INFO supervisord started with pid 94
+2026-09-22 07:51:48,368 INFO supervisord started with pid 94
+2026-09-22 07:59:06,333 INFO supervisord started with pid 94
+2026-09-22 08:05:53,801 INFO supervisord started with pid 94
+2026-09-22 08:09:10,692 INFO supervisord started with pid 94
+2026-09-22 08:16:17,056 INFO supervisord started with pid 102
+2026-09-22 08:23:25,118 INFO supervisord started with pid 95
+2026-09-22 08:26:29,684 INFO supervisord started with pid 101
+=== backend spawn events (last 30) ===
+2026-09-22 04:55:40,055 INFO spawned: 'backend' with pid 4999
+2026-09-22 05:01:45,166 INFO spawned: 'backend' with pid 98
+2026-09-22 05:12:29,745 INFO spawned: 'backend' with pid 99
+2026-09-22 05:19:37,782 INFO spawned: 'backend' with pid 99
+2026-09-22 05:25:24,722 INFO spawned: 'backend' with pid 99
+2026-09-22 05:43:39,347 INFO spawned: 'backend' with pid 99
+2026-09-22 05:47:21,662 INFO spawned: 'backend' with pid 103
+2026-09-22 05:52:27,121 INFO spawned: 'backend' with pid 103
+2026-09-22 06:02:11,683 INFO spawned: 'backend' with pid 102
+2026-09-22 06:21:50,327 INFO spawned: 'backend' with pid 6108
+2026-09-22 06:28:42,716 INFO spawned: 'backend' with pid 103
+2026-09-22 06:36:25,040 INFO spawned: 'backend' with pid 98
+2026-09-22 06:51:25,142 INFO spawned: 'backend' with pid 99
+2026-09-22 06:57:25,478 INFO spawned: 'backend' with pid 106
+2026-09-22 06:59:24,724 INFO spawned: 'backend' with pid 99
+2026-09-22 07:05:24,050 INFO spawned: 'backend' with pid 103
+2026-09-22 07:11:27,190 INFO spawned: 'backend' with pid 99
+2026-09-22 07:14:28,454 INFO spawned: 'backend' with pid 106
+2026-09-22 07:20:27,191 INFO spawned: 'backend' with pid 108
+2026-09-22 07:26:30,439 INFO spawned: 'backend' with pid 103
+2026-09-22 07:29:44,932 INFO spawned: 'backend' with pid 103
+2026-09-22 07:36:24,260 INFO spawned: 'backend' with pid 108
+2026-09-22 07:44:45,395 INFO spawned: 'backend' with pid 99
+2026-09-22 07:51:49,373 INFO spawned: 'backend' with pid 99
+2026-09-22 07:59:07,338 INFO spawned: 'backend' with pid 99
+2026-09-22 08:05:54,806 INFO spawned: 'backend' with pid 103
+2026-09-22 08:09:11,697 INFO spawned: 'backend' with pid 99
+2026-09-22 08:16:18,061 INFO spawned: 'backend' with pid 108
+2026-09-22 08:23:26,123 INFO spawned: 'backend' with pid 111
+2026-09-22 08:26:30,689 INFO spawned: 'backend' with pid 110
+=== dmesg oom ===
+dmesg: read kernel buffer failed: Operation not permitted
+=== backend health ===
+{
+    "ok": true,
+    "checks": {
+        "mongo": {
+            "ok": true,
+            "ms": 0
+        },
+        "gridfs": {
+            "ok": true
+        },
+        "disk": {
+            "ok": true,
+            "free_gb": 72.86,
+            "total_gb": 94.19,
+            "warn_below_gb": 2.0
+        },
+        "disk_app": {
+            "ok": true,
+            "free_gb": 3.09,
+            "total_gb": 9.75,
+            "free_pct": 31.7,
+            "warn_below_pct": 15.0
+        },
+        "libreoffice": {
+            "ok": true,
+            "path": "/bin/soffice"
+        },
+        "tesseract": {
+            "ok": true,
+            "path": "/bin/tesseract"
+        },
+        "poppler": {
+            "ok": true,
+            "path": "/bin/pdftotext"
+        },
+        "backup_lock": {
+            "ok": true,
+            "in_progress": true,
+            "started_at": "2026-09-22T08:24:36.647941+00:00",
+            "started_age_min": 9.8,
+            "last_run_at": "2026-09-21T02:01:40.318685+00:00",
+            "stale_lock_reclaim_count": 1,
+            "last_stale_reclaim_at": "2026-09-22T04:55:49.785561+00:00",
+            "stale_threshold_min": 30
+        }
+    },
+    "degraded": [
+        "backup_lock_reclaims_seen"
+    ]
+}
+=== lan-status ===
+{
+    "health": "stale",
+    "stale_after_h": 8.0,
+    "down_after_min": 30,
+    "now": "2026-09-22T08:34:23.653194+00:00",
+    "last_delivery": {
+        "id": "da683e84-254d-4bf4-b616-01efdb1be061",
+        "agent_id": "a6767aa4-d280-40df-8bac-d48026b0afcb",
+        "received_at": "2026-09-21T02:03:13.834591+00:00",
+        "snapshot_id": "b2792118-c995-44af-88bf-2c783775ac63",
+        "destination_id": null,
+        "status": "ok",
+        "bytes_written": 423340068,
+        "target_path": "/data/paneltec-civil-b2792118-c995-44af-88bf-2c783775ac63.zip",
+        "mdns_services": [],
+        "error": null,
+        "disk_usage": {
+            "total": 15843059896320,
+            "used": 38442565632,
+            "free": 15804600553472
+        },
+        "nas_disk_usage": null
+    },
+    "last_delivery_age_min": 1831.1636433833335,
+    "last_failure": {
+        "id": "5cf2b2ca-377a-4113-a5e3-bfbfa00b67de",
+        "agent_id": "a6767aa4-d280-40df-8bac-d48026b0afcb",
+        "received_at": "2026-09-22T07:38:28.890150+00:00",
+        "snapshot_id": "9176bec4-c56e-464f-9f0b-10a86290af16",
+        "destination_id": null,
+        "status": "fail",
+        "bytes_written": null,
+        "target_path": null,
+        "mdns_services": null,
+        "error": "download failed",
+        "disk_usage": {
+            "total": 15843059896320,
+            "used": 38442500096,
+            "free": 15804600619008
+        },

@@ -1,0 +1,249 @@
+=== BASELINE snapshot ===
+2026-09-22T10:15:49Z (1790072149)
+
+=== supervisord restart cadence (last 4 hours) ===
+2026-09-22 07:29:43,927 INFO supervisord started with pid 94
+2026-09-22 07:29:44,932 INFO spawned: 'backend' with pid 103
+2026-09-22 07:36:23,254 INFO supervisord started with pid 94
+2026-09-22 07:36:24,260 INFO spawned: 'backend' with pid 108
+2026-09-22 07:44:44,390 INFO supervisord started with pid 94
+2026-09-22 07:44:45,395 INFO spawned: 'backend' with pid 99
+2026-09-22 07:51:48,368 INFO supervisord started with pid 94
+2026-09-22 07:51:49,373 INFO spawned: 'backend' with pid 99
+2026-09-22 07:59:06,333 INFO supervisord started with pid 94
+2026-09-22 07:59:07,338 INFO spawned: 'backend' with pid 99
+2026-09-22 08:05:53,801 INFO supervisord started with pid 94
+2026-09-22 08:05:54,806 INFO spawned: 'backend' with pid 103
+2026-09-22 08:09:10,692 INFO supervisord started with pid 94
+2026-09-22 08:09:11,697 INFO spawned: 'backend' with pid 99
+2026-09-22 08:16:17,056 INFO supervisord started with pid 102
+2026-09-22 08:16:18,061 INFO spawned: 'backend' with pid 108
+2026-09-22 08:23:25,118 INFO supervisord started with pid 95
+2026-09-22 08:23:26,123 INFO spawned: 'backend' with pid 111
+2026-09-22 08:26:29,684 INFO supervisord started with pid 101
+2026-09-22 08:26:30,689 INFO spawned: 'backend' with pid 110
+2026-09-22 08:40:46,790 INFO supervisord started with pid 94
+2026-09-22 08:40:47,795 INFO spawned: 'backend' with pid 111
+2026-09-22 08:47:46,945 INFO supervisord started with pid 95
+2026-09-22 08:47:47,954 INFO spawned: 'backend' with pid 104
+2026-09-22 08:54:46,929 INFO supervisord started with pid 94
+2026-09-22 08:54:47,935 INFO spawned: 'backend' with pid 111
+2026-09-22 09:02:47,571 INFO supervisord started with pid 94
+2026-09-22 09:02:48,575 INFO spawned: 'backend' with pid 99
+2026-09-22 09:10:14,365 INFO supervisord started with pid 94
+2026-09-22 09:10:15,370 INFO spawned: 'backend' with pid 105
+2026-09-22 09:15:38,421 INFO supervisord started with pid 94
+2026-09-22 09:15:39,427 INFO spawned: 'backend' with pid 105
+2026-09-22 09:24:59,796 INFO supervisord started with pid 94
+2026-09-22 09:25:00,802 INFO spawned: 'backend' with pid 106
+2026-09-22 09:32:06,762 INFO supervisord started with pid 95
+2026-09-22 09:32:07,767 INFO spawned: 'backend' with pid 100
+2026-09-22 09:36:42,416 INFO supervisord started with pid 94
+2026-09-22 09:36:43,421 INFO spawned: 'backend' with pid 99
+2026-09-22 09:41:37,390 INFO supervisord started with pid 94
+2026-09-22 09:41:38,395 INFO spawned: 'backend' with pid 107
+2026-09-22 09:47:44,173 INFO supervisord started with pid 94
+2026-09-22 09:47:45,178 INFO spawned: 'backend' with pid 99
+2026-09-22 09:55:04,461 INFO supervisord started with pid 94
+2026-09-22 09:55:05,466 INFO spawned: 'backend' with pid 99
+2026-09-22 10:02:10,809 INFO supervisord started with pid 94
+2026-09-22 10:02:11,816 INFO spawned: 'backend' with pid 106
+2026-09-22 10:09:13,513 INFO supervisord started with pid 94
+2026-09-22 10:09:14,518 INFO spawned: 'backend' with pid 119
+2026-09-22 10:12:27,043 INFO spawned: 'backend' with pid 3960
+2026-09-22 10:12:57,823 INFO spawned: 'backend' with pid 4141
+
+=== supervisor status now ===
+backend                          RUNNING   pid 4141, uptime 0:02:52
+code-server                      STOPPED   Not started
+frontend                         RUNNING   pid 122, uptime 0:06:35
+mobile                           RUNNING   pid 254, uptime 0:06:33
+mongodb                          RUNNING   pid 125, uptime 0:06:35
+nginx-code-proxy                 RUNNING   pid 115, uptime 0:06:35
+webhook-crond                    RUNNING   pid 126, uptime 0:06:35
+
+=== disk ===
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n2    9.8G  6.7G  3.1G  69% /app
+overlay          95G   22G   74G  23% /
+
+=== mem ===
+               total        used        free      shared  buff/cache   available
+Mem:           64185        8912       33623          44       22321       55273
+Swap:              0           0           0
+
+=== load ===
+ 10:15:49 up  4:18,  0 user,  load average: 0.68, 1.38, 0.89
+
+=== cgroup memory pressure ===
+current: 6149562368 bytes
+max: 8589934592
+events:
+low 0
+high 0
+max 0
+oom 0
+oom_kill 0
+oom_group_kill 0
+
+=== dmesg oom/killed ===
+
+=== process tree (top level under PID 1) ===
+    PID    PPID %CPU %MEM     ELAPSED CMD
+      1       0  0.0  0.0       06:37 /bin/bash /entrypoint.sh
+--- deeper tree ---
+entrypoint.sh(1)-+-e1_monitor(70)
+                 |-entrypoint.sh(7)---uvicorn(10)-+-bash(4992)-+-head(5013)
+                 |                                |            `-pstree(5012)
+                 |                                |-{uvicorn}(109)
+                 |                                |-{uvicorn}(110)
+                 |                                |-{uvicorn}(111)
+                 |                                |-{uvicorn}(112)
+                 |                                |-{uvicorn}(113)
+                 |                                |-{uvicorn}(114)
+                 |                                |-{uvicorn}(203)
+                 |                                |-{uvicorn}(3503)
+                 |                                |-{uvicorn}(3552)
+                 |                                |-{uvicorn}(3553)
+                 |                                |-{uvicorn}(3554)
+                 |                                |-{uvicorn}(3555)
+                 |                                |-{uvicorn}(3556)
+                 |                                |-{uvicorn}(3557)
+                 |                                |-{uvicorn}(3558)
+                 |                                |-{uvicorn}(3559)
+                 |                                |-{uvicorn}(3560)
+                 |                                |-{uvicorn}(3561)
+                 |                                |-{uvicorn}(3562)
+                 |                                |-{uvicorn}(3563)
+                 |                                |-{uvicorn}(3564)
+                 |                                |-{uvicorn}(3565)
+                 |                                |-{uvicorn}(3566)
+                 |                                |-{uvicorn}(3567)
+                 |                                |-{uvicorn}(3568)
+                 |                                `-{uvicorn}(4993)
+                 `-supervisord(94)-+-MainThread(122)-+-sh(173)---MainThread(188)-+-MainThread(195)-+-{MainThread}(196)
+                                   |                 |                           |                 |-{MainThread}(197)
+                                   |                 |                           |                 |-{MainThread}(198)
+                                   |                 |                           |                 |-{MainThread}(199)
+                                   |                 |                           |                 |-{MainThread}(200)
+                                   |                 |                           |                 |-{MainThread}(202)
+                                   |                 |                           |                 |-{MainThread}(292)
+                                   |                 |                           |                 |-{MainThread}(293)
+                                   |                 |                           |                 |-{MainThread}(294)
+                                   |                 |                           |                 `-{MainThread}(295)
+                                   |                 |                           |-{MainThread}(189)
+
+=== backend health probe ===
+{
+    "ok": true,
+    "checks": {
+        "mongo": {
+            "ok": true,
+            "ms": 0
+        },
+        "gridfs": {
+            "ok": true
+        },
+        "disk": {
+            "ok": true,
+            "free_gb": 73.12,
+            "total_gb": 94.19,
+            "warn_below_gb": 2.0
+        },
+        "disk_app": {
+            "ok": true,
+            "free_gb": 3.03,
+            "total_gb": 9.75,
+            "free_pct": 31.1,
+            "warn_below_pct": 15.0
+        },
+        "libreoffice": {
+            "ok": true,
+            "path": "/bin/soffice"
+        },
+        "tesseract": {
+            "ok": true,
+            "path": "/bin/tesseract"
+        },
+        "poppler": {
+            "ok": true,
+            "path": "/bin/pdftotext"
+        },
+        "backup_lock": {
+            "ok": true,
+            "in_progress": true,
+            "started_at": "2026-09-22T10:03:22.822190+00:00",
+            "started_age_min": 12.5,
+            "last_run_at": "2026-09-21T02:01:40.318685+00:00",
+            "stale_lock_reclaim_count": 1,
+            "last_stale_reclaim_at": "2026-09-22T04:55:49.785561+00:00",
+            "stale_threshold_min": 30
+        }
+    },
+    "degraded": [
+        "backup_lock_reclaims_seen"
+    ]
+}
+
+=== backup/summary post-fix ===
+{
+    "health": "down",
+    "health_reason": "Both delivery (32.2h) and local snapshot (32.2h) are stale \u2014 check LAN agent + backend. last delivery is 32.2h old (threshold 24h).",
+    "last_snapshot": {
+        "id": "b2792118-c995-44af-88bf-2c783775ac63",
+        "created_at": "2026-09-21T02:01:40.306871+00:00",
+        "size": 423340068,
+        "total_documents": 106040
+    },
+    "last_delivery": {
+        "received_at": "2026-09-21T02:03:13.834591+00:00",
+        "bytes_written": 423340068,
+        "target_path": "/data/paneltec-civil-b2792118-c995-44af-88bf-2c783775ac63.zip",
+        "dest_name": "Office UGREEN tower",
+        "agent_name": "Office Pi"
+    },
+    "next_snapshot_at": "2026-09-23T00:00:00+10:00",
+    "setup": {
+        "destination_configured": true,
+        "agent_registered": true,
+        "agent_first_seen": true,
+        "first_delivery_ok": true,
+        "complete": true
+    },
+    "agent_count": 1,
+    "destination_count": 2
+}
+
+=== recent WatchFiles/Reloading (should be zero post-fix) ===
+113
+(cumulative since log rotation — check timestamps of newest matches:)
+INFO:     Started reloader process [103] using WatchFiles
+INFO:     Started reloader process [103] using WatchFiles
+INFO:     Started reloader process [102] using WatchFiles
+
+=== supervisord.conf backend command ===
+[program:backend]
+# v58.13.5 — Add `--reload` + `--reload-dir /app/backend`. Prevents the
+# stale-backend class of bug (see /app/memory/BUILD_STATE.md). uvicorn
+
+=== supervisord.log — pod-lifecycle markers ===
+2026-09-22 07:59:06,333 INFO supervisord started with pid 94
+2026-09-22 08:05:53,801 INFO supervisord started with pid 94
+2026-09-22 08:09:10,692 INFO supervisord started with pid 94
+2026-09-22 08:16:17,056 INFO supervisord started with pid 102
+2026-09-22 08:23:25,118 INFO supervisord started with pid 95
+2026-09-22 08:26:29,684 INFO supervisord started with pid 101
+2026-09-22 08:40:46,790 INFO supervisord started with pid 94
+2026-09-22 08:47:46,945 INFO supervisord started with pid 95
+2026-09-22 08:54:46,929 INFO supervisord started with pid 94
+2026-09-22 09:02:47,571 INFO supervisord started with pid 94
+2026-09-22 09:10:14,365 INFO supervisord started with pid 94
+2026-09-22 09:15:38,421 INFO supervisord started with pid 94
+2026-09-22 09:24:59,796 INFO supervisord started with pid 94
+2026-09-22 09:32:06,762 INFO supervisord started with pid 95
+2026-09-22 09:36:42,416 INFO supervisord started with pid 94
+2026-09-22 09:41:37,390 INFO supervisord started with pid 94
+2026-09-22 09:47:44,173 INFO supervisord started with pid 94
+2026-09-22 09:55:04,461 INFO supervisord started with pid 94
+2026-09-22 10:02:10,809 INFO supervisord started with pid 94
+2026-09-22 10:09:13,513 INFO supervisord started with pid 94

@@ -1,5 +1,6 @@
 /**
  * Form Runner — Fill mode + mandatory Review-before-Submit.
+ * v58.13.132kx — Collapsible section groups for SCS, custom rows, ✓ALL.
  * v58.13.132l — Draft persistence via AsyncStorage keyed by form+worker.
  *   Fill → Review → Confirm & Submit state machine. Review step is
  *   MANDATORY (no bypass). Draft autosave debounced 800ms, cleared
@@ -38,7 +39,10 @@ import {
   SitePicker, JobPicker, AssetScanPicker, ContactPicker,
 } from '../../../src/components/pickers/PickerFields';
 import InlineChecklistRow from '../../../src/components/forms/InlineChecklistRow';
-import { buildFieldRenderPlan, type RenderEntry } from '../../../src/lib/checklistDetect';
+import CollapsibleSectionGroup from '../../../src/components/forms/CollapsibleSectionGroup';
+import { type CustomRow } from '../../../src/components/forms/CustomChecklistRow';
+import { buildFieldRenderPlan, type RenderPlanEntry, type SectionGroupEntry } from '../../../src/lib/checklistDetect';
+import { useSectionExpansion } from '../../../src/hooks/useSectionExpansion';
 
 type FieldValues = Record<string, unknown>;
 type Mode = 'fill' | 'review';
@@ -120,6 +124,53 @@ export default function FormRunnerScreen() {
   const [lockedFieldIds, setLockedFieldIds] = useState<Set<string>>(new Set());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // v58.13.132kx — Section expansion + custom checklist rows
+  const sectionExpansion = useSectionExpansion(id);
+  const [customChecklistRows, setCustomChecklistRows] = useState<Record<string, CustomRow[]>>({});
+  const customRowsLoaded = useRef(false);
+
+  // Rehydrate custom rows from draft values on first load
+  useEffect(() => {
+    if (!draftLoaded || customRowsLoaded.current) return;
+    customRowsLoaded.current = true;
+    const raw = values.__custom_checklist_rows__;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      setCustomChecklistRows(raw as Record<string, CustomRow[]>);
+    }
+  }, [draftLoaded, values]);
+
+  // Persist custom rows into values so they ride along with draft autosave + submission
+  useEffect(() => {
+    if (!customRowsLoaded.current) return;
+    setValues((prev) => ({ ...prev, __custom_checklist_rows__: customChecklistRows }));
+  }, [customChecklistRows]);
+
+  const addCustomRow = useCallback((sectionKey: string) => {
+    setCustomChecklistRows((prev) => {
+      const list = prev[sectionKey] || [];
+      const rid = `${sectionKey}-${Date.now().toString(36)}-${list.length}`;
+      return { ...prev, [sectionKey]: [...list, { id: rid, label: '', value: null, notes: '' }] };
+    });
+  }, []);
+
+  const updateCustomRow = useCallback((sectionKey: string, rowId: string, patch: Partial<CustomRow>) => {
+    setCustomChecklistRows((prev) => {
+      const list = (prev[sectionKey] || []).map((r) => (r.id === rowId ? { ...r, ...patch } : r));
+      return { ...prev, [sectionKey]: list };
+    });
+  }, []);
+
+  const deleteCustomRow = useCallback((sectionKey: string, rowId: string) => {
+    setCustomChecklistRows((prev) => {
+      const list = (prev[sectionKey] || []).filter((r) => r.id !== rowId);
+      return { ...prev, [sectionKey]: list };
+    });
+  }, []);
+
+  const markCustomChecked = useCallback((sectionKey: string, rowId: string, value: string) => {
+    updateCustomRow(sectionKey, rowId, { value });
+  }, [updateCustomRow]);
 
   // Fetch template
   const { data: template, isLoading } = useQuery<FormTemplate>({
@@ -453,38 +504,94 @@ export default function FormRunnerScreen() {
             </View>
           )}
 
-          {/* Fields — .132kc: use render plan to detect checklist rows */}
+          {/* Fields — .132kx: collapsible section groups + checklist rows */}
           {mode === 'fill' ? (
-            buildFieldRenderPlan(template.fields || []).map((entry) => {
-              if (entry.kind === 'checklist_row') {
-                const { radio: r, notes: n } = entry;
-                return (
-                  <InlineChecklistRow
-                    key={r.id}
-                    radio={r}
-                    notes={n}
-                    radioValue={(values[r.id] as string) || null}
-                    notesValue={(values[n.id] as string) || ''}
-                    onRadioChange={(v) => setField(r.id, v)}
-                    onNotesChange={(v) => setField(n.id, v)}
-                    locked={lockedFieldIds.has(r.id)}
-                  />
-                );
-              }
-              const field = entry.field;
+            (() => {
+              const plan = buildFieldRenderPlan(template.fields || []);
+              const groupKeys = plan.filter((p): p is SectionGroupEntry => p.kind === 'section_group').map((p) => p.key);
+              const allExpanded = groupKeys.length > 0 && groupKeys.every((k) => sectionExpansion.openKeys.has(k));
               return (
-                <FieldRenderer
-                  key={field.id}
-                  field={field}
-                  value={values[field.id]}
-                  onChange={(v) => setField(field.id, v)}
-                  hasError={submitAttempted && missingFields.some((mf) => mf.id === field.id)}
-                  allValues={values}
-                  allFields={template.fields}
-                  locked={lockedFieldIds.has(field.id)}
-                />
+                <>
+                  {groupKeys.length > 0 && (
+                    <TouchableOpacity
+                      testID="section-expand-all"
+                      style={s.expandAllBtn}
+                      onPress={() => sectionExpansion.setAll(groupKeys, !allExpanded)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={allExpanded ? 'contract-outline' : 'expand-outline'}
+                        size={14}
+                        color={Colors.info}
+                      />
+                      <Text style={s.expandAllText}>
+                        {allExpanded ? 'Collapse all' : 'Expand all'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {plan.map((entry) => {
+                    if (entry.kind === 'section_group') {
+                      return (
+                        <CollapsibleSectionGroup
+                          key={entry.key}
+                          group={entry}
+                          expanded={sectionExpansion.openKeys.has(entry.key)}
+                          onToggle={() => sectionExpansion.toggle(entry.key)}
+                          values={values}
+                          setField={setField}
+                          readOnly={false}
+                          customRows={customChecklistRows}
+                          addCustomRow={addCustomRow}
+                          updateCustomRow={updateCustomRow}
+                          deleteCustomRow={deleteCustomRow}
+                          markAllChecked={markCustomChecked}
+                          renderField={(field: FormField) => (
+                            <FieldRenderer
+                              key={field.id}
+                              field={field}
+                              value={values[field.id]}
+                              onChange={(v) => setField(field.id, v)}
+                              hasError={submitAttempted && missingFields.some((mf) => mf.id === field.id)}
+                              allValues={values}
+                              allFields={template.fields}
+                              locked={lockedFieldIds.has(field.id)}
+                            />
+                          )}
+                        />
+                      );
+                    }
+                    if (entry.kind === 'checklist_row') {
+                      const { radio: r, notes: n } = entry;
+                      return (
+                        <InlineChecklistRow
+                          key={r.id}
+                          radio={r}
+                          notes={n}
+                          radioValue={(values[r.id] as string) || null}
+                          notesValue={(values[n.id] as string) || ''}
+                          onRadioChange={(v) => setField(r.id, v)}
+                          onNotesChange={(v) => setField(n.id, v)}
+                          locked={lockedFieldIds.has(r.id)}
+                        />
+                      );
+                    }
+                    const field = entry.field;
+                    return (
+                      <FieldRenderer
+                        key={field.id}
+                        field={field}
+                        value={values[field.id]}
+                        onChange={(v) => setField(field.id, v)}
+                        hasError={submitAttempted && missingFields.some((mf) => mf.id === field.id)}
+                        allValues={values}
+                        allFields={template.fields}
+                        locked={lockedFieldIds.has(field.id)}
+                      />
+                    );
+                  })}
+                </>
               );
-            })
+            })()
           ) : (
             /* ── Review mode ── */
             <>
@@ -495,6 +602,27 @@ export default function FormRunnerScreen() {
                 </Text>
               </View>
               {buildFieldRenderPlan(template.fields || []).map((entry) => {
+                if (entry.kind === 'section_group') {
+                  return (
+                    <CollapsibleSectionGroup
+                      key={entry.key}
+                      group={entry}
+                      expanded={true}
+                      onToggle={() => {}}
+                      values={values}
+                      setField={() => {}}
+                      readOnly
+                      customRows={customChecklistRows}
+                      addCustomRow={() => {}}
+                      updateCustomRow={() => {}}
+                      deleteCustomRow={() => {}}
+                      markAllChecked={() => {}}
+                      renderField={(field: FormField) => (
+                        <ReviewField key={field.id} field={field} value={values[field.id]} />
+                      )}
+                    />
+                  );
+                }
                 if (entry.kind === 'checklist_row') {
                   const { radio: r, notes: n } = entry;
                   return (
@@ -1124,6 +1252,15 @@ const s = StyleSheet.create({
     backgroundColor: Colors.errorSoft, borderRadius: 12, padding: 12, marginBottom: 12,
   },
   missingText: { fontSize: 12, color: Colors.error, fontWeight: '500', flex: 1 },
+
+  // Expand all
+  expandAllBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-end',
+    marginBottom: 8, paddingVertical: 6, paddingHorizontal: 10,
+  },
+  expandAllText: {
+    fontSize: 13, fontWeight: '700', color: Colors.info,
+  },
 
   // ── Review mode styles ──
   reviewBanner: {
