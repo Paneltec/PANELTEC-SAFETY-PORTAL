@@ -147,10 +147,15 @@ def _lan_max_pending_hours() -> int:
     return _env_int("LAN_DELIVERY_MAX_PENDING_HOURS", default=24)
 
 # Trigger-dedupe lock window. 60 min covers back-to-back reboots and
-# APScheduler misfire storms. 2 h stale-lock reclaim keeps a crashed
-# writer from wedging the lock forever.
+# APScheduler misfire storms. Stale-lock reclaim tightened from 2 h
+# to 30 min in v58.13.132ks — a real snapshot completes in ~90 s
+# (see /app/memory/v58_13_132ks_backup_scheduler_stale_lock.md), so
+# 30 min gives ~20× grace over the typical duration while dramatically
+# shortening the outage window when a backend restart kills a writer
+# mid-flight (the exact class of bug that stalled the scheduler for
+# 26.2 h on 2026-09-21).
 _BACKUP_LOCK_WINDOW_MIN = 60
-_BACKUP_LOCK_STALE_HOURS = 2
+_BACKUP_LOCK_STALE_MINUTES = 30
 _BACKUP_LOCK_DOC_ID = "backup_lock"
 
 
@@ -161,30 +166,73 @@ async def _acquire_backup_lock(db_) -> Tuple[bool, str]:
       - "recent_run"     — a successful backup completed <60 min ago
       - "in_progress"    — another writer is currently running
       - "acquired"       — lock is ours; caller must release it
+
+    v58.13.132ks — Adds two WARN log lines so the operator can spot
+    the class of bug that stalled the scheduler for 26.2 h on
+    2026-09-21:
+      · A "SKIPPED — lock held" line whenever an inbound fire is
+        blocked by another writer (lets us see if legit long
+        writes are being blocked vs. a stale lock).
+      · A "RECLAIMED" line whenever the 30-min stale threshold
+        fires (a persistent counter is also incremented on the
+        lock doc so the health surface can flag recurring hangs).
     """
     now = datetime.now(timezone.utc)
     doc = await db_.system_backup_lock.find_one({"_id": _BACKUP_LOCK_DOC_ID}) or {}
 
     # Stale-lock reclaim: if a writer says it's in-progress but the
-    # started_at is older than 2 h, treat it as crashed and take over.
+    # started_at is older than the stale threshold, treat it as
+    # crashed and take over. v58.13.132ks: threshold 2h → 30min.
     started_raw = doc.get("started_at")
+    reclaimed = False
     if doc.get("in_progress") and started_raw:
         try:
             started_dt = started_raw if isinstance(started_raw, datetime) else \
                 datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
             if started_dt.tzinfo is None:
                 started_dt = started_dt.replace(tzinfo=timezone.utc)
-            age_h = (now - started_dt).total_seconds() / 3600
-            if age_h >= _BACKUP_LOCK_STALE_HOURS:
+            age_min = (now - started_dt).total_seconds() / 60
+            if age_min >= _BACKUP_LOCK_STALE_MINUTES:
                 logger.warning(
-                    "backup_lock.stale_reclaimed after=%.1fh started_at=%s",
-                    age_h, started_dt.isoformat(),
+                    "backup_lock.stale_reclaimed — was held for %.1f min (threshold=%d min). "
+                    "started_at=%s. Proceeding with snapshot.",
+                    age_min, _BACKUP_LOCK_STALE_MINUTES, started_dt.isoformat(),
                 )
                 doc["in_progress"] = False  # fall through to acquire
+                reclaimed = True
+                # v58.13.132ks — persistent counter so recurring
+                # stale-lock hangs show up in the health probe.
+                try:
+                    await db_.system_backup_lock.update_one(
+                        {"_id": _BACKUP_LOCK_DOC_ID},
+                        {"$inc": {"stale_lock_reclaim_count": 1},
+                         "$set": {"last_stale_reclaim_at": now.isoformat(),
+                                  "last_stale_reclaim_age_min": age_min}},
+                        upsert=True,
+                    )
+                except Exception as _e:  # noqa: BLE001
+                    logger.warning("backup_lock reclaim counter bump failed: %s", _e)
         except Exception as _e:  # noqa: BLE001
             logger.warning("backup_lock stale probe failed: %s", _e)
 
     if doc.get("in_progress"):
+        # v58.13.132ks — surface WHY the fire was skipped so we can
+        # distinguish "healthy long write" from "stalled lock".
+        try:
+            started_dt = started_raw if isinstance(started_raw, datetime) else \
+                datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
+            if started_dt.tzinfo is None:
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            skip_age_min = (now - started_dt).total_seconds() / 60
+        except Exception:  # noqa: BLE001
+            skip_age_min = -1.0
+        logger.warning(
+            "backup_snapshot.scheduler_skipped — lock held. "
+            "started_at=%s, age_min=%.1f, stale_threshold_min=%d. "
+            "If age_min exceeds the threshold on the next fire, the "
+            "reclaim path will take over.",
+            started_raw, skip_age_min, _BACKUP_LOCK_STALE_MINUTES,
+        )
         return False, "in_progress"
 
     last_raw = doc.get("last_run_at")

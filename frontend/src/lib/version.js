@@ -13335,7 +13335,51 @@
 //       transparent to the Pi.
 //     · `restore` endpoint — untouched (it accepts an uploaded
 //       ZIP, doesn't care where it came from).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kq';
+// v58.13.132ks — Backup scheduler stale-lock self-heal.
+//
+// USER PAIN (Stephen, 2026-09-22): "backups going down. widget shows
+// stale — last snapshot 26.2h old". Auto-snapshot scheduler wedged
+// because a mid-flight backend restart on 2026-09-21 killed the
+// snapshot writer AFTER it had claimed `system_backup_lock.in_progress=
+// True`. The pre-existing 2 h stale-reclaim threshold was too generous:
+// subsequent 6 h scheduler fires kept skipping with `reason=in_progress`
+// because the crashed writer's `started_at` never crossed the 2 h line
+// before another restart-mid-fire reset it.
+//
+// Fixes bundled in .132ks:
+//   · Tier 1 (ops): cleared the stale lock and manually fired
+//     `POST /api/backup/snapshots`. See ship memo
+//     `/app/memory/v58_13_132ks_backup_scheduler_stale_lock.md`.
+//   · Tier 2 (code): `backend/backup_service.py::_acquire_backup_lock`
+//     stale-reclaim threshold 2 h → 30 min. Real snapshots complete
+//     in ~90 s per the 20/09 + 21/09 records, so 30 min is ~20×
+//     grace over typical runtime while dramatically shortening the
+//     outage window on future mid-flight restarts.
+//   · Two new WARN logs:
+//       - `backup_snapshot.scheduler_skipped — lock held. …age_min=` —
+//         fires every time an inbound scheduler fire is blocked by
+//         an existing writer. Lets ops distinguish healthy long
+//         writes from a stalled lock.
+//       - `backup_lock.stale_reclaimed — was held for X.X min` —
+//         fires when the 30-min stale reclaim takes over. Persists
+//         to the lock doc as `stale_lock_reclaim_count` +
+//         `last_stale_reclaim_at`.
+//   · New `/api/health` block `backup_lock`: exposes
+//     `in_progress`, `started_at`, `started_age_min`,
+//     `last_run_at`, `stale_lock_reclaim_count`, `last_stale_reclaim_at`.
+//     `degraded` list gains `backup_lock_reclaims_seen` when the
+//     counter > 0 and `backup_lock_stuck` when a writer has held
+//     the lock >30 min.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `STALE_AFTER_H = 8.0` on the LAN-delivery widget (correct
+//     for the 6 h cron — leave as-is).
+//   · Backend restart gating (deferred candidate — see ship memo's
+//     "Future ops guidance" section).
+//   · `/app/mobile/` code — untouched (mobile edit ban).
+//   · `_BACKUP_LOCK_WINDOW_MIN = 60` (60-min post-success dedupe)
+//     — unchanged.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ks';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13356,7 +13400,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kq';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kq';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ks';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

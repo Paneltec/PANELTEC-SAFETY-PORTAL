@@ -275,6 +275,50 @@ async def health():
             checks[name] = {"ok": False, "reason": f"{cmd} not on PATH"}
             degraded.append(name)
 
+    # 7. Backup lock health — v58.13.132ks. Surfaces the persistent
+    #    `stale_lock_reclaim_count` counter (bumped every time the
+    #    stale-lock reclaim path fires) plus the current lock state
+    #    so a recurring restart-mid-snapshot pattern shows up in
+    #    `/api/health` without needing to log-dive. Never flips the
+    #    critical gate — this is observability only.
+    try:
+        lock_doc = await asyncio.wait_for(
+            _db.system_backup_lock.find_one({"_id": "backup_lock"}),
+            timeout=0.5,
+        ) or {}
+        reclaim_count = int(lock_doc.get("stale_lock_reclaim_count") or 0)
+        started_at = lock_doc.get("started_at")
+        started_age_min = None
+        if lock_doc.get("in_progress") and started_at:
+            try:
+                from datetime import datetime as _dt, timezone as _tz
+                _sdt = _dt.fromisoformat(str(started_at).replace("Z", "+00:00"))
+                if _sdt.tzinfo is None:
+                    _sdt = _sdt.replace(tzinfo=_tz.utc)
+                started_age_min = (_dt.now(_tz.utc) - _sdt).total_seconds() / 60
+            except Exception:  # noqa: BLE001
+                pass
+        checks["backup_lock"] = {
+            "ok": True,
+            "in_progress": bool(lock_doc.get("in_progress")),
+            "started_at": started_at,
+            "started_age_min": (round(started_age_min, 1)
+                                if started_age_min is not None else None),
+            "last_run_at": lock_doc.get("last_run_at"),
+            "stale_lock_reclaim_count": reclaim_count,
+            "last_stale_reclaim_at": lock_doc.get("last_stale_reclaim_at"),
+            "stale_threshold_min": 30,
+        }
+        # Signal-only: mark degraded when the counter suggests the
+        # class-of-bug is recurring OR a writer is genuinely stuck.
+        if reclaim_count > 0:
+            degraded.append("backup_lock_reclaims_seen")
+        if (started_age_min is not None and started_age_min > 30):
+            degraded.append("backup_lock_stuck")
+    except Exception as exc:  # noqa: BLE001
+        checks["backup_lock"] = {"ok": False, "error": str(exc)[:120]}
+        # Don't flip critical — health is not gated on backup metadata.
+
     body = {
         "ok": not critical_fail,
         "checks": checks,

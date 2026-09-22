@@ -1,7 +1,8 @@
 /**
- * Settings tab — v58.13.132kr
+ * Settings tab — v58.13.132ku
  * Profile info, app version, updates, admin tools, sign out.
- * Added Help & Support section with manual links.
+ * Help & Support section with manual links.
+ * App / Admin Manual gated to admin-qualifying roles (.132ku).
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -97,7 +98,12 @@ export default function SettingsScreen() {
     ? user.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
 
-  const isAdmin = user?.role_id === 'admin' || user?.role === 'admin';
+  const ADMIN_QUALIFYING_ROLES = [
+    'admin', 'hseq_lead', 'hseq_manager', 'hseq_manager_2',
+    'responsible_manager', 'report_emailing_admin', 'supervisor', 'manager',
+  ];
+  const userRole = (user?.role_id || user?.role || '').toLowerCase();
+  const isAdmin = ADMIN_QUALIFYING_ROLES.includes(userRole);
 
   if (loading) {
     return (
@@ -197,12 +203,14 @@ export default function SettingsScreen() {
           title="User Manual (Phone)"
           onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/manuals/user')}
         />
-        <SettingsRow
-          testID="settings-admin-manual"
-          icon="desktop-outline" iconColor="#3B82F6" iconBg="#DBEAFE"
-          title="App / Admin Manual"
-          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/manuals/admin')}
-        />
+        {isAdmin && (
+          <SettingsRow
+            testID="settings-admin-manual"
+            icon="desktop-outline" iconColor="#3B82F6" iconBg="#DBEAFE"
+            title="App / Admin Manual"
+            onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/manuals/admin')}
+          />
+        )}
 
         {/* Updates */}
         <TouchableOpacity

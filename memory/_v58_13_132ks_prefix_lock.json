@@ -1,0 +1,8 @@
+{
+  "_id": "backup_lock",
+  "in_progress": true,
+  "started_at": "2026-09-22T03:18:08.783063+00:00",
+  "last_run_at": "2026-09-21T02:01:40.318685+00:00",
+  "captured_at": "2026-09-22T04:13:22.880557+00:00",
+  "notes": "started_at is 0.92h old (below existing 2h stale reclaim threshold). last_run_at is 26.2h old. Scheduler fire ~55min ago acquired lock and never released it (mid-flight restart)."
+}
