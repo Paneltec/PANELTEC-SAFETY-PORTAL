@@ -219,9 +219,9 @@ export default function AuditExports() {
             return (
               <div key={g.key}
                 data-testid={`export-row-${g.primary.id}`}
-                className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4 px-4 py-3 hover:bg-slate-50/60 transition-colors">
+                className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3 lg:gap-4 px-4 py-3 hover:bg-slate-50/60 transition-colors">
                 {/* Title + scope */}
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 lg:min-w-[180px] lg:basis-[220px]">
                   <div className="font-medium text-slate-900 truncate" title={g.primary.title}>
                     {g.primary.title}
                   </div>
@@ -232,7 +232,7 @@ export default function AuditExports() {
                   )}
                 </div>
                 {/* Metadata chips */}
-                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600 lg:flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600 lg:flex-1 lg:min-w-0">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100"
                     title={`${g.primary.date_from} → ${g.primary.date_to}`}>
                     <span className="text-slate-400">Period</span>
