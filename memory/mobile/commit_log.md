@@ -639,3 +639,17 @@
   - FIX: forms.tsx — search results same routing fix
   - Version 1.0.39, versionCode 161, bundle .132kg
 - **Files modified**: swms/[id].tsx (new), forms/category/[key].tsx, forms.tsx, app.json, version.ts
+
+## Iteration .132kk — Public visitor route bypasses auth for site QR deep-links
+- **Commit**: 9b30d15486aa359864cd530008f05a28b8f79a6a
+- **Date**: 2026-09-22
+- **Changes**:
+  - NEW: app/scan/site/[token]/index.tsx — public site scan resolver (no auth)
+  - NEW: app/scan/site/[token]/visitor.tsx — public visitor sign-in form (no auth)
+  - FIX: _layout.tsx — registered scan + swms route groups in Stack
+  - Visitor form: name, company, phone, purpose, visiting, rego, dynamic questions, SWMS ack, safety ack
+  - Submit: POST /api/scan/site/{token}/sign-on-visitor (public)
+  - Success screen: green checkmark, timestamp, SWMS chips
+  - Version 1.0.40, versionCode 162, bundle .132kk
+  - EAS build: a86fc0fa-3120-4e90-8ab5-da3d005382bf
+- **Files modified**: scan/site/[token]/{index,visitor}.tsx (new), _layout.tsx, app.json, version.ts

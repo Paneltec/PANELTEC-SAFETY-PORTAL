@@ -73,19 +73,103 @@ const PLATFORM_AUTH_REASONS = new Set([
   'account-disabled',
 ]);
 
+// v58.13.132kl — Public-route allow-list. On these routes, a
+// 401 jwt-* response MUST NOT bounce the user to the sign-in
+// screen. Instead the interceptor clears the poisoned token (which
+// arrived from a stale localStorage entry, e.g. a returning phone
+// whose previous session's JWT has expired) and reloads the page
+// once so the public-route component re-mounts against a clean
+// anon state.
+//
+// Why this is needed:
+//   Public routes (`/scan/site/:token`, `/scan/:token`, `/onboard`,
+//   `/reset`, etc.) live OUTSIDE the `/app/*` auth wrapper and are
+//   meant to be scannable by anyone. But if the visitor's phone
+//   still has a stale JWT in localStorage from a prior authed
+//   session, the request interceptor will attach it, ANY authed
+//   side-effect fetch (CacheBusterBanner's `/settings/force-refresh-signal`,
+//   version-check polls, workspace probes) will return 401
+//   jwt-expired, and the pre-.132kl handler unconditionally
+//   bounced the whole page to `/?next=<original>` — dumping the
+//   visitor onto the sign-in landing page instead of the visitor
+//   form. See diagnostic in `memory/v58_13_132kl_axios_public_route_bypass.md`.
+//
+// Matching:
+//   · `/`                     — EXACT match only (never a startsWith,
+//                                otherwise every path becomes public).
+//   · `/scan/`, `/onboard`,   — startsWith match. The trailing slash
+//     `/m/onboard/`, `/reset`,   on some entries is intentional so
+//     `/renew/`, `/print/worker-id-card/`,
+//     `/apps-directory`          `/onboard` matches `/onboard/xyz` but
+//                                `/onboarding-plans` never does.
+//
+// Single-flight guard:
+//   `sessionStorage['paneltec_public_401_cleared_' + pathname]`
+//   is set BEFORE the reload. On the next load, if the same public
+//   path is hit and STILL emits 401 jwt-*, we log and reject —
+//   never reload again. Prevents an infinite reload loop if the
+//   backend keeps stamping jwt-expired on a public asset probe.
+const PUBLIC_ROUTE_PREFIXES = [
+  '/', '/onboard', '/m/onboard/', '/reset', '/renew/', '/scan/',
+  '/print/worker-id-card/', '/apps-directory',
+];
+
+function _isPublicRoute(pathname) {
+  if (typeof pathname !== 'string') return false;
+  for (const p of PUBLIC_ROUTE_PREFIXES) {
+    if (p === '/') { if (pathname === '/') return true; continue; }
+    if (pathname.startsWith(p)) return true;
+  }
+  return false;
+}
+
 api.interceptors.response.use(
   (r) => r,
   (err) => {
     const status = err?.response?.status;
     const reason = err?.response?.headers?.['x-auth-reason'];
     if (status === 401 && PLATFORM_AUTH_REASONS.has(reason)) {
+      const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+      const onPublicRoute = _isPublicRoute(pathname);
+
+      // Always clear the poisoned local copy. On public routes this
+      // lets the re-mounted page render its anon path (e.g.
+      // SiteScanResolver's `if (!user) return <Navigate to=…/visitor>`).
+      // On private routes we clear + bounce, same as before .132kl.
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
-      if (typeof window !== 'undefined' && window.location.pathname !== '/' && !window.location.pathname.startsWith('/login')) {
-        // Preserve where the user was so the login screen can send them back.
-        const here = window.location.pathname + window.location.search;
-        const safeHere = here.startsWith('/') && !here.startsWith('//') ? here : '/app/dashboard';
-        window.location.assign(`/?next=${encodeURIComponent(safeHere)}`);
+
+      if (typeof window !== 'undefined') {
+        if (onPublicRoute) {
+          // v58.13.132kl — Single-flight reload for public routes.
+          // Only reload if we haven't already reloaded for this exact
+          // path in the current session. If we have, log and let the
+          // rejection propagate so the page can render its error
+          // state (or ignore the failed side-effect fetch entirely).
+          const guardKey = `paneltec_public_401_cleared_${pathname}`;
+          try {
+            const already = sessionStorage.getItem(guardKey);
+            if (!already) {
+              sessionStorage.setItem(guardKey, String(Date.now()));
+              window.location.reload();
+            } else {
+              // eslint-disable-next-line no-console
+              console.warn('[api] public-route 401 after clear+reload — leaving rejection to caller', pathname);
+            }
+          } catch (_) {
+            // sessionStorage unavailable (privacy mode?). Skip the
+            // single-flight guard and reload once — better UX than
+            // wedging on a broken page.
+            window.location.reload();
+          }
+        } else if (pathname !== '/' && !pathname.startsWith('/login')) {
+          // Existing pre-.132kl behaviour for private routes:
+          // preserve where the user was so the sign-in screen can
+          // send them back after re-authenticating.
+          const here = pathname + window.location.search;
+          const safeHere = here.startsWith('/') && !here.startsWith('//') ? here : '/app/dashboard';
+          window.location.assign(`/?next=${encodeURIComponent(safeHere)}`);
+        }
       }
     }
     return Promise.reject(err);
