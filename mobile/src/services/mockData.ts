@@ -39,8 +39,6 @@ export const MOCK_AI_BRIEFING = {
 export const MOCK_COMPLIANCE_LIST = [
   { id: 'c1', title: 'Daily Pre-Start Check', type: 'pre_start', status: 'due', site: 'Connector Park', dueAt: new Date().toISOString() },
   { id: 'c2', title: 'SWMS Review — Excavation', type: 'swms', status: 'pending', site: 'Connector Park', dueAt: new Date().toISOString() },
-  { id: 'c3', title: 'Toolbox Meeting Sign-off', type: 'toolbox', status: 'due', site: 'Moorebank Depot', dueAt: new Date().toISOString() },
-  { id: 'c4', title: 'Site Induction — New Starter', type: 'induction', status: 'overdue', site: 'Moorebank Depot', dueAt: new Date(Date.now() - 86400000).toISOString() },
 ];
 
 export type RecordGroup = {

@@ -211,106 +211,102 @@ export default function AuditExports() {
         <TabsContent value="list" className="mt-4" data-testid="audit-exports-tab-list-content">
       {groups.length === 0 ? <EmptyState title="No exports yet" body="Generate your first audit pack." />
        : (
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-              <tr>
-                <th className="text-left px-4 py-3">Title</th>
-                <th className="text-left px-4 py-3">Period</th>
-                <th className="text-left px-4 py-3">Formats</th>
-                <th className="text-left px-4 py-3">Size</th>
-                <th className="text-left px-4 py-3">SHA-256</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((g) => {
-                // Email/Delete uses the PDF (auditor-friendly) when present,
-                // otherwise the canonical primary artefact.
-                const anchor = g.byFormat.pdf || g.primary;
-                return (
-                  <tr key={g.key} className="border-t border-slate-100" data-testid={`export-row-${g.primary.id}`}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{g.primary.title}</div>
-                      <div className="text-xs text-slate-500">{g.primary.scope}</div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{g.primary.date_from} → {g.primary.date_to}</td>
-                    <td className="px-4 py-3" data-testid={`export-formats-${g.primary.id}`}>
-                      <div className="inline-flex items-center gap-2 text-xs font-semibold">
-                        {g.formats.map((row, idx) => (
-                          <React.Fragment key={row.id}>
-                            {idx > 0 && <span className="text-slate-300">·</span>}
-                            <FormatLink row={row} primary={g.primary.format} />
-                          </React.Fragment>
-                        ))}
-                        {/* Missing-format hints — PDF first (admin can render),
-                            JSON only as informational (cannot reconstruct). */}
-                        {!g.hasPdf && (
-                          <MissingFormatHint
-                            row={g.primary}
-                            missing="pdf"
-                            isAdmin={isAdmin}
-                            onRendered={onSiblingRendered}
-                          />
-                        )}
-                        {g.hasPdf && !g.hasJson && !g.hasCsv && (
-                          <MissingFormatHint row={g.primary} missing="json" isAdmin={isAdmin} />
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{fmtBytes(g.totalBytes)}</td>
-                    <td className="px-4 py-3 text-slate-400 text-[10px] font-mono">{(g.primary.sha256 || '').slice(0, 12)}…</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex gap-1 items-center">
-                        {/* v160.3.0-adjust-2 — Explicit View button.
-                            Opens the primary artefact (PDF when
-                            present; otherwise the JSON/CSV row) in
-                            a new tab. FormatLink chips above still
-                            offer per-format access; this button is
-                            the "just show me the report" affordance
-                            the user asked for. Placed LEFT of Email
-                            per brief. */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const target = g.byFormat.pdf || g.primary;
-                            openAuthedFile(target.file_url, `${target.title || target.id}.${target.format}`);
-                          }}
-                          data-testid={`export-view-${anchor.id}`}
-                          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-slate-100 text-slate-700"
-                          title="View report"
-                        >
-                          <Eye className="w-3 h-3" /> View
-                        </button>
-                        <EmailButton
-                          resourceKind="audit_exports"
-                          recordId={anchor.id}
-                          subject={`Audit Export: ${anchor.scope || anchor.title} (${anchor.date_from} to ${anchor.date_to})`}
-                          body={`Please find attached the requested audit export for ${anchor.date_from} → ${anchor.date_to}.\n\nScope: ${anchor.scope || ''}\nFormat: ${(anchor.format || '').toUpperCase()}`}
-                          attachments={g.formats.map((r) => ({ file_url: `${BACKEND}${r.file_url}`, label: `${r.title}.${r.format}` }))}
-                          variant="row"
-                          size="sm"
-                          label="Email"
-                        />
-                        <DeleteRecordButton
-                          resourceKind="audit_exports"
-                          apiPath="audit-exports"
-                          recordId={anchor.id}
-                          label="Audit export"
-                          recordTitle={anchor.title || anchor.scope}
-                          onDeleted={() => removeGroup(g)}
-                        />
-                        <button type="button"
-                          onClick={() => openAuthedFile(anchor.file_url, `${anchor.title || anchor.id}.${anchor.format}`)}
-                          data-testid={`export-download-${anchor.id}`}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800"><Download /> Download</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
+          {groups.map((g) => {
+            // Email/Delete uses the PDF (auditor-friendly) when present,
+            // otherwise the canonical primary artefact.
+            const anchor = g.byFormat.pdf || g.primary;
+            return (
+              <div key={g.key}
+                data-testid={`export-row-${g.primary.id}`}
+                className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4 px-4 py-3 hover:bg-slate-50/60 transition-colors">
+                {/* Title + scope */}
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-slate-900 truncate" title={g.primary.title}>
+                    {g.primary.title}
+                  </div>
+                  {g.primary.scope && (
+                    <div className="text-xs text-slate-500 truncate" title={g.primary.scope}>
+                      {g.primary.scope}
+                    </div>
+                  )}
+                </div>
+                {/* Metadata chips */}
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600 lg:flex-shrink-0">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100"
+                    title={`${g.primary.date_from} → ${g.primary.date_to}`}>
+                    <span className="text-slate-400">Period</span>
+                    <span className="font-semibold text-slate-700">{g.primary.date_from} → {g.primary.date_to}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100"
+                    title={fmtBytes(g.totalBytes)}>
+                    <span className="text-slate-400">Size</span>
+                    <span className="font-semibold text-slate-700">{fmtBytes(g.totalBytes)}</span>
+                  </span>
+                  <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 font-mono"
+                    title={g.primary.sha256}>
+                    <span className="text-slate-400">SHA</span>
+                    <span className="text-slate-700">{(g.primary.sha256 || '').slice(0, 8)}…</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-xs font-semibold"
+                    data-testid={`export-formats-${g.primary.id}`}>
+                    {g.formats.map((row, idx) => (
+                      <React.Fragment key={row.id}>
+                        {idx > 0 && <span className="text-slate-300">·</span>}
+                        <FormatLink row={row} primary={g.primary.format} />
+                      </React.Fragment>
+                    ))}
+                    {!g.hasPdf && (
+                      <MissingFormatHint row={g.primary} missing="pdf"
+                        isAdmin={isAdmin} onRendered={onSiblingRendered} />
+                    )}
+                    {g.hasPdf && !g.hasJson && !g.hasCsv && (
+                      <MissingFormatHint row={g.primary} missing="json" isAdmin={isAdmin} />
+                    )}
+                  </span>
+                </div>
+                {/* Actions */}
+                <div className="flex flex-wrap items-center gap-1 lg:flex-shrink-0 lg:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = g.byFormat.pdf || g.primary;
+                      openAuthedFile(target.file_url, `${target.title || target.id}.${target.format}`);
+                    }}
+                    data-testid={`export-view-${anchor.id}`}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-slate-100 text-slate-700"
+                    title="View report"
+                  >
+                    <Eye className="w-3 h-3" /> View
+                  </button>
+                  <EmailButton
+                    resourceKind="audit_exports"
+                    recordId={anchor.id}
+                    subject={`Audit Export: ${anchor.scope || anchor.title} (${anchor.date_from} to ${anchor.date_to})`}
+                    body={`Please find attached the requested audit export for ${anchor.date_from} → ${anchor.date_to}.\n\nScope: ${anchor.scope || ''}\nFormat: ${(anchor.format || '').toUpperCase()}`}
+                    attachments={g.formats.map((r) => ({ file_url: `${BACKEND}${r.file_url}`, label: `${r.title}.${r.format}` }))}
+                    variant="row"
+                    size="sm"
+                    label="Email"
+                  />
+                  <DeleteRecordButton
+                    resourceKind="audit_exports"
+                    apiPath="audit-exports"
+                    recordId={anchor.id}
+                    label="Audit export"
+                    recordTitle={anchor.title || anchor.scope}
+                    onDeleted={() => removeGroup(g)}
+                  />
+                  <button type="button"
+                    onClick={() => openAuthedFile(anchor.file_url, `${anchor.title || anchor.id}.${anchor.format}`)}
+                    data-testid={`export-download-${anchor.id}`}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800">
+                    <Download /> Download
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
        )}
         </TabsContent>

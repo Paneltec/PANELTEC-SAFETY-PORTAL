@@ -389,7 +389,7 @@ export default function HomeScreen() {
           ) : null}
         </View>
 
-        {/* Quick Actions — .132jt: added Scan Vehicle QR tile */}
+        {/* Quick Actions — .132kf: added Incident Report, 2×2 grid */}
         <View style={s.quickActions}>
           <TouchableOpacity testID="home-action-scan-qr" style={s.actionTile} onPress={() => router.push('/(screens)/qr-scan')}>
             <View style={[s.actionIcon, { backgroundColor: '#FFF7ED' }]}>
@@ -402,6 +402,12 @@ export default function HomeScreen() {
               <Ionicons name="checkbox-outline" size={24} color={Colors.success} />
             </View>
             <Text style={s.actionLabel}>New Pre-Start</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="home-action-incident" style={s.actionTile} onPress={() => router.push({ pathname: '/forms/picker', params: { category: 'incident', title: 'Incident Report' } } as never)}>
+            <View style={[s.actionIcon, { backgroundColor: '#FEE2E2' }]}>
+              <Ionicons name="warning-outline" size={24} color={Colors.error} />
+            </View>
+            <Text style={s.actionLabel}>Incident Report</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="home-action-signon" style={s.actionTile} onPress={() => setViewMode('signed_on')}>
             <View style={[s.actionIcon, { backgroundColor: '#DBEAFE' }]}>
@@ -535,9 +541,9 @@ const s = StyleSheet.create({
   severityText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 
   // Quick Actions
-  quickActions: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   actionTile: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    width: '47%', backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
     alignItems: 'center', gap: 10, minHeight: 100,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
