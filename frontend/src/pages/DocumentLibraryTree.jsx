@@ -250,6 +250,20 @@ function TreeRow(props) {
         {node.is_system ? (
           <span className="ml-2 text-[9px] uppercase tracking-wider font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">System</span>
         ) : null}
+        {/* v58.13.132km — Visible SHARED marker in the default tree view so
+            admins can see at-a-glance which folders are worker-visible.
+            The interactive Globe toggle lives in the card-grid render
+            (accessible by activating a filter). WHS Reg 344 rationale in
+            the ship memo. */}
+        {node.shared_reference ? (
+          <span
+            data-testid={'tree-shared-pill-' + node.id}
+            title="Shared reference — visible to all workers on mobile Docs tab"
+            className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-semibold uppercase tracking-wider"
+          >
+            Shared
+          </span>
+        ) : null}
       </button>
       <span className="text-[11px] text-slate-500 tabular-nums shrink-0" data-testid={'tree-count-' + node.id}>
         {showRollup ? (

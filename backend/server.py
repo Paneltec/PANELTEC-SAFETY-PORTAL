@@ -840,6 +840,17 @@ async def on_startup():
         log.info("comms_safe_mode.startup_seed: %s", _res)
     except Exception as e:  # noqa: BLE001
         log.warning("comms_safe_mode startup seed failed: %s", e)
+    # v58.13.132km — Auto-seed `shared_reference:True` on well-known
+    # reference-library folder names (SDS, Chemical Register, Australian
+    # Standards, Toolbox Talks, Procedures, etc.) so workers can access
+    # docs required under AU WHS Regulation 344. Idempotent — safe on
+    # every boot. Never downgrades a folder an admin manually toggled off.
+    try:
+        from shared_reference_seed import seed_shared_reference_flags_on_startup
+        _sr = await seed_shared_reference_flags_on_startup()
+        log.info("shared_reference startup seed: %s", _sr)
+    except Exception as e:  # noqa: BLE001
+        log.warning("shared_reference startup seed failed: %s", e)
     # v160.3.9.58.13.47 — TTL + query indexes for capture-density
     # telemetry. Best-effort, silent on failure (idempotent).
     try:

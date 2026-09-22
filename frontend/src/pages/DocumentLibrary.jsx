@@ -8,7 +8,7 @@
 // semantic RAG is deferred to a future phase.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, ShieldOff, Sparkles, X, Archive as ArchiveIcon, RotateCcw, ChevronDown } from 'lucide-react';
+import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, ShieldOff, Sparkles, X, Archive as ArchiveIcon, RotateCcw, ChevronDown, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
 import useClipboardPaste from '../lib/useClipboardPaste';
@@ -849,6 +849,42 @@ export default function DocumentLibrary() {
     }
   }, []);
 
+  // v58.13.132km — Shared-reference toggle handler. Only privileged users
+  // (`canEdit`) reach this UI. Flipping OFF a folder that carries >= 50
+  // files pops a confirm to avoid an accidental worker lockout on a
+  // heavily-populated reference bucket (SDS, Toolbox Talks, etc.). Legal
+  // note: workers require access to SDS for chemicals they handle per
+  // AU WHS Regulation 344 — see ship memo for rationale.
+  const toggleSharedReference = useCallback(async (folder) => {
+    if (!folder) return;
+    const currentlyShared = !!folder.shared_reference;
+    const next = !currentlyShared;
+    if (currentlyShared && (folder.file_count || 0) >= 50) {
+      const ok = window.confirm(
+        `“${folder.name}” contains ${folder.file_count} files and is currently ` +
+        `flagged Shared reference (visible to all workers).\n\n` +
+        `Turning this OFF will HIDE every file in this folder from every ` +
+        `non-admin worker on the mobile Docs tab and web Documents section.\n\n` +
+        `For SDS / Chemical / Standards folders this may create a WHS ` +
+        `compliance risk.\n\n` +
+        `Continue?`
+      );
+      if (!ok) return;
+    }
+    // Optimistic flip
+    setFolders((rs) => rs.map((r) => (r.id === folder.id ? { ...r, shared_reference: next } : r)));
+    try {
+      await api.patch(`/document-library/folders/${folder.id}`, { shared_reference: next });
+      toast.success(next
+        ? `“${folder.name}” marked Shared reference — visible to all workers.`
+        : `“${folder.name}” is no longer shared with workers.`);
+    } catch (e) {
+      toast.error(apiError(e));
+      // Roll back
+      setFolders((rs) => rs.map((r) => (r.id === folder.id ? { ...r, shared_reference: currentlyShared } : r)));
+    }
+  }, []);
+
   // v160.3.7p — Semantic colour taxonomy sourced from /lib/folderColors.
   // The old cosmetic labels (`Sky`, `Mint`, …) told an admin nothing;
   // now the legend and swatches surface "Health & Hazards", "SWMS &
@@ -1276,8 +1312,21 @@ export default function DocumentLibrary() {
                 >
                   <FolderOpen size={22} className={`${PASTEL_ICON[f.color_key] || PASTEL_ICON.sky} mb-1.5`} />
                   <div className="font-display font-semibold text-[13px] text-slate-900 line-clamp-2 leading-snug min-h-[2.1rem]">{f.name}</div>
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    {f.file_count} {f.file_count === 1 ? 'file' : 'files'}
+                  <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+                    <span>{f.file_count} {f.file_count === 1 ? 'file' : 'files'}</span>
+                    {/* v58.13.132km — SHARED pill: visible to everyone (not
+                        gated on canEdit) so workers can also SEE which
+                        folders they can access on mobile. Uses the Globe
+                        icon per design brief. */}
+                    {f.shared_reference && (
+                      <span
+                        data-testid={`folder-shared-pill-${f.id}`}
+                        title="Shared reference — visible to all workers on mobile Docs tab"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-semibold uppercase tracking-wider"
+                      >
+                        <Globe size={9} strokeWidth={2.5} /> Shared
+                      </span>
+                    )}
                   </div>
                 </button>
                 {canEdit && !f.is_system && confirmDeleteTarget?.id !== f.id && (
@@ -1304,6 +1353,22 @@ export default function DocumentLibrary() {
                       title="Rename"
                       className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-brand-blue hover:bg-white">
                       <Pencil />
+                    </button>
+                    {/* v58.13.132km — Shared-reference admin toggle. Green
+                        Globe when ON, greyed Globe when OFF. Confirmation
+                        dialog fires when toggling OFF a folder with >= 50
+                        files (see toggleSharedReference handler). */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleSharedReference(f); }}
+                      data-testid={`folder-shared-toggle-${f.id}`}
+                      title={f.shared_reference
+                        ? 'Shared with all workers — click to make admin-only'
+                        : 'Make Shared reference (visible to all workers on mobile Docs tab)'}
+                      className={`p-1.5 rounded border flex items-center ${f.shared_reference
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                        : 'bg-white/90 border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-white'}`}
+                    >
+                      <Globe size={11} strokeWidth={2.5} />
                     </button>
                     {canDeleteFolder && (
                       <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteTarget(f); }} data-testid={`folder-delete-btn-${f.id}`}

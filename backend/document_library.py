@@ -236,6 +236,10 @@ def _serialise_folder(doc: dict, file_count: int = 0, subfolder_count: int = 0) 
         "worker_id": doc.get("worker_id"),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
+        # v58.13.132km — Expose the shared_reference toggle so the FE
+        # can render the `SHARED` pill on folder cards and pre-hydrate
+        # the admin toggle state without a second fetch.
+        "shared_reference": bool(doc.get("shared_reference")),
     }
 
 
@@ -546,6 +550,12 @@ class FolderPatch(BaseModel):
     # explicitly null" with default=None, we use a "-" sentinel
     # meaning "move to root" and default=None meaning "no change".
     parent_folder_id: Optional[str] = Field(default=None, max_length=64)
+    # v58.13.132km — Toggle worker-visibility for shared reference
+    # material (SDS, Chemical Register, Australian Standards, etc.).
+    # Only privileged roles can flip it (WRITE_ROLES enforced in the
+    # endpoint). See permissions rationale in
+    # `memory/v58_13_132km_shared_reference_folders.md`.
+    shared_reference: Optional[bool] = None
 
 
 @router.post("/reorganise")
@@ -848,7 +858,7 @@ async def list_all_folders(user: dict = Depends(get_current_user)):
         {"org_id": user["org_id"], "deleted_at": None},
         {"_id": 0, "id": 1, "name": 1, "parent_folder_id": 1,
          "is_system": 1, "worker_id": 1, "color_key": 1,
-         "sort_order": 1},
+         "sort_order": 1, "shared_reference": 1},
     ).sort([("sort_order", 1), ("name", 1)]):
         # Skip per-worker folders — they're not meaningful parents
         # for user-created top-level or sub-folders.
@@ -862,6 +872,9 @@ async def list_all_folders(user: dict = Depends(get_current_user)):
             "file_count": counts.get(f["id"], 0),
             "color_key": f.get("color_key") or "sky",
             "sort_order": f.get("sort_order", 0),
+            # v58.13.132km — Included for the folder-tree admin UI so
+            # the shared-reference pill renders in every listing surface.
+            "shared_reference": bool(f.get("shared_reference")),
         })
     return out
 
@@ -1014,6 +1027,12 @@ async def rename_folder(
                     {"_id": 0, "id": 1, "parent_folder_id": 1},
                 )
             update["parent_folder_id"] = raw
+    # v58.13.132km — Persist the shared_reference toggle. The endpoint is
+    # already privileged-only via `_require(user, WRITE_ROLES)` above +
+    # `require_permission("documents","edit")` on the Depends; no extra
+    # role check needed here.
+    if body.shared_reference is not None:
+        update["shared_reference"] = bool(body.shared_reference)
     if len(update) == 1:
         raise HTTPException(400, "No editable fields supplied")
     result = await db.doc_folders.find_one_and_update(
@@ -1118,10 +1137,25 @@ async def list_files(folder_id: str, user: dict = Depends(get_current_user)):
     # workers (worker.documents.view=False). Per Phase 3b brief: list
     # GETs open to authenticated users must narrow via scope_filter, not
     # reject. Worker sees only their own uploads / assignments.
-    await _resolve_folder(folder_id, user["org_id"])
-    _scope = scope_filter(user, "documents")
-    if _scope.get("__scope_no_match__"):
-        return []
+    #
+    # v58.13.132km — Shared-reference short-circuit. WHS legal risk fix:
+    # non-privileged users (workers, general_users, preview-mode viewers)
+    # were seeing an empty SDS folder because `scope_filter("documents")`
+    # narrows to `{created_by: uid} OR {assignee_id: uid}` and shared
+    # reference files were uploaded by admins. Under AU WHS Regulation
+    # 344 employers MUST make SDS available to any worker handling the
+    # chemicals — a fail-narrow scope was hiding legally-required
+    # documents. Folders marked `shared_reference:True` bypass the
+    # user-level narrowing entirely; the org boundary (org_id) is still
+    # enforced, and the per-record `category_visible(...)` post-filter
+    # still runs so category-level access controls are honoured.
+    folder = await _resolve_folder(folder_id, user["org_id"])
+    if folder.get("shared_reference"):
+        _scope: dict = {}
+    else:
+        _scope = scope_filter(user, "documents")
+        if _scope.get("__scope_no_match__"):
+            return []
     # v58.13.132if — Auto-archive-on-fetch sweep. Any doc_file in this
     # folder whose `expiry_date < today` AND `archived_at IS NULL`
     # AND `deleted_at IS NULL` is flipped to `archived_at = now()`.
