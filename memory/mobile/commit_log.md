@@ -629,3 +629,13 @@
   - Quick actions grid: 3-col row → 2×2 wrap (width: 47%)
   - Version 1.0.38, versionCode 160, bundle .132kf
 - **Files modified**: home.tsx, mockData.ts, app.json, version.ts
+
+## Iteration .132kg — Fix SWMS tap "template not found" → route to SWMS viewer
+- **Commit**: 997ff8424e8bf17e44dbd1dea2addfee8b18c75c
+- **Date**: 2026-09-22
+- **Changes**:
+  - NEW: app/swms/[id].tsx — SWMS detail viewer (hazards, PPE, controls, emergency procedures)
+  - FIX: forms/category/[key].tsx — route is_swms items to /swms/[id] not /forms/[id]
+  - FIX: forms.tsx — search results same routing fix
+  - Version 1.0.39, versionCode 161, bundle .132kg
+- **Files modified**: swms/[id].tsx (new), forms/category/[key].tsx, forms.tsx, app.json, version.ts

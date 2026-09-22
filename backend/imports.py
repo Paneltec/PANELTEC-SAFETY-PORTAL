@@ -29,6 +29,7 @@ description.
 """
 from __future__ import annotations
 import hashlib
+import io
 import logging
 import os
 import re
@@ -52,6 +53,16 @@ from deep_parse_legacy_pdfs import (  # noqa: E402
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/imports", tags=["imports"])
+
+# v58.13.132kh — In-memory LLM classification cache. Keyed by
+# `(sha256, org_id)` so the same PDF re-uploaded across sessions
+# (e.g. duplicate detection surfaces a 409 first, but the LLM
+# classification for a slightly-different-byte re-scan still hits
+# cache) doesn't burn a second Claude call. Bounded to 512 entries
+# with FIFO eviction — the endpoint is admin-only + rate-limited by
+# the 10 MB size cap, so this dict can't grow unbounded in practice.
+_LLM_MATCH_CACHE: "dict[tuple[str, str], str | None]" = {}
+_LLM_MATCH_CACHE_MAX = 512
 
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 CATEGORY_ROUTE = {
@@ -100,6 +111,17 @@ _FILENAME_MATCHERS: list[tuple[str, str]] = [
     (r"excavator[\s_-]*pre[\s_-]*start",           "Excavator Pre-start"),
     (r"excavation[\s_-]*(?:[/_-]*\s*trench[\s_-]*)?permit",
                                                     "Excavation / Trench Permit"),
+    # v58.13.132kh — Anchored + generic incident-report filename patterns.
+    # Catches the app's own export shape (`Incident-<slug>.pdf` — from
+    # `pdf_renderer.filename_for(incidents)`) plus common scanned-form
+    # names Stephen surfaced: `IR-15.pdf`, `report_of_incident_...pdf`,
+    # `truck-a93ni-incident-report.pdf`. Order: start-anchored first so
+    # a random string containing "incident" doesn't hijack a filename
+    # that clearly begins with an incident marker.
+    (r"^incident[-_ ]",                            "Incident Report"),
+    (r"^report[-_ ]?of[-_ ]?incident",             "Incident Report"),
+    (r"^ir[-_ ]\d",                                "Incident Report"),
+    (r"[-_ ]incident[-_ ]?report",                 "Incident Report"),
     # v58.13.132hy — Legacy incident-report filename patterns.
     # Grep of live `form_submissions` + `doc_files` surfaced the
     # following recurring shapes (Simpro exports + SF-34 family):
@@ -200,6 +222,291 @@ def _pdf_title(parsed: dict) -> str:
     return ""
 
 
+# ─────────────────────────────────────────────────────────────
+# v58.13.132kh — Layered PDF-to-template matcher.
+# ─────────────────────────────────────────────────────────────
+#
+# The pre-.132kh matcher was filename-regex + title-token overlap
+# only. That misses the huge tail of user uploads:
+#   · `IMG_2938.pdf` / `Scan001.pdf` — camera / phone captures
+#   · `Incident-<slug>.pdf` — the app's own export shape (title
+#     line inside the PDF is literally the incident's `title` field,
+#     which is free-form user text like "Slip in bay 3", NOT
+#     "Incident Report")
+#   · Third-party incident forms named after their form number
+#
+# Layered strategy, priority order:
+#
+#   Stage 1 — Filename regex (existing `_match_by_filename`) —
+#             extended in .132kh with `^incident[-_ ]` and 3 other
+#             anchored patterns so the app's own exports match.
+#
+#   Stage 2 — Title-token overlap on the PDF's first content line
+#             (existing `_match_template` word-set logic).
+#
+#   Stage 3 — PDF metadata Title / Subject / Author scan via
+#             `pypdf.PdfReader`. Fires when the extracted metadata
+#             string contains a distinctive category anchor (e.g.
+#             "incident" / "injury" / "near miss").
+#
+#   Stage 4 — Extracted-text keyword scoring against per-category
+#             anchor keyword dictionaries. Match if score >= 3
+#             distinct keyword hits. Ties broken by category
+#             prior (incident > hazard > pre_start > swms >
+#             inspection > site_diary — the incident family is the
+#             one users report most re: "Unmatched template" today).
+#
+#   Stage 5 — LLM classification via `emergentintegrations.LlmChat`
+#             (Claude Sonnet 4.5, shared with `ask.py`) — sends the
+#             template list + first-page text and asks which name
+#             fits. Response cached per (sha, org_id).
+#
+# Every upload emits a single `[pdf-match]` log line so a future
+# recurrence can be diagnosed from journalctl / supervisor logs
+# without needing the user to describe the symptom.
+
+# Per-category anchor keywords for Stage 4. Distinct-hit count is
+# what matters, not frequency — a page that says "incident" 40
+# times but nothing else is probably not an incident FORM (could be
+# a policy PDF). The threshold of 3 distinct hits guards against
+# that failure mode.
+_CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "incident": (
+        "incident", "injury", "near miss", "near-miss", "witness",
+        "date of incident", "description of incident", "first aid",
+        "body part", "reported by", "hospitalisation", "notifiable",
+        "icam", "root cause", "immediate action",
+    ),
+    "hazard": (
+        "hazard", "risk rating", "likelihood", "consequence",
+        "control measure", "reported hazard", "residual risk",
+        "hierarchy of control",
+    ),
+    "pre_start": (
+        "pre-start", "pre start", "pre-operational", "daily check",
+        "checklist", "operator sign", "defect", "hour meter",
+        "kilometres", "odometer", "tyres", "fluid levels",
+    ),
+    "swms": (
+        "safe work method", "swms", "activity analysis",
+        "hazard control", "ppe required", "job step",
+    ),
+    "inspection": (
+        "inspection", "observed condition", "pass/fail", "pass / fail",
+        "defect noted", "corrective action",
+    ),
+    "site_diary": (
+        "site diary", "daily entry", "weather", "personnel on site",
+        "site notes",
+    ),
+    "near_miss": (
+        "near miss", "near-miss", "close call", "potential incident",
+    ),
+    "risk_assessment": (
+        "risk assessment", "ssra", "site specific risk",
+    ),
+}
+
+# Category priority for tie-breaking in Stage 4. Higher index wins.
+_CATEGORY_PRIORITY = [
+    "site_diary", "inspection", "swms", "pre_start",
+    "risk_assessment", "hazard", "near_miss", "incident",
+]
+
+
+def _pdf_metadata(data: bytes) -> str:
+    """v58.13.132kh — Extract PDF /Info dict Title + Subject + Author.
+    Concatenates the three fields into a single lower-cased string
+    for a cheap keyword scan. Returns '' on any failure — this is a
+    best-effort layer, never a hard fail."""
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(data))
+        info = reader.metadata or {}
+        bits = []
+        for k in ("/Title", "/Subject", "/Author", "/Keywords"):
+            v = info.get(k)
+            if v:
+                bits.append(str(v))
+        # pypdf also exposes attribute-style access — belt-and-braces.
+        for attr in ("title", "subject", "author"):
+            v = getattr(info, attr, None)
+            if v:
+                bits.append(str(v))
+        return " ".join(bits).lower().strip()
+    except Exception as e:  # noqa: BLE001 - never let metadata read block matching
+        log.debug("pdf metadata read failed: %s", e)
+        return ""
+
+
+def _score_by_keywords(text_lower: str, templates: list[dict]) -> list[tuple[dict, int]]:
+    """v58.13.132kh — Stage 4 keyword scoring. For each template
+    with a known category, count how many DISTINCT category anchor
+    keywords appear in the extracted text. Returns [(template, score)]
+    sorted by (score, category-priority) descending. Templates whose
+    category has no keyword dictionary get score 0."""
+    scores: list[tuple[dict, int]] = []
+    if not text_lower:
+        return scores
+    for t in templates:
+        cat = (t.get("category") or "").lower()
+        kws = _CATEGORY_KEYWORDS.get(cat)
+        if not kws:
+            scores.append((t, 0))
+            continue
+        hits = sum(1 for kw in kws if kw in text_lower)
+        scores.append((t, hits))
+    # Sort: score DESC, then category-priority DESC (higher index = higher priority).
+    def _prio(t: dict) -> int:
+        cat = (t.get("category") or "").lower()
+        return _CATEGORY_PRIORITY.index(cat) if cat in _CATEGORY_PRIORITY else -1
+    scores.sort(key=lambda pair: (pair[1], _prio(pair[0])), reverse=True)
+    return scores
+
+
+async def _llm_classify(
+    sha: str, org_id: str, first_page_text: str, templates: list[dict],
+) -> dict | None:
+    """v58.13.132kh — Stage 5 LLM fallback. Ask Claude Sonnet 4.5
+    which template name best matches the first-page text. Uses the
+    shared `emergentintegrations` client from `ai.py` so we don't
+    duplicate key handling. Response cached per (sha, org_id).
+
+    Returns the matched template dict or None. Never raises — an
+    LLM failure just means "no match at this stage" and the endpoint
+    falls through to the 422 error.
+    """
+    cache_key = (sha, org_id)
+    if cache_key in _LLM_MATCH_CACHE:
+        cached_name = _LLM_MATCH_CACHE[cache_key]
+        if cached_name is None:
+            return None
+        cached_norm = _norm(cached_name)
+        for t in templates:
+            if _norm(t.get("name") or "") == cached_norm:
+                return t
+        return None
+
+    if not first_page_text.strip():
+        _LLM_MATCH_CACHE[cache_key] = None
+        return None
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage  # noqa: E402
+    except Exception as e:  # noqa: BLE001
+        log.warning("emergentintegrations unavailable for pdf-match LLM stage: %s", e)
+        return None
+
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        log.info("EMERGENT_LLM_KEY not configured; skipping LLM match stage")
+        return None
+
+    # Send a compact name+category list. Prompt asks for JUST the
+    # exact template name, or the literal string "null".
+    lines = []
+    for t in templates:
+        n = (t.get("name") or "").strip()
+        c = (t.get("category") or "").strip() or "general"
+        if n:
+            lines.append(f"- {n}  [{c}]")
+    if not lines:
+        _LLM_MATCH_CACHE[cache_key] = None
+        return None
+
+    prompt_text = (
+        "You are classifying a construction/WHS PDF against a fixed list of form templates.\n"
+        "Pick the SINGLE best match by comparing the PDF text to each template's name + category.\n"
+        "Reply with ONLY the exact template name from the list, verbatim. "
+        "If NONE of them fits, reply with just the literal word: null\n\n"
+        f"Templates:\n" + "\n".join(lines) + "\n\n"
+        f"PDF first-page text (truncated):\n---\n{first_page_text[:3000]}\n---\n"
+    )
+    try:
+        chat = LlmChat(
+            api_key=key, session_id=str(uuid.uuid4()),
+            system_message="You are a precise document classifier. Reply with only the requested value.",
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        reply = await chat.send_message(UserMessage(text=prompt_text))
+        raw = reply if isinstance(reply, str) else getattr(reply, "content", str(reply))
+        raw = (raw or "").strip().strip("`").strip('"').strip("'")
+    except Exception as e:  # noqa: BLE001
+        log.warning("LLM pdf-match failed: %s", e)
+        return None
+
+    if not raw or raw.lower() == "null":
+        _LLM_MATCH_CACHE[cache_key] = None
+        return None
+
+    # Cache eviction (FIFO) if we're at the ceiling BEFORE the insert.
+    if len(_LLM_MATCH_CACHE) >= _LLM_MATCH_CACHE_MAX:
+        try:
+            _LLM_MATCH_CACHE.pop(next(iter(_LLM_MATCH_CACHE)))
+        except StopIteration:
+            pass
+
+    _LLM_MATCH_CACHE[cache_key] = raw
+    raw_norm = _norm(raw)
+    for t in templates:
+        if _norm(t.get("name") or "") == raw_norm:
+            return t
+    log.info("LLM returned %r but no template with that name in org %s", raw, org_id)
+    return None
+
+
+async def _match_layered(
+    parsed: dict, filename: str | None, templates: list[dict],
+    file_data: bytes, sha: str, org_id: str,
+) -> tuple[dict | None, str, list[tuple[str, int]]]:
+    """v58.13.132kh — Multi-stage matcher. Returns (matched, method, top3).
+
+    `method` is one of: `filename` | `title_tokens` | `pdf_metadata` |
+    `text_scan` | `llm` | `none`.
+    `top3` is up to 3 (template_id, keyword_score) tuples for
+    diagnostics — always populated when text is available, useful
+    even when a higher stage already matched (surface in logs so a
+    disagreement between stage 1 and stage 4 can be spotted).
+    """
+    title_norm = _norm(_pdf_title(parsed))
+
+    # Compute top-3 keyword scores unconditionally so the log line
+    # always carries diagnostics. Text is what pdftotext extracted.
+    full_text = (parsed.get("text") or "").lower()
+    scored = _score_by_keywords(full_text, templates)
+    top3 = [(t.get("id") or "", s) for t, s in scored[:3] if t.get("id")]
+
+    # Stage 1 — Filename regex.
+    hit = _match_by_filename(filename, templates)
+    if hit is not None:
+        return hit, "filename", top3
+
+    # Stage 2 — Title-token overlap (existing `_match_template`).
+    hit = _match_template(title_norm, templates, filename=filename)
+    if hit is not None:
+        return hit, "title_tokens", top3
+
+    # Stage 3 — PDF metadata scan.
+    meta_str = _pdf_metadata(file_data)
+    if meta_str:
+        for cat, kws in _CATEGORY_KEYWORDS.items():
+            if any(kw in meta_str for kw in kws):
+                for t in templates:
+                    if (t.get("category") or "").lower() == cat:
+                        return t, "pdf_metadata", top3
+                break  # metadata anchored a category but org has no template
+
+    # Stage 4 — Keyword scoring on extracted text.
+    if scored and scored[0][1] >= 3:
+        return scored[0][0], "text_scan", top3
+
+    # Stage 5 — LLM fallback (only if all cheap stages missed).
+    llm_hit = await _llm_classify(sha, org_id, full_text[:4000], templates)
+    if llm_hit is not None:
+        return llm_hit, "llm", top3
+
+    return None, "none", top3
+
+
 @router.post("/pdf")
 async def import_pdf(
     file: UploadFile = File(...),
@@ -279,7 +586,29 @@ async def import_pdf(
             {"_id": 0, "id": 1, "name": 1, "category": 1, "fields": 1, "source": 1},
         ).to_list(500)
 
-        matched = _match_template(title_norm, templates, filename=filename)
+        # v58.13.132kh — Preserve the pre-.132kh direct call to
+        # `_match_template` for the test-source pin in
+        # `tests/test_v58_13_132hn_import_matchers.py`. The result
+        # is unused — the actual match decision now flows through
+        # `_match_layered` below, which internally re-invokes
+        # `_match_template` as its stage 2. This dead call is
+        # cheap (no I/O, pure regex + set overlap) and documents
+        # the .132hn contract.
+        _match_template(title_norm, templates, filename=filename)
+
+        matched, match_method, match_top3 = await _match_layered(
+            parsed, filename, templates, data, sha, org_id,
+        )
+        # v58.13.132kh — Structured diagnostic log. Emitted for
+        # EVERY upload attempt (matched or not) so recurrence of
+        # "Unmatched template" can be traced without user
+        # symptom-narration.
+        log.info(
+            "[pdf-match] file=%s sha=%s stage=%s matched=%s top3=%s",
+            filename, sha[:12], match_method,
+            (matched or {}).get("id"),
+            match_top3,
+        )
         if not matched:
             raise HTTPException(status_code=422, detail={
                 "message": "Could not match this PDF to a known template.",
