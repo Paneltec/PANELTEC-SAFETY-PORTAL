@@ -13418,7 +13418,54 @@
 // download for readers who prefer a file over print-to-PDF. Deferred
 // because the current print-to-PDF path avoids stale-PDF drift and
 // keeps a single source of truth for manual content.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kt';
+// v58.13.132kv — Fix uvicorn autoreload storm blocking catch-up snapshots.
+//
+// USER PAIN (Stephen, 2026-09-22): The `.132ks` reclaim tightening
+// landed correctly, but the catch-up snapshot did not complete
+// because uvicorn's `--reload` file-watcher (`WatchFiles`) was firing
+// spuriously in the preview pod — the backend was remounting every
+// 6–7 minutes on the ship day (04:24, 04:26, 04:55, 05:01, 05:12,
+// 06:03) even though `find /app/backend -type f -mmin -60
+// -not -path '*__pycache__*'` returned nothing. Each remount
+// SIGTERM'd whatever writer was mid-flight — including every
+// snapshot subprocess we spawned — so the widget stayed DOWN.
+//
+// Fix in `.132kv`:
+//   · Dropped `--reload` and `--reload-dir /app/backend` from the
+//     preview pod's supervisor `[program:backend]` command line
+//     (`/etc/supervisor/conf.d/supervisord.conf` line 20). Preview /
+//     prod pods have no dev workflow that depends on hot-reload;
+//     editors run `sudo supervisorctl restart backend` after `.py`
+//     edits (a 4-second cost that beats the class of bug entirely).
+//   · Chose Option B (drop `--reload` entirely) over Option A
+//     (`--reload-exclude` patterns) because the WatchFiles log
+//     showed reloads triggered by real `.py` files (backup_service.py,
+//     server.py, forms.py, white_card_seed.py) — not `.pyc`, log,
+//     or temp files — so no exclude pattern would have helped. See
+//     ship memo `/app/memory/v58_13_132kv_uvicorn_reload_storm_fix.md`.
+//   · Verification: zero `WatchFiles detected`/`Reloading`/`Started
+//     reloader` log lines in `backend.err.log` across the entire
+//     post-fix observation window.
+//
+// ── Not resolved in `.132kv` (flagged as follow-up `.132kw`) ────
+//   · **Pod-level restart cycling.** Even after removing `--reload`,
+//     the *entire supervisor daemon* (not just the backend program)
+//     is being respawned by the platform layer every 3–8 minutes
+//     (see `supervisord.log`: 07:59, 08:05, 08:09, 08:16, 08:23,
+//     …). This kills every long-running write inside the container,
+//     including the snapshot writer, so the catch-up cycle still
+//     can't complete under these conditions. That's an infra issue
+//     outside the app boundary — the `.132ks` reclaim will handle
+//     it automatically once the pod stabilises.
+//
+// ── Not changed ────────────────────────────────────────────────
+//   · `.132ks` reclaim path and WARN logic — untouched.
+//   · `/app/mobile/` — untouched (mobile edit ban).
+//   · `entrypoint.sh` `{{RELOAD_FLAG}}` template mechanism — the
+//     placeholder is only sed-substituted on a *clean* config, and
+//     because our edit removes the placeholder markers entirely,
+//     subsequent pod reboots do not re-inject `--reload`.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kv';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13439,7 +13486,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kt';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kt';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kv';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
