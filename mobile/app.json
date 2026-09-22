@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paneltec Group Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.42",
+    "version": "1.0.43",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "scheme": "paneltec-mobile",
@@ -10,7 +10,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.whscompliance.fv5aib",
-      "buildNumber": "164"
+      "buildNumber": "165",
+      "associatedDomains": [
+        "applinks:whs-compliance.preview.emergentagent.com",
+        "applinks:paneltec.com.au",
+        "applinks:app.paneltec.com.au"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +23,23 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.emergent.whscompliance.fv5aib",
-      "versionCode": 164
+      "versionCode": 165,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "whs-compliance.preview.emergentagent.com", "pathPrefix": "/scan" },
+            { "scheme": "https", "host": "whs-compliance.preview.emergentagent.com", "pathPrefix": "/onboard" },
+            { "scheme": "https", "host": "whs-compliance.preview.emergentagent.com", "pathPrefix": "/manuals" },
+            { "scheme": "https", "host": "paneltec.com.au", "pathPrefix": "/scan" },
+            { "scheme": "https", "host": "paneltec.com.au", "pathPrefix": "/onboard" },
+            { "scheme": "https", "host": "app.paneltec.com.au", "pathPrefix": "/scan" },
+            { "scheme": "https", "host": "app.paneltec.com.au", "pathPrefix": "/onboard" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
