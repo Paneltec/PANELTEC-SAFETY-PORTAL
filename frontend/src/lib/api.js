@@ -117,6 +117,11 @@ const PUBLIC_ROUTE_PREFIXES = [
   // index resolves the extensionless URLs `/manuals/user` and
   // `/manuals/admin` that ship in `.132kr` mobile settings links).
   '/manuals/',
+  // v58.13.132ld — Dropbox OAuth callback. Public because Dropbox
+  // redirects an anonymous browser here; the page hands the code+
+  // state to the backend for server-side exchange. Auth-guarding it
+  // would break the OAuth flow entirely.
+  '/dropbox/callback',
 ];
 
 function _isPublicRoute(pathname) {

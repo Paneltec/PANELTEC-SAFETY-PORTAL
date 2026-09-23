@@ -146,6 +146,7 @@ import OrgSettings from '@/pages/OrgSettings';
 import QuickLinks from '@/pages/QuickLinks';
 // v58.13.132es — Standalone Apps Directory hub (opens in new window).
 import AppsDirectory from '@/pages/AppsDirectory';
+import DropboxCallback from '@/pages/DropboxCallback';  // v58.13.132ld
 // v58.13.132cb — `Workspaces` page retired (Phase A of workspaces/sites
 // merge). Route redirects to `/app/settings/sites`. The `.jsx` file has
 // been deleted; import removed to prevent a build-time resolve error.
@@ -251,6 +252,13 @@ function App() {
                 authenticated axios instance (localStorage token from
                 the main window is available on the same origin). */}
             <Route path="/apps-directory" element={<AppsDirectory />} />
+
+            {/* v58.13.132ld — Dropbox OAuth callback landing.
+                Public route (outside `/app/*`). Dropbox redirects an
+                anonymous browser here after admin approves the
+                authorize request; the page exchanges code+state via
+                the backend and postMessages the opener. */}
+            <Route path="/dropbox/callback" element={<DropboxCallback />} />
 
             <Route path="/app" element={<MustChangePasswordGuard><AppShell /></MustChangePasswordGuard>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />

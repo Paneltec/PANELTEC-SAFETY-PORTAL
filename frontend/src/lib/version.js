@@ -1,5 +1,85 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132ld — Dropbox OAuth authorize + refresh-token flow.
+//
+// Standing brief (Stephen, following `.132lb`): the token minted from
+// the Dropbox App Console couldn't be regenerated with the new
+// `files.metadata.read` scope from the UI Stephen had access to, so
+// we pivoted to the proper OAuth `authorize → code → tokens` round-
+// trip. Result: a persistent refresh token that survives access-
+// token expiry and doesn't require anyone to babysit the App
+// Console again.
+//
+// ── Backend ────────────────────────────────────────────────────
+//   · `backend/integrations_dropbox.py` REWRITE — three new
+//     endpoints:
+//       · GET  /api/dropbox/oauth/start     (admin)   — mints CSRF
+//         state, returns Dropbox authorize URL with
+//         `token_access_type=offline` + scopes
+//         `files.metadata.read files.content.read sharing.read`.
+//       · POST /api/dropbox/oauth/callback  (public)  — verifies
+//         state, exchanges code for `{access_token, refresh_token,
+//         account_id}`, writes both to `.env` via `_env_upsert()`
+//         (atomic rewrite; preserves comments; NEVER logs values)
+//         AND updates `os.environ` so the running backend picks
+//         up the fresh creds immediately without a supervisor
+//         restart.
+//     Plus:
+//       · `_get_dbx_client()` NEW — instantiates
+//         `dropbox.Dropbox(oauth2_refresh_token=..., app_key=...,
+//         app_secret=...)` whenever a refresh token is present.
+//         The SDK auto-refreshes the access token on 401 due to
+//         expiry, transparently to callers. No manual refresh
+//         helper needed.
+//       · `_live_probe()` — routed through `_get_dbx_client()` so
+//         `/api/dropbox/health` benefits from auto-refresh too.
+//       · `refresh_token_present` field added to `/health` payload.
+//   · CSRF `state` store — in-process dict with 5-minute TTL.
+//     Single-worker uvicorn so this is safe; if we ever go
+//     multi-worker, migrate to a Mongo collection with a TTL
+//     index (`dropbox_oauth_states`).
+//
+// ── Frontend ───────────────────────────────────────────────────
+//   · `src/pages/DropboxCallback.jsx` NEW — public route mounted
+//     at `/dropbox/callback`. Reads `?code=&state=` from the URL,
+//     POSTs to `/api/dropbox/oauth/callback`, renders success/
+//     error UI, and postMessages the opener window so the
+//     Integrations tab can flip its state without waiting on the
+//     poll.
+//   · `src/lib/api.js` — added `/dropbox/callback` to
+//     `PUBLIC_ROUTE_PREFIXES` so the axios interceptor's `.132kl`
+//     stale-JWT bounce logic doesn't clobber the OAuth callback.
+//   · `src/pages/Integrations.jsx` — new `DropboxCard` component:
+//     `Connect Dropbox` button → opens authorize URL in a popup →
+//     polls `/api/dropbox/health` every 5s until connected →
+//     shows `Connected as stephen@paneltec.com.au` + audit
+//     summary (top-level folder count + projected GB from the
+//     `.132lb` artifact when available).
+//   · `src/App.js` — mounted `<Route path="/dropbox/callback"
+//     element={<DropboxCallback />} />` outside the `/app/*`
+//     guarded shell.
+//
+// ── SECURITY notes ─────────────────────────────────────────────
+//   · `DROPBOX_APP_SECRET` never leaves the backend. Server-side
+//     token exchange is authoritative. Frontend only handles the
+//     `code` + `state` round-trip.
+//   · CSRF: state token is a `secrets.token_urlsafe(24)` (192 bits
+//     entropy), single-use, 5-min TTL.
+//   · Redirect URI is HARD-CODED to
+//     `https://whs-compliance.preview.emergentagent.com/dropbox/callback`
+//     and matched exactly on the Dropbox App Console side.
+//   · `.env` update is atomic (tmp-file + rename) and preserves
+//     every unrelated line including comments. Existing
+//     `DROPBOX_ACCESS_TOKEN` line is REPLACED in-place;
+//     `DROPBOX_REFRESH_TOKEN` is APPENDED with a ship-header
+//     comment.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `doc_folders` / `doc_files` — still zero writes (Phase 0).
+//   · `.132lc` doc-tool swap — untouched.
+//   · `/app/mobile/` — untouched (edit ban).
+//   · `MOBILE_BUNDLE_VERSION` — unchanged.
+
 // v58.13.132lc — Backend+web: persist NODE_OPTIONS + swap heavy doc
 // tools for lightweight libs.
 //
@@ -13820,7 +13900,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lc';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ld';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13841,7 +13921,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lc';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lc';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ld';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
