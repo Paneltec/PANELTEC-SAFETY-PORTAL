@@ -23,12 +23,6 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
-// Ticket #261441 (Emergent Support, 2026-09-23) — preview pod is CPU-capped
-// (4 cores); Metro's default maxWorkers auto-detects CPU count and can spin up
-// multiple parallel transform workers, competing with the frontend dev server
-// for the same fixed budget. Cap it to reduce peak CPU during bundling.
-config.maxWorkers = 2;
-
 // v58.13.132ba (retry #2) — portable regex. The previous attempt
 // used `path.join(__dirname, '_archived_')` which baked the LOCAL
 // absolute path into the pattern; on the EAS runner __dirname is

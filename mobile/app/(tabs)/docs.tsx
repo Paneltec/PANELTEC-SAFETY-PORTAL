@@ -1,7 +1,8 @@
 /**
- * Docs tab — v58.13.132js
+ * Docs tab — v58.13.132la
  * Document library with folder navigation.
  * .132js — error-state UI + focus refetch + session expiry redirect.
+ * .132la — fix display name (strip hex prefix) + fix file open (auth download + share).
  * GET /api/document-library/folders → folder list
  * GET /api/document-library/folders/{id}/files → files in folder
  * GET /api/document-library/folders/{id}/subfolders → subfolders
@@ -9,16 +10,18 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  RefreshControl, ActivityIndicator, TextInput, Linking,
+  RefreshControl, ActivityIndicator, TextInput, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '../../src/theme/colors';
 import { authGet } from '../../src/services/apiClient';
-import { clearSession } from '../../src/services/auth';
+import { clearSession, getStoredJwt } from '../../src/services/auth';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { folderIcon } from '../../src/lib/folderIcons';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 interface DocFolder {
   id: string;
@@ -32,13 +35,38 @@ interface DocFolder {
 interface DocFile {
   id: string;
   file_id?: string;
-  name: string;
+  name?: string;
   filename?: string;
+  mime?: string;
   mime_type?: string;
   file_size?: number;
-  uploaded_at?: string;
+  size?: number;
+  file_url?: string;
   url?: string;
+  uploaded_at?: string;
+  uploaded_by_name?: string;
+  ai_tags?: string[];
   [key: string]: unknown;
+}
+
+/** Strip leading hex prefix (e.g. "6373f0898139e-") and clean underscores */
+function humanFileName(file: DocFile): string {
+  const raw = file.filename || file.name || '';
+  if (!raw) return 'Untitled document';
+  // Strip hex-like prefix: 8+ hex chars followed by dash
+  let cleaned = raw.replace(/^[0-9a-f]{8,}-/i, '');
+  // Remove file extension for display
+  const dotIdx = cleaned.lastIndexOf('.');
+  if (dotIdx > 0) cleaned = cleaned.substring(0, dotIdx);
+  // Replace underscores with spaces
+  cleaned = cleaned.replace(/_/g, ' ');
+  return cleaned || raw;
+}
+
+function fileExtension(file: DocFile): string {
+  const raw = file.filename || file.name || '';
+  const dotIdx = raw.lastIndexOf('.');
+  return dotIdx > 0 ? raw.substring(dotIdx + 1).toLowerCase() : '';
 }
 
 async function fetchRootFolders(): Promise<DocFolder[]> {
@@ -88,8 +116,9 @@ const FILE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   txt: 'reader',
 };
 
-function getFileIcon(name: string): keyof typeof Ionicons.glyphMap {
-  const ext = (name || '').split('.').pop()?.toLowerCase() || '';
+function getFileIcon(nameOrFile: string | DocFile): keyof typeof Ionicons.glyphMap {
+  const raw = typeof nameOrFile === 'string' ? nameOrFile : (nameOrFile.filename || nameOrFile.name || '');
+  const ext = (raw || '').split('.').pop()?.toLowerCase() || '';
   return FILE_ICONS[ext] || 'document-outline';
 }
 
@@ -182,8 +211,55 @@ export default function DocsScreen() {
   const filteredFiles = useMemo(() => {
     if (!files || !search.trim()) return files || [];
     const q = search.toLowerCase();
-    return files.filter(f => (f.name || f.filename || '').toLowerCase().includes(q));
+    return files.filter(f => {
+      const display = humanFileName(f).toLowerCase();
+      const raw = (f.filename || f.name || '').toLowerCase();
+      return display.includes(q) || raw.includes(q);
+    });
   }, [files, search]);
+
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null);
+
+  const handleFilePress = useCallback(async (file: DocFile) => {
+    const fileUrl = file.file_url || file.url;
+    if (!fileUrl) {
+      Alert.alert('No file', 'This document has no downloadable file.');
+      return;
+    }
+    const baseUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+    const fullUrl = fileUrl.startsWith('http') ? fileUrl : `${baseUrl}${fileUrl}`;
+    const fid = file.id || file.file_id || 'unknown';
+    const ext = fileExtension(file);
+    const localUri = `${FileSystem.cacheDirectory}doc_${fid}.${ext || 'bin'}`;
+
+    setOpeningFileId(fid);
+    try {
+      const token = await getStoredJwt();
+      const dl = await FileSystem.downloadAsync(fullUrl, localUri, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (dl.status !== 200) {
+        Alert.alert('Download failed', `Server returned ${dl.status}. Try again or contact your supervisor.`);
+        return;
+      }
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        const mimeType = file.mime || file.mime_type || 'application/octet-stream';
+        await Sharing.shareAsync(dl.uri, {
+          mimeType,
+          dialogTitle: humanFileName(file),
+          UTI: ext === 'pdf' ? 'com.adobe.pdf' : undefined,
+        });
+      } else {
+        Alert.alert('Cannot open', 'Sharing is not available on this device.');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      Alert.alert('Error', `Couldn't open this file. ${msg}`);
+    } finally {
+      setOpeningFileId(null);
+    }
+  }, []);
 
   type ListItem =
     | { type: 'folder'; data: DocFolder }
@@ -219,14 +295,6 @@ export default function DocsScreen() {
     setSearch('');
   };
 
-  const handleFilePress = (file: DocFile) => {
-    if (file.url) {
-      const baseUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-      const fullUrl = file.url.startsWith('http') ? file.url : `${baseUrl}${file.url}`;
-      Linking.openURL(fullUrl);
-    }
-  };
-
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.type === 'folder') {
       const folder = item.data;
@@ -252,24 +320,35 @@ export default function DocsScreen() {
       );
     }
     const file = item.data;
-    const fname = file.name || file.filename || 'Unknown';
+    const displayName = humanFileName(file);
+    const ext = fileExtension(file);
+    const isOpening = openingFileId === (file.id || file.file_id);
     return (
       <TouchableOpacity
         testID={`doc-file-${file.id || file.file_id}`}
         style={st.row}
         onPress={() => handleFilePress(file)}
         activeOpacity={0.7}
+        disabled={isOpening}
       >
         <View style={st.fileIcon}>
-          <Ionicons name={getFileIcon(fname)} size={20} color={Colors.info} />
+          {isOpening ? (
+            <ActivityIndicator size="small" color={Colors.info} />
+          ) : (
+            <Ionicons name={getFileIcon(file)} size={20} color={Colors.info} />
+          )}
         </View>
         <View style={st.rowInfo}>
-          <Text style={st.rowName} numberOfLines={1}>{fname}</Text>
+          <Text style={st.rowName} numberOfLines={2}>{displayName}</Text>
           <Text style={st.rowMeta}>
-            {[formatSize(file.file_size), file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString() : ''].filter(Boolean).join(' · ')}
+            {[
+              ext.toUpperCase(),
+              formatSize(file.size ?? file.file_size),
+              file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString() : '',
+            ].filter(Boolean).join(' · ')}
           </Text>
         </View>
-        <Ionicons name="open-outline" size={16} color={Colors.textTertiary} />
+        <Ionicons name={isOpening ? 'hourglass-outline' : 'open-outline'} size={16} color={Colors.textTertiary} />
       </TouchableOpacity>
     );
   };
