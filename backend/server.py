@@ -66,6 +66,9 @@ from document_library import (  # noqa: E402
     router as document_library_router,
     supplier_folders_router,
 )
+from document_library_shares import (  # noqa: E402 — v58.13.132ma
+    router as document_library_shares_router,
+)
 from suppliers import router as suppliers_router  # noqa: E402
 from supplier_panels import router as supplier_panels_router  # noqa: E402
 from workers import router as workers_router, me_router as workers_me_router  # noqa: E402
@@ -635,6 +638,7 @@ api.include_router(pdf_router)
 # v160.3.9.58.13.47 — Capture-density telemetry endpoint.
 api.include_router(metrics_router)
 api.include_router(document_library_router)
+api.include_router(document_library_shares_router)   # v58.13.132ma
 api.include_router(supplier_folders_router)
 api.include_router(suppliers_router)
 api.include_router(supplier_panels_router)

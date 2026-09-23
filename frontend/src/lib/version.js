@@ -1,5 +1,97 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132ma — Document Library: Phase 1 backend (shares + bulk +
+// hard-delete + tree upload + migration one-shot).
+//
+// Standing brief (Stephen): three-phase Dropbox-style Document
+// Library rebuild. Phase 1 (this ship) = backend. Phase 2 = web UI
+// (.132mb). Phase 3 = mobile hide (.132mc, delegated to
+// e1_expo_frontend_dev). Runs in parallel with the still-active
+// Dropbox → NAS migration; does NOT touch migration state or the
+// storage_backend flip logic on existing rows.
+//
+// New module `backend/document_library_shares.py` mounted at the
+// existing `/document-library` prefix. All admin endpoints gated
+// by `role_id == "admin"` via a local `_require_admin`. Non-admin
+// access limited to `/shared-with-me` + share-scoped download.
+//
+// Endpoints added:
+//   · POST   /files/{id}/shares                (admin)
+//   · GET    /files/{id}/shares                (admin)
+//   · DELETE /shares/{share_id}                (admin)
+//   · GET    /shared-with-me                   (any authed)
+//   · GET    /shared-with-me/files/{id}/download (share-scoped)
+//   · POST   /download/bulk                    (admin, file_ids[])
+//   · GET    /folders/{id}/download-zip        (admin, recursive)
+//   · DELETE /files/{id}/hard                  (admin, hard-delete)
+//   · DELETE /folders/{id}/hard                (admin, recursive)
+//   · POST   /folders/{id}/upload-tree         (admin, tree w/ paths)
+//   · POST   /admin/seed-shares-from-shared-reference (idempotent)
+//
+// Data model: new collection `doc_shares` —
+//   {id, org_id, file_id, target_type: user|all_workers,
+//    target_id: user_id | null, permission: view|download,
+//    granted_by, granted_by_name, granted_reason?, created_at,
+//    revoked_at}
+// `group` target deferred to Phase 2 (no user-groups collection
+// exists yet).
+//
+// Migration one-shot (idempotent) — Stephen's hard-cutover safety
+// net: every doc_folder with `shared_reference=True` gets an
+// `all_workers/download` share created for every file inside.
+// Skips files that already have such an active share. Mobile now
+// has zero doc-library access so this is a WEB-only day-1
+// preservation of legacy visibility.
+//
+// Constraints honoured:
+//   · Storage backend on new uploads = "gridfs" (via existing
+//     `uploads_storage.save_upload`). 5 GB via pre-signed NAS
+//     upload URL deferred to Phase 2 — current per-file cap 200 MB.
+//   · Existing files' `storage_backend` field untouched — the
+//     Dropbox → NAS migration is the authoritative writer of
+//     that during its concurrent run.
+//   · Hard-delete on a NAS-backed row: enqueues `delete_file`
+//     via `nas_client` so the agent sweeps the bytes off the
+//     NAS. GridFS-backed rows: bucket-delete via `_bucket()`.
+//   · Legacy soft-delete endpoint at `DELETE /files/{id}` kept
+//     intact — the UI's existing "delete" button still does soft.
+//     New endpoint `/files/{id}/hard` is admin-only + explicit.
+//
+// NOT touched:
+//   · document_library.py legacy endpoints (upload, download,
+//     folder CRUD, search, share_reference toggle, archive,
+//     category visibility) — unchanged.
+//   · scope_filter / permissions / role model.
+//   · Any migration-related code.
+//   · /app/mobile/ — untouched (ban + Phase 3 is delegated).
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+//
+// Test coverage (12 curl scenarios validated post-ship):
+//   1. admin single upload → OK (legacy endpoint)
+//   2. admin tree upload w/ 3-level depth → doc_folders + doc_files
+//      created preserving structure
+//   3. non-admin blocked on every admin endpoint (403)
+//   4. share to a specific user → target user sees file in /shared-with-me
+//   5. share to all_workers → every non-admin sees it
+//   6. non-admin with download permission → 200 + bytes
+//   7. non-admin with view permission → 403 on /download
+//   8. revoke share → target no longer sees file
+//   9. hard-delete → NAS/GridFS bytes purged, doc_shares purged
+//  10. bulk download 3 files → application/zip stream returned
+//  11. folder recursive zip → structure preserved
+//  12. seed-from-shared-reference → N shares created (idempotent
+//      on re-run: skipped_existing count matches created count)
+//
+// Phase 2 backlog:
+//   · Web UI: toolbar buttons, share modal, delete confirm,
+//     Shared-with-me page, drag-drop + webkitdirectory.
+//   · NAS pre-signed upload URL flow to lift the per-file cap
+//     from 200 MB → 5 GB.
+//   · user_groups collection + `target_type=group`.
+// Phase 3 backlog:
+//   · Mobile: hide Documents nav entry (delegated to
+//     e1_expo_frontend_dev, /app/mobile/ ban).
+
 // v58.13.132lm — Phase 2b Ship 2: Dropbox → NAS bytes-copy engine.
 //
 // The main event. Ships 1 (`.132lj`), 1a (`.132lk`), 1b (`.132ll`)
@@ -14661,7 +14753,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lm';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ma';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14682,7 +14774,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lm';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lm';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ma';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
