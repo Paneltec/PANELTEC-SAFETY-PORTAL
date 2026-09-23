@@ -315,10 +315,229 @@ def _ship_to_smb(dest: Dict[str, Any], local_zip: Path,
 # =====================================================================
 # Main loop
 # =====================================================================
+# ── v58.13.132lf — bi-directional NAS file ops ────────────────
+# The Hub piggy-backs `nas_ops` on every `/agent/pending` poll. Each
+# op is signed with HMAC-SHA256 over its canonical payload using
+# `NAS_AGENT_SHARED_SECRET` (same secret in the Hub's backend/.env).
+# We verify the signature before touching disk, execute locally
+# against `<NAS_ROOT>/paneltec-files/…`, and POST the result to
+# `/agent/nas-op-result`. Never trust the op — validate every path
+# stays under the root prefix (path-traversal defence).
+
+import hashlib as _hashlib
+import hmac as _hmac
+import base64 as _base64
+
+_NAS_HMAC_SECRET = os.environ.get("NAS_AGENT_SHARED_SECRET", "").strip()
+_NAS_ROOT = Path(os.environ.get(
+    "NAS_ROOT", os.environ.get("PANELTEC_LOCAL_DIR", "/data"),
+)) / "paneltec-files"
+
+
+def _nas_canonical(op: str, path: str, body_b64: str,
+                     enqueued_at: str) -> bytes:
+    return f"{op}|{path}|{body_b64 or ''}|{enqueued_at}".encode("utf-8")
+
+
+def _nas_verify_hmac(op_row: Dict[str, Any]) -> bool:
+    if not _NAS_HMAC_SECRET:
+        log.warning("[nas-ops] NAS_AGENT_SHARED_SECRET missing — "
+                       "refusing to execute op id=%s", op_row.get("id"))
+        return False
+    expected = _hmac.new(
+        _NAS_HMAC_SECRET.encode("utf-8"),
+        _nas_canonical(op_row.get("op", ""), op_row.get("path", ""),
+                       op_row.get("body_b64") or "",
+                       op_row.get("enqueued_at", "")),
+        _hashlib.sha256,
+    ).hexdigest()
+    return _hmac.compare_digest(expected, op_row.get("hmac") or "")
+
+
+def _nas_safe_path(rel: str) -> Path:
+    """Resolve `rel` under `_NAS_ROOT` and ensure the result stays
+    inside the root — protects against `..` traversal and absolute
+    paths in op payloads."""
+    p = (_NAS_ROOT / rel.lstrip("/")).resolve()
+    root = _NAS_ROOT.resolve()
+    try:
+        p.relative_to(root)
+    except ValueError:
+        raise ValueError(f"path traversal blocked: {rel!r}")
+    return p
+
+
+def _nas_disk_usage() -> Dict[str, Any]:
+    """du snapshot for the NAS ROOT (Ugreen 14 TB volume typically)."""
+    _NAS_ROOT.mkdir(parents=True, exist_ok=True)
+    du = shutil.disk_usage(str(_NAS_ROOT))
+    return {
+        "free_gb": round(du.free / (1024 ** 3), 2),
+        "used_gb": round(du.used / (1024 ** 3), 2),
+        "total_gb": round(du.total / (1024 ** 3), 2),
+    }
+
+
+def _nas_execute(op_row: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a single verified op locally. Never raises — returns
+    an `{"status": "done"|"error", "result"|"error"}` dict."""
+    op = op_row.get("op")
+    path = op_row.get("path") or ""
+    try:
+        if op == "ping":
+            return {"status": "done", "result": {
+                "agent_time": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                              time.gmtime()),
+                **_nas_disk_usage(),
+            }}
+
+        if op == "stat":
+            fp = _nas_safe_path(path)
+            if not fp.exists():
+                return {"status": "done", "result": {
+                    "path": path, "exists": False,
+                }}
+            st = fp.stat()
+            sha = ""
+            if fp.is_file():
+                h = _hashlib.sha256()
+                with fp.open("rb") as fh:
+                    for chunk in iter(lambda: fh.read(65536), b""):
+                        h.update(chunk)
+                sha = h.hexdigest()
+            return {"status": "done", "result": {
+                "path": path, "exists": True,
+                "size": st.st_size, "sha256": sha,
+                "mtime": int(st.st_mtime), "is_dir": fp.is_dir(),
+            }}
+
+        if op == "list_dir":
+            fp = _nas_safe_path(path)
+            if not fp.exists():
+                return {"status": "error",
+                        "error": f"not found: {path!r}"}
+            if not fp.is_dir():
+                return {"status": "error",
+                        "error": f"not a directory: {path!r}"}
+            entries = []
+            for child in sorted(fp.iterdir()):
+                cst = child.stat()
+                entries.append({
+                    "name": child.name,
+                    "is_dir": child.is_dir(),
+                    "size": cst.st_size if child.is_file() else 0,
+                    "mtime": int(cst.st_mtime),
+                })
+            return {"status": "done",
+                    "result": {"path": path, "entries": entries}}
+
+        if op == "put_file":
+            fp = _nas_safe_path(path)
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            body = _base64.b64decode(op_row.get("body_b64") or "")
+            fp.write_bytes(body)
+            st = fp.stat()
+            sha = _hashlib.sha256(body).hexdigest()
+            # Sidecar meta for later reconciliation (source_id from
+            # Dropbox etc. when Phase 2b runs).
+            meta = op_row.get("meta") or {}
+            if meta:
+                mp = fp.with_name(fp.name + ".meta.json")
+                try:
+                    mp.write_text(json.dumps(meta, indent=2))
+                except OSError as e:
+                    log.warning("[nas-ops] meta sidecar write failed "
+                                   "%s: %s", mp, e)
+            return {"status": "done", "result": {
+                "path": path, "size": st.st_size, "sha256": sha,
+                "mtime": int(st.st_mtime),
+            }}
+
+        if op == "get_file":
+            fp = _nas_safe_path(path)
+            if not fp.exists() or not fp.is_file():
+                return {"status": "error",
+                        "error": f"not a file: {path!r}"}
+            body = fp.read_bytes()
+            return {"status": "done", "result": {
+                "path": path, "size": len(body),
+                "sha256": _hashlib.sha256(body).hexdigest(),
+                "body_b64": _base64.b64encode(body).decode("ascii"),
+            }}
+
+        if op == "delete_file":
+            fp = _nas_safe_path(path)
+            if not fp.exists():
+                return {"status": "done", "result": {
+                    "path": path, "deleted": False,
+                    "reason": "not found",
+                }}
+            if fp.is_dir():
+                return {"status": "error",
+                        "error": f"refusing to delete directory: {path!r}"}
+            fp.unlink()
+            # Best-effort sidecar cleanup.
+            side = fp.with_name(fp.name + ".meta.json")
+            try:
+                if side.exists():
+                    side.unlink()
+            except OSError:
+                pass
+            return {"status": "done",
+                    "result": {"path": path, "deleted": True}}
+
+        return {"status": "error",
+                "error": f"unknown op: {op!r}"}
+    except Exception as e:  # noqa: BLE001 — errors go over the wire
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
+def _nas_report(op_id: str, outcome: Dict[str, Any]) -> None:
+    try:
+        r = requests.post(
+            f"{HUB_URL}/api/backup/agent/nas-op-result",
+            headers={**_headers(), "Content-Type": "application/json"},
+            json={"op_id": op_id, **outcome},
+            timeout=30,
+        )
+        if r.status_code != 200:
+            log.warning("[nas-ops] result POST HTTP %s body=%s",
+                          r.status_code, r.text[:200])
+    except requests.RequestException as e:
+        log.warning("[nas-ops] result POST failed: %s", e)
+
+
+def _drain_nas_ops(ops: List[Dict[str, Any]]) -> None:
+    if not ops:
+        return
+    log.info("[nas-ops] draining %d op(s)", len(ops))
+    for op_row in ops:
+        op_id = op_row.get("id")
+        op = op_row.get("op")
+        path = op_row.get("path")
+        if not _nas_verify_hmac(op_row):
+            log.warning("[nas-ops] HMAC verify FAILED op=%s path=%s "
+                           "id=%s — refusing", op, path, op_id)
+            _nas_report(op_id, {"status": "error",
+                                  "error": "hmac verify failed"})
+            continue
+        outcome = _nas_execute(op_row)
+        log.info("[nas-ops] executed op=%s path=%s status=%s",
+                    op, path, outcome.get("status"))
+        _nas_report(op_id, outcome)
+
+
 def _one_pass(state: Dict[str, Any]) -> None:
     pending = hub_pending()
     if not pending:
         return
+
+    # v58.13.132lf — drain any queued NAS ops before we consider
+    # snapshot work. Ops are executed back-to-back (with a re-poll
+    # between drains) so a batch of writes coming from the Hub
+    # doesn't have to wait for the next idle poll.
+    _drain_nas_ops(pending.get("nas_ops") or [])
+
     snap = pending.get("snapshot")
     dests = pending.get("destinations") or []
     if not snap:

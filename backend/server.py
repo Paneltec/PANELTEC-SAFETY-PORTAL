@@ -109,6 +109,7 @@ from workspaces import router as workspaces_router  # noqa: E402
 # (.132cb-b) will absorb the FK rename + retire /api/workspaces.
 from sites_admin import router as sites_admin_router  # noqa: E402
 from integrations_dropbox import router as dropbox_router  # noqa: E402  — v58.13.132lb
+from integrations_nas import router as nas_router  # noqa: E402  — v58.13.132lf
 from org_settings import router as org_router  # noqa: E402
 from mobile_modules import router as mobile_modules_router  # noqa: E402
 
@@ -617,6 +618,7 @@ api.include_router(workspaces_router)
 # workspaces_router so the .132cb-b retire is a one-line drop.
 api.include_router(sites_admin_router)
 api.include_router(dropbox_router)  # v58.13.132lb — /api/dropbox/health
+api.include_router(nas_router)  # v58.13.132lf — /api/nas/health + /probe
 app.include_router(org_router)
 app.include_router(mobile_modules_router)
 api.include_router(email_router)
@@ -870,6 +872,12 @@ async def on_startup():
     except Exception as e:  # noqa: BLE001
         log.warning("doc_files extracted_text backfill boot failed: %s", e)
     await session_history_ensure_indexes()
+    # v58.13.132lf — NAS ops queue indexes (TTL + agent status).
+    try:
+        from nas_ops_service import ensure_indexes as _nas_ensure_idx
+        await _nas_ensure_idx()
+    except Exception as _e:
+        log.warning("nas_ops ensure_indexes failed: %s", _e)
     # v58.13.132ab — daily_job_assignments (org_id, worker_id, date) compound.
     try:
         await _mobile_daily_jobs_ensure_indexes()

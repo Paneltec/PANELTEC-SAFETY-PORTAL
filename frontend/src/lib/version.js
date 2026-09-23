@@ -1,5 +1,153 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132lf — Backend+agent: bi-directional NAS file API.
+//
+// Standing brief (Stephen): migrate off Dropbox onto the UGREEN NAS.
+// Files must live on NAS + be served by our app. This ship stands
+// up the bi-directional file transport; Phase 2b (bulk Dropbox →
+// NAS copy) and Phase 2c (wire doc_files reads through NAS) follow.
+//
+// ── Agent runtime finding ──────────────────────────────────────
+//   Docker container running ON the UGREEN NAS itself (`Reference
+//   target: a UGREEN NAS Docker container` — see
+//   scripts/paneltec_backup_agent.py header). Not a separate Pi.
+//   No inbound port on the NAS; tunnel is agent-outbound HTTPS
+//   polling every PANELTEC_POLL seconds (default 60s) to
+//   `/api/backup/agent/pending`. Auth: sha256-hashed bearer
+//   token per-agent in `bk_agents`.
+//
+// ── Bi-directional design ──────────────────────────────────────
+//   Real WebSocket real-time is Phase 2a.1. For 2a we queue-and-
+//   drain on the existing poll: pod enqueues NAS ops into a Mongo
+//   `nas_ops` collection; the agent's next poll receives them on
+//   `pending.nas_ops[]`; the agent executes each op locally against
+//   `<NAS_ROOT>/paneltec-files/<path>` and POSTs the result to a
+//   new `/api/backup/agent/nas-op-result` endpoint. Latency is
+//   0-poll_interval on the leading edge, sub-second per op inside
+//   a drain batch. On the production 60s poll cadence this gives
+//   us ≤ 60s p95 for on-demand reads; back-to-back writes in a
+//   bulk copy phase 2b batch will feel near-instant.
+//
+// ── Backend ────────────────────────────────────────────────────
+//   · `backend/nas_ops_service.py` NEW — queue + HMAC + TTL:
+//       · `enqueue_op(op, path, body_b64, agent_id, meta)` —
+//         inserts a signed row into `nas_ops`.
+//       · `wait_for_result(op_id, timeout_s)` — polls the row
+//         until status transitions to done/error/timeout.
+//       · `next_ops_for_agent(agent_id, limit=8)` — atomically
+//         claims up to N queued ops on the poll path.
+//       · `store_agent_result(op_id, agent_id, status, result,
+//         error)` — settles a row on the result POST path.
+//       · `ensure_indexes()` — TTL 24h on `enqueued_at_ts` +
+//         compound `(agent_id, status, enqueued_at)`.
+//       · HMAC-SHA256 over canonical
+//         `{op}|{path}|{body_b64}|{enqueued_at}` using
+//         `NAS_AGENT_SHARED_SECRET`. Agent verifies before
+//         touching disk.
+//   · `backend/nas_client.py` NEW — pod-side sync-looking async
+//     facade: `put_file / get_file / stat / list_dir /
+//     delete_file / ping`. Retries with exponential backoff
+//     (0.5→1→2s) on transient failures. 30s timeout for metadata,
+//     5 min for large files.
+//   · `backend/integrations_nas.py` NEW — admin surface:
+//       · `GET /api/nas/health` — agent_connected /
+//         agent_stale_seconds / nas_free_gb / nas_used_gb /
+//         hmac_secret_present / last_bidirectional_probe_ms /
+//         last_bidirectional_probe_status / diagnostic.
+//         Fires a 5s-bounded ping op inline; longer probes go
+//         through POST /nas/probe.
+//       · `POST /api/nas/probe` — full 30s ping.
+//     Admin gate mirrors the `.132kt` set.
+//   · `backend/backup_service.py` — extended:
+//       · `/agent/pending` piggybacks up to 8 queued nas_ops on
+//         every poll response.
+//       · New `POST /api/backup/agent/nas-op-result` endpoint
+//         (agent-token-gated) settles op rows.
+//   · `backend/server.py` — mounted `nas_router` at `/api/nas`;
+//     wired `nas_ops_service.ensure_indexes()` into `on_startup`.
+//   · `backend/.env` — appended
+//     `NAS_AGENT_SHARED_SECRET=<64-char urlsafe token>`. Same
+//     value MUST land in the agent's docker-compose env for
+//     signature verification to work — deployment doc addition
+//     pending (see follow-up).
+//
+// ── Agent (scripts/paneltec_backup_agent.py) ───────────────────
+//   Extended in-place (backward compatible — existing snapshot
+//   shipping unchanged):
+//   · `_drain_nas_ops(ops)` — called at the top of every
+//     `_one_pass()` before snapshot work.
+//   · `_nas_verify_hmac(row)` — refuses execution on signature
+//     mismatch or missing secret.
+//   · `_nas_safe_path(rel)` — resolves rel-path under
+//     `_NAS_ROOT/paneltec-files/`, blocks `..` traversal + absolute
+//     paths.
+//   · `_nas_execute(row)` — dispatches on op:
+//       ping · stat · list_dir · put_file · get_file · delete_file
+//     Writes a sidecar `<file>.meta.json` alongside `put_file`
+//     bodies for later reconciliation (Phase 2b will populate
+//     `{dropbox_source_id, dropbox_content_hash}` in meta so the
+//     backfill is resumable + verifiable).
+//   · `_nas_report(op_id, outcome)` — POSTs to
+//     `/api/backup/agent/nas-op-result`.
+//
+// ── End-to-end round-trip smoke test (this pod) ────────────────
+//   Registered a mock agent, ran the extended agent script locally
+//   with PANELTEC_POLL=2s pointed at the pod as HUB_URL, then from
+//   another python process enqueued a sequence of ops.
+//
+//   Result — all 7 checks pass:
+//     PING     → done in 505 ms ; NAS reports 72.6/94.2 GB used
+//     PUT      → done in 2.5 s  ; sha256 preserved, meta sidecar
+//                                 written alongside bytes
+//     GET      → done in 2.5 s  ; bytes identical, sha256 matches
+//     STAT     → done          ; exists=true, mtime accurate
+//     LIST_DIR → done          ; test-hello.txt (10B) +
+//                                 test-hello.txt.meta.json (32B)
+//     DELETE   → done          ; deleted=true; sidecar swept
+//     HMAC-TAMPER → REFUSED    ; agent returned `hmac verify failed`
+//                                 confirming the crypto layer works.
+//
+//   `/api/nas/health` (admin) after the run:
+//     agent_connected=true · agent_stale_seconds=0.7 ·
+//     hmac_secret_present=true ·
+//     last_bidirectional_probe_status="ok".
+//
+// ── SECURITY posture ───────────────────────────────────────────
+//   · Agent-token auth kept (existing sha256 hash in bk_agents).
+//   · HMAC-SHA256 signature per op = second layer. A leaked agent
+//     token alone can't execute NAS ops without also having the
+//     shared secret from the agent's docker-compose env.
+//   · Path-traversal defence: `_nas_safe_path` resolves against
+//     `_NAS_ROOT.resolve()` and refuses paths that escape.
+//   · No bytes ever logged — only path + size.
+//   · TTL 24h on nas_ops rows → auto-purge if the agent goes
+//     offline for extended periods (bytes on disk survive).
+//
+// ── Deferred (Phase 2a.1 / 2b / 2c) ────────────────────────────
+//   · Real WebSocket transport (removes the poll latency ceiling).
+//     Current p95 = poll_interval; acceptable for Phase 2b bulk
+//     copy but tight for interactive doc_files reads at scale.
+//   · Frontend NAS-status card on Integrations page (mirror the
+//     Dropbox card pattern from .132ld). This ship added the
+//     `/api/nas/health` payload but not the visual widget.
+//   · Streaming body transfer for files > ~50 MB (current
+//     base64-in-JSON approach blows JSON parse memory on very
+//     large files). Phase 2b will need this before touching CCTV
+//     footage subtrees.
+//   · Deployment doc update — Stephen needs to add
+//     `NAS_AGENT_SHARED_SECRET=<value>` to the UGREEN docker-
+//     compose env alongside `AGENT_TOKEN` so HMAC verification
+//     stops refusing every op. Value already in backend/.env.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · doc_files behaviour — SDS, Pre-Start, everything else
+//     continues to serve from GridFS (Phase 2c wires NAS in).
+//   · Dropbox integration (.132ld / .132le) — untouched.
+//   · Existing backup snapshot flow — every code path preserved;
+//     nas_ops piggyback is additive on `/agent/pending`.
+//   · /app/mobile/ — untouched (ban).
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+
 // v58.13.132le — Dropbox integration Phase 1: folder tree mirror.
 //
 // Standing brief: mirror the full folder tree of
@@ -13992,7 +14140,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132le';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lf';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14013,7 +14161,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132le';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132le';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lf';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

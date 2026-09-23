@@ -65,7 +65,7 @@ from typing import Optional, List, Dict, Any, Tuple
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Header, Query, UploadFile, File
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ConfigDict
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
@@ -2287,11 +2287,23 @@ def install(app, db, require_admin):
                                "did not sweep it", d.get("id"))
                 d["password"] = legacy_plain
             d["mode"] = "smb"
+        # v58.13.132lf — piggyback NAS ops on the poll response.
+        # Agent claims up to 8 ops per poll and drains them
+        # back-to-back before its next idle poll. Each op carries an
+        # HMAC signature over its canonical payload; the agent MUST
+        # verify before executing.
+        try:
+            from nas_ops_service import next_ops_for_agent
+            nas_ops = await next_ops_for_agent(agent["id"], limit=8)
+        except Exception as e:
+            logger.warning("[nas-ops] pending pickup failed: %s", e)
+            nas_ops = []
         return {
             "snapshot": latest,
             "destinations": dests,
             "agent_id": agent["id"],
             "server_time": _now_iso(),
+            "nas_ops": nas_ops,
         }
 
     @api_router.post("/agent/report")
@@ -2447,6 +2459,42 @@ def install(app, db, require_admin):
                         {"id": snap_id_reported},
                         {"$set": updates},
                     )
+        return {"ok": True}
+
+    # v58.13.132lf — NAS op result endpoint. Called by the agent
+    # after it has drained a `nas_ops` batch from
+    # `/agent/pending.nas_ops`. Each entry POSTs here with the op
+    # id + status ("done" | "error") + result payload (base64
+    # bytes for get_file, entry list for list_dir, etc).
+    @api_router.post("/agent/nas-op-result")
+    async def agent_nas_op_result(
+        payload: Dict[str, Any] = Body(...),
+        authorization: Optional[str] = Header(None),
+    ):
+        agent = await _resolve_agent(authorization)
+        if not agent:
+            raise HTTPException(401, "agent token required")
+        op_id = (payload or {}).get("op_id")
+        status = (payload or {}).get("status")
+        if not op_id or status not in {"done", "error"}:
+            raise HTTPException(
+                400, "op_id + status ('done'|'error') required",
+            )
+        from nas_ops_service import store_agent_result
+        ok = await store_agent_result(
+            op_id=op_id,
+            agent_id=agent["id"],
+            status=status,
+            result=payload.get("result"),
+            error=payload.get("error"),
+        )
+        if not ok:
+            # Not fatal — the row may already have been marked (dup
+            # POST) or TTL-expired. Log and swallow.
+            logger.info(
+                "[nas-ops] result for op=%s not applied (already "
+                "settled or expired)", op_id,
+            )
         return {"ok": True}
 
     @api_router.get("/agent-logs", dependencies=[Depends(require_admin)])
