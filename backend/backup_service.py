@@ -2419,7 +2419,14 @@ def install(app, db, require_admin):
         # verify before executing.
         try:
             from nas_ops_service import next_ops_for_agent
-            nas_ops = await next_ops_for_agent(agent["id"], limit=8)
+            # v58.13.132lm — Ship 2 bytes-copy engine needs a bigger
+            # per-poll drain to actually finish 114k files in a
+            # bounded window. Bumped 8 → 32 per Stephen's locked-in
+            # speed decision. Agent's `_drain_nas_ops` processes
+            # these back-to-back within one _one_pass so this
+            # roughly quadruples raw throughput without changing
+            # the poll cadence.
+            nas_ops = await next_ops_for_agent(agent["id"], limit=32)
         except Exception as e:
             logger.warning("[nas-ops] pending pickup failed: %s", e)
             nas_ops = []

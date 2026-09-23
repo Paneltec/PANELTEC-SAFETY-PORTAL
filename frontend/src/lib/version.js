@@ -1,5 +1,107 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132lm — Phase 2b Ship 2: Dropbox → NAS bytes-copy engine.
+//
+// The main event. Ships 1 (`.132lj`), 1a (`.132lk`), 1b (`.132ll`)
+// proved the transport out. This ship is the actual bytes mover.
+//
+// Reads `dropbox_files_enum` (145,035 rows / 265.6 GB from
+// `.132lj`), applies Stephen's confirmed exclusion prefix list,
+// calls `dbx.files.get_temporary_link(path)` per file for a
+// short-lived direct-download URL, then enqueues a
+// `fetch_and_put` op signed against the NAS agent.
+//
+// Locked-in decisions (Stephen 2026-09-23):
+//   · Auto-exclude (path prefix, dir-boundary safe):
+//       - "/…/Viatec Traffic Solutions/Bevs PC Backup June 2020"
+//       - "/…/CCTV/Jago Crt"
+//       - "/…/Customers/TasWater CDO/Scoyttsdale CCTV Investigation10022025"
+//   · KEEP the 5 Pitt & Sherry / Arthurs Lake SWMS PDFs
+//     (verified in the dry-run's sanity-probe output).
+//   · KEEP Taswater Line Viewer dumps under
+//     "/…/CCTV/Taswater …/DISK1/…" (Cutten St / Frankland St).
+//   · No depth cap.
+//   · Migrate 13.7 GB Callibration Certificates.zip via the
+//     agent — resumable transport can handle it.
+//
+// Throughput knob:
+//   · `backup_service.py:2422` — `next_ops_for_agent(limit=32)`
+//     (was 8 in `.132lj`). Agent's `_drain_nas_ops` chews these
+//     back-to-back inside one `_one_pass`, roughly quadrupling
+//     raw throughput without changing the 60 s poll cadence.
+//
+// New module `backend/dropbox_bytes_copy.py`:
+//   · `run_copy_job(run_id, agent_id, dry_run)` — background
+//     entry point. Dispatches to `_run_dry` or `_run_copy`.
+//   · `_run_dry(run_id)` — walks `dropbox_files_enum` and counts
+//     `{raw_files, raw_bytes, would_copy_files, would_copy_bytes,
+//       excluded_by_reason}`. Never touches Dropbox or the NAS.
+//     Also emits sanity-probe results:
+//       - kept_pitt_sherry_swms_seen: bool
+//       - kept_arthurs_lake_swms_seen: bool
+//       - swms_kept_count + swms_kept_paths (list of kept SWMS PDFs)
+//       - taswater_line_viewer_files_kept: int (Cutten/Frankland)
+//       - callibration_certificates_zip_bytes: int (proves 13.7 GB
+//         zip is in the "would copy" set)
+//   · `_run_copy(run_id, agent_id)` — real bytes mover:
+//       - Sorts by size ASC so small files land first (quick wins,
+//         gives Stephen visible progress within minutes).
+//       - Per file: `nas_client.stat()` → skip if size matches
+//         (idempotency: Dropbox `content_hash` is not sha256, so
+//         we can't sha-verify existing files; size + agent's
+//         .part-then-atomic-rename discipline is the guarantee).
+//       - `client.files_get_temporary_link(path).link` → 4h URL.
+//       - `nas_client.fetch_and_put(nas_path, source_url,
+//         expected_sha256="", expected_size, meta={…})` with
+//         6 h timeout (headroom for the 13.7 GB zip).
+//       - Per-file errors caught, appended to
+//         `errors[-100:]`, run continues.
+//       - Progress flushed to `dropbox_migration_run` every ~2 s
+//         with `files_copied / files_skipped_existing /
+//         files_failed / bytes_transferred / current_file /
+//         throughput_files_per_hour / elapsed_s`.
+//
+// NAS layout: files land at
+//   `<NAS_ROOT>/paneltec-files/dropbox/<dropbox_path>`.
+// Sidecar `.meta.json` next to each file (written by the agent
+// from the `meta` dict) carries `{source, dropbox_id,
+// dropbox_path, dropbox_rev, content_hash, bytes, migrated_at,
+// run_id}` for later reconciliation.
+//
+// Endpoints (`backend/integrations_dropbox.py`):
+//   · POST /api/dropbox/migration/start   (admin)
+//       body: {agent_id: str, dry_run: bool = false}
+//       returns: {run_id, state, agent_id, dry_run}
+//       idempotency: if a run is `running` / `dry-run-running`,
+//       returns the existing run doc instead of starting a new
+//       one.
+//   · GET  /api/dropbox/migration/status  (admin)
+//       returns: latest doc from `dropbox_migration_run`.
+//
+// Verified live:
+//   · Enum re-fired post-`.132ll` — `large_file_probe.status =
+//     "ok"`, 128 MB round-trip in 71 s.
+//   · Dry-run counts + sanity probes to be reported after the
+//     first admin-triggered `POST /migration/start
+//     {"dry_run": true}`.
+//
+// NOT touched:
+//   · HMAC canonicals — unchanged since .132lj.
+//   · Enum engine — unchanged; still populates
+//     `dropbox_files_enum`.
+//   · Snapshot/probe-blob endpoints — unchanged since .132ll.
+//   · Agent code — unchanged since .132ll (this ship is
+//     pod-side only + a `limit=32` bump).
+//   · Cutover — no `doc_files.storage_backend` flip. That's a
+//     separate future ship (`.132ln` or later) once Stephen
+//     spot-checks the mirrored bytes.
+//   · /app/mobile/ — untouched (ban).
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+//
+// Backlog (see /app/memory/backlog.md):
+//   · Agent mDNS discovery `zeroconf` API drift — non-blocking
+//     `TypeError` in stderr. Candidate for `.132ln`.
+
 // v58.13.132ll — HEAD support + sha-mismatch cooldown guard.
 //
 // Fallout from the .132lk shakedown: agent's first snapshot pull
@@ -14559,7 +14661,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ll';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lm';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14580,7 +14682,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ll';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ll';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lm';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

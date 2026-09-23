@@ -645,3 +645,49 @@ async def dropbox_enum_status(
     import dropbox_file_enum as enum
     s = await enum.latest_status()
     return s or {"state": "none"}
+
+
+# ── v58.13.132lm — Phase 2b Ship 2: bytes-copy engine ───────────
+@router.post("/migration/start")
+async def dropbox_migration_start(
+    body: Optional[Dict[str, Any]] = Body(default=None),
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """Kick off the bytes-copy run as a background task.
+    Body: `{agent_id: str, dry_run: bool = false}`.
+    `dry_run=true` walks `dropbox_files_enum` and counts what
+    would be copied (no NAS ops, no Dropbox API calls beyond the
+    walk). `dry_run=false` fires the real fetch_and_put chain."""
+    import dropbox_bytes_copy as bcopy
+    body = body or {}
+    dry_run = bool(body.get("dry_run", False))
+    agent_id = body.get("agent_id") or ""
+    if not dry_run and not agent_id:
+        raise HTTPException(400, "agent_id required for a real run")
+
+    latest = await bcopy.latest_status()
+    if latest and latest.get("state") in {
+        "running", "dry-run-running",
+    }:
+        return {"run_id": latest["run_id"],
+                "state": latest["state"],
+                "note": "existing run in flight"}
+
+    run_id = f"copy-{secrets.token_hex(6)}"
+    asyncio.create_task(
+        bcopy.run_copy_job(run_id, agent_id, dry_run=dry_run)
+    )
+    log.info("dropbox_migration kicked off run_id=%s agent_id=%s "
+                "dry_run=%s", run_id, agent_id, dry_run)
+    return {"run_id": run_id, "state": "started",
+              "agent_id": agent_id or None, "dry_run": dry_run}
+
+
+@router.get("/migration/status")
+async def dropbox_migration_status(
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """Latest run doc from `dropbox_migration_run`."""
+    import dropbox_bytes_copy as bcopy
+    s = await bcopy.latest_status()
+    return s or {"state": "none"}
