@@ -1,5 +1,36 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132lh — Web: visitor sign-in form field removal (mirror of
+// mobile `.132lg` which landed earlier via the Expo specialist).
+//
+// Removed from `frontend/src/pages/VisitorSignIn.jsx`:
+//   · "Who are you visiting?"  (state key `visiting_person`)
+//   · "Vehicle rego"           (state key `vehicle_rego`)
+//
+// Rationale: site sign-in should stay focused on the compliance-
+// critical inputs (name, company, phone, purpose, induction
+// acknowledgement). Host + rego added friction without materially
+// improving the site diary evidence trail.
+//
+// Kept: Full name (required), Company, Phone, Purpose dropdown,
+// Safety induction checkbox, signature step (post-submit).
+//
+// Payload: submit posts `form` directly via `api.post('/public/
+// visitor/site/{token}/signin', form)`. Because we removed the two
+// state keys from `useState({...})`, they are no longer present on
+// the payload — no explicit payload edit needed. Backend accepts
+// the smaller shape (`visiting_person` and `vehicle_rego` were
+// already optional on `VisitorSignInPayload`).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · /public/visitor/site/{token}/signin backend endpoint — still
+//     accepts the two fields if present (backward-compat); web
+//     just stops sending them.
+//   · Mobile visitor form — already shipped in `.132lg` (parallel
+//     actor, mobile ban respected).
+//   · /app/mobile/ — untouched (ban).
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+
 // v58.13.132lf — Backend+agent: bi-directional NAS file API.
 //
 // Standing brief (Stephen): migrate off Dropbox onto the UGREEN NAS.
@@ -14140,7 +14171,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lf';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lh';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14161,7 +14192,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lf';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lf';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lh';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -24,8 +24,12 @@ export default function VisitorSignIn() {
   });
   const [signOutQrDataUrl, setSignOutQrDataUrl] = useState('');
   const [form, setForm] = useState({
+    // v58.13.132lh — Removed `visiting_person` and `vehicle_rego`
+    // to match the mobile visitor-form field removal shipped as
+    // `.132lg`. Site QR-flow now captures name / company / phone /
+    // purpose / induction only.
     name: '', company: '', phone: '', purpose: PURPOSES[0],
-    visiting_person: '', vehicle_rego: '', induction_acknowledged: false,
+    induction_acknowledged: false,
   });
 
   useEffect(() => {
@@ -163,18 +167,10 @@ export default function VisitorSignIn() {
               {PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </Field>
-          <Field label="Who are you visiting?" testid="visitor-visiting">
-            <input value={form.visiting_person}
-              onChange={(e) => setForm({ ...form, visiting_person: e.target.value })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base"
-              data-testid="visitor-visiting-input" />
-          </Field>
-          <Field label="Vehicle rego" testid="visitor-rego">
-            <input value={form.vehicle_rego} autoCapitalize="characters"
-              onChange={(e) => setForm({ ...form, vehicle_rego: e.target.value.toUpperCase() })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base uppercase"
-              data-testid="visitor-rego-input" />
-          </Field>
+          {/* v58.13.132lh — Removed "Who are you visiting?" + "Vehicle rego"
+              fields to match mobile `.132lg`. Site sign-in stays focused
+              on the compliance-critical inputs (name, company, phone,
+              purpose, induction acknowledgement). */}
           <label className={`flex items-start gap-3 rounded-lg px-3 py-3 border cursor-pointer ${form.induction_acknowledged ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-amber-50 border-amber-300 text-amber-900'}`}>
             <input type="checkbox" checked={form.induction_acknowledged}
               onChange={(e) => setForm({ ...form, induction_acknowledged: e.target.checked })}
