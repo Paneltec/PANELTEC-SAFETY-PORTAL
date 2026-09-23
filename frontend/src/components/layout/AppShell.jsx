@@ -219,6 +219,11 @@ const NAV = [
     { to: '/app/suppliers', label: 'Suppliers', icon: People24Regular, iconActive: People24Filled, testid: 'nav-suppliers', pastel: 'sage' },
     { to: '/app/renewals', label: 'Renewal Links', icon: Link24Regular, iconActive: Link24Filled, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
     { to: '/app/document-library', label: 'Document Library', icon: FolderOpen24Regular, iconActive: FolderOpen24Filled, testid: 'nav-document-library', pastel: 'lavender' },
+    // v58.13.132mb — Phase 2: non-admin visible entry. AppShell hides
+    // this via `hideWhenEmpty: 'sharedWithMe'` when the current user
+    // has zero active shares (poll `/document-library/shared-with-me`
+    // on mount, empty array → nav item omitted).
+    { to: '/app/shared-with-me', label: 'Shared with me', icon: FolderOpen24Regular, iconActive: FolderOpen24Filled, testid: 'nav-shared-with-me', pastel: 'lavender', hideWhenEmpty: 'sharedWithMe' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: ArrowDownload24Regular, iconActive: ArrowDownload24Filled, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
     // v58.13.120d — "Plant & Vehicles" sidebar entry retired. The
     // legacy `/app/vehicles` route still redirects to `/app/fleet`
@@ -282,6 +287,25 @@ const SECTION_TINTS = {
 
 const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
   const can = useCan();
+  // v58.13.132mb — "Shared with me" nav visibility. Poll the endpoint
+  // once on mount so the entry only appears for users who actually
+  // have a share (admins with no explicit shares get an empty list
+  // here and the item stays hidden — admins already see the full
+  // library via the main Document Library entry).
+  const [hasShared, setHasShared] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const api = (await import('../../lib/api')).default;
+        const { data } = await api.get('/document-library/shared-with-me');
+        if (!cancelled) setHasShared(Array.isArray(data) && data.length > 0);
+      } catch (_e) {
+        if (!cancelled) setHasShared(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
       {NAV.map((group) => {
@@ -309,6 +333,10 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
           if (it.requiresCan && !can(...it.requiresCan)) return false;
           if (it.adminOnly && !canAdminNav) return false;
           if (it.resource && !can(it.resource, 'open')) return false;
+          // v58.13.132mb — conditional emptiness gates (currently just
+          // 'sharedWithMe'). Extend the switch when new empty-hides
+          // land.
+          if (it.hideWhenEmpty === 'sharedWithMe' && !hasShared) return false;
           return true;
         });
         if (visible.length === 0) return null;

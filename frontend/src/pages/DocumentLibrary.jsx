@@ -20,6 +20,10 @@ import {
   splitDocsByArchived, useDocArchivedOpen, archiveDoc, restoreDoc,
 } from '../lib/docArchiveHelpers';
 import BulkRestrictModal from '../components/BulkRestrictModal';
+// v58.13.132mb — Phase 2 Document Library admin components.
+import ShareModal from '../components/document-library/ShareModal';
+import HardDeleteModal from '../components/document-library/HardDeleteModal';
+import FolderAdminToolbar from '../components/document-library/FolderAdminToolbar';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
@@ -51,6 +55,7 @@ import {
   Edit20Regular as Pencil,
   Eye20Regular as Eye,
   Search20Regular as Search,
+  ShareAndroid20Regular as ShareIcon,
 } from '@fluentui/react-icons';
 
 // v58.13.132bf — Legacy WRITE_ROLES / DELETE_FOLDER_ROLES sets removed.
@@ -1670,6 +1675,23 @@ export function DocumentLibraryFolder() {
   // existing /files/{id} endpoint with the new folder_id and
   // refreshes the list.
   const [draggingFileId, setDraggingFileId] = useState(null);
+  // v58.13.132mb — Phase 2 admin UI state.
+  const [shareFile, setShareFile] = useState(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState(null);
+  const [selectedFileIds, setSelectedFileIds] = useState([]);
+  // Captured DataTransferItemList from a folder-aware drop — handed
+  // to <FolderAdminToolbar> which walks the directory entries and
+  // POSTs to /folders/{id}/upload-tree. Nulled once consumed.
+  const [droppedItems, setDroppedItems] = useState(null);
+  const toggleSelected = (id) => {
+    setSelectedFileIds((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    ));
+  };
+  const selectAll = (list) => {
+    setSelectedFileIds(list.map((f) => f.id));
+  };
+  const clearSelection = () => setSelectedFileIds([]);
   const moveFile = useCallback(async (fileId, targetFolderId, targetLabel) => {
     if (!fileId || !targetFolderId) return;
     if (targetFolderId === folderId) return;
@@ -1805,6 +1827,23 @@ export function DocumentLibraryFolder() {
     e.preventDefault();
     setDragOver(false);
     if (!canEdit) return;
+    // v58.13.132mb — folder-aware drop. If any of the DataTransfer
+    // items exposes a directory entry (Chrome/Edge/FF via
+    // webkitGetAsEntry), hand the whole list to <FolderAdminToolbar>
+    // which walks the tree client-side and hits the tree upload
+    // endpoint. Otherwise fall back to the flat multi-file upload.
+    const items = e.dataTransfer.items;
+    let hasDir = false;
+    if (items && items.length) {
+      for (const it of items) {
+        const entry = it.webkitGetAsEntry?.();
+        if (entry?.isDirectory) { hasDir = true; break; }
+      }
+    }
+    if (hasDir) {
+      setDroppedItems(items);
+      return;
+    }
     if (e.dataTransfer.files?.length) uploadFiles(Array.from(e.dataTransfer.files));
   };
 
@@ -2095,6 +2134,23 @@ export function DocumentLibraryFolder() {
         </div>
       )}
 
+      {/* v58.13.132mb — Admin toolbar (upload folder, bulk actions,
+          folder ZIP). Rendered only when the user can edit. */}
+      {canEdit && folder && (
+        <FolderAdminToolbar
+          folder={folder}
+          selectedIds={selectedFileIds}
+          onClearSelection={clearSelection}
+          onUploaded={loadFiles}
+          onHardDeleteFile={(id, name) => {
+            const f = files.find((x) => x.id === id);
+            setHardDeleteTarget({ kind: 'file', id, name: name || f?.filename || 'file' });
+          }}
+          droppedItems={droppedItems}
+          onDroppedItemsConsumed={() => setDroppedItems(null)}
+        />
+      )}
+
       {loading ? (
         <div className="text-sm text-slate-500">Loading files…</div>
       ) : folderSearchResults && folderSearchResults.results.length === 0 ? (
@@ -2118,6 +2174,21 @@ export function DocumentLibraryFolder() {
           <table className="w-full text-sm" data-testid="folder-files-table">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
+                {canEdit && (
+                  <th className="px-3 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      data-testid="folder-select-all"
+                      aria-label="Select all files in this folder"
+                      checked={
+                        selectedFileIds.length > 0
+                        && files.length > 0
+                        && files.every((f) => selectedFileIds.includes(f.id))
+                      }
+                      onChange={(e) => (e.target.checked ? selectAll(files) : clearSelection())}
+                    />
+                  </th>
+                )}
                 <th className="text-left px-4 py-3">Filename</th>
                 <th className="text-left px-4 py-3 hidden md:table-cell">Size</th>
                 <th className="text-left px-4 py-3 hidden lg:table-cell">Uploaded by</th>
@@ -2156,7 +2227,7 @@ export function DocumentLibraryFolder() {
                       data-testid={`doc-library-group-${groupKey}`}
                       style={{ backgroundColor: palette.tint, borderLeft: `3px solid ${palette.hex}` }}
                     >
-                      <td colSpan={6} className="px-4 py-2">
+                      <td colSpan={canEdit ? 7 : 6} className="px-4 py-2">
                         <span
                           className="text-[10px] uppercase tracking-[0.16em] font-semibold"
                           style={{ color: palette.text }}
@@ -2187,6 +2258,7 @@ export function DocumentLibraryFolder() {
                           highlightActive === f.id ? 'g132gb-highlight-row' : ''
                         } ${draggingFileId === f.id ? 'opacity-40' : ''}`}
                         data-testid={`file-row-${f.id}`}
+                        data-file-name={f.filename}
                         draggable={canEdit}
                         onDragStart={(e) => {
                           if (!canEdit) return;
@@ -2197,6 +2269,17 @@ export function DocumentLibraryFolder() {
                         onDragEnd={() => setDraggingFileId(null)}
                         style={{ borderLeft: `4px solid ${borderColor}` }}
                       >
+                        {canEdit && (
+                          <td className="px-3 py-3 align-middle">
+                            <input
+                              type="checkbox"
+                              data-testid={`file-select-${f.id}`}
+                              aria-label={`Select ${f.filename}`}
+                              checked={selectedFileIds.includes(f.id)}
+                              onChange={() => toggleSelected(f.id)}
+                            />
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <div className="inline-flex items-center gap-2">
                             <span className="shrink-0" style={{ color: palette.hex }}>{fileIcon(f.mime)}</span>
@@ -2359,8 +2442,24 @@ export function DocumentLibraryFolder() {
                               </button>
                             )}
                             {canEdit && (
+                              <button onClick={() => setShareFile(f)} data-testid={`file-share-${f.id}`}
+                                className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Share with users or all workers">
+                                <ShareIcon />
+                              </button>
+                            )}
+                            {canEdit && (
                               <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
-                                className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete">
+                                className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete (30-day archive)">
+                                <Trash2 />
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                onClick={() => setHardDeleteTarget({ kind: 'file', id: f.id, name: f.filename })}
+                                data-testid={`file-hard-delete-${f.id}`}
+                                className="p-1.5 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                                title="Permanently delete (cannot be undone)"
+                              >
                                 <Trash2 />
                               </button>
                             )}
@@ -2429,6 +2528,17 @@ export function DocumentLibraryFolder() {
             </div>
           </div>
         </div>
+      )}
+      {/* v58.13.132mb — Phase 2 admin modals. */}
+      {shareFile && (
+        <ShareModal file={shareFile} onClose={() => setShareFile(null)} />
+      )}
+      {hardDeleteTarget && (
+        <HardDeleteModal
+          target={hardDeleteTarget}
+          onClose={() => setHardDeleteTarget(null)}
+          onDeleted={() => { loadFiles(); loadFolder(); clearSelection(); }}
+        />
       )}
     </div>
   );

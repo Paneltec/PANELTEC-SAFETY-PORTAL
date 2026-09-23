@@ -151,6 +151,8 @@ import DropboxCallback from '@/pages/DropboxCallback';  // v58.13.132ld
 // merge). Route redirects to `/app/settings/sites`. The `.jsx` file has
 // been deleted; import removed to prevent a build-time resolve error.
 import DocumentLibrary, { DocumentLibraryFolder } from '@/pages/DocumentLibrary';
+// v58.13.132mb — Phase 2 web UI: non-admin "Shared with me" surface.
+import SharedWithMe from '@/pages/SharedWithMe';
 import Suppliers from '@/pages/Suppliers';
 import Workers from '@/pages/Workers';
 import FormAssignmentsAdmin from '@/pages/FormAssignmentsAdmin';
@@ -368,6 +370,8 @@ function App() {
 
               <Route path="document-library" element={<DocumentLibrary />} />
               <Route path="document-library/:folderId" element={<DocumentLibraryFolder />} />
+              {/* v58.13.132mb — Phase 2: non-admin visible files. */}
+              <Route path="shared-with-me" element={<SharedWithMe />} />
 
               <Route path="settings/org" element={<OrgSettings />} />
               {/* v58.13.132cb — Workspaces surface retired (Phase A of

@@ -301,6 +301,33 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
     started_ts = time.time()
     last_flush = started_ts
 
+    async def _maybe_flush(current: Optional[str]) -> None:
+        # v58.13.132mb — hoisted so BOTH `continue` paths (excluded
+        # + temp-link fail) still write heartbeats to the status doc.
+        # Previously the flush lived at the bottom of the loop body
+        # and every `continue` skipped it, so a stale-enum failure
+        # burst looked identical to a healthy silent run.
+        nonlocal last_flush
+        now = time.time()
+        if now - last_flush <= 2.0:
+            return
+        elapsed = max(now - started_ts, 1.0)
+        fph = int((files_copied + files_skipped) * 3600.0 / elapsed)
+        total_target = files_copied + files_skipped + files_failed
+        await _status_upsert(run_id, {
+            "state": "running",
+            "files_copied": files_copied,
+            "files_skipped_existing": files_skipped,
+            "files_failed": files_failed,
+            "bytes_transferred": bytes_transferred,
+            "current_file": current,
+            "throughput_files_per_hour": fph,
+            "errors": errors,
+            "elapsed_s": int(elapsed),
+            "progress_files": total_target,
+        })
+        last_flush = now
+
     async for row in db[_ENUM_COLL].find({}, {
         "_id": 0, "dropbox_id": 1, "dropbox_path": 1,
         "dropbox_rev": 1, "size": 1, "content_hash": 1,
@@ -308,6 +335,7 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
         path = row["dropbox_path"]
         size = int(row.get("size") or 0)
         if _is_excluded(path):
+            await _maybe_flush(path)
             continue
 
         nas_path = _nas_rel_path(path)
@@ -337,6 +365,7 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
             errors.append({"path": path, "phase": "temp-link",
                              "error": f"{type(e).__name__}: {e}"})
             errors = errors[-100:]
+            await _maybe_flush(path)
             continue
 
         try:
@@ -369,25 +398,7 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
                              "error": f"{type(e).__name__}: {str(e)[:250]}"})
             errors = errors[-100:]
 
-        # Progress flush every ~2 s.
-        now = time.time()
-        if now - last_flush > 2.0:
-            elapsed = max(now - started_ts, 1.0)
-            fph = int((files_copied + files_skipped) * 3600.0 / elapsed)
-            total_target = files_copied + files_skipped + files_failed
-            await _status_upsert(run_id, {
-                "state": "running",
-                "files_copied": files_copied,
-                "files_skipped_existing": files_skipped,
-                "files_failed": files_failed,
-                "bytes_transferred": bytes_transferred,
-                "current_file": path,
-                "throughput_files_per_hour": fph,
-                "errors": errors,
-                "elapsed_s": int(elapsed),
-                "progress_files": total_target,
-            })
-            last_flush = now
+        await _maybe_flush(path)
 
     await _status_upsert(run_id, {
         "state": "complete",
@@ -407,7 +418,28 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
 # ── Public entrypoint ─────────────────────────────────────────
 async def run_copy_job(run_id: str, agent_id: str,
                           dry_run: bool = False) -> None:
-    if dry_run:
-        await _run_dry(run_id)
-    else:
-        await _run_copy(run_id, agent_id)
+    # v58.13.132mb — outer safety net. Any exception that escapes
+    # `_run_dry` / `_run_copy` used to vanish silently (the caller
+    # in integrations_dropbox.py fire-and-forgets us). Now we
+    # persist a `failed` status doc with the traceback so admins
+    # can see what happened via GET /api/dropbox/migration/status.
+    try:
+        if dry_run:
+            await _run_dry(run_id)
+        else:
+            await _run_copy(run_id, agent_id)
+    except BaseException as e:   # noqa: BLE001 — reraise below
+        import traceback
+        tb = traceback.format_exc()
+        log.exception("[copy] run_id=%s crashed: %s", run_id, e)
+        try:
+            await _status_upsert(run_id, {
+                "state": "failed",
+                "completed_at": _now_iso(),
+                "errors": [{"phase": "run_copy_job",
+                              "error": f"{type(e).__name__}: {str(e)[:400]}",
+                              "traceback": tb[-2000:]}],
+            })
+        except Exception:   # noqa: BLE001 — best-effort
+            log.exception("[copy] failed to record failure state")
+        raise

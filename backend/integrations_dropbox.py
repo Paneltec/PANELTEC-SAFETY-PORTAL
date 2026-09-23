@@ -46,6 +46,15 @@ from auth import get_current_user
 log = logging.getLogger("paneltec.dropbox")
 router = APIRouter(prefix="/dropbox", tags=["dropbox"])
 
+# v58.13.132mb — Strong references to background tasks so Python's
+# WeakSet-based asyncio._all_tasks doesn't GC them mid-execution.
+# Root cause of the .132lm silent-death bug: `asyncio.create_task(...)`
+# without a held ref → task collected after first `await` yield → the
+# copy job wrote initial "running" status then vanished, no bytes ever
+# enqueued, no traceback logged. The done-callback removes the ref
+# once the task settles so this set stays bounded.
+_BACKGROUND_TASKS: set = set()
+
 # In-process CSRF-state store. 5-minute TTL. Sufficient because a
 # single admin clicks the Connect button and completes the flow
 # from the same pod; state is not shared across replicas (we run
@@ -674,9 +683,14 @@ async def dropbox_migration_start(
                 "note": "existing run in flight"}
 
     run_id = f"copy-{secrets.token_hex(6)}"
-    asyncio.create_task(
+    # v58.13.132mb — hold a strong ref + auto-remove on completion so
+    # Python 3.11's WeakSet _all_tasks doesn't GC the coroutine
+    # after its first await yield (see _BACKGROUND_TASKS docstring).
+    task = asyncio.create_task(
         bcopy.run_copy_job(run_id, agent_id, dry_run=dry_run)
     )
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
     log.info("dropbox_migration kicked off run_id=%s agent_id=%s "
                 "dry_run=%s", run_id, agent_id, dry_run)
     return {"run_id": run_id, "state": "started",

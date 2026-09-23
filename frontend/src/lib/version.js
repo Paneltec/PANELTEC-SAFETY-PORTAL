@@ -1,5 +1,137 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132mb — Document Library: Phase 2 web UI + Dropbox
+// migration task-guard hotfix.
+//
+// PART A · Dropbox → NAS migration task-guard (backend hotfix).
+//   Root cause diagnosed: `asyncio.create_task(run_copy_job(...))`
+//   in `integrations_dropbox.py:migration/start` didn't hold a
+//   reference to the returned Task. Python 3.11's asyncio._all_tasks
+//   is a `WeakSet`, so the coroutine was garbage-collected after
+//   its first await yield. The initial "running" status was
+//   written, then the task silently vanished with no traceback.
+//   Fix in `integrations_dropbox.py`:
+//     · module-level `_BACKGROUND_TASKS: set = set()` holds strong
+//       refs
+//     · launch appends the task + adds a done-callback that
+//       discards on completion (so the set stays bounded)
+//   Belt-and-braces in `dropbox_bytes_copy.run_copy_job`:
+//     · outer try/except that persists `state=failed` +
+//       traceback to `dropbox_migration_run` so any future death
+//       surfaces via GET /api/dropbox/migration/status instead
+//       of freezing at `state: running`
+//   Flush-on-continue polish in `_run_copy`:
+//     · heartbeat helper `_maybe_flush()` hoisted out of the loop
+//       body; called before every `continue` (excluded prefix +
+//       temp-link failure). Previously the flush lived at the
+//       bottom and every `continue` skipped it, making a burst of
+//       stale-enum failures look identical to a healthy silent run.
+//
+// PART A ALSO documents an UNRESOLVED user decision — see
+// `/app/memory/v58_13_132mb_doclib_web_ui_and_migration_taskguard.md`.
+// The 30/30 sampled `dropbox_files_enum` paths return `not_found`
+// from live Dropbox because the source folder has been renamed
+// (Dropbox now shows `/Paneltec-General Administration (Team folder
+// conflict)/…`). Migration is CANCELLED PENDING USER DECISION —
+// three options preserved in the memo. Layer-1 fix is unrelated to
+// the enum data issue and stands on its own merit.
+//
+// PART B · Phase 2 web UI (admin-facing).
+//   New files under `frontend/src/`:
+//     · `components/document-library/ShareModal.jsx`
+//         — file-level Share sheet. Presets: All Workers.
+//           User picker: `/api/users?hide_test=true`.
+//           Permission dropdown: view | download.
+//           Current shares list w/ per-row revoke.
+//     · `components/document-library/HardDeleteModal.jsx`
+//         — Requires the user to type the target's name to confirm
+//           before firing the DELETE /files/{id}/hard or
+//           /folders/{id}/hard endpoint. Rose-themed warning banner
+//           calls out "cannot be undone" + "revokes active shares".
+//     · `components/document-library/FolderAdminToolbar.jsx`
+//         — Rendered above the file table on the folder-detail
+//           page. Buttons: Upload folder (native `webkitdirectory`
+//           input + folder-drop via `DataTransferItem.
+//           webkitGetAsEntry()` walking the tree client-side and
+//           POSTing to /folders/{id}/upload-tree); Download folder
+//           as ZIP; Bulk actions dropdown (Download selected as
+//           ZIP, Permanently delete selected — batches through
+//           HardDeleteModal one-at-a-time). Selection is owned by
+//           the parent; the toolbar just consumes `selectedIds`.
+//     · `pages/SharedWithMe.jsx`
+//         — Non-admin visible page at `/app/shared-with-me`. Table
+//           of files the user has an active share on. Download
+//           column visible only for `download` permission; view-
+//           only rows show an italic "View only" tag. Empty state
+//           friendly for a fresh worker.
+//
+//   Small edits to existing files:
+//     · `pages/DocumentLibrary.jsx` (folder view only)
+//         — mounts <FolderAdminToolbar/>, checkbox column for
+//           multi-select (only when canEdit), row-level Share +
+//           Hard-delete icons, folder-aware drop handler dispatches
+//           to the tree upload path when the DataTransfer contains
+//           a directory entry, mounts <ShareModal/> +
+//           <HardDeleteModal/>.
+//     · `components/layout/AppShell.jsx`
+//         — new nav entry "Shared with me" (Compliance section, right
+//           under Document Library). Hidden by default; a one-shot
+//           poll of `/document-library/shared-with-me` on mount
+//           flips the flag when the response is non-empty. Admins
+//           without explicit shares don't see the item — their
+//           full-access Document Library entry already covers them.
+//     · `App.js` — new route `/app/shared-with-me → <SharedWithMe/>`.
+//
+// Endpoints consumed (all shipped in .132ma):
+//   · GET    /document-library/shared-with-me
+//   · GET    /document-library/shared-with-me/files/{id}/download
+//   · POST   /document-library/files/{id}/shares
+//   · GET    /document-library/files/{id}/shares
+//   · DELETE /document-library/shares/{share_id}
+//   · POST   /document-library/download/bulk
+//   · GET    /document-library/folders/{id}/download-zip
+//   · DELETE /document-library/files/{id}/hard
+//   · DELETE /document-library/folders/{id}/hard
+//   · POST   /document-library/folders/{id}/upload-tree
+//   · GET    /api/users (existing — used by the share user-picker)
+//
+// Scope-cut deferrals (unchanged from .132ma):
+//   · Group-target shares: still deferred — no `user_groups`
+//     collection exists yet. Share modal shows Users + All Workers
+//     only; the backend accepts `target_type=group` but nothing
+//     writes into that collection, so it stays out of the UI.
+//   · Per-file upload cap 200 MB (Phase 2 pre-signed NAS URL flow
+//     for >200 MB uploads still deferred; folder tree upload path
+//     inherits the same cap).
+//   · Mobile hide (`.132mc`) — Phase 3, delegated to
+//     e1_expo_frontend_dev. This ship does NOT touch /app/mobile/*.
+//
+// Test IDs added (for e1_tester + future testing agent):
+//   · folder-admin-toolbar, folder-upload-tree-btn,
+//     folder-upload-tree-input, folder-download-zip-btn,
+//     folder-bulk-actions-btn, folder-bulk-actions-menu,
+//     folder-bulk-download-zip, folder-bulk-hard-delete,
+//     folder-selection-clear, folder-select-all,
+//     file-select-<id>, file-share-<id>, file-hard-delete-<id>,
+//     share-modal (+ …-close, -done, -filename,
+//     share-permission-view/download, share-all-workers-btn,
+//     share-user-search, share-user-results,
+//     share-user-option-<id>, share-current-list,
+//     share-revoke-<id>, share-empty-state),
+//     hard-delete-modal (+ …-name, -confirm-input, -cancel,
+//     -confirm),
+//     shared-with-me-page, shared-with-me-table,
+//     shared-row-<id>, shared-download-<id>, shared-filename-<id>,
+//     nav-shared-with-me.
+//
+// Regression surface guarded:
+//   · Legacy delete button unchanged (still soft-deletes into the
+//     30-day archive). NEW rose-tinted trash button is hard-delete.
+//   · Drop-zone flat-file behaviour untouched — folder detection
+//     only fires when `webkitGetAsEntry()` reports a directory.
+//   · Existing per-row Archive / Rename / Retry AI icons keep
+//     their test IDs and click handlers.
+
 // v58.13.132ma — Document Library: Phase 1 backend (shares + bulk +
 // hard-delete + tree upload + migration one-shot).
 //
@@ -14753,7 +14885,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ma';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mb';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14774,7 +14906,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ma';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ma';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132mb';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
