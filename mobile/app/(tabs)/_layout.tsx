@@ -1,8 +1,9 @@
 /**
- * Tab layout — v58.13.132jb
- * 5 tabs: HOME · FORMS · FLEET · DOCS · SETTINGS
+ * Tab layout — v58.13.132mc
+ * 4 tabs: HOME · FORMS · FLEET · SETTINGS
+ * .132mc — Documents tab hidden (doc-library now web-only per admin cutover).
  * Haptic feedback on tab switch.
- * profile.tsx kept in (tabs) but hidden via href: null.
+ * profile.tsx and docs.tsx kept in (tabs) but hidden via href: null.
  */
 import React from 'react';
 import { Platform } from 'react-native';
@@ -82,12 +83,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="docs"
-        options={{
-          title: 'Docs',
-          tabBarIcon: ({ focused, color }) => (
-            <TabIcon name={focused ? 'folder-open' : 'folder-open-outline'} color={color} size={22} />
-          ),
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="settings"
