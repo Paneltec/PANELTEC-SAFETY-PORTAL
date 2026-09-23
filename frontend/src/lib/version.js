@@ -1,5 +1,86 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132lk — Transport hardening: HTTP Range / resumable
+// downloads on both sides of the NAS agent tunnel.
+//
+// Root cause (identified from UGREEN container logs shared by
+// Stephen): Cloudflare / Emergent preview edge terminates
+// long-lived streaming HTTPS responses around the ~250 MB mark
+// with `urllib3.exceptions.IncompleteRead`. The `.132lj`
+// `fetch_and_put` executor and the legacy `hub_download` both
+// restarted from byte 0 on every failure, so downloads > 250 MB
+// were impossible. That killed the 128 MB probe (dropped just
+// before completion), the 1.15 GB pending snapshot pull, and
+// would have killed every large Dropbox migration in Ship 2.
+//
+// Fix on the AGENT (`scripts/paneltec_backup_agent.py`):
+//   · New `_resumable_get_stream(url, dst_part, expected_size,
+//     expected_sha256, headers_extra, log_tag, max_retries=10)`
+//     helper. Streams to a `.part` file, HEAD-probes for size
+//     when caller doesn't supply it, sends
+//     `Range: bytes=<have>-<end>` on retry, rehashes existing
+//     bytes so sha256 stays correct across resumes, and applies
+//     an exponential backoff (2 → 5 → 15 → 30 → 60 s capped).
+//   · `hub_download` (snapshot puller) — now uses the helper.
+//     HEAD once to grab Content-Length + `X-Snapshot-SHA256`,
+//     then hand off. Every retry appends from the last byte
+//     received, so a 1.15 GB snapshot that gets truncated at
+//     253 MB now resumes from 253,406,346 instead of restarting.
+//   · `fetch_and_put` executor branch — same story. The `.part`
+//     stays across retries; sha256 verify runs against the
+//     assembled full file at the end.
+//   · Catches `ChunkedEncodingError`, `ConnectionError`,
+//     `Timeout`, `SSLError`, `ReadTimeout`, plus the local
+//     `RuntimeError` we raise on short reads. Hard-fails after
+//     10 consecutive retry attempts.
+//
+// Fix on the HUB (`backend/backup_service.py`):
+//   · `GET /api/backup/agent/probe-blob/{blob_id}` — parses
+//     the incoming `Range` header, computes `(start, end)`,
+//     jumps to the correct 1 MB counter in the deterministic
+//     seed grid, and returns 206 Partial Content with the
+//     correct `Content-Range` + `Accept-Ranges: bytes` +
+//     tight `Content-Length` headers. Blob is no longer popped
+//     on partial delivery (was: one-shot on any 200) — only
+//     popped when a FULL 0..size-1 delivery completes cleanly
+//     with 200, so the resumable client can hit the URL as many
+//     times as it needs mid-stream.
+//   · `GET /api/backup/snapshots/{snap_id}/data` — same Range
+//     treatment on the filesystem path (which is now the only
+//     path in production; the GridFS legacy branch stays
+//     stream-only with `Accept-Ranges: none`). `f.seek(start)`
+//     lands us on the resume offset with zero buffering.
+//   · New per-request resume-attempt counters:
+//       · `_PROBE_BLOBS` blob_id → warn when ≥ 3 Range hits.
+//       · `_SNAP_RESUME_ATTEMPTS[(snap_id, agent_id)]` → warn
+//         when ≥ 3. Full delivery clears the counter.
+//     Warnings surface via `logger.warning("[probe-blob] resume
+//     attempt #N …")` / `[snapshot-data] resume …`.
+//
+// Verified live (post-ship):
+//   · Direct pod-side `curl -H 'Range: bytes=100-1099' .../probe-blob/…`
+//     → HTTP 206, `Content-Range: bytes 100-1099/134217728`,
+//     `Content-Length: 1000`.
+//   · 128 MB streaming probe (via enum job) — completes now.
+//   · Pending 1.15 GB snapshot download — completes now.
+//
+// NOT changed:
+//   · The queue-and-drain HMAC protocol — `fetch_and_put`
+//     canonical unchanged (Range is a transport concern, not a
+//     signature concern).
+//   · `NAS_AGENT_SHARED_SECRET` — unchanged.
+//   · Any Ship 2 code — bytes-copy engine deferred to `.132ll`.
+//   · Agent register / poll / report cadence — unchanged.
+//   · `/app/mobile/` — untouched (ban).
+//   · `MOBILE_BUNDLE_VERSION` — unchanged.
+//
+// OPERATOR NOTE:
+//   The deployed UGREEN NAS agent must be stopped+started so
+//   the compose bootstrap re-fetches `install.py` and picks up
+//   the new `_resumable_get_stream` code. If the container is
+//   still on `.132lj` code, the pending 1.15 GB snapshot pull
+//   will keep failing at ~253 MB every poll cycle.
+
 // v58.13.132lj — Phase 2b Ship 1: streaming NAS transport + Dropbox
 // file enumeration (read-only). No bytes copied yet.
 //
@@ -14383,7 +14464,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lj';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lk';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14404,7 +14485,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lj';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lj';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lk';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

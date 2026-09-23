@@ -65,7 +65,7 @@ from typing import Optional, List, Dict, Any, Tuple
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Header, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Header, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ConfigDict
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
@@ -303,6 +303,7 @@ PUBLIC_HUB_URL_FOR_AGENTS = (
 ).rstrip("/")
 
 _PROBE_BLOBS: Dict[str, Dict[str, Any]] = {}   # id → {size, sha256, sig, expiry}
+_SNAP_RESUME_ATTEMPTS: Dict[Any, int] = {}       # (snap_id, agent_id) → count
 
 
 def register_probe_blob(size: int, ttl_s: int = 3600) -> Dict[str, Any]:
@@ -1897,7 +1898,7 @@ def install(app, db, require_admin):
         return await _apply_retention_policy(db, fs)
 
     @api_router.get("/snapshots/{snap_id}/data")
-    async def download_snapshot(snap_id: str,
+    async def download_snapshot(request: Request, snap_id: str,
                                 authorization: Optional[str] = Header(None),
                                 token: Optional[str] = Query(None)):
         """Either:
@@ -1905,12 +1906,17 @@ def install(app, db, require_admin):
           "Download Snapshot" button in Settings.
         * A registered agent (presents X-Agent-Token via Authorization:
           `Agent <token>` or ?token=).
-        Both paths hit the same data."""
+        Both paths hit the same data.
+
+        v58.13.132lk — HTTP Range support (206 Partial Content). The
+        preview edge (Cloudflare) terminates long-lived HTTPS streams
+        around ~250 MB. The agent's resumable helper now sends
+        `Range: bytes=<have>-<end>` on retry, which requires this
+        endpoint to actually honor it. Also supports HEAD so the
+        client can discover Content-Length + X-Snapshot-SHA256
+        without pulling a byte."""
         agent = await _resolve_agent(authorization, token)
         if not agent:
-            # Admin auth via header OR ?token= query param so a plain
-            # `<a href>` download link works without a fetch dance. We
-            # pass the query token through Authorization-style verify.
             ok, _ = await verify_bearer_token(db, authorization)
             if not ok and token:
                 ok, _ = await verify_bearer_token(db, f"Bearer {token}")
@@ -1926,27 +1932,80 @@ def install(app, db, require_admin):
         # case a restore repopulates them).
         filepath = snap.get("filepath")
         if filepath and os.path.exists(filepath):
-            async def _stream_fs():
-                # Read in 1 MiB chunks so we don't materialize a 400 MB
-                # bytes object in memory.
+            total_size = os.path.getsize(filepath)
+            sha_hdr = snap.get("sha256") or ""
+            range_hdr = (request.headers.get("range")
+                         or request.headers.get("Range"))
+            start, end = 0, total_size - 1
+            status_code = 200
+            if range_hdr:
+                import re as _re
+                m = _re.match(r"bytes=(\d+)-(\d*)$",
+                                 range_hdr.strip().lower())
+                if not m:
+                    raise HTTPException(416, "malformed Range header")
+                start = int(m.group(1))
+                if m.group(2):
+                    end = min(int(m.group(2)), total_size - 1)
+                if start >= total_size or start > end:
+                    raise HTTPException(
+                        416, "range not satisfiable",
+                        headers={"Content-Range": f"bytes */{total_size}"},
+                    )
+                status_code = 206
+                # Bump resume-attempt counter per (snap_id, agent_id).
+                key = (snap_id,
+                       (agent or {}).get("id") if agent else "admin")
+                _SNAP_RESUME_ATTEMPTS[key] = _SNAP_RESUME_ATTEMPTS.get(key, 0) + 1
+                n = _SNAP_RESUME_ATTEMPTS[key]
+                if n >= 3:
+                    logger.warning(
+                        "[snapshot-data] resume attempt #%d snap=%s "
+                        "agent=%s range=%s — edge is truncating "
+                        "long-lived streams; verify Cloudflare/preview "
+                        "headers", n, snap_id, key[1], range_hdr,
+                    )
+
+            length = end - start + 1
+
+            def _stream_fs():
                 with open(filepath, "rb") as f:
-                    while True:
-                        chunk = f.read(1024 * 1024)
+                    if start:
+                        f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(1024 * 1024, remaining))
                         if not chunk:
                             break
                         yield chunk
+                        remaining -= len(chunk)
+                # Full delivery clears the resume counter.
+                if status_code == 200:
+                    _SNAP_RESUME_ATTEMPTS.pop(
+                        (snap_id,
+                         (agent or {}).get("id") if agent else "admin"),
+                        None,
+                    )
+
+            headers = {
+                "Content-Disposition": f'attachment; filename="paneltec-snapshot-{snap_id}.zip"',
+                "X-Snapshot-SHA256": sha_hdr,
+                "Content-Length": str(length),
+                "X-Snapshot-Storage": "filesystem",
+                "Accept-Ranges": "bytes",
+            }
+            if status_code == 206:
+                headers["Content-Range"] = f"bytes {start}-{end}/{total_size}"
+
             return StreamingResponse(
                 _stream_fs(),
+                status_code=status_code,
                 media_type="application/zip",
-                headers={
-                    "Content-Disposition": f'attachment; filename="paneltec-snapshot-{snap_id}.zip"',
-                    "X-Snapshot-SHA256": snap.get("sha256") or "",
-                    "Content-Length": str(snap.get("size") or 0),
-                    "X-Snapshot-Storage": "filesystem",
-                },
+                headers=headers,
             )
 
-        # Legacy GridFS fallback.
+        # Legacy GridFS fallback (no Range support — .132jh purge
+        # emptied this branch; kept as insurance only).
         gridfs_id_str = snap.get("gridfs_id")
         if not gridfs_id_str:
             raise HTTPException(
@@ -1969,11 +2028,10 @@ def install(app, db, require_admin):
             media_type="application/zip",
             headers={
                 "Content-Disposition": f'attachment; filename="paneltec-snapshot-{snap_id}.zip"',
-                # v58.13.132gr — Guard legacy rows that predate the
-                # sha256/size fields.
                 "X-Snapshot-SHA256": snap.get("sha256") or "",
                 "Content-Length": str(snap.get("size") or 0),
                 "X-Snapshot-Storage": "gridfs-legacy",
+                "Accept-Ranges": "none",
             },
         )
 
@@ -3136,18 +3194,27 @@ services:
         return PlainTextResponse(yml, media_type="text/yaml")
 
     # ── v58.13.132lj — probe-blob streaming endpoint ─────────
+    # v58.13.132lk — added HTTP Range support (206 Partial Content)
+    # + resume-attempt tracking. Cloudflare edge terminates
+    # long-lived streams at ~250 MB; the agent's `_resumable_get_stream`
+    # helper now resumes via `Range: bytes=<have>-<end>`, which
+    # requires this endpoint to actually honor the header.
+    _RESUME_ATTEMPTS: Dict[str, int] = {}    # blob_id → count
+
     @api_router.get("/agent/probe-blob/{blob_id}")
-    async def agent_probe_blob(blob_id: str, sig: str = Query(...)):
+    async def agent_probe_blob(request: Request, blob_id: str,
+                                  sig: str = Query(...)):
         """Deterministic random-bytes stream, gated by the HMAC
         signature the pod handed the agent inside a
-        `fetch_and_put` op's `source_url`. No agent bearer
-        required — the sig IS the auth. Streams in 1 MB chunks so
-        pod memory stays flat."""
+        `fetch_and_put` op's `source_url`. Range-aware so
+        interrupted streams resume from `<have>` rather than 0.
+        No agent bearer required — the sig IS the auth."""
         blob = _PROBE_BLOBS.get(blob_id)
         if not blob:
             raise HTTPException(404, "probe blob not found or expired")
         if int(datetime.now(timezone.utc).timestamp()) > blob["expiry"]:
             _PROBE_BLOBS.pop(blob_id, None)
+            _RESUME_ATTEMPTS.pop(blob_id, None)
             raise HTTPException(410, "probe blob expired")
         import hmac as _hmac
         if not _hmac.compare_digest(sig, blob["sig"]):
@@ -3155,27 +3222,78 @@ services:
 
         size = blob["size"]
         seed = blob["seed"]
+        chunk_size = 1024 * 1024   # matches register_probe_blob's hash pass
+
+        # Parse a single-range Range header (RFC 7233).
+        range_hdr = request.headers.get("range") or request.headers.get("Range")
+        start, end = 0, size - 1
+        status_code = 200
+        if range_hdr:
+            import re as _re
+            m = _re.match(r"bytes=(\d+)-(\d*)$",
+                            range_hdr.strip().lower())
+            if not m:
+                raise HTTPException(416, "malformed Range header")
+            start = int(m.group(1))
+            if m.group(2):
+                end = min(int(m.group(2)), size - 1)
+            if start >= size or start > end:
+                raise HTTPException(
+                    416, "range not satisfiable",
+                    headers={"Content-Range": f"bytes */{size}"},
+                )
+            status_code = 206
+            n = _RESUME_ATTEMPTS.get(blob_id, 0) + 1
+            _RESUME_ATTEMPTS[blob_id] = n
+            if n >= 3:
+                logger.warning(
+                    "[probe-blob] resume attempt #%d for blob=%s "
+                    "range=%s — edge is truncating; investigate",
+                    n, blob_id, range_hdr,
+                )
+
+        length = end - start + 1
 
         def _iter():
-            chunk_size = 1024 * 1024
-            remaining = size
-            counter = 0
-            while remaining > 0:
+            # Chunk grid is the same as `register_probe_blob`: each
+            # 1 MB chunk is derived from `sha256(seed + counter)`
+            # so we can jump to any offset without buffering.
+            first_counter = start // chunk_size
+            first_offset = start - first_counter * chunk_size
+            counter = first_counter
+            emitted = 0
+            while emitted < length:
                 piece = hashlib.sha256(
                     seed + counter.to_bytes(8, "big")
                 ).digest()
-                block = (piece * ((chunk_size // 32) + 1))[
-                    :min(chunk_size, remaining)
-                ]
-                yield block
-                remaining -= len(block)
+                block = (piece * ((chunk_size // 32) + 1))[:chunk_size]
+                # Trim the front of the very first chunk if `start`
+                # doesn't align on a chunk boundary.
+                if emitted == 0 and first_offset > 0:
+                    block = block[first_offset:]
+                take = min(len(block), length - emitted)
+                yield block[:take]
+                emitted += take
                 counter += 1
-            _PROBE_BLOBS.pop(blob_id, None)   # one-shot
+            # Only invalidate the blob after a FULL (0..size-1)
+            # delivery. Partial 206 responses may be part of a
+            # resumable download that will need more chunks.
+            if start == 0 and end == size - 1 and status_code == 200:
+                _PROBE_BLOBS.pop(blob_id, None)
+                _RESUME_ATTEMPTS.pop(blob_id, None)
+
+        headers = {
+            "Content-Length": str(length),
+            "Accept-Ranges": "bytes",
+        }
+        if status_code == 206:
+            headers["Content-Range"] = f"bytes {start}-{end}/{size}"
 
         return StreamingResponse(
             _iter(),
+            status_code=status_code,
             media_type="application/octet-stream",
-            headers={"Content-Length": str(size)},
+            headers=headers,
         )
 
     app.include_router(api_router)

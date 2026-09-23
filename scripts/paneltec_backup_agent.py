@@ -45,7 +45,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # ── Constants populated by the Hub at download time ───────────────
 # `backup_service.py:1313-1314` does `source.replace("__HUB_URL__", …)`
@@ -195,28 +195,186 @@ def hub_pending() -> Optional[Dict[str, Any]]:
     return r.json()
 
 
+def _resumable_get_stream(
+    url: str,
+    dst_part: Path,
+    expected_size: int = 0,
+    expected_sha256: Optional[str] = None,
+    headers_extra: Optional[Dict[str, str]] = None,
+    log_tag: str = "dl",
+    max_retries: int = 10,
+) -> Tuple[int, str]:
+    """v58.13.132lk — Resumable streaming download.
+
+    Root cause fix for the ``.132lf`` / ``.132lj`` transport
+    stalls: Cloudflare / preview edge terminates long-lived HTTPS
+    streams around the ~250 MB mark, raising
+    ``urllib3.exceptions.IncompleteRead``. Every subsequent retry
+    started over from byte 0, so the download never completed.
+
+    Contract:
+        * Streams into ``dst_part`` (a ``.part`` sibling of the
+          final path). Caller atomic-renames on success.
+        * On connection drops, appends from
+          ``Range: bytes=<have>-<end>``. Rehashes existing bytes
+          on each attempt so the running sha256 stays correct.
+        * Backoff: 2 → 5 → 15 → 30 → 60 s (then 60 s cap).
+          Hard-fail after ``max_retries`` attempts.
+        * Verifies sha256 if ``expected_sha256`` supplied.
+        * Sends ``Mozilla/5.0 paneltec-agent`` UA so Cloudflare
+          doesn't 502 (same rule that bit the ``install.py``
+          bootstrap in .132li).
+
+    Returns ``(bytes_written, sha256_hex)``. Raises RuntimeError
+    only on hard failure (max_retries hit OR sha mismatch)."""
+    import time as _time
+    backoff = [2, 5, 15, 30, 60]
+    ua_header = {"User-Agent": "Mozilla/5.0 paneltec-agent"}
+    if headers_extra:
+        ua_header.update(headers_extra)
+
+    dst_part.parent.mkdir(parents=True, exist_ok=True)
+
+    # HEAD probe if caller didn't tell us the size — some endpoints
+    # (Dropbox temp links, our snapshot endpoint) always set
+    # Content-Length, so we can drive the resume math off that.
+    if expected_size <= 0:
+        try:
+            head = requests.head(
+                url, headers=ua_header,
+                timeout=(15, 60), allow_redirects=True,
+            )
+            if head.status_code < 400:
+                cl = head.headers.get("Content-Length")
+                if cl and cl.isdigit():
+                    expected_size = int(cl)
+        except Exception as e:   # noqa: BLE001
+            log.debug("[%s] HEAD probe failed (non-fatal): %s",
+                         log_tag, e)
+
+    last_err: Optional[str] = None
+    for attempt in range(max_retries):
+        have = dst_part.stat().st_size if dst_part.exists() else 0
+        if expected_size > 0 and have >= expected_size:
+            break
+
+        # Re-hash whatever's already on disk so sha stays correct
+        # across resumes. Reads at 1 MB / iter → constant memory.
+        h = _hashlib.sha256()
+        if have > 0:
+            with dst_part.open("rb") as fh:
+                while True:
+                    b = fh.read(1024 * 1024)
+                    if not b:
+                        break
+                    h.update(b)
+
+        req_headers = dict(ua_header)
+        if have > 0 and expected_size > 0:
+            req_headers["Range"] = f"bytes={have}-{expected_size - 1}"
+            log.info("[%s] attempt %d/%d  RESUME @ byte %d/%d",
+                       log_tag, attempt + 1, max_retries, have,
+                       expected_size)
+        else:
+            log.info("[%s] attempt %d/%d  fresh GET (have=%d expect=%d)",
+                       log_tag, attempt + 1, max_retries, have,
+                       expected_size)
+
+        try:
+            with requests.get(
+                url,
+                stream=True,
+                headers=req_headers,
+                timeout=(30, 900),
+            ) as r:
+                if r.status_code not in (200, 206):
+                    raise RuntimeError(
+                        f"HTTP {r.status_code} at byte {have}"
+                    )
+                # If we asked for Range but server ignored it
+                # (returned 200 + full body), we can't append — the
+                # bytes we're about to receive start at 0. Wipe and
+                # restart, but preserve the retry count so we don't
+                # loop forever on a broken server.
+                if have > 0 and r.status_code == 200:
+                    log.warning("[%s] server ignored Range — "
+                                   "wiping .part and restarting from 0",
+                                   log_tag)
+                    dst_part.unlink()
+                    have = 0
+                    h = _hashlib.sha256()
+
+                mode = "ab" if have > 0 else "wb"
+                with dst_part.open(mode) as fh:
+                    for chunk in r.iter_content(chunk_size=1 << 16):
+                        if not chunk:
+                            continue
+                        fh.write(chunk)
+                        h.update(chunk)
+                        have += len(chunk)
+
+            # Loop exit path only reached on clean stream end. If we
+            # know the expected size and fell short, treat as
+            # IncompleteRead — retry with resume.
+            if expected_size > 0 and have < expected_size:
+                raise RuntimeError(
+                    f"stream ended at byte {have}, expected {expected_size}"
+                )
+            break   # SUCCESS
+        except (
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.SSLError,
+            requests.exceptions.ReadTimeout,
+            RuntimeError,
+        ) as e:
+            last_err = f"{type(e).__name__}: {e}"
+            wait = backoff[attempt] if attempt < len(backoff) else 60
+            log.warning(
+                "[%s] attempt %d/%d failed at byte %d: %s — retry in %ds",
+                log_tag, attempt + 1, max_retries, have, last_err, wait,
+            )
+            _time.sleep(wait)
+    else:
+        raise RuntimeError(
+            f"{log_tag} exceeded {max_retries} retries "
+            f"(last_err={last_err})"
+        )
+
+    got_sha = h.hexdigest()
+    if expected_sha256 and got_sha != expected_sha256:
+        raise RuntimeError(
+            f"sha256 mismatch: got={got_sha[:12]}… "
+            f"expected={expected_sha256[:12]}…"
+        )
+    return have, got_sha
+
+
 def hub_download(snapshot_id: str, dst: Path) -> Optional[int]:
     """Stream the snapshot ZIP to disk. Returns bytes written on
-    success or None on any failure — we log inline so callers just
-    need to check truthiness."""
+    success or None on any failure. v58.13.132lk — now uses the
+    resumable helper so Cloudflare-cut streams resume from the
+    last byte received instead of restarting from 0."""
     url = f"{HUB_URL}/api/backup/snapshots/{snapshot_id}/data"
     tmp = dst.with_suffix(dst.suffix + ".part")
     try:
-        with requests.get(url,
-                          headers=_headers(),
-                          stream=True,
-                          timeout=(15, 600)) as r:
-            if not r.ok:
-                log.error("download %s: %s %s", snapshot_id,
-                          r.status_code, r.text[:200])
-                return None
-            tmp.parent.mkdir(parents=True, exist_ok=True)
-            written = 0
-            with tmp.open("wb") as fh:
-                for chunk in r.iter_content(chunk_size=1 << 16):
-                    if chunk:
-                        fh.write(chunk)
-                        written += len(chunk)
+        # We don't know the expected sha up-front; hub sends
+        # `X-Snapshot-SHA256` on the initial HEAD/GET response.
+        # HEAD once here so the helper has both size + sha context.
+        head = requests.head(url, headers=_headers(),
+                                timeout=(15, 60), allow_redirects=True)
+        exp_size = int(head.headers.get("Content-Length") or "0")
+        exp_sha = head.headers.get("X-Snapshot-SHA256") or None
+
+        written, got_sha = _resumable_get_stream(
+            url=url,
+            dst_part=tmp,
+            expected_size=exp_size,
+            expected_sha256=exp_sha,
+            headers_extra=_headers(),
+            log_tag=f"snap-{snapshot_id[:8]}",
+        )
         tmp.replace(dst)
         return written
     except Exception as e:  # noqa: BLE001 — log full trace
@@ -512,13 +670,10 @@ def _nas_execute(op_row: Dict[str, Any]) -> Dict[str, Any]:
                     "result": {"path": path, "deleted": True}}
 
         if op == "fetch_and_put":
-            # v58.13.132lj — streaming transport. Download bytes
-            # DIRECTLY from `meta.source_url` to a temp file next
-            # to the destination, verify sha256 matches
-            # `meta.expected_sha256`, then atomic-rename into
-            # place. Body bytes never traverse the HTTP body of
-            # our poll response. Streams in 1 MB chunks so memory
-            # stays flat even on multi-GB files.
+            # v58.13.132lj — streaming transport.
+            # v58.13.132lk — now uses the shared resumable helper so
+            # Cloudflare-cut streams resume via HTTP Range instead of
+            # silently stalling in `_nas_execute`'s except-guard.
             m = op_row.get("meta") or {}
             source_url = m.get("source_url") or ""
             expected_sha = m.get("expected_sha256") or ""
@@ -529,28 +684,22 @@ def _nas_execute(op_row: Dict[str, Any]) -> Dict[str, Any]:
             fp = _nas_safe_path(path)
             fp.parent.mkdir(parents=True, exist_ok=True)
             tmp = fp.with_name(fp.name + ".part")
-            h = _hashlib.sha256()
-            got_bytes = 0
             try:
-                # `-A` UA header so Cloudflare doesn't 502 the pull
-                # (same bypass we shipped for install.py in .132li).
-                with requests.get(
-                    source_url,
-                    stream=True,
-                    headers={"User-Agent": "Mozilla/5.0 paneltec-agent"},
-                    timeout=(30, 900),  # (connect, read) — 15 min
-                ) as r:
-                    if r.status_code != 200:
-                        return {"status": "error",
-                                "error": f"source HTTP {r.status_code}"}
-                    with tmp.open("wb") as fh:
-                        for chunk in r.iter_content(chunk_size=1024 * 1024):
-                            if not chunk:
-                                continue
-                            fh.write(chunk)
-                            h.update(chunk)
-                            got_bytes += len(chunk)
-            except requests.RequestException as e:
+                written, got_sha = _resumable_get_stream(
+                    url=source_url,
+                    dst_part=tmp,
+                    expected_size=expected_size,
+                    expected_sha256=expected_sha or None,
+                    log_tag=f"nas-fetch-{path[-40:]}",
+                )
+            except RuntimeError as e:
+                try:
+                    if tmp.exists():
+                        tmp.unlink()
+                except OSError:
+                    pass
+                return {"status": "error", "error": str(e)}
+            except Exception as e:   # noqa: BLE001
                 try:
                     if tmp.exists():
                         tmp.unlink()
@@ -559,27 +708,9 @@ def _nas_execute(op_row: Dict[str, Any]) -> Dict[str, Any]:
                 return {"status": "error",
                         "error": f"download failed: {type(e).__name__}: {e}"}
 
-            got_sha = h.hexdigest()
-            if expected_size and got_bytes != expected_size:
-                try: tmp.unlink()
-                except OSError: pass
-                return {"status": "error",
-                        "error": (
-                            f"size mismatch: got={got_bytes} "
-                            f"expected={expected_size}"
-                        )}
-            if expected_sha and got_sha != expected_sha:
-                try: tmp.unlink()
-                except OSError: pass
-                return {"status": "error",
-                        "error": (
-                            f"sha256 mismatch: got={got_sha[:12]}… "
-                            f"expected={expected_sha[:12]}…"
-                        )}
             # Atomic rename into place.
             tmp.replace(fp)
-            # Sidecar meta for reconciliation (Phase 2b bytes-copy
-            # will populate `{dropbox_id, dropbox_rev, ...}`).
+            # Sidecar meta for reconciliation.
             side_meta = {k: v for k, v in m.items() if k not in (
                 "source_url", "expected_sha256", "expected_size",
             )}
