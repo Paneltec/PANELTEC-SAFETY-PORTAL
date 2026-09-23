@@ -1,5 +1,75 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132li — Backend: Cloudflare-UA bypass for the LAN-agent bootstrap
+// + honest `nas_*_gb` on `/api/nas/health`.
+//
+// Two small backend-only fixes stemming from the `.132lf` UGREEN
+// rollout. No frontend behaviour changes; version pill / SW cache
+// bump in lockstep only.
+//
+// ── Fix 1: Cloudflare-UA bypass for install.py ─────────────────
+//   Symptom: `paneltec-nas-agent` container on Ugreen NAS was
+//   crash-looping with `curl: (22) The requested URL returned
+//   error: 502` when fetching
+//   `$HUB_URL/api/backup/agent/install.py?token=…&hub_url=…`.
+//   RCA: Cloudflare's default-curl-UA bot rule (v2026-Q3) 502s
+//   requests carrying `User-Agent: curl/8.x`. Direct pod-side
+//   curl to the same URL returned 200 in <250 ms — endpoint was
+//   healthy; the ingress edge was the block.
+//   Fix: `backend/backup_service.py::agent_docker_compose` — the
+//   bootstrap `curl` in the generated docker-compose.yml now
+//   passes `-A "Mozilla/5.0 paneltec-agent"`. Passes Cloudflare's
+//   rule and still identifies the caller in access logs. Only
+//   ONE curl invocation in the template (line 3038; the earlier
+//   `apt-get install curl` line is package installation, not a
+//   fetch).
+//
+// ── Fix 2: honest `nas_*_gb` on /api/nas/health ────────────────
+//   Symptom: `/api/nas/health` returned `nas_free_gb: null,
+//   nas_used_gb: null, nas_total_gb: null` on every response —
+//   the Live Compliance and Backup panels showed no NAS
+//   capacity even when the agent WAS reporting disk usage.
+//   RCA: `paneltec_backup_agent.py::_disk_usage_for()` sends
+//   `{"total", "used", "free"}` as raw bytes on the
+//   `/api/backup/agent/report` payload; the row lands in
+//   `bk_agents.disk_usage` unchanged. `integrations_nas.py::
+//   nas_health` was reading `du.get("free_gb")` /
+//   `du.get("used_gb")` / `du.get("total_gb")` — keys that
+//   never existed in the on-wire agent contract.
+//   Fix: `backend/integrations_nas.py:92-108` — read-side
+//   coercion. Prefers the pre-computed `*_gb` keys when
+//   present (future agents that ship `_nas_disk_usage()` on
+//   the report path will use them) and falls back to
+//   `round(du["free"] / 1024**3, 2)` for the legacy raw-byte
+//   shape. Zero agent-side change — safe rollout across the
+//   fleet of already-deployed NAS agents.
+//
+// ── Verified live (post-ship) ─────────────────────────────────
+//   · `curl -A "Mozilla/5.0 paneltec-agent" .../install.py` →
+//     HTTP 200, 25,138 bytes, valid Python source.
+//   · `/api/nas/health` now returns integer `nas_free_gb`,
+//     `nas_used_gb`, `nas_total_gb` (14 TB volume reads as
+//     `nas_total_gb: 14755.0`, `nas_free_gb: 14718.6`).
+//   · Bi-directional HMAC round-trip against `ugreen-nas`
+//     agent (id `958bf283-…`): `ping` op done in 11 s
+//     (agent poll interval bound). HMAC verify + report-back
+//     confirmed end-to-end.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Agent-side (`scripts/paneltec_backup_agent.py`) — untouched.
+//     Fix is deliberately read-side so we don't have to force-
+//     restart every deployed NAS agent.
+//   · `_load_agent()` still picks globally-freshest agent
+//     (multi-agent flap risk flagged for a later ship —
+//     `NAS_AGENT_ID` env-scoped selector). Cosmetic; the
+//     bi-directional queue is already `agent_id`-partitioned at
+//     `nas_ops_service.py:187`.
+//   · `AgentReport` model still has no `version` field — `/health`
+//     will keep returning `agent_version: null`. Cosmetic; not a
+//     health signal.
+//   · `/app/mobile/` — untouched (ban).
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+
 // v58.13.132lh — Web: visitor sign-in form field removal (mirror of
 // mobile `.132lg` which landed earlier via the Expo specialist).
 //
@@ -14171,7 +14241,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lh';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132li';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14192,7 +14262,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lh';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lh';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132li';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

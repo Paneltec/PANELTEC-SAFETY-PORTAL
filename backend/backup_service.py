@@ -3033,9 +3033,15 @@ services:
         fi
 
         # 3) Fetch the agent script from the Hub — retry up to 5 times.
+        # v58.13.132li — force a browser-shaped User-Agent so Cloudflare's
+        # curl-family bot rules don't 502 the request. Default curl UA
+        # (`curl/8.x`) was consistently getting blocked at the preview
+        # edge; a plain-text UA carrying our identifier passes cleanly
+        # and stays honest about what's calling.
         for i in 1 2 3 4 5; do
           echo "[paneltec-agent] fetch agent.py attempt $$i/5 …"
           if curl -fsSL --max-time 30 \\
+               -A "Mozilla/5.0 paneltec-agent" \\
                "$$HUB_URL/api/backup/agent/install.py?token=$$AGENT_TOKEN&hub_url=$$HUB_URL" \\
                -o /app/agent.py; then
             echo "[paneltec-agent] agent.py fetched OK ($(wc -c < /app/agent.py) bytes)"

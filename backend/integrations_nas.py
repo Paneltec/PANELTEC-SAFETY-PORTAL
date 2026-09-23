@@ -89,9 +89,28 @@ async def nas_health(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
         "agent_version": agent.get("version") or agent.get("agent_version"),
         "agent_last_seen_at": last_seen,
         "agent_stale_seconds": None if stale_s == float("inf") else round(stale_s, 1),
-        "nas_free_gb": du.get("free_gb"),
-        "nas_used_gb": du.get("used_gb"),
-        "nas_total_gb": du.get("total_gb"),
+        # v58.13.132li — agent reports raw bytes as `total/used/free`
+        # via `_disk_usage_for(LOCAL_DIR)` in paneltec_backup_agent.py;
+        # convert to GB on read here rather than change the agent
+        # contract (agents on customer NAS boxes can't be force-updated).
+        # Legacy `*_gb` keys (never actually populated in prod) still
+        # win when present so any future agent that DOES pre-compute
+        # them stays supported.
+        "nas_free_gb": (
+            du.get("free_gb")
+            if du.get("free_gb") is not None
+            else (round(du["free"]  / (1024 ** 3), 2) if du.get("free")  is not None else None)
+        ),
+        "nas_used_gb": (
+            du.get("used_gb")
+            if du.get("used_gb") is not None
+            else (round(du["used"]  / (1024 ** 3), 2) if du.get("used")  is not None else None)
+        ),
+        "nas_total_gb": (
+            du.get("total_gb")
+            if du.get("total_gb") is not None
+            else (round(du["total"] / (1024 ** 3), 2) if du.get("total") is not None else None)
+        ),
         "nas_disk_usage_at": agent.get("disk_usage_at"),
         "hmac_secret_present": bool(os.environ.get("NAS_AGENT_SHARED_SECRET", "").strip()),
         "last_bidirectional_probe_ms": None,
