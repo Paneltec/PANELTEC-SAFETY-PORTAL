@@ -13,6 +13,8 @@ import { toast } from 'sonner';
 import { Download, Eye, FileText, Loader2 } from 'lucide-react';
 import api, { apiError, API_BASE } from '../lib/api';
 import { getToken } from '../lib/auth';
+// v58.13.132mf — display-only strip of legacy hex-id filename prefix.
+import { displayFilename } from '../lib/displayFilename';
 import {
   PageHeader, EmptyState,
 } from '../components/capture/Ui';
@@ -56,7 +58,7 @@ export default function SharedWithMe() {
   useEffect(() => { load(); }, [load]);
 
   const download = async (row) => {
-    const t = toast.loading(`Downloading "${row.filename}"…`);
+    const t = toast.loading(`Downloading "${displayFilename(row.filename)}"…`);
     try {
       const res = await fetch(
         `${API_BASE}/document-library/shared-with-me/files/${row.id}/download`,
@@ -67,7 +69,7 @@ export default function SharedWithMe() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = row.filename;
+      a.download = displayFilename(row.filename) || row.filename;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       toast.success('Downloaded', { id: t });
@@ -116,10 +118,10 @@ export default function SharedWithMe() {
                       <div className="min-w-0">
                         <div
                           className="font-medium text-slate-800 truncate"
-                          title={r.filename}
+                          title={displayFilename(r.filename)}
                           data-testid={`shared-filename-${r.id}`}
                         >
-                          {r.filename}
+                          {displayFilename(r.filename)}
                         </div>
                         <div className="text-[11px] text-slate-500">{humanSize(r.size_bytes || r.size)}</div>
                       </div>

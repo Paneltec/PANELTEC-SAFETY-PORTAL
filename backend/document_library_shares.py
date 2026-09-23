@@ -279,9 +279,13 @@ async def shared_download(file_id: str,
     def _iter():
         yield buf
 
+    # v58.13.132mf — clean the hex-prefix off the filename before
+    # sending it to the user; storage still uses the prefixed name.
+    from display_filename import display_filename
+    _disp_name = display_filename(doc["filename"]) or doc["filename"]
     headers = {
         "Content-Disposition":
-            f'attachment; filename="{doc["filename"]}"',
+            f'attachment; filename="{_disp_name}"',
         "Content-Length": str(len(buf)),
     }
     return StreamingResponse(
@@ -302,6 +306,10 @@ async def _zip_stream_from_files(files: List[dict]) -> StreamingResponse:
     so we don't pay CPU for compression on already-compressed
     PDFs/JPGs — the copy is bandwidth-bound anyway."""
     from uploads_storage import read_upload
+    # v58.13.132mf — clean the hex-prefix off each ZIP entry name so
+    # unzipping delivers user-friendly filenames. Only the last path
+    # segment is stripped (folder names in `zip_path` are preserved).
+    from display_filename import display_zip_arcname
 
     async def _gen():
         buf = io.BytesIO()
@@ -318,9 +326,10 @@ async def _zip_stream_from_files(files: List[dict]) -> StreamingResponse:
                                    f.get("id"))
                     continue
                 body, _mime = got
-                arcname = _sanitise_zip_name(
+                raw = _sanitise_zip_name(
                     f.get("zip_path") or f.get("filename") or "file",
                 )
+                arcname = display_zip_arcname(raw) or raw
                 zf.writestr(arcname, body)
                 yield buf.getvalue()
                 buf.seek(0)

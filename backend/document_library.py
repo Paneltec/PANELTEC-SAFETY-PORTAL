@@ -1866,8 +1866,12 @@ async def download_file(
     if hit is not None:
         data, mime = hit
         from fastapi.responses import Response
+        # v58.13.132mf — clean the hex prefix off the filename before
+        # sending it to the user; storage still uses the prefixed name.
+        from display_filename import display_filename
+        _disp_name = display_filename(doc["filename"]) or doc["filename"]
         headers = {
-            "Content-Disposition": f'{disp}; filename="{doc["filename"]}"',
+            "Content-Disposition": f'{disp}; filename="{_disp_name}"',
         }
         return Response(content=data,
                           media_type=mime or doc.get("mime")
@@ -1876,10 +1880,11 @@ async def download_file(
     path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
     if not path.exists():
         raise missing_file_response()
+    from display_filename import display_filename  # noqa: WPS433 — lazy
     return FileResponse(
         str(path),
         media_type=doc.get("mime") or "application/octet-stream",
-        filename=doc.get("filename"),
+        filename=display_filename(doc.get("filename")) or doc.get("filename"),
         content_disposition_type=disp,
     )
 

@@ -1,5 +1,86 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132mf — Display-only strip of legacy hex-ID filename prefix.
+//
+// Legacy bulk imports stamped a 12- or 13-char hex + dash prefix
+// on stored filenames (e.g. `6373ef3a0ba47-Bostik.pdf`). Users see
+// this in every file row, toast, modal, and downloaded file — noisy.
+//
+// Fix: pure display cleanup at the render/response boundary. The
+// stored `doc_files.filename` in Mongo is UNCHANGED so storage
+// lookups keep working. Storage keys off `stored_name` anyway; only
+// user-facing surfaces are cleaned.
+//
+// Regex: `^[0-9a-f]{12,13}-` (case-insensitive). Requires the
+// trailing dash so filenames that happen to start with a hex-looking
+// word (e.g. `abcdef.pdf`) are not mistakenly stripped.
+//
+// New shared helpers:
+//   · frontend `src/lib/displayFilename.js` — `displayFilename(name)`
+//   · backend  `backend/display_filename.py` — `display_filename()`
+//                                              + `display_zip_arcname()`
+//                                              (strips last path segment
+//                                               only; folder names
+//                                               preserved)
+//
+// Frontend wiring (readonly displays only — inputs/edit fields
+// still show the raw value so admin renames don't accidentally
+// operate on a truncated string):
+//   · `pages/DocumentLibrary.jsx`
+//       — main folder-view file button + tooltip
+//       — table cell (RecentDocsRow variant)
+//       — smart-search results row
+//       — search-result row title (line 529)
+//       — client-side <a download="…"> save-as filename
+//       — "replacement uploaded" toast + archive toasts
+//       — hard-delete modal target name (both row-icon + toolbar
+//         bulk paths)
+//   · `pages/SharedWithMe.jsx`
+//       — table row filename + tooltip
+//       — download toast copy + client-side save-as filename
+//   · `components/document-library/ShareModal.jsx`
+//       — modal title + tooltip
+//   · `components/document-library/HardDeleteModal.jsx` — input is
+//     pre-cleaned by callers; the modal itself doesn't wrap.
+//   · `components/document-library/FolderAdminToolbar.jsx` — reads
+//     `data-file-name` (raw) from the row DOM to forward to the
+//     hard-delete callback, which then strips. `data-file-name`
+//     intentionally keeps the raw value so test IDs stay stable.
+//
+// Backend wiring (response boundary):
+//   · `document_library.py` GET `/files/{id}/download`
+//       — Content-Disposition filename stripped
+//       — FileResponse `filename=` param stripped (legacy on-disk
+//         fallback path)
+//   · `document_library_shares.py`
+//       — GET `/shared-with-me/files/{id}/download` Content-Disposition
+//       — POST `/download/bulk` + GET `/folders/{id}/download-zip`
+//         both flow through `_zip_stream_from_files` — ZIP entry
+//         arcnames stripped via `display_zip_arcname()` (last
+//         segment only, folder tree preserved).
+//   · Bulk zip's outer Content-Disposition is the literal
+//     `documents.zip` — no change needed.
+//
+// Not touched (intentional):
+//   · `data-file-name={f.filename}` test-ID hooks — must match the
+//     underlying DB value for the tester to drive precise UI flows.
+//   · Filename INPUT fields on rename modals — those should still
+//     show/save the raw value.
+//   · `f.stored_name` — never displayed; storage key.
+//   · Assets / equipment / fleet / help / imports download routes
+//     — scoped out of this ship (user requested Document Library
+//     first). Follow-up ship can broaden.
+//   · Mobile app — delegated to e1_expo_frontend_dev in a
+//     follow-up. This ship does NOT touch `/app/mobile/*`.
+//
+// Migration status at ship time: real Dropbox→NAS run
+// `copy-585eb471118b` still in flight (13 min in-flight on 1st
+// fetch_and_put op, agent-side ack pending). Untouched by this
+// ship — separate concern.
+//
+// Not shipped: `.132me` auth-lockout time-window decay (still
+// parked awaiting user green-light).
+
 // v58.13.132md — Dropbox migration: team-namespace client fix
 // (one-line, backend-only, no frontend UI changes).
 //
@@ -14954,7 +15035,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132md';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mf';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14975,7 +15056,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132md';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132md';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132mf';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

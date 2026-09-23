@@ -24,6 +24,8 @@ import BulkRestrictModal from '../components/BulkRestrictModal';
 import ShareModal from '../components/document-library/ShareModal';
 import HardDeleteModal from '../components/document-library/HardDeleteModal';
 import FolderAdminToolbar from '../components/document-library/FolderAdminToolbar';
+// v58.13.132mf — display-only strip of legacy hex-id filename prefix.
+import { displayFilename } from '../lib/displayFilename';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
@@ -404,17 +406,17 @@ function MissingBinaryModal({ onClose }) {
       await api.post(`/document-library/files/${row.id}/replace-binary`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      toast.success(`Replacement uploaded for "${row.filename}".`);
+      toast.success(`Replacement uploaded for "${displayFilename(row.filename)}".`);
       load();
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusyId(null); }
   };
   const doMarkGone = async (row) => {
-    if (!window.confirm(`Mark "${row.filename}" as permanently gone? This soft-deletes the record (recoverable from Archive) and stamps an audit entry.`)) return;
+    if (!window.confirm(`Mark "${displayFilename(row.filename)}" as permanently gone? This soft-deletes the record (recoverable from Archive) and stamps an audit entry.`)) return;
     setBusyId(row.id);
     try {
       await api.post(`/document-library/files/${row.id}/mark-gone`);
-      toast.success(`"${row.filename}" archived as permanently gone.`);
+      toast.success(`"${displayFilename(row.filename)}" archived as permanently gone.`);
       load();
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusyId(null); }
@@ -526,7 +528,7 @@ function MissingBinaryRow({ row, busy, onReplace, onMarkGone, humanSize }) {
   return (
     <tr className="border-t border-slate-100" data-testid={`missing-binary-row-${row.id}`}>
       <td className="px-4 py-2.5 max-w-[280px]">
-        <div className="truncate text-slate-900 font-medium" title={row.filename}>{row.filename}</div>
+        <div className="truncate text-slate-900 font-medium" title={displayFilename(row.filename)}>{displayFilename(row.filename)}</div>
         <div className="text-xs text-slate-400">{row.mime || '—'}</div>
       </td>
       <td className="px-4 py-2.5 text-slate-600 max-w-[240px]">
@@ -663,7 +665,7 @@ function DocLibraryArchivedSection({ files, canEdit, onChanged }) {
                 <tr key={f.id} className="opacity-75"
                   data-testid={`file-row-${f.id}`}
                   data-archived="true">
-                  <td className="px-4 py-2 font-medium text-slate-800">{f.filename}</td>
+                  <td className="px-4 py-2 font-medium text-slate-800">{displayFilename(f.filename)}</td>
                   <td className="px-4 py-2 text-slate-500 hidden md:table-cell whitespace-nowrap">
                     {(f.expiry_date || '').slice(0, 10) || '—'}
                   </td>
@@ -1082,7 +1084,7 @@ export default function DocumentLibrary() {
                           className="px-3 py-2 flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-sm font-medium truncate flex items-center gap-2">
-                              {r.filename}
+                              {displayFilename(r.filename)}
                               <span
                                 data-testid={`smart-search-match-field-${r.file_id || r.id}`}
                                 className={
@@ -1916,7 +1918,7 @@ export function DocumentLibraryFolder() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = f.filename;
+      a.download = displayFilename(f.filename) || f.filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -2144,7 +2146,8 @@ export function DocumentLibraryFolder() {
           onUploaded={loadFiles}
           onHardDeleteFile={(id, name) => {
             const f = files.find((x) => x.id === id);
-            setHardDeleteTarget({ kind: 'file', id, name: name || f?.filename || 'file' });
+            const raw = name || f?.filename || 'file';
+            setHardDeleteTarget({ kind: 'file', id, name: displayFilename(raw) });
           }}
           droppedItems={droppedItems}
           onDroppedItemsConsumed={() => setDroppedItems(null)}
@@ -2285,10 +2288,10 @@ export function DocumentLibraryFolder() {
                             <span className="shrink-0" style={{ color: palette.hex }}>{fileIcon(f.mime)}</span>
                             <button onClick={() => openFile(f)} className="text-left font-medium text-slate-900 hover:text-brand-blue truncate max-w-[320px]"
                               title={isInlineViewable(f.mime, f.filename)
-                                ? `Open in new window — ${f.filename}`
-                                : `Download — ${f.filename}`}
+                                ? `Open in new window — ${displayFilename(f.filename)}`
+                                : `Download — ${displayFilename(f.filename)}`}
                               data-testid={`file-open-${f.id}`}>
-                              {f.filename}
+                              {displayFilename(f.filename)}
                             </button>
                             {f._search_match_field && (
                               <span
@@ -2455,7 +2458,7 @@ export function DocumentLibraryFolder() {
                             )}
                             {canEdit && (
                               <button
-                                onClick={() => setHardDeleteTarget({ kind: 'file', id: f.id, name: f.filename })}
+                                onClick={() => setHardDeleteTarget({ kind: 'file', id: f.id, name: displayFilename(f.filename) })}
                                 data-testid={`file-hard-delete-${f.id}`}
                                 className="p-1.5 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50"
                                 title="Permanently delete (cannot be undone)"

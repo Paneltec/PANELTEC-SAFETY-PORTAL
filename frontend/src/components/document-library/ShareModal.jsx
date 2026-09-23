@@ -12,6 +12,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, X, Users, User as UserIcon, Check } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
+// v58.13.132mf — display-only strip of legacy hex-id filename prefix.
+import { displayFilename } from '../../lib/displayFilename';
 
 const PERMISSIONS = [
   { key: 'download', label: 'Download', hint: 'View + download file' },
@@ -99,10 +101,10 @@ export default function ShareModal({ file, onClose }) {
             </div>
             <h3
               className="font-display font-bold text-slate-900 text-lg mt-0.5 truncate"
-              title={file.filename}
+              title={displayFilename(file.filename)}
               data-testid="share-modal-filename"
             >
-              {file.filename}
+              {displayFilename(file.filename)}
             </h3>
           </div>
           <button
