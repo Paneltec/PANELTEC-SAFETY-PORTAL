@@ -339,29 +339,27 @@ def _safe_scan_ext(filename: str) -> Optional[str]:
 
 
 def _ocr_image(path) -> str:
-    """Tesseract direct call for image uploads."""
-    import shutil, subprocess
-    if not shutil.which("tesseract"):
+    """v58.13.132lc — Tesseract via pytesseract (lazy). Skips OCR when
+    the binary isn't installed."""
+    import shutil as _sh
+    if not _sh.which("tesseract"):
         return ""
-    res = subprocess.run(
-        ["tesseract", str(path), "-", "-l", "eng"],
-        capture_output=True, timeout=90,
-    )
-    return (res.stdout or b"").decode("utf-8", errors="replace").strip()
+    try:
+        import pytesseract
+        from PIL import Image
+        return (pytesseract.image_to_string(Image.open(str(path))) or "").strip()
+    except Exception:
+        return ""
 
 
 def _count_pdf_pages(pdf_path) -> int:
-    """Best-effort page count for the audit log; never raises."""
+    """v58.13.132lc — Best-effort page count via pymupdf; never raises."""
     try:
-        import shutil, subprocess
-        if shutil.which("pdfinfo"):
-            r = subprocess.run(["pdfinfo", str(pdf_path)], capture_output=True, timeout=30)
-            m = re.search(rb"Pages:\s+(\d+)", r.stdout or b"")
-            if m:
-                return int(m.group(1))
+        import fitz  # pymupdf
+        with fitz.open(str(pdf_path)) as doc:
+            return int(doc.page_count)
     except Exception:
-        pass
-    return 0
+        return 0
 
 
 @router.post("/from-scan", status_code=201)

@@ -1,5 +1,93 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132lc — Backend+web: persist NODE_OPTIONS + swap heavy doc
+// tools for lightweight libs.
+//
+// Context (Emergent Support reply): the 5-8 min pod restart cycle
+// root-caused to a document-tool reinstall firing on every restart
+// (LibreOffice / Poppler / Tesseract getting re-apt-installed on
+// container refresh), plus a fixed shared-CPU allowance being maxed
+// by web + mobile preview running together. Emergent paused the
+// reinstall + tuned memory ceilings on their side; they asked us to
+// keep it stable across environment rebuilds by:
+//   1. Persisting NODE_OPTIONS in more than one place.
+//   2. Replacing the heavy doc-conversion tools with the lightweight
+//      libraries already in the pip environment.
+//
+// ── Frontend heap persistence (3 layers) ───────────────────────
+//   1. `frontend/package.json` — `start`, `build`, `test` scripts
+//      prefixed with `NODE_OPTIONS=--max-old-space-size=4096`.
+//   2. `frontend/.env` — `NODE_OPTIONS=--max-old-space-size=4096`
+//      appended (persists across node process restarts).
+//   3. `supervisord.conf` frontend program — `environment=…
+//      NODE_OPTIONS="--max-old-space-size=4096"` (from .132kz,
+//      retained as belt-and-braces).
+//
+// ── Backend doc-tool swap ──────────────────────────────────────
+//   · `backend/file_pdf.py` — removed `_libreoffice_binary()`,
+//     `_libreoffice_to_pdf()`, `_office_to_pdf_via_lo()`, the
+//     `_run_apt_install()` background task, and the
+//     `ensure_server_tools_or_install_bg()` apt spawner.
+//     - `_docx_to_pdf()` → python-docx paragraph/table walk →
+//       reportlab (was: LibreOffice / docx2pdf / text-fallback trio).
+//     - `_xlsx_to_pdf()` NEW → openpyxl → reportlab.Table (landscape
+//       A4). Handles the .xlsx preview pipeline entirely in-process.
+//     - `.pptx` / `.odt` / `.rtf` → 415 with a "download original"
+//       hint (no lightweight in-process renderer).
+//     - `ocr_pdf_to_text()` → pymupdf text-layer + pytesseract-lazy
+//       (was: `pdftotext` → `pdftoppm` → `tesseract` subprocess
+//       chain).
+//     - `POST /admin/install-libreoffice` → 410 Gone.
+//     - `GET /admin/system-tools` + `/admin/server-tools/health` —
+//       preserved but now report python-docx / openpyxl / pymupdf /
+//       reportlab status. Legacy `libreoffice` / `poppler` keys
+//       map to their in-process replacements so the Settings page
+//       chip stays green.
+//   · `backend/text_extraction.py` — `_extract_pdf_ocr()` +
+//     `_extract_image()` now guard on `_ensure_tesseract()` and
+//     return "" gracefully when the binary is missing.
+//   · `backend/swms_phase45.py` — `_ocr_image()` via pytesseract-
+//     lazy; `_count_pdf_pages()` via pymupdf (was: `pdfinfo`
+//     subprocess).
+//   · `backend/bulk_import_prestarts.py::_pdf_pages_png_b64` —
+//     rasterisation via pymupdf (was: `pdftoppm` subprocess).
+//   · `backend/document_library.py` AI-retry rasterisation —
+//     pymupdf for PDFs, reuses `file_pdf._docx_to_pdf` /
+//     `_xlsx_to_pdf` for docx/xlsx (was: `libreoffice --convert-to
+//     pdf` subprocess).
+//   · `backend/server.py::health` — dropped `libreoffice` and
+//     `poppler` from the soft-dep probe. Only `tesseract` remains
+//     (optional; degrades gracefully when missing).
+//
+// ── Startup hygiene ────────────────────────────────────────────
+//   · Verified: `server.py::on_startup` has NO eager
+//     `ensure_server_tools_or_install_bg` call — it was already
+//     commented out under ticket #261441.
+//   · The `ensure_server_tools_or_install_bg` function is retained
+//     as a probe-only shim so any older caller that unwraps it will
+//     get `action=noop` rather than crashing.
+//
+// ── Verification (live curl) ───────────────────────────────────
+//   · `GET /api/health` → 200, `degraded` no longer lists
+//     `libreoffice` or `poppler`.
+//   · `GET /api/dropbox/health` (from .132lb) → still 200, unaffected.
+//   · Manual sample .docx round-trip through
+//     `_docx_to_pdf(...)` → outputs a valid multi-page PDF.
+//   · Manual sample .xlsx round-trip through `_xlsx_to_pdf(...)` →
+//     outputs a valid multi-sheet PDF with tabular styling.
+//   · Manual sample PDF through `ocr_pdf_to_text(...)` on a
+//     text-layer PDF → returns the text-layer content
+//     sub-second, no Tesseract call needed.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Pipeline cache keys — old rows keyed by `docx_libreoffice`
+//     still resolve. `_convert` routes both `docx_python` and
+//     legacy `docx_libreoffice` to the new in-process renderer.
+//   · `/app/mobile/` — untouched (ban).
+//   · Dropbox `.132lb` work — untouched.
+//   · Import PDF matching pipeline (`.132kh`) — untouched. Only
+//     the underlying rasterisation swapped (pdftoppm → pymupdf).
+
 // v58.13.132lb — Dropbox integration Phase 0 (audit-only, backend).
 //
 // Standing brief (Stephen): stand up a Dropbox link to the team
@@ -13732,7 +13820,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lb';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lc';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13753,7 +13841,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lb';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lb';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lc';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

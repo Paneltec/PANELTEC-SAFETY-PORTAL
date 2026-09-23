@@ -81,21 +81,43 @@ def _extract_pdf_native(data: bytes) -> str:
     return "\n".join(parts).strip()
 
 
+def _ensure_tesseract() -> bool:
+    """v58.13.132lc — Lazy Tesseract binary check. Callers should
+    degrade gracefully (return empty/failed result) when this
+    returns False rather than crashing. Never tries to install."""
+    import shutil
+    return bool(shutil.which("tesseract"))
+
+
 def _extract_pdf_ocr(data: bytes) -> str:
-    """Rasterise the PDF then Tesseract each page. Slow — used only
-    when the text-native pass yielded nothing usable."""
+    """v58.13.132lc — Rasterise a PDF via pymupdf then OCR each page
+    with pytesseract. Slow — used only when the text-native pass
+    yielded nothing usable.
+
+    Removed the `pdf2image` (Poppler) subprocess dependency; pymupdf
+    handles rasterisation in-process. Tesseract binary is checked
+    lazily; if missing, returns "" so the caller can flip to
+    `status: 'failed', engine: 'tesseract'` cleanly."""
+    if not _ensure_tesseract():
+        log.info("tesseract missing — OCR fallback skipped")
+        return ""
     import pytesseract
-    from pdf2image import convert_from_bytes
-    images = convert_from_bytes(
-        data, dpi=OCR_DPI, first_page=1, last_page=OCR_MAX_PAGES,
-        fmt="png",
-    )
+    import fitz  # pymupdf
+    from PIL import Image
     parts: list[str] = []
-    for img in images:
-        try:
-            parts.append(pytesseract.image_to_string(img) or "")
-        except Exception as e:
-            log.debug("tesseract page failed: %s", e)
+    with fitz.open(stream=data, filetype="pdf") as doc:
+        for i, page in enumerate(doc):
+            if i >= OCR_MAX_PAGES:
+                parts.append("[truncated — page cap]")
+                break
+            try:
+                pix = page.get_pixmap(dpi=OCR_DPI)
+                img = Image.frombytes(
+                    "RGB", (pix.width, pix.height), pix.samples,
+                )
+                parts.append(pytesseract.image_to_string(img) or "")
+            except Exception as e:
+                log.debug("tesseract page failed: %s", e)
     return "\n".join(parts).strip()
 
 
@@ -131,6 +153,9 @@ def _extract_xlsx(data: bytes) -> str:
 
 
 def _extract_image(data: bytes) -> str:
+    """v58.13.132lc — image OCR with lazy Tesseract check."""
+    if not _ensure_tesseract():
+        return ""
     import pytesseract
     from PIL import Image
     img = Image.open(io.BytesIO(data))

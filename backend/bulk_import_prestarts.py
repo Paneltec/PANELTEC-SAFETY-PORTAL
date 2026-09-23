@@ -1538,13 +1538,16 @@ def _pdf_pages_png_b64(pdf_bytes: bytes,
     return `checklist: {}` on the fully-populated Simpro exports —
     the checklist body lives on pages 2-5 of a typical 5-8 page
     PDF. This helper now renders every page (bounded by
-    `BULK_IMPORT_MAX_PAGES_PER_PDF`, default 8) in a single
-    pdftoppm invocation so downstream Claude calls can see the
-    complete form.
+    `BULK_IMPORT_MAX_PAGES_PER_PDF`, default 8) so downstream Claude
+    calls can see the complete form.
+
+    v58.13.132lc — Migrated from `pdftoppm` subprocess to pymupdf
+    in-process rasterisation. Same DPI, same output shape; removes
+    the last Poppler dependency from the ingest pipeline.
 
     Failure modes:
-      · pdftoppm not installed or timing out → returns [] and lets
-        the caller record a `pdf_render_failed` error step.
+      · pymupdf can't open the bytes → returns [] and lets the caller
+        record a `pdf_render_failed` error step.
       · Single-page PDFs → returns a 1-element list.
       · PDFs longer than the cap → additional pages are silently
         dropped (form appendices rarely carry compliance data).
@@ -1553,26 +1556,27 @@ def _pdf_pages_png_b64(pdf_bytes: bytes,
         "BULK_IMPORT_MAX_PAGES_PER_PDF", 8)
     if cap <= 0:
         return []
-    with tempfile.TemporaryDirectory() as td:
-        pdf_path = os.path.join(td, "in.pdf")
-        with open(pdf_path, "wb") as f:
-            f.write(pdf_bytes)
-        try:
-            subprocess.run(
-                ["pdftoppm", "-png", "-r", "110",
-                 "-f", "1", "-l", str(cap),
-                 pdf_path, os.path.join(td, "page")],
-                check=True, capture_output=True, timeout=45,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-            log.warning("pdftoppm failed: %s", e)
-            return []
-        pages: list = []
-        for fn in sorted(os.listdir(td)):
-            if fn.startswith("page") and fn.endswith(".png"):
-                with open(os.path.join(td, fn), "rb") as fh:
-                    pages.append(base64.b64encode(fh.read()).decode())
-        return pages
+    try:
+        import fitz  # pymupdf
+    except ImportError:
+        log.warning("pymupdf not installed — pdf render skipped")
+        return []
+    pages: list = []
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            for i, page in enumerate(doc):
+                if i >= cap:
+                    break
+                # 110 DPI matches the prior pdftoppm invocation. pymupdf
+                # takes a zoom matrix rather than a DPI flag; 110/72 ≈ 1.528.
+                zoom = 110.0 / 72.0
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                png_bytes = pix.tobytes("png")
+                pages.append(base64.b64encode(png_bytes).decode())
+    except Exception as e:
+        log.warning("pymupdf render failed: %s", e)
+        return []
+    return pages
 
 
 # ────────────────── Models ──────────────────

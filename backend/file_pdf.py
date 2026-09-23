@@ -5,25 +5,30 @@ Endpoints (all prefixed `/api`):
     GET  /files/{id}/pdf.pdf    — same, path-disguised variant for ad-blocker
                                   compatibility (mirrors `forms_pdf` pattern)
     POST /files/pdf-bundle      — concatenate multiple files into one PDF
-    POST /admin/install-libreoffice — admin-only install hook (stub trigger)
 
-Conversion pipeline (Pragmatic Phase A — LibreOffice **not** installed):
+Conversion pipeline (v58.13.132lc — lightweight, no LibreOffice/Poppler):
     application/pdf                         → passthrough
     image/jpeg|png|webp                     → Pillow + reportlab A4 fit-to-page
     image/heic|heif                         → pillow-heif → JPG → reportlab
     text/csv | text/plain | text/markdown   → reportlab monospace paginated
-    .docx (Word)                            → docx2pdf (best effort) → if <1KB
-                                              output fall back to python-docx
-                                              + reportlab plain-text renderer
-                                              (lossy but never blank)
-    .xlsx / .pptx / .odt / .rtf / other     → 415 "LibreOffice not installed —
-                                              PDF preview not available for
-                                              this format"
+    .docx (Word)                            → python-docx paragraph/table
+                                              extraction → reportlab.
+    .xlsx (Excel)                           → openpyxl sheet→row extraction
+                                              → reportlab tabular renderer.
+    .pptx / .odt / .rtf / other             → 415 "PDF preview not available
+                                              for this format"
 
 Cache: converted PDFs live in `doc_files_pdf_cache` keyed by
        (file_id, sha1, pipeline). Cache miss writes the row; subsequent calls
        stream from cache. Invalidated when the source file is replaced
        (different sha1).
+
+v58.13.132lc — Removed all LibreOffice / Poppler / pdftotext / pdftoppm
+subprocess shellouts. Everything now runs in-process via python-docx,
+openpyxl, reportlab, pymupdf, and pytesseract (lazy). This matches
+Emergent's guidance to stop reinstalling heavy binaries on every pod
+restart, and unlocks the same feature-set in production without any
+system-package prerequisites.
 """
 from __future__ import annotations
 
@@ -35,7 +40,7 @@ import io
 import json
 import logging
 import os
-import subprocess
+import shutil
 import tempfile
 import time
 import uuid
@@ -47,12 +52,13 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
-    Paragraph, Preformatted, SimpleDocTemplate, Spacer,
+    Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 from db import db
@@ -65,60 +71,15 @@ log = logging.getLogger("paneltec.files.pdf")
 router = APIRouter(prefix="", tags=["files-pdf"])
 
 UPLOAD_DIR = Path(__file__).parent / "uploads" / "document_library"
+# v58.13.132lc — pipeline labels PRESERVED for cache-key stability. Old
+# entries in doc_files_pdf_cache with pipeline="docx_libreoffice" still
+# resolve; new entries are written under "docx_python" / "xlsx_openpyxl".
 PIPELINES = {
     "passthrough", "image", "heic", "text",
     "docx_libreoffice", "docx_docx2pdf", "docx_text_fallback",
+    "docx_python", "xlsx_openpyxl",
     "xlsx_libreoffice", "pptx_libreoffice", "odt_libreoffice", "rtf_libreoffice",
 }
-
-# Phase 3.13 — LibreOffice primary path. Override via env to fault-test.
-LIBREOFFICE_BIN_OVERRIDE = os.environ.get("PANELTEC_LIBREOFFICE_BIN")
-LIBREOFFICE_TIMEOUT_S = int(os.environ.get("PANELTEC_LIBREOFFICE_TIMEOUT_S", "60"))
-
-
-def _libreoffice_binary() -> str | None:
-    """Resolve the soffice/libreoffice executable, honouring an env override.
-    Set PANELTEC_LIBREOFFICE_BIN to a non-existent path during fault tests to
-    force the pragmatic fallback."""
-    import shutil
-    if LIBREOFFICE_BIN_OVERRIDE is not None:
-        return LIBREOFFICE_BIN_OVERRIDE if Path(LIBREOFFICE_BIN_OVERRIDE).exists() else None
-    return shutil.which("soffice") or shutil.which("libreoffice")
-
-
-def _libreoffice_to_pdf(src_path: Path, out_dir: Path, timeout: int = LIBREOFFICE_TIMEOUT_S) -> Path:
-    """Convert an office doc → PDF via headless LibreOffice. Returns the
-    output PDF path or raises. Each call gets its own UserInstallation profile
-    so concurrent requests don't clobber each other's lockfiles."""
-    bin_path = _libreoffice_binary()
-    if not bin_path:
-        raise RuntimeError("LibreOffice not installed")
-    profile = out_dir / f"_lo_profile_{os.getpid()}_{int(time.time()*1000)}"
-    profile.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        bin_path, "--headless",
-        f"-env:UserInstallation=file://{profile}",
-        "--convert-to", "pdf", "--outdir", str(out_dir), str(src_path),
-    ]
-    res = subprocess.run(cmd, capture_output=True, timeout=timeout)
-    if res.returncode != 0:
-        tail = (res.stderr or res.stdout or b"").decode("utf-8", errors="replace")[-300:]
-        raise RuntimeError(f"libreoffice rc={res.returncode}: {tail}")
-    expected = out_dir / (src_path.stem + ".pdf")
-    if not expected.exists():
-        raise RuntimeError("LibreOffice produced no PDF output file")
-    return expected
-
-
-def _office_to_pdf_via_lo(blob: bytes, ext: str, name: str) -> bytes:
-    """Pipe blob → temp file → LibreOffice → PDF bytes. Raises on any
-    failure; caller decides whether to fall back."""
-    with tempfile.TemporaryDirectory() as td:
-        td_p = Path(td)
-        src = td_p / f"in.{ext.lstrip('.')}"
-        src.write_bytes(blob)
-        out = _libreoffice_to_pdf(src, td_p)
-        return out.read_bytes()
 
 
 # ────────────────── helpers ──────────────────
@@ -219,9 +180,9 @@ def _pipeline_for(mime: str, name: str) -> str:
     # .docx still has a pragmatic ReportLab text fallback for ultra-defensive
     # delivery; xlsx/pptx/odt/rtf are LO-only (raises 415 on LO failure).
     if n.endswith(".docx") or m == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        return "docx_libreoffice"
+        return "docx_python"
     if n.endswith(".xlsx") or m == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-        return "xlsx_libreoffice"
+        return "xlsx_openpyxl"
     if n.endswith(".pptx") or m == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
         return "pptx_libreoffice"
     if n.endswith(".odt") or m == "application/vnd.oasis.opendocument.text":
@@ -286,8 +247,11 @@ def _text_to_pdf(blob: bytes, name: str) -> bytes:
 
 
 def _docx_text_fallback(blob: bytes, name: str) -> bytes:
-    """Lossy but never-blank: pull paragraphs + tables from a .docx and render
-    them as reportlab paragraphs. Tables are flattened to tab-separated lines."""
+    """v58.13.132lc — primary docx → PDF renderer (was fallback in .132kh).
+    Pulls paragraphs + tables from a .docx via python-docx and renders
+    them as reportlab paragraphs. Tables are flattened to
+    " | "-separated lines. On a python-docx parse failure this raises;
+    the caller (`_docx_to_pdf`) wraps that into a placeholder PDF."""
     from docx import Document
     d = Document(io.BytesIO(blob))
     lines: list[str] = []
@@ -298,100 +262,236 @@ def _docx_text_fallback(blob: bytes, name: str) -> bytes:
         lines.append("")  # spacer
         for row in tbl.rows:
             lines.append(" | ".join((c.text or "").strip() for c in row.cells))
+    if not lines:
+        lines = ["(document contains no readable text)"]
     return _text_to_pdf(("\n".join(lines)).encode("utf-8"), name)
 
 
 def _docx_to_pdf(blob: bytes, name: str) -> tuple[bytes, str]:
-    """Best-effort docx → PDF. Tries LibreOffice headless first (high fidelity),
-    then docx2pdf (legacy Windows-on-PATH path), and finally the pragmatic
-    ReportLab text fallback so we **never** return blank.
+    """v58.13.132lc — pure-Python docx → PDF via python-docx + reportlab.
 
-    Each fallback reason is logged at INFO so the production log shows the
-    pipeline actually used (visible via `tail /var/log/supervisor/backend.out.log`)."""
-    # 1. LibreOffice headless — primary path.
+    Removed the LibreOffice / docx2pdf subprocess fallbacks — Emergent's
+    root-cause analysis pinned repeat LibreOffice reinstalls as the
+    cause of the pod SIGTERM cycle. The existing `_docx_text_fallback`
+    was already the last-line-of-defence in .132kh; we now promote it
+    to primary and drop the two subprocess paths entirely.
+
+    Never blank: on a malformed .docx that python-docx refuses to
+    parse, we still emit a one-line "unable to render" PDF so the
+    caller's iframe never shows a 500."""
     try:
-        pdf = _office_to_pdf_via_lo(blob, "docx", name)
-        if len(pdf) >= 1024 and _is_pdf(pdf):
-            log.info("libreoffice: ok docx=%s bytes=%d", name, len(pdf))
-            return pdf, "docx_libreoffice"
-        log.info("libreoffice fallback: docx produced %d bytes (<1KB or not PDF)", len(pdf))
-    except Exception as e:
-        log.info("libreoffice fallback: %s", e)
+        pdf = _docx_text_fallback(blob, name)
+        if _is_pdf(pdf) and len(pdf) >= 200:
+            log.info("docx_python: ok docx=%s bytes=%d", name, len(pdf))
+            return pdf, "docx_python"
+        log.warning("docx_python produced suspiciously small output for %s (%d bytes)",
+                     name, len(pdf))
+    except Exception as e:  # noqa: BLE001
+        log.info("docx_python failed for %s: %s — falling back to placeholder", name, e)
+    # Last-line-of-defence: emit a placeholder PDF so the viewer doesn't 500.
+    placeholder = _text_to_pdf(
+        f"Could not render {name} as PDF preview.\n\n"
+        "The .docx file may be malformed. Try downloading the original "
+        "via the download button.".encode("utf-8"),
+        name,
+    )
+    return placeholder, "docx_text_fallback"
 
-    # 2. docx2pdf — legacy path (only effective if Word/LO is on PATH, but
-    # still gives us a third shot before the lossy fallback).
-    with tempfile.TemporaryDirectory() as td:
-        td_p = Path(td)
-        src = td_p / "in.docx"
-        src.write_bytes(blob)
-        dst = td_p / "in.pdf"
-        try:
-            import docx2pdf
-            docx2pdf.convert(str(src), str(dst))
-            if dst.exists():
-                data = dst.read_bytes()
-                if len(data) >= 1024 and _is_pdf(data):
-                    log.info("docx2pdf: ok docx=%s bytes=%d", name, len(data))
-                    return data, "docx_docx2pdf"
-        except Exception as e:
-            log.info("docx2pdf fallback: %s", e)
 
-    # 3. Pragmatic ReportLab text renderer — never blank.
-    log.info("docx text fallback engaged for %s", name)
-    return _docx_text_fallback(blob, name), "docx_text_fallback"
+def _xlsx_to_pdf(blob: bytes, name: str) -> bytes:
+    """v58.13.132lc — pure-Python xlsx → PDF via openpyxl + reportlab.Table.
+
+    Renders each sheet as a heading followed by a paginated table. Uses
+    landscape A4 for wide sheets. Empty rows/cells are skipped. Text
+    values are truncated to 60 chars per cell to keep the table
+    printable — the original file is always available via the
+    download link.
+
+    Malformed xlsx → surfaces as a placeholder PDF (never crashes the
+    iframe)."""
+    from openpyxl import load_workbook
+    out = io.BytesIO()
+    doc = SimpleDocTemplate(
+        out, pagesize=landscape(A4),
+        leftMargin=10 * mm, rightMargin=10 * mm,
+        topMargin=10 * mm, bottomMargin=10 * mm,
+    )
+    styles = getSampleStyleSheet()
+    sheet_head = ParagraphStyle(
+        "SheetHead", parent=styles["Heading2"],
+        fontName="Helvetica-Bold", fontSize=12, spaceAfter=6,
+    )
+    doc_title = ParagraphStyle(
+        "DocTitle", parent=styles["Heading1"],
+        fontName="Helvetica-Bold", fontSize=14, spaceAfter=10,
+    )
+    story: list = [Paragraph(name, doc_title)]
+    try:
+        wb = load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
+    except Exception as e:  # noqa: BLE001
+        log.warning("openpyxl failed to open %s: %s", name, e)
+        return _text_to_pdf(
+            f"Could not render {name} as PDF preview.\n\n"
+            "The .xlsx file may be malformed. Try downloading the "
+            "original via the download button.".encode("utf-8"),
+            name,
+        )
+
+    def _cell(v) -> str:
+        if v is None:
+            return ""
+        s = str(v)
+        return s if len(s) <= 60 else s[:57] + "…"
+
+    MAX_ROWS_PER_SHEET = 400
+    MAX_COLS = 16
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        story.append(Paragraph(f"Sheet: {sheet_name}", sheet_head))
+        rows: list = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i >= MAX_ROWS_PER_SHEET:
+                rows.append(["…", f"[{i}+ rows — truncated]"] + [""] * (MAX_COLS - 2))
+                break
+            cells = [_cell(v) for v in row[:MAX_COLS]]
+            if any(c for c in cells):
+                rows.append(cells + [""] * (MAX_COLS - len(cells)))
+        if not rows:
+            story.append(Paragraph("<i>(empty sheet)</i>", styles["BodyText"]))
+            story.append(Spacer(1, 6))
+            continue
+        # Normalise column count so Table doesn't raise.
+        width = max(len(r) for r in rows)
+        rows = [r + [""] * (width - len(r)) for r in rows]
+        tbl = Table(rows, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 7),
+            ("BOX", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("INNERGRID", (0, 0), (-1, -1), 0.15, colors.lightgrey),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F5F3FF")),
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 10))
+
+    try:
+        doc.build(story)
+    except Exception as e:  # noqa: BLE001
+        log.warning("reportlab build failed for xlsx=%s: %s", name, e)
+        return _text_to_pdf(
+            f"Could not render {name} as PDF preview.\n\n"
+            "Table layout exceeded the printable area. Try downloading "
+            "the original via the download button.".encode("utf-8"),
+            name,
+        )
+    return out.getvalue()
 
 
 def _office_to_pdf_or_415(blob: bytes, ext: str, name: str, pipeline: str) -> tuple[bytes, str]:
-    """xlsx / pptx / odt / rtf have no pragmatic fallback. Convert via LO or
-    raise a 415 with a useful hint."""
-    try:
-        pdf = _office_to_pdf_via_lo(blob, ext, name)
-        if _is_pdf(pdf) and len(pdf) >= 100:
-            log.info("libreoffice: ok %s=%s bytes=%d", ext, name, len(pdf))
-            return pdf, pipeline
-        raise RuntimeError(f"produced invalid PDF: {len(pdf)} bytes")
-    except subprocess.TimeoutExpired:
-        log.info("libreoffice timeout for %s — giving up", name)
-        raise HTTPException(504, f"LibreOffice timed out converting {name}. Try again or open locally.")
-    except Exception as e:
-        log.info("libreoffice failed for %s: %s", name, e)
-        raise HTTPException(415, f"Couldn't render {ext.upper()} preview: {e}")
+    """v58.13.132lc — .xlsx handled in-process. .pptx/.odt/.rtf remain
+    unsupported (no lightweight in-process renderer available). Callers
+    should fall through to the "download original" affordance."""
+    if pipeline == "xlsx_libreoffice" or pipeline == "xlsx_openpyxl":
+        pdf = _xlsx_to_pdf(blob, name)
+        log.info("xlsx_openpyxl: ok %s=%s bytes=%d", ext, name, len(pdf))
+        return pdf, "xlsx_openpyxl"
+    # .pptx / .odt / .rtf — no lightweight in-process renderer.
+    raise HTTPException(
+        415,
+        f"PDF preview not available for .{ext.lower()} files. "
+        "Please download the original.",
+    )
 
 
 # ────────────────── OCR utility (opt-in) ──────────────────
 
-def ocr_pdf_to_text(pdf_path: Path | str, lang: str = "eng", timeout: int = 90) -> str:
-    """Extract plaintext from a PDF. Tries `pdftotext` first (fast — works for
-    text-layer PDFs), falls back to Tesseract via Poppler's `pdftoppm` when
-    the file is image-only. **Not** wired into the upload path — call this
-    explicitly from a search-indexer job or admin tool.
+def _ensure_tesseract() -> bool:
+    """v58.13.132lc — lazy Tesseract check. Returns True when the
+    binary is on PATH; never tries to install on the fly (that was the
+    Emergent-flagged reinstall loop). Callers should degrade gracefully
+    when this returns False."""
+    return bool(shutil.which("tesseract"))
 
-    Raises FileNotFoundError if the binaries aren't installed."""
-    import shutil
+
+def ocr_pdf_to_text(pdf_path: Path | str, lang: str = "eng", timeout: int = 90) -> str:
+    """v58.13.132lc — Extract plaintext from a PDF using pymupdf's
+    in-process text layer, falling back to pytesseract OCR on
+    rasterised pages when the PDF has no text layer.
+
+    Removes the prior `pdftotext` / `pdftoppm` subprocess shellouts —
+    both are now handled in-process by pymupdf (which is already
+    installed for `pdf_photo_extractor.py`). Tesseract is still called
+    via pytesseract, but the binary presence is checked lazily and
+    the OCR pass is skipped (returning whatever text-layer text we
+    found, or "") when Tesseract is missing.
+
+    Never raises. Returns "" when the file is unreadable, missing, or
+    the OCR fallback is unavailable."""
     src = Path(pdf_path)
     if not src.exists():
-        raise FileNotFoundError(src)
-    if not shutil.which("pdftotext"):
-        raise FileNotFoundError("pdftotext (poppler-utils) not installed")
-    # Fast path — pdftotext.
-    res = subprocess.run(["pdftotext", "-layout", str(src), "-"],
-                         capture_output=True, timeout=timeout)
-    text = (res.stdout or b"").decode("utf-8", errors="replace").strip()
-    if text:
-        return text
-    # Slow path — rasterise + tesseract OCR.
-    if not shutil.which("pdftoppm") or not shutil.which("tesseract"):
+        log.info("ocr_pdf_to_text: file missing %s", src)
         return ""
-    with tempfile.TemporaryDirectory() as td:
-        td_p = Path(td)
-        subprocess.run(["pdftoppm", "-r", "200", str(src), str(td_p / "page"), "-png"],
-                       capture_output=True, timeout=timeout)
-        out_chunks: list[str] = []
-        for img in sorted(td_p.glob("page-*.png")):
-            r = subprocess.run(["tesseract", str(img), "-", "-l", lang],
-                               capture_output=True, timeout=timeout)
-            out_chunks.append((r.stdout or b"").decode("utf-8", errors="replace"))
-        return "\n".join(out_chunks).strip()
+    try:
+        import fitz  # pymupdf
+    except ImportError:
+        log.warning("ocr_pdf_to_text: pymupdf not installed")
+        return ""
+
+    text_parts: list[str] = []
+    pages_needing_ocr: list[int] = []
+    try:
+        doc = fitz.open(str(src))
+    except Exception as e:  # noqa: BLE001
+        log.info("ocr_pdf_to_text: pymupdf failed to open %s: %s", src, e)
+        return ""
+    try:
+        for i, page in enumerate(doc):
+            try:
+                txt = page.get_text() or ""
+            except Exception as e:  # noqa: BLE001
+                log.debug("ocr_pdf_to_text: page %d get_text failed: %s", i, e)
+                txt = ""
+            if txt.strip():
+                text_parts.append(txt)
+            else:
+                pages_needing_ocr.append(i)
+
+        # No OCR needed — return the text-layer content.
+        if not pages_needing_ocr:
+            return "\n".join(text_parts).strip()
+
+        # OCR fallback for image-only pages.
+        if not _ensure_tesseract():
+            log.info("ocr_pdf_to_text: tesseract missing, returning text-layer only "
+                       "(%d pages needed OCR)", len(pages_needing_ocr))
+            return "\n".join(text_parts).strip()
+        try:
+            import pytesseract
+            from PIL import Image
+        except ImportError as e:
+            log.warning("ocr_pdf_to_text: pytesseract/PIL missing: %s", e)
+            return "\n".join(text_parts).strip()
+
+        for i in pages_needing_ocr:
+            try:
+                page = doc[i]
+                pix = page.get_pixmap(dpi=200)
+                img = Image.frombytes(
+                    "RGB", (pix.width, pix.height), pix.samples,
+                )
+                ocr_text = pytesseract.image_to_string(img, lang=lang) or ""
+                if ocr_text.strip():
+                    text_parts.append(ocr_text)
+            except Exception as e:  # noqa: BLE001
+                log.debug("ocr_pdf_to_text: OCR page %d failed: %s", i, e)
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return "\n".join(text_parts).strip()
 
 
 # ────────────────── cache + dispatcher ──────────────────
@@ -428,9 +528,7 @@ async def _convert(doc: dict, blob: bytes) -> tuple[bytes, str]:
     pipeline = _pipeline_for(doc.get("mime"), doc.get("filename") or "")
     if not pipeline:
         ctype = doc.get("mime") or "application/octet-stream"
-        msg = (f"LibreOffice not installed — PDF preview not available for "
-               f"this format ({ctype})") if "officedocument" in ctype else \
-              f"PDF preview not available for {ctype}"
+        msg = f"PDF preview not available for {ctype}"
         raise HTTPException(415, msg)
     cached = await _cache_lookup(doc["id"], sha1, pipeline)
     if cached:
@@ -460,9 +558,12 @@ async def _convert(doc: dict, blob: bytes) -> tuple[bytes, str]:
     elif pipeline == "image": pdf = _img_to_pdf(blob)
     elif pipeline == "heic":  pdf = _heic_to_pdf(blob)
     elif pipeline == "text":  pdf = _text_to_pdf(blob, doc.get("filename") or "Document")
-    elif pipeline == "docx_libreoffice":
+    elif pipeline in {"docx_python", "docx_libreoffice"}:
+        # Legacy cache entries carry "docx_libreoffice" — both route to
+        # the same in-process renderer post-.132lc.
         pdf, pipeline = _docx_to_pdf(blob, doc.get("filename") or "Document")
-    elif pipeline in {"xlsx_libreoffice", "pptx_libreoffice", "odt_libreoffice", "rtf_libreoffice"}:
+    elif pipeline in {"xlsx_openpyxl", "xlsx_libreoffice",
+                       "pptx_libreoffice", "odt_libreoffice", "rtf_libreoffice"}:
         ext = pipeline.split("_", 1)[0]
         pdf, pipeline = _office_to_pdf_or_415(blob, ext, doc.get("filename") or f"Document.{ext}", pipeline)
     else:
@@ -726,21 +827,21 @@ async def file_pdf_bundle(body: BundleIn, user: dict = Depends(get_current_user)
     return Response(content=buf.getvalue(), media_type="application/pdf", headers=headers)
 
 
-# ────────────────── admin install hook (v146 — background job) ──────────────────
+# ────────────────── admin install hook (v146 → .132lc DEPRECATED) ──────────────────
 #
-# Prior to v146 this endpoint blocked the HTTP request for the full duration
-# of `apt-get install`, which on a first-time install fetches ~650 MB of
-# LibreOffice deps and takes 5–10 minutes. The public URL runs behind
-# Cloudflare + Kubernetes ingress, both of which enforce a ~100 s idle-read
-# timeout; the browser saw a 5xx while the backend kept installing to
-# completion server-side. Users experienced "install goes part-way then
-# stops" but the packages actually finished landing.
+# v58.13.132lc — Emergent's root-cause analysis pinned repeat
+# LibreOffice/Poppler/Tesseract apt reinstalls as the cause of the
+# pod SIGTERM cycle. The full apt-install machinery is now retired:
+#   · POST /admin/install-libreoffice → 410 Gone (with a friendly
+#     hint pointing at the new lightweight pipeline).
+#   · Auto-install-on-boot (`ensure_server_tools_or_install_bg`)
+#     downgraded to a pure status probe — never spawns apt.
+#   · GET /admin/system-tools + /admin/server-tools/health continue
+#     to work but now report python-docx / openpyxl / pymupdf /
+#     reportlab / tesseract-lazy as the runtime toolchain.
 #
-# v146 fix: POST returns 202 immediately with a job_id, and the subprocess
-# runs as a detached asyncio task. `_INSTALL_STATE` tracks live progress
-# (rolling last-50-lines log tail) so `GET /admin/server-tools/health`
-# can surface it. The frontend polls health every 5 s until
-# `install_running=false`.
+# `_INSTALL_STATE` is retained as an empty shim so any legacy poller
+# still sees a well-formed response and doesn't crash on missing keys.
 _INSTALL_STATE: Dict[str, Any] = {
     "install_running": False,
     "job_id": None,
@@ -748,267 +849,143 @@ _INSTALL_STATE: Dict[str, Any] = {
     "finished_at": None,
     "exit_code": None,
     "packages": None,
-    "log_tail": deque(maxlen=50),
+    "log_tail": deque(maxlen=1),
 }
-_INSTALL_WALL_CLOCK_S = 20 * 60   # 20-minute hard ceiling
 
 
 def _install_log_tail_str() -> str:
-    return "\n".join(_INSTALL_STATE["log_tail"])
+    return ""
 
 
-async def _run_apt_install(job_id: str, pkgs: list) -> None:
-    """Background task — runs `apt-get install` and streams stdout/stderr
-    line-by-line into the module-level `_INSTALL_STATE["log_tail"]` deque.
-    Enforces the 20-min wall-clock cap by SIGKILLing the subprocess."""
-    _INSTALL_STATE["log_tail"].append(
-        f"[paneltec] Job {job_id} — installing: {', '.join(pkgs)}"
-    )
-    cmd = [
-        "bash", "-lc",
-        # v151.1 — `dpkg --configure -a` first cleans up any interrupted
-        # prior install (e.g. an earlier apt run that was killed by a
-        # container refresh mid-transaction). Idempotent no-op on a clean
-        # system. Without it, apt-get refuses to proceed with "dpkg was
-        # interrupted, you must manually run 'dpkg --configure -a'".
-        f"dpkg --configure -a 2>&1 || true; "
-        f"apt-get update -qq && apt-get install -y --no-install-recommends "
-        f"{' '.join(pkgs)} 2>&1; echo '---'; "
-        f"which libreoffice || which soffice || true; "
-        f"echo '---'; which tesseract || true; "
-        f"echo '---'; which pdftotext || true",
-    ]
-    proc = None
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-
-        async def _reader():
-            assert proc is not None and proc.stdout is not None
-            while True:
-                line_b = await proc.stdout.readline()
-                if not line_b:
-                    return
-                line = line_b.decode("utf-8", errors="replace").rstrip()
-                if line:
-                    _INSTALL_STATE["log_tail"].append(line)
-
-        try:
-            await asyncio.wait_for(_reader(), timeout=_INSTALL_WALL_CLOCK_S)
-            rc = await proc.wait()
-        except asyncio.TimeoutError:
-            _INSTALL_STATE["log_tail"].append(
-                f"[paneltec] wall-clock timeout after {_INSTALL_WALL_CLOCK_S}s — killing subprocess"
-            )
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception as ke:
-                _INSTALL_STATE["log_tail"].append(f"[paneltec] kill failed: {ke}")
-            rc = -1
-
-        _INSTALL_STATE["exit_code"] = rc
-        _INSTALL_STATE["log_tail"].append(f"[paneltec] apt-get exited rc={rc}")
-    except Exception as e:
-        log.exception("install_libreoffice background task crashed")
-        _INSTALL_STATE["exit_code"] = -1
-        _INSTALL_STATE["log_tail"].append(f"[paneltec] background task crashed: {e}")
-    finally:
-        _INSTALL_STATE["install_running"] = False
-        _INSTALL_STATE["finished_at"] = datetime.now(timezone.utc).isoformat()
-
-
-# ────────────────── v151.1 — auto-install on backend boot ──────────────────
-#
-# WHY: Our pod runs the Emergent-managed base image
-# `mono_fullstack_base_image_cloud_arm:release-15062026-2` which does NOT
-# include LibreOffice / Tesseract / Poppler. The image's writable overlay
-# is tied to the container lifecycle — supervisor service restarts survive,
-# but any container refresh (memory pressure, forced Emergent update, node
-# reschedule) resets `/usr`, wiping the apt-installed packages we needed
-# for DOCX→PDF conversion and OCR. Users saw the Server Tools admin pill
-# regress to red after each container refresh (v146 first spotted it).
-#
-# Emergent doesn't expose a Dockerfile / apt-packages hook to us from
-# inside the pod (only `/app/.emergent/emergent.yml` which is an opaque
-# image reference). So the durable fix here is to detect the missing
-# tools every time the backend boots and dispatch the same apt-get task
-# that `POST /admin/install-libreoffice` uses. Fire-and-forget:
-# `on_startup` returns immediately and apt runs in the background. The
-# health endpoint's `install_running=true` + `log_tail` show progress
-# to any admin watching, without them touching a button.
 def ensure_server_tools_or_install_bg() -> Dict[str, Any]:
-    """Detect libreoffice/tesseract/poppler and kick off an async apt-get
-    if any are missing. Idempotent — a no-op if all tools are present or
-    if an install is already in flight. Fires-and-forgets; caller must
-    never await. Returns a small status dict for logging."""
-    import shutil
-    tools = {
-        "libreoffice": shutil.which("libreoffice") or shutil.which("soffice"),
-        "tesseract":   shutil.which("tesseract"),
-        "poppler":     shutil.which("pdftotext"),
+    """v58.13.132lc — probe-only. Returns a status dict but NEVER
+    spawns an apt subprocess. Preserves the signature so
+    `server.py::on_startup` can still call it if the guard is
+    ever re-enabled — it'll be a fast in-process check that
+    reports the health of the lightweight Python libs."""
+    ok = _lib_status()
+    missing = [k for k, v in ok.items() if not v.get("installed")]
+    return {
+        "missing": missing,
+        "action": "noop",
+        "reason": "lightweight libs — no apt install needed",
+        "libs": ok,
     }
-    missing = [name for name, path in tools.items() if not path]
-
-    if not missing:
-        return {"missing": [], "action": "noop", "reason": "all tools present"}
-
-    if _INSTALL_STATE.get("install_running"):
-        return {
-            "missing": missing,
-            "action": "skip",
-            "reason": "install already running",
-            "job_id": _INSTALL_STATE.get("job_id"),
-        }
-
-    # Always install the full toolchain so a partial wipe doesn't leave us
-    # with mismatched versions. Same package list as the manual endpoint.
-    pkgs = [
-        "libreoffice-core", "libreoffice-writer",
-        "libreoffice-calc", "libreoffice-impress",
-        "tesseract-ocr", "poppler-utils",
-    ]
-    job_id = str(uuid.uuid4())
-    started = datetime.now(timezone.utc).isoformat()
-    _INSTALL_STATE.update({
-        "install_running": True,
-        "job_id": job_id,
-        "started_at": started,
-        "finished_at": None,
-        "exit_code": None,
-        "packages": list(pkgs),
-    })
-    _INSTALL_STATE["log_tail"].clear()
-    _INSTALL_STATE["log_tail"].append(
-        f"[paneltec] auto-install on boot — missing: {', '.join(missing)}"
-    )
-    # Fire-and-forget. `_run_apt_install` handles its own exceptions and
-    # always flips `install_running` back to False in its finally block.
-    asyncio.create_task(_run_apt_install(job_id, pkgs))
-    return {"missing": missing, "action": "queued", "job_id": job_id}
 
 
-
-@router.post("/admin/install-libreoffice", status_code=202)
-async def install_libreoffice(
-    include_ocr: bool = Query(True, description="Also install Tesseract + Poppler for OCR"),
-    user: dict = Depends(get_current_user),
-):
-    """Admin-only one-click toolchain installer. Kicks off apt-get in a
-    background asyncio task and returns 202 immediately with a job_id so
-    the caller can poll `/admin/server-tools/health` for progress —
-    apt-get runs for 5–10 min on a cold cache, longer than any edge
-    HTTP proxy will hold a connection open."""
+@router.post("/admin/install-libreoffice", status_code=410)
+async def install_libreoffice(user: dict = Depends(get_current_user)):
+    """v58.13.132lc — DEPRECATED. Returns 410 Gone; the doc-conversion
+    pipeline no longer needs LibreOffice / Poppler / Tesseract to be
+    apt-installed. python-docx + openpyxl + reportlab + pymupdf handle
+    everything in-process."""
     if user.get("role") != "admin":
-        raise HTTPException(403, "Only admin can install system packages")
-    if _INSTALL_STATE["install_running"]:
-        raise HTTPException(
-            409,
-            {
-                "detail": "Install already running",
-                "job_id": _INSTALL_STATE["job_id"],
-                "started_at": _INSTALL_STATE["started_at"],
-            },
-        )
-    pkgs = [
-        "libreoffice-core", "libreoffice-writer",
-        "libreoffice-calc", "libreoffice-impress",
-    ]
-    if include_ocr:
-        pkgs += ["tesseract-ocr", "poppler-utils"]
-
-    job_id = str(uuid.uuid4())
-    started = datetime.now(timezone.utc).isoformat()
-    _INSTALL_STATE.update({
-        "install_running": True,
-        "job_id": job_id,
-        "started_at": started,
-        "finished_at": None,
-        "exit_code": None,
-        "packages": list(pkgs),
-    })
-    _INSTALL_STATE["log_tail"].clear()
-
-    asyncio.create_task(_run_apt_install(job_id, pkgs))
-
-    return {
-        "job_id": job_id,
-        "started_at": started,
-        "install_running": True,
-        "packages": pkgs,
-    }
+        raise HTTPException(403, "Admin only")
+    raise HTTPException(
+        410,
+        "This endpoint is retired in v58.13.132lc. Document conversion "
+        "runs in-process via python-docx / openpyxl / reportlab / "
+        "pymupdf and no longer requires LibreOffice or Poppler to be "
+        "installed on the pod.",
+    )
 
 
-async def _tool_status() -> dict:
-    """which-style status of optional server toolchains."""
-    async def _which(name: str) -> str | None:
-        p = await asyncio.create_subprocess_exec(
-            "bash", "-lc", f"which {name} 2>/dev/null || true",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        out, _ = await p.communicate()
-        path = out.decode().strip().splitlines()[0] if out else ""
-        return path or None
-
-    async def _version(bin_path: str, flag: str = "--version") -> str | None:
-        if not bin_path:
+def _lib_status() -> dict:
+    """Report presence + version of the pure-Python doc toolchain."""
+    def _v(mod_name: str) -> Optional[str]:
+        try:
+            import importlib
+            m = importlib.import_module(mod_name)
+            return getattr(m, "__version__", None) or "installed"
+        except ImportError:
             return None
-        p = await asyncio.create_subprocess_exec(
-            "bash", "-lc", f"{bin_path} {flag} 2>&1 | head -1",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        out, _ = await p.communicate()
-        return (out.decode().strip() or None)
 
-    lo = await _which("libreoffice") or await _which("soffice")
-    ts = await _which("tesseract")
-    pp = await _which("pdftotext")
+    def _one(name: str, mod: str) -> dict:
+        v = _v(mod)
+        return {"installed": bool(v), "path": mod, "version": v}
+
     return {
-        "libreoffice": {"installed": bool(lo), "path": lo, "version": await _version(lo) if lo else None},
-        "tesseract":   {"installed": bool(ts), "path": ts, "version": await _version(ts) if ts else None},
-        "poppler":     {"installed": bool(pp), "path": pp, "version": await _version(pp, "-v") if pp else None},
+        # Doc conversion — python-docx replaces LibreOffice for .docx.
+        "python-docx": _one("python-docx", "docx"),
+        # xlsx — openpyxl replaces LibreOffice for .xlsx.
+        "openpyxl":    _one("openpyxl", "openpyxl"),
+        # PDF rasterisation + text extraction — pymupdf replaces poppler.
+        "pymupdf":     _one("pymupdf", "fitz"),
+        # PDF composition — reportlab (always installed).
+        "reportlab":   _one("reportlab", "reportlab"),
+        # OCR — tesseract binary (system dep) + pytesseract wrapper.
+        # Kept lazy — only invoked on-demand via `_ensure_tesseract()`.
+        "tesseract":   {
+            "installed": bool(shutil.which("tesseract")),
+            "path": shutil.which("tesseract"),
+            "version": None,
+        },
     }
 
 
 @router.get("/admin/system-tools")
 async def system_tools(user: dict = Depends(get_current_user)):
-    """Status of optional server toolchains (admin-only). Drives the
-    Settings → System page in the UI."""
+    """v58.13.132lc — reports the pure-Python doc toolchain instead of
+    LibreOffice / Poppler / Tesseract binaries. Admin-only. The
+    Settings → System page uses this to colour its status chips.
+
+    Backward-compat: the legacy `libreoffice`, `tesseract`, `poppler`
+    keys are ALSO surfaced under `legacy_tools` so any frontend
+    version still reading them doesn't crash. New surface should read
+    from the top-level `tools` map."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
-    return {"tools": await _tool_status()}
+    libs = _lib_status()
+    legacy = {
+        # We no longer depend on these; report as "ok" via the pure-
+        # Python replacements so the UI doesn't render a red chip.
+        "libreoffice": {"installed": libs["python-docx"]["installed"],
+                         "path": "python-docx (in-process)",
+                         "version": libs["python-docx"]["version"]},
+        "tesseract":   libs["tesseract"],
+        "poppler":     {"installed": libs["pymupdf"]["installed"],
+                         "path": "pymupdf (in-process)",
+                         "version": libs["pymupdf"]["version"]},
+    }
+    return {"tools": libs, "legacy_tools": legacy}
 
 
 @router.get("/admin/server-tools/health")
 async def server_tools_health(user: dict = Depends(get_current_user)):
-    """Phase 3.13 — health-check shape requested by the Settings page.
-    Returns `{libreoffice:{ok,version,path}, tesseract:{...}, poppler:{...}}`.
-    Same data as `/admin/system-tools` but normalised to the `ok` key the
-    UI uses to colour the chip green/red without a key-mapping helper.
+    """v58.13.132lc — health-check shape used by the Settings page.
 
-    v146 — also surfaces the background install job progress so the UI
-    can poll a single endpoint and show a live log tail while apt-get
-    is still running (`install_running`, `install_job_id`,
-    `install_log_tail`, `install_exit_code`, `install_started_at`,
-    `install_finished_at`)."""
+    Legacy keys (`libreoffice`, `tesseract`, `poppler`) preserved for
+    UI compatibility; each now reports the lightweight replacement's
+    status. `install_*` keys are frozen — no background installer
+    runs anymore. Admin-only."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
-    s = await _tool_status()
-    def _norm(t: dict) -> dict:
-        return {"ok": bool(t.get("installed")), "version": t.get("version"), "path": t.get("path")}
+    libs = _lib_status()
+
+    def _legacy_norm(installed: bool, version: Optional[str],
+                      replacement: str) -> dict:
+        return {"ok": installed, "version": version, "path": replacement}
+
     return {
-        "libreoffice": _norm(s["libreoffice"]),
-        "tesseract":   _norm(s["tesseract"]),
-        "poppler":     _norm(s["poppler"]),
-        "install_running":     bool(_INSTALL_STATE["install_running"]),
-        "install_job_id":      _INSTALL_STATE["job_id"],
-        "install_started_at":  _INSTALL_STATE["started_at"],
-        "install_finished_at": _INSTALL_STATE["finished_at"],
-        "install_exit_code":   _INSTALL_STATE["exit_code"],
-        "install_log_tail":    _install_log_tail_str() or None,
+        # Legacy shape.
+        "libreoffice": _legacy_norm(libs["python-docx"]["installed"],
+                                       libs["python-docx"]["version"],
+                                       "python-docx (in-process)"),
+        "tesseract":   _legacy_norm(libs["tesseract"]["installed"],
+                                       libs["tesseract"]["version"],
+                                       libs["tesseract"]["path"] or "tesseract (lazy)"),
+        "poppler":     _legacy_norm(libs["pymupdf"]["installed"],
+                                       libs["pymupdf"]["version"],
+                                       "pymupdf (in-process)"),
+        # New shape — full pure-Python toolchain status.
+        "libs": libs,
+        # Retired installer surface (kept for frontend compat).
+        "install_running":     False,
+        "install_job_id":      None,
+        "install_started_at":  None,
+        "install_finished_at": None,
+        "install_exit_code":   None,
+        "install_log_tail":    None,
     }
 
 
@@ -1026,7 +1003,7 @@ OCR_INDEX_MAX_BYTES = 50 * 1024 * 1024
 
 async def _ocr_index_file(file_id: str, pdf_path: Path) -> None:
     """Background task: extract text and persist to doc_files.search_text.
-    Cheap when the PDF has a text layer (pdftotext fast path); slow only
+    Cheap when the PDF has a text layer (pymupdf fast path); slow only
     when tesseract has to OCR rasterised pages."""
     try:
         existing = await db.doc_files.find_one({"id": file_id}, {"_id": 0, "search_text": 1, "size": 1})

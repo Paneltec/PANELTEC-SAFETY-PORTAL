@@ -190,12 +190,19 @@ async def health():
     """v58.13.83 — real dependency probes.
 
     Critical deps (mongo, disk) failing → 503 so K8s / Cloudflare load
-    balancer can pull the pod out of rotation. Soft deps (libreoffice,
-    tesseract, poppler) missing → 200 with the missing name added to
+    balancer can pull the pod out of rotation. Soft deps (tesseract only,
+    as of .132lc) missing → 200 with the missing name added to
     `degraded` so the top-bar health pill and admin UI can show a warning
     without triggering a health-check failover. 2-second aggregate cap
     prevents this endpoint from being a DoS vector (health probes are
-    unauthenticated by design)."""
+    unauthenticated by design).
+
+    v58.13.132lc — Dropped `libreoffice` and `poppler` from the soft-dep
+    probe. Doc/PDF handling now runs in-process (python-docx / openpyxl
+    / reportlab / pymupdf), so those two binaries never need to be
+    apt-installed. Only Tesseract remains a soft dep — it's used for
+    scanned-image OCR fallback and, if missing, callers degrade
+    gracefully to text-layer-only extraction."""
     import asyncio, shutil, time as _time
     from db import db as _db
 
@@ -267,13 +274,16 @@ async def health():
     except Exception as exc:  # noqa: BLE001
         checks["disk_app"] = {"ok": False, "error": str(exc)[:120]}
 
-    # 4-6. Soft deps — presence check only (cheap).
-    for name, cmd in (("libreoffice", "soffice"), ("tesseract", "tesseract"), ("poppler", "pdftotext")):
+    # 4-6. Soft deps — v58.13.132lc: only Tesseract remains a "soft dep"
+    # since it's optional (used for scanned-PDF OCR fallback). LibreOffice
+    # + Poppler are no longer required — all doc/PDF handling runs
+    # in-process via python-docx / openpyxl / reportlab / pymupdf.
+    for name, cmd in (("tesseract", "tesseract"),):
         path = shutil.which(cmd)
         if path:
             checks[name] = {"ok": True, "path": path}
         else:
-            checks[name] = {"ok": False, "reason": f"{cmd} not on PATH"}
+            checks[name] = {"ok": False, "reason": f"{cmd} not on PATH (OCR fallback disabled)"}
             degraded.append(name)
 
     # 7. Backup lock health — v58.13.132ks. Surfaces the persistent

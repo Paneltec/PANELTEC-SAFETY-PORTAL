@@ -1514,35 +1514,56 @@ async def retry_extract_ai(
         import io as _io
         images: list = []
         if mime_l == "application/pdf" or filename.lower().endswith(".pdf"):
-            from pdf2image import convert_from_bytes
-            pages = convert_from_bytes(data, dpi=180, first_page=1, last_page=8, fmt="jpeg")
-            for img in pages:
-                buf = _io.BytesIO(); img.save(buf, "JPEG", quality=75)
-                images.append(base64.b64encode(buf.getvalue()).decode())
+            # v58.13.132lc — pdf2image (Poppler) → pymupdf in-process.
+            import fitz  # pymupdf
+            with fitz.open(stream=data, filetype="pdf") as pdf:
+                for i, page in enumerate(pdf):
+                    if i >= 8:
+                        break
+                    zoom = 180.0 / 72.0
+                    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                    jpeg = pix.tobytes("jpeg", jpg_quality=75)
+                    images.append(base64.b64encode(jpeg).decode())
         elif mime_l.startswith("image/"):
             img = Image.open(_io.BytesIO(data))
             if img.mode not in ("L", "RGB"): img = img.convert("RGB")
             buf = _io.BytesIO(); img.save(buf, "JPEG", quality=80)
             images.append(base64.b64encode(buf.getvalue()).decode())
+        elif filename.lower().endswith(".docx") or mime_l == \
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            # v58.13.132lc — .docx AI retry: pipe through file_pdf's
+            # in-process python-docx→reportlab pipeline (was LibreOffice).
+            from file_pdf import _docx_to_pdf
+            import fitz  # pymupdf
+            pdf_bytes, _ = _docx_to_pdf(data, filename or "document.docx")
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
+                for i, page in enumerate(pdf):
+                    if i >= 8:
+                        break
+                    zoom = 180.0 / 72.0
+                    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                    jpeg = pix.tobytes("jpeg", jpg_quality=75)
+                    images.append(base64.b64encode(jpeg).decode())
+        elif filename.lower().endswith(".xlsx") or mime_l == \
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+            from file_pdf import _xlsx_to_pdf
+            import fitz  # pymupdf
+            pdf_bytes = _xlsx_to_pdf(data, filename or "document.xlsx")
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
+                for i, page in enumerate(pdf):
+                    if i >= 8:
+                        break
+                    zoom = 180.0 / 72.0
+                    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                    jpeg = pix.tobytes("jpeg", jpg_quality=75)
+                    images.append(base64.b64encode(jpeg).decode())
         else:
-            import subprocess, tempfile, os as _os
-            with tempfile.TemporaryDirectory() as tmp:
-                src = _os.path.join(tmp, filename or "doc.bin")
-                with open(src, "wb") as f: f.write(data)
-                r = subprocess.run(
-                    ["libreoffice", "--headless", "--convert-to", "pdf",
-                     "--outdir", tmp, src],
-                    capture_output=True, timeout=60,
-                )
-                if r.returncode != 0:
-                    raise HTTPException(415, "AI retry: LibreOffice conversion failed")
-                pdf_path = _os.path.join(tmp, _os.path.splitext(_os.path.basename(src))[0] + ".pdf")
-                if not _os.path.exists(pdf_path):
-                    raise HTTPException(415, "AI retry: no PDF produced")
-                from pdf2image import convert_from_path
-                for img in convert_from_path(pdf_path, dpi=180, first_page=1, last_page=8, fmt="jpeg"):
-                    buf = _io.BytesIO(); img.save(buf, "JPEG", quality=75)
-                    images.append(base64.b64encode(buf.getvalue()).decode())
+            raise HTTPException(
+                415,
+                "AI retry: this file format is not supported for "
+                "in-process rasterisation. Please download the "
+                "original and re-upload as PDF.",
+            )
         return images
 
     try:
