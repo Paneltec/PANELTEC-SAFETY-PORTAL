@@ -24,6 +24,9 @@ TENANT-SIDE ALREADY DONE:
 * .132kz — /entrypoint.sh fuser-kill orphan ports 3000/8001/27017 pre-boot
 * .132kz — [program:frontend] wraps yarn start in `fuser -k 3000/tcp; sleep 1;
             exec yarn start` so mid-life restarts self-heal
+* .132kz — raised Node --max-old-space-size 1024 → 4096 on frontend to stop
+            V8 mark-compact OOM during CRA compile (masking the orphan class
+            in some cycles)
 Symptom 2 will no longer surface as an outage, but the root symptom stays.
 
 TENANT-SIDE RULED OUT:

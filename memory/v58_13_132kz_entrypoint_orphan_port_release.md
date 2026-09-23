@@ -73,19 +73,35 @@ Idempotent, non-fatal. Runs once per container boot — covers the
 hard-restart case. Only sweeps ports we own; 8010 / 3001 / 8020
 are launched later in the entrypoint and are left alone.
 
-### 2. `[program:frontend]` — wrap `yarn start`
+### 2. `[program:frontend]` — wrap `yarn start` + raise Node heap
 
 ```
 command=/bin/sh -c "fuser -k 3000/tcp 2>/dev/null; sleep 1; exec yarn start"
+environment=HOST="0.0.0.0",PORT="3000",NODE_OPTIONS="--max-old-space-size=4096",
 ```
 
-Runs on every frontend restart mid-life — this is the exact window
-(mid-life supervisord respawn + orphan surviving) that produced
-the incident. `fuser -k` is a no-op when :3000 is already free,
-so this stays idempotent across normal restarts. `exec` avoids
-leaving a `/bin/sh` in the process tree.
+Two changes on this line:
 
-## Verification (live simulation)
+- **Command wrapper** (primary `.132kz` fix): runs on every
+  frontend restart mid-life. `fuser -k` is a no-op when :3000 is
+  already free, so this stays idempotent. `exec` avoids leaving
+  a `/bin/sh` in the process tree.
+
+- **`NODE_OPTIONS=--max-old-space-size=4096`** (secondary
+  finding, same ship, 2026-09-23 early UTC): the original config
+  had `NODE_OPTIONS="--max-old-space-size=1024"` — an intentional
+  cgroup-memory guard, but too small for the current CRA build
+  (~4000 modules → V8 GC thrash → `FATAL ERROR: Ineffective
+  mark-compacts near heap limit / Allocation failed - JavaScript
+  heap out of memory` in `/var/log/supervisor/frontend.err.log`).
+  Container has 32 GB RAM and only ~7-8 GB in use, so raising the
+  cap to 4 GB is safe and stops the crash loop. This was masking
+  the port-3000 orphan class in some restarts — every attempt was
+  OOMing on module 3800-ish before it could bind :3000.
+
+## Verification (live simulation + real recovery)
+
+### Port-3000 orphan simulation
 
 ```
 # Bind :3000 with a decoy Python listener before restart
@@ -98,13 +114,41 @@ $ sudo supervisorctl status frontend
 frontend                         RUNNING   pid 1129, uptime 0:02:39
 $ curl -sI -o /dev/null -w "%{http_code}\n" http://localhost:3000/
 200
+```
+
+Decoy killed by `fuser -k`. Frontend rebound cleanly.
+
+### Node heap bump (real, post-simulation)
+
+After the wrapper landed and the pod cycled again, the secondary
+OOM signature surfaced. Config changed 1024 → 4096, then:
+
+```
+$ sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl restart frontend
+frontend: changed
+frontend: stopped
+frontend: updated process group
+frontend: started
+
+# Verify the running craco actually sees the new limit
+$ cat /proc/$(pgrep -f 'craco/dist/scripts/start')/environ | tr '\0' '\n' | grep NODE_OPTIONS
+NODE_OPTIONS=--max-old-space-size=4096
+
+# ~3 min later CRA finished compiling
+$ tail /var/log/supervisor/frontend.out.log
+Compiled successfully!
+You can now view frontend in the browser.
+  Local:            http://localhost:3000
+webpack compiled successfully
+
+$ curl -sI -o /dev/null -w "%{http_code}\n" http://localhost:3000/
+200
 $ curl -sI -o /dev/null -w "%{http_code}\n" https://whs-compliance.preview.emergentagent.com/
 200
 ```
 
-Decoy process was killed by `fuser -k` (verified via `ps -p ${DECOY}`
-returned no such process). Frontend rebinding was clean. External
-preview URL responded 200.
+Both the local and external URLs are responding 200. Preview URL
+is UP for the user.
 
 ## Emergent diagnostic bundle update
 
