@@ -267,9 +267,22 @@ async def _run_dry(run_id: str) -> Dict[str, Any]:
 async def _run_copy(run_id: str, agent_id: str) -> None:
     """Real bytes-copy. Never crashes the run on a per-file error
     — collect + continue. Status updated every batch."""
-    from integrations_dropbox import _get_dbx_client  # lazy
+    # v58.13.132md — Use the TEAM-NAMESPACE-scoped Dropbox client
+    # (via `dropbox_folder_mirror._get_dbx_root_client`, which applies
+    # `with_path_root(namespace_id=$DROPBOX_ROOT_NAMESPACE_ID)`). The
+    # `dropbox_files_enum` collection was populated by `.132lj` using
+    # this same team-namespace client, so every stored path is a
+    # team-space path. The default `integrations_dropbox._get_dbx_client`
+    # resolves paths through the *personal* namespace instead — which
+    # is why 40/40 sampled enum paths returned `not_found` during the
+    # first real run (.132lm/.132mb attempt). Personal namespace shows
+    # a synthetic `/Paneltec-General Administration (Team folder
+    # conflict)` folder that doesn't contain the same subtree; team
+    # namespace shows the real `/Paneltec-General Administration`
+    # tree that the enum captured.
+    from dropbox_folder_mirror import _get_dbx_root_client
     import nas_client
-    client = _get_dbx_client()
+    client = _get_dbx_root_client()
     if not client:
         await _status_upsert(run_id, {
             "state": "failed",

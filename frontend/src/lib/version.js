@@ -1,5 +1,74 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132md — Dropbox migration: team-namespace client fix
+// (one-line, backend-only, no frontend UI changes).
+//
+// The `.132mb` migration attempt hammered Dropbox at ~5 req/sec with
+// zero `fetch_and_put` ops enqueued and zero bytes copied. RCA on
+// evidence: 30/30 (then 40/40 in a second sample) `dropbox_files_enum`
+// paths returned `ApiError('path', 'not_found')` from
+// `client.files_get_temporary_link(path)`. Initially misdiagnosed as
+// a stale Dropbox enum (folder renamed to
+// `/Paneltec-General Administration (Team folder conflict)`). Further
+// probing found the truth: the "(Team folder conflict)" suffix is a
+// *personal-namespace-only* artifact. Under the TEAM namespace (which
+// is what Stephen actually sees in his Dropbox UI), the folder is
+// still `/Paneltec-General Administration` — no suffix.
+//
+// Root cause: `dropbox_bytes_copy._run_copy()` imported the DEFAULT
+// Dropbox client factory `integrations_dropbox._get_dbx_client()`
+// (personal namespace). The enum was populated by `.132lj` using the
+// team-scoped `dropbox_folder_mirror._get_dbx_root_client()` which
+// applies `with_path_root(namespace_id=$DROPBOX_ROOT_NAMESPACE_ID)`.
+// Every enum path is therefore a team-space path; the personal
+// namespace can't resolve them.
+//
+// Fix (one file, ~10 lines including comment):
+//   backend/dropbox_bytes_copy.py:270 —
+//     from integrations_dropbox import _get_dbx_client  ← removed
+//     from dropbox_folder_mirror import _get_dbx_root_client
+//     client = _get_dbx_root_client()
+//
+// Proof it will work:
+//   · Team-namespace client sample of 40 random enum paths →
+//     40/40 resolve, 0 not_found, 0 other errors.
+//   · Team-namespace client on the exact `plugins.qmltypes` enum path
+//     that failed with `not_found` under the default client →
+//     returns a valid temp-link (link_len=267).
+//   · `files_list_folder("")` under team namespace lists
+//     `/Paneltec-General Administration` cleanly (no suffix), 6
+//     entries at root, matches Stephen's UI.
+//
+// Belt-and-braces already in place from `.132mb`:
+//   · `_BACKGROUND_TASKS` set holds strong refs against
+//     Python 3.11's WeakSet _all_tasks GC.
+//   · Outer try/except in `run_copy_job` persists `state=failed` +
+//     traceback so future silent deaths surface via the status
+//     endpoint.
+//   · `_maybe_flush()` heartbeat fires before every `continue` so
+//     failure bursts don't look identical to a healthy silent run.
+//
+// Dry-run against the existing enum (fired before this ship, run_id
+// `copy-189cbad17d0a`, 0.47 s):
+//   · raw_files            145,035   / raw_bytes            285.2 GB
+//   · would_copy_files      98,520   / would_copy_bytes     255.1 GB
+//   · Bevs PC Backup excluded 30,391 files / 18.0 GB
+//   · Jago Crt CCTV excluded  16,122 files / 12.1 GB
+//   · Scoyttsdale CCTV excluded    2 files / 2 MB
+//   · kept_pitt_sherry_swms_seen             ✅ true
+//   · kept_arthurs_lake_swms_seen            ✅ true
+//   · taswater_line_viewer_files_kept        ✅ 463 (≥400)
+//   · callibration_certificates_zip_migrated ✅ true, 14.7 GB
+// Delta vs previous dry-run: zero. Enum has not drifted.
+//
+// No enum re-run performed — the existing snapshot is correct.
+//
+// Not shipped in this commit:
+//   · `.132me` — auth-lockout time-window decay + login-attempts
+//     forensic trail. Diagnosis complete, ~15 lines of code drafted,
+//     awaiting user green-light. Kept out of `.132md` so the migration
+//     hotfix stays surgical.
+
 // v58.13.132mb — Document Library: Phase 2 web UI + Dropbox
 // migration task-guard hotfix.
 //
@@ -14885,7 +14954,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mb';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132md';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14906,7 +14975,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mb';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132mb';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132md';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
