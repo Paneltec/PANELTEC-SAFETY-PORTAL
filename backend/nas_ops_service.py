@@ -61,6 +61,19 @@ def _canonical(op: str, path: str, body_b64: str, enqueued_at: str) -> bytes:
     return f"{op}|{path}|{body_b64 or ''}|{enqueued_at}".encode("utf-8")
 
 
+def _canonical_fetch(path: str, source_url: str, expected_sha256: str,
+                       expected_size: int, enqueued_at: str) -> bytes:
+    """v58.13.132lj — canonical for the streaming `fetch_and_put`
+    op. Body bytes never appear in the signature or the JSON
+    payload — instead we sign the source_url the agent will pull
+    from, plus expected sha256 + size so the agent knows what it
+    should end up with. Order: op|path|url|sha|size|enqueued_at."""
+    return (
+        f"fetch_and_put|{path}|{source_url}|{expected_sha256}|"
+        f"{expected_size}|{enqueued_at}"
+    ).encode("utf-8")
+
+
 def _sign(payload: bytes) -> str:
     secret = os.environ.get(_HMAC_SECRET_ENV, "").strip()
     if not secret:
@@ -140,7 +153,19 @@ async def enqueue_op(
         )
     now = _now_iso()
     now_ts = datetime.now(timezone.utc)
-    signature = _sign(_canonical(op, path, body_b64 or "", now))
+    # v58.13.132lj — dispatch on op for the canonical signature.
+    # `fetch_and_put` signs source_url + expected sha/size instead
+    # of body_b64 (which is always empty for the streaming path).
+    if op == "fetch_and_put":
+        m = meta or {}
+        signature = _sign(_canonical_fetch(
+            path, m.get("source_url", ""),
+            m.get("expected_sha256", ""),
+            int(m.get("expected_size", 0)),
+            now,
+        ))
+    else:
+        signature = _sign(_canonical(op, path, body_b64 or "", now))
     doc = {
         "id": str(uuid.uuid4()),
         "agent_id": aid,

@@ -339,16 +339,41 @@ def _nas_canonical(op: str, path: str, body_b64: str,
     return f"{op}|{path}|{body_b64 or ''}|{enqueued_at}".encode("utf-8")
 
 
+def _nas_canonical_fetch(path: str, source_url: str,
+                            expected_sha256: str, expected_size: int,
+                            enqueued_at: str) -> bytes:
+    """v58.13.132lj — streaming-op canonical. Must match the pod's
+    `nas_ops_service._canonical_fetch()`."""
+    return (
+        f"fetch_and_put|{path}|{source_url}|{expected_sha256}|"
+        f"{expected_size}|{enqueued_at}"
+    ).encode("utf-8")
+
+
 def _nas_verify_hmac(op_row: Dict[str, Any]) -> bool:
     if not _NAS_HMAC_SECRET:
         log.warning("[nas-ops] NAS_AGENT_SHARED_SECRET missing — "
                        "refusing to execute op id=%s", op_row.get("id"))
         return False
+    op = op_row.get("op") or ""
+    if op == "fetch_and_put":
+        m = op_row.get("meta") or {}
+        payload = _nas_canonical_fetch(
+            op_row.get("path", ""),
+            m.get("source_url", ""),
+            m.get("expected_sha256", ""),
+            int(m.get("expected_size", 0)),
+            op_row.get("enqueued_at", ""),
+        )
+    else:
+        payload = _nas_canonical(
+            op, op_row.get("path", ""),
+            op_row.get("body_b64") or "",
+            op_row.get("enqueued_at", ""),
+        )
     expected = _hmac.new(
         _NAS_HMAC_SECRET.encode("utf-8"),
-        _nas_canonical(op_row.get("op", ""), op_row.get("path", ""),
-                       op_row.get("body_b64") or "",
-                       op_row.get("enqueued_at", "")),
+        payload,
         _hashlib.sha256,
     ).hexdigest()
     return _hmac.compare_digest(expected, op_row.get("hmac") or "")
@@ -485,6 +510,91 @@ def _nas_execute(op_row: Dict[str, Any]) -> Dict[str, Any]:
                 pass
             return {"status": "done",
                     "result": {"path": path, "deleted": True}}
+
+        if op == "fetch_and_put":
+            # v58.13.132lj — streaming transport. Download bytes
+            # DIRECTLY from `meta.source_url` to a temp file next
+            # to the destination, verify sha256 matches
+            # `meta.expected_sha256`, then atomic-rename into
+            # place. Body bytes never traverse the HTTP body of
+            # our poll response. Streams in 1 MB chunks so memory
+            # stays flat even on multi-GB files.
+            m = op_row.get("meta") or {}
+            source_url = m.get("source_url") or ""
+            expected_sha = m.get("expected_sha256") or ""
+            expected_size = int(m.get("expected_size") or 0)
+            if not source_url:
+                return {"status": "error",
+                        "error": "fetch_and_put missing meta.source_url"}
+            fp = _nas_safe_path(path)
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            tmp = fp.with_name(fp.name + ".part")
+            h = _hashlib.sha256()
+            got_bytes = 0
+            try:
+                # `-A` UA header so Cloudflare doesn't 502 the pull
+                # (same bypass we shipped for install.py in .132li).
+                with requests.get(
+                    source_url,
+                    stream=True,
+                    headers={"User-Agent": "Mozilla/5.0 paneltec-agent"},
+                    timeout=(30, 900),  # (connect, read) — 15 min
+                ) as r:
+                    if r.status_code != 200:
+                        return {"status": "error",
+                                "error": f"source HTTP {r.status_code}"}
+                    with tmp.open("wb") as fh:
+                        for chunk in r.iter_content(chunk_size=1024 * 1024):
+                            if not chunk:
+                                continue
+                            fh.write(chunk)
+                            h.update(chunk)
+                            got_bytes += len(chunk)
+            except requests.RequestException as e:
+                try:
+                    if tmp.exists():
+                        tmp.unlink()
+                except OSError:
+                    pass
+                return {"status": "error",
+                        "error": f"download failed: {type(e).__name__}: {e}"}
+
+            got_sha = h.hexdigest()
+            if expected_size and got_bytes != expected_size:
+                try: tmp.unlink()
+                except OSError: pass
+                return {"status": "error",
+                        "error": (
+                            f"size mismatch: got={got_bytes} "
+                            f"expected={expected_size}"
+                        )}
+            if expected_sha and got_sha != expected_sha:
+                try: tmp.unlink()
+                except OSError: pass
+                return {"status": "error",
+                        "error": (
+                            f"sha256 mismatch: got={got_sha[:12]}… "
+                            f"expected={expected_sha[:12]}…"
+                        )}
+            # Atomic rename into place.
+            tmp.replace(fp)
+            # Sidecar meta for reconciliation (Phase 2b bytes-copy
+            # will populate `{dropbox_id, dropbox_rev, ...}`).
+            side_meta = {k: v for k, v in m.items() if k not in (
+                "source_url", "expected_sha256", "expected_size",
+            )}
+            if side_meta:
+                mp = fp.with_name(fp.name + ".meta.json")
+                try:
+                    mp.write_text(json.dumps(side_meta, indent=2))
+                except OSError as e:
+                    log.warning("[nas-ops] meta sidecar write failed "
+                                   "%s: %s", mp, e)
+            st = fp.stat()
+            return {"status": "done", "result": {
+                "path": path, "size": st.st_size,
+                "sha256": got_sha, "mtime": int(st.st_mtime),
+            }}
 
         return {"status": "error",
                 "error": f"unknown op: {op!r}"}

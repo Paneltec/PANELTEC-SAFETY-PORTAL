@@ -288,6 +288,67 @@ def _hash_token(t: str) -> str:
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
 
+# ── v58.13.132lj — streaming-transport probe blob ────────────
+# Signed one-shot URL the agent can pull `size` random bytes from
+# for the enumeration ship's large-file transport probe. Never
+# used by real Dropbox migration (Ship 2 will call
+# `dbx.files.get_temporary_link` for the real bytes). Blobs are
+# generated on demand from a deterministic seed so we don't hold
+# 128 MB in pod memory — `iter_stream()` yields chunks.
+PUBLIC_HUB_URL_FOR_AGENTS = (
+    os.environ.get("PUBLIC_HUB_URL")
+    or os.environ.get("FRONTEND_PUBLIC_URL")
+    or os.environ.get("REACT_APP_BACKEND_URL")
+    or ""
+).rstrip("/")
+
+_PROBE_BLOBS: Dict[str, Dict[str, Any]] = {}   # id → {size, sha256, sig, expiry}
+
+
+def register_probe_blob(size: int, ttl_s: int = 3600) -> Dict[str, Any]:
+    """Register a signed probe blob and return
+    `{id, size, sha256, sig, expiry}`. The sha256 is pre-computed
+    over the deterministic seed so the agent can verify without
+    us buffering 128 MB. `sig` is HMAC-SHA256 over
+    `probe-blob|{id}|{size}|{expiry}` using
+    `NAS_AGENT_SHARED_SECRET` — same secret the agent already
+    trusts."""
+    blob_id = f"probe-{secrets.token_hex(8)}"
+    seed = f"paneltec-probe-{blob_id}".encode("utf-8")
+    # Pre-compute sha256 by iterating the same generator the
+    # streaming endpoint will use, without holding the bytes.
+    h = hashlib.sha256()
+    remaining = size
+    chunk_size = 1024 * 1024
+    counter = 0
+    while remaining > 0:
+        piece = hashlib.sha256(seed + counter.to_bytes(8, "big")).digest()
+        # 32 bytes per hash — repeat to fill the chunk.
+        block = (piece * ((chunk_size // 32) + 1))[:min(chunk_size, remaining)]
+        h.update(block)
+        remaining -= len(block)
+        counter += 1
+    expiry = int(datetime.now(timezone.utc).timestamp()) + ttl_s
+    secret = os.environ.get("NAS_AGENT_SHARED_SECRET", "").strip()
+    if not secret:
+        raise RuntimeError("NAS_AGENT_SHARED_SECRET missing")
+    import hmac as _hmac
+    sig = _hmac.new(
+        secret.encode("utf-8"),
+        f"probe-blob|{blob_id}|{size}|{expiry}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    _PROBE_BLOBS[blob_id] = {
+        "size": size,
+        "sha256": h.hexdigest(),
+        "sig": sig,
+        "expiry": expiry,
+        "seed": seed,
+    }
+    return {"id": blob_id, "size": size, "sha256": h.hexdigest(),
+              "sig": sig, "expiry": expiry}
+
+
 # ─────────────────────────────────────────────────────────────
 # v160.3.9.38 — SMB destination password at-rest encryption.
 #
@@ -3073,6 +3134,49 @@ services:
         done
 """
         return PlainTextResponse(yml, media_type="text/yaml")
+
+    # ── v58.13.132lj — probe-blob streaming endpoint ─────────
+    @api_router.get("/agent/probe-blob/{blob_id}")
+    async def agent_probe_blob(blob_id: str, sig: str = Query(...)):
+        """Deterministic random-bytes stream, gated by the HMAC
+        signature the pod handed the agent inside a
+        `fetch_and_put` op's `source_url`. No agent bearer
+        required — the sig IS the auth. Streams in 1 MB chunks so
+        pod memory stays flat."""
+        blob = _PROBE_BLOBS.get(blob_id)
+        if not blob:
+            raise HTTPException(404, "probe blob not found or expired")
+        if int(datetime.now(timezone.utc).timestamp()) > blob["expiry"]:
+            _PROBE_BLOBS.pop(blob_id, None)
+            raise HTTPException(410, "probe blob expired")
+        import hmac as _hmac
+        if not _hmac.compare_digest(sig, blob["sig"]):
+            raise HTTPException(403, "sig mismatch")
+
+        size = blob["size"]
+        seed = blob["seed"]
+
+        def _iter():
+            chunk_size = 1024 * 1024
+            remaining = size
+            counter = 0
+            while remaining > 0:
+                piece = hashlib.sha256(
+                    seed + counter.to_bytes(8, "big")
+                ).digest()
+                block = (piece * ((chunk_size // 32) + 1))[
+                    :min(chunk_size, remaining)
+                ]
+                yield block
+                remaining -= len(block)
+                counter += 1
+            _PROBE_BLOBS.pop(blob_id, None)   # one-shot
+
+        return StreamingResponse(
+            _iter(),
+            media_type="application/octet-stream",
+            headers={"Content-Length": str(size)},
+        )
 
     app.include_router(api_router)
     logger.info("Backup service mounted at /api/backup")

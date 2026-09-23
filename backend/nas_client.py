@@ -75,6 +75,43 @@ async def put_file(path: str, body: bytes,
                         timeout_s=timeout, meta=meta)
 
 
+async def fetch_and_put(path: str, source_url: str,
+                          expected_sha256: str, expected_size: int,
+                          meta: Optional[Dict[str, Any]] = None,
+                          timeout_s: float = 30 * 60.0) -> Dict[str, Any]:
+    """v58.13.132lj — streaming transport. Agent downloads directly
+    from `source_url` (typically a Dropbox `files_get_temporary_link`
+    URL or a pod-served probe blob URL) to a temp file on the NAS,
+    verifies sha256, and atomic-renames into
+    `<NAS_ROOT>/paneltec-files/<path>`. Body bytes never traverse
+    the pod-to-agent HTTP body — signed URL is the transport, HMAC
+    signs `path|source_url|expected_sha256|expected_size`.
+
+    Default timeout 30 min (bulk-copy jobs will call with longer).
+    Returns `{path, size, sha256, mtime}` — same shape as `put_file`."""
+    full_meta = dict(meta or {})
+    full_meta.update({
+        "source_url": source_url,
+        "expected_sha256": expected_sha256,
+        "expected_size": int(expected_size),
+    })
+    row = await enqueue_op("fetch_and_put", path, body_b64=None,
+                             meta=full_meta)
+    settled = await wait_for_result(row["id"], timeout_s=timeout_s)
+    status = settled.get("status")
+    if status == "done":
+        return settled.get("result") or {}
+    if status == "error":
+        raise NasError(
+            f"fetch_and_put path={path} agent_error="
+            f"{settled.get('error') or 'unknown'}"
+        )
+    raise NasError(
+        f"fetch_and_put path={path} timeout after {timeout_s}s "
+        f"(op_id={row['id']})"
+    )
+
+
 async def get_file(path: str) -> bytes:
     """Read bytes from `<NAS_ROOT>/paneltec-files/<path>`.
     Raises `NasError` on missing/permission/timeout."""

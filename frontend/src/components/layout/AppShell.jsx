@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { runSwVersionGuard } from '@/lib/swVersionGuard';
 import RebrandNudge from '@/components/RebrandNudge';
+import { toast } from 'sonner';
 // v58.13.112 — In-app PWA install button + one-time banner + iOS
 // walk-through. Hidden entirely when the app is already running in
 // standalone mode.

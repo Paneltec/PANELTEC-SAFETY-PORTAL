@@ -607,3 +607,41 @@ def dropbox_mirror_jobs(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
             if jid in _MIRROR_JOBS
         ],
     }
+
+
+# ── v58.13.132lj — Phase 2b Ship 1: file-enum + streaming probe ─
+@router.post("/enum/start")
+async def dropbox_enum_start(
+    body: Optional[Dict[str, Any]] = Body(default=None),
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """Kick off the file-metadata enumeration walk as a background
+    task. Optional body: `{"agent_id": "…"}` targets a specific
+    NAS agent for the large-file streaming probe (defaults to the
+    freshest agent). Returns immediately with `{job_id, state}`.
+
+    Only one enum job at a time — a second POST while an existing
+    job is running/complete returns the existing job's status."""
+    import dropbox_file_enum as enum
+    latest = await enum.latest_status()
+    if latest and latest.get("state") in {"running", "walk-complete"}:
+        return {"job_id": latest["job_id"], "state": latest["state"],
+                "note": "existing job in flight"}
+    job_id = f"enum-{secrets.token_hex(6)}"
+    agent_id = (body or {}).get("agent_id")
+    asyncio.create_task(enum.run_enum_job(job_id, agent_id=agent_id))
+    log.info("dropbox_enum kicked off job_id=%s agent_id=%s", job_id, agent_id)
+    return {"job_id": job_id, "state": "started",
+              "agent_id": agent_id or "auto"}
+
+
+@router.get("/enum/status")
+async def dropbox_enum_status(
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """Return the latest enum job's status doc from
+    `dropbox_migration_status`. Empty payload with `state: none`
+    when no job has ever run."""
+    import dropbox_file_enum as enum
+    s = await enum.latest_status()
+    return s or {"state": "none"}

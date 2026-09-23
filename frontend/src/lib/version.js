@@ -1,5 +1,147 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132lj — Phase 2b Ship 1: streaming NAS transport + Dropbox
+// file enumeration (read-only). No bytes copied yet.
+//
+// Standing brief (Stephen): three small ships to migrate the 23.7 GB
+// Dropbox tree onto the UGREEN NAS. Ship 1 (this one) proves the
+// streaming transport handles > 100 MB files without OOMing the pod
+// and enumerates the tree so Stephen can make an informed pruning
+// call before Ship 2 copies bytes.
+//
+// ── Streaming transport (fixes the .132lf deferred prereq) ─────
+//   Problem: `nas_client.put_file` base64-in-JSON approach OOMs the
+//   pod on files > ~50 MB. `.132lf` memo flagged this as a Phase 2b
+//   blocker.
+//   Solution: new `fetch_and_put` op. Pod signs `{path, source_url,
+//   expected_sha256, expected_size, enqueued_at}` via HMAC-SHA256.
+//   Agent HMAC-verifies, curls the URL directly with a streaming
+//   1 MB-chunk pipe → sha256 → atomic-rename into
+//   `<NAS_ROOT>/paneltec-files/<path>`. Body bytes never traverse
+//   any JSON payload.
+//
+//   Backward-compat: legacy `put_file` base64 path preserved for
+//   small ops (< 1 MB) and existing test paths. `fetch_and_put`
+//   canonical is separate — no signature drift.
+//
+//   Backend:
+//     · `backend/nas_ops_service.py` — new `_canonical_fetch()`,
+//       dispatch in `enqueue_op()`. Canonical:
+//       `fetch_and_put|{path}|{source_url}|{expected_sha256}|
+//        {expected_size}|{enqueued_at}`.
+//     · `backend/nas_client.py` — new `fetch_and_put(path,
+//       source_url, expected_sha256, expected_size, meta,
+//       timeout_s=30min)` helper. Default timeout 30 min so
+//       future multi-GB CCTV copies don't time out mid-download.
+//     · `backend/backup_service.py` — new signed probe-blob
+//       endpoint `GET /api/backup/agent/probe-blob/{id}?sig=…`
+//       serving deterministic random bytes for the transport
+//       proof. HMAC over `probe-blob|{id}|{size}|{expiry}`.
+//       Streams in 1 MB chunks; one-shot (blob popped after
+//       first successful stream). New helper
+//       `register_probe_blob(size, ttl_s=3600)` returns
+//       `{id, size, sha256, sig, expiry}` for enum to use.
+//     · New env-derived `PUBLIC_HUB_URL_FOR_AGENTS` — reads
+//       `PUBLIC_HUB_URL` → `FRONTEND_PUBLIC_URL` → 
+//       `REACT_APP_BACKEND_URL` in that order.
+//
+//   Agent (`scripts/paneltec_backup_agent.py`):
+//     · `_nas_verify_hmac` — dispatches on `op` for canonical
+//       (fetch_and_put path signs source_url + sha + size).
+//     · `_nas_execute` — new `fetch_and_put` branch. Downloads
+//       via `requests.get(stream=True, headers={UA})` into a
+//       `.part` file next to the destination, verifies sha256
+//       and size, atomic-renames. Sends the same
+//       `-A "Mozilla/5.0 paneltec-agent"` UA header we shipped
+//       for install.py in .132li so Cloudflare doesn't 502.
+//     · Path-traversal defence and sidecar-meta behaviour
+//       unchanged.
+//
+// ── Dropbox file enumeration (Ship 2 prep) ────────────────────
+//   Backend:
+//     · `backend/dropbox_file_enum.py` NEW. Walks the tree via a
+//       single cursor-paginated
+//       `files_list_folder(recursive=True)` on
+//       `/Paneltec-General Administration`. For each file entry:
+//       classify against exclusion patterns, upsert into
+//       `dropbox_files_enum` with
+//       `{dropbox_id, dropbox_path, dropbox_rev, size,
+//         content_hash, client_modified, server_modified,
+//         excluded, excluded_reason, unresolved_wildcard,
+//         enumerated_at}`. Progress snapshot flushed to
+//       `dropbox_migration_status` every 2 s.
+//     · Exclusion patterns (Stephen 2026-09-23):
+//         (a) `/Paneltec-General Administration/General
+//              Administration/Viatec Traffic Solutions/
+//              Bevs PC Backup June 2020` — auto-exclude
+//              (well-defined path, 3,834 folders confirmed in
+//              `doc_folders`).
+//         (b) `**/Jago Crt` CCTV recording dumps — REPORT-ONLY;
+//              1,134 candidate folders surfaced in
+//              `unresolved_wildcards`. Stephen confirms before
+//              Ship 2 treats them as excluded.
+//         (c) Taswater CCTV — REPORT-ONLY; 893 candidates
+//              (Cutten St, Frankland St, TasWater CDO CCTV
+//              tender, King Island Clean & CCTV). Stephen
+//              confirms before Ship 2 treats them as excluded.
+//     · Large-file probe fires once we see any file > 100 MB.
+//       Registers a 128 MB synthetic probe blob via
+//       `backup_service.register_probe_blob`, enqueues one
+//       `fetch_and_put` op targeting
+//       `.probe/streaming-<jobid>.bin` on the NAS, waits for
+//       result, cleans up via `delete_file`.
+//     · `backend/integrations_dropbox.py` — two new endpoints:
+//         · POST /api/dropbox/enum/start  (admin) — kicks the
+//           walk off as a background task. Optional body
+//           `{"agent_id": "…"}` targets a specific NAS agent for
+//           the streaming probe (defaults to freshest poller).
+//         · GET  /api/dropbox/enum/status (admin) — reads the
+//           latest doc in `dropbox_migration_status`. Payload:
+//           `{state, started_at, updated_at, completed_at,
+//             files_enumerated, bytes_total, raw:{files,bytes},
+//             post_exclusion:{files,bytes}, excluded_subtrees,
+//             unresolved_wildcards, large_file_probe, errors}`.
+//   No writes to `doc_files`. No bytes touched. Exclusion counts
+//   computed via a small `$group` aggregation over
+//   `dropbox_files_enum` at the tail of the walk.
+//
+// ── Piggyback fixes ────────────────────────────────────────────
+//   · `frontend/src/components/layout/AppShell.jsx` — parallel
+//     actor's `toast` reference at lines 106/108/113 was missing
+//     its import. Added `import { toast } from 'sonner';` at the
+//     top. One-line fix; unblocks the pre-commit lint check.
+//
+// ── Deferred (Ship 2 / Ship 3) ─────────────────────────────────
+//   · Bytes-copy engine that walks `dropbox_files_enum` for
+//     `excluded=false` rows, calls Dropbox
+//     `files.get_temporary_link(path)` per file, enqueues
+//     `fetch_and_put` with the returned URL. Batched to respect
+//     agent poll drain (8 ops per 60s → ~480/h ceiling —
+//     realistic ETA for 20k files is 40+ hours). Ship as .132lk.
+//   · Cutover — flipping `doc_files.storage_backend` to NAS
+//     reads. Stephen-gated after byte spot-checks. Ship as .132lm+.
+//
+// ── OPERATOR NOTE for large-file probe ─────────────────────────
+//   The UGREEN NAS agent must be running .132lj-era code for the
+//   `fetch_and_put` HMAC canonical to verify. The compose
+//   bootstrap re-fetches `/api/backup/agent/install.py` on every
+//   container start, so a stop+start on the UGREEN Docker UI
+//   picks up the new agent code. If the container hasn't been
+//   restarted since .132li, the enum's large-file probe will
+//   fail with `hmac verify failed` on the deployed old-canonical
+//   agent — the WALK will still complete fine (enum doesn't
+//   depend on the agent at all).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · doc_files — zero writes.
+//   · doc_folders — zero writes (Phase 1 output preserved).
+//   · Existing put_file / get_file / stat / list_dir / delete_file /
+//     ping ops — unchanged.
+//   · Legacy `_canonical` — unchanged; only the fetch canonical
+//     is new.
+//   · /app/mobile/ — untouched (ban).
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+
 // v58.13.132li — Backend: Cloudflare-UA bypass for the LAN-agent bootstrap
 // + honest `nas_*_gb` on `/api/nas/health`.
 //
@@ -14241,7 +14383,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132li';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lj';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14262,7 +14404,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132li';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132li';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lj';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
