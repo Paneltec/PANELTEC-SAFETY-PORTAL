@@ -1,10 +1,11 @@
 /**
- * Visitor Sign-In — v58.13.132kk
+ * Visitor Sign-In — v58.13.132lg
  * Public route: /scan/site/{token}/visitor
  *
  * Mirrors web VisitorSignIn. Fully public — never redirects to login.
  * Fetches GET /api/scan/site/{token} (public) for site info.
  * Submits POST /api/scan/site/{token}/sign-on-visitor (public).
+ * .132lg — removed "Who visiting" + "Vehicle Rego" fields.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -52,8 +53,6 @@ export default function VisitorSignInScreen() {
   const [company, setCompany] = useState('');
   const [phone, setPhone] = useState('');
   const [purpose, setPurpose] = useState('');
-  const [visiting, setVisiting] = useState('');
-  const [vehicleRego, setVehicleRego] = useState('');
   const [safetyAck, setSafetyAck] = useState(false);
   const [ackSwms, setAckSwms] = useState<Set<string>>(new Set());
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -125,8 +124,6 @@ export default function VisitorSignInScreen() {
           company: company.trim() || null,
           phone: phone.trim() || null,
           purpose: purpose || null,
-          visiting: visiting.trim() || null,
-          vehicle_rego: vehicleRego.trim() || null,
           safety_induction_ack: safetyAck,
           swms_acknowledged: Array.from(ackSwms),
           answers: answersList,
@@ -149,7 +146,7 @@ export default function VisitorSignInScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [name, company, phone, purpose, visiting, vehicleRego, safetyAck, ackSwms, answers, data, token]);
+  }, [name, company, phone, purpose, safetyAck, ackSwms, answers, data, token]);
 
   const site = data?.site;
 
@@ -285,29 +282,6 @@ export default function VisitorSignInScreen() {
               </TouchableOpacity>
             ))}
           </View>
-
-          {/* Who visiting */}
-          <Text style={st.label}>Who Are You Visiting?</Text>
-          <TextInput
-            testID="visitor-visiting-input"
-            style={st.input}
-            value={visiting}
-            onChangeText={setVisiting}
-            placeholder="Name of person you're visiting"
-            placeholderTextColor={Colors.textTertiary}
-          />
-
-          {/* Vehicle */}
-          <Text style={st.label}>Vehicle Rego (optional)</Text>
-          <TextInput
-            testID="visitor-rego-input"
-            style={st.input}
-            value={vehicleRego}
-            onChangeText={setVehicleRego}
-            placeholder="e.g. ABC123"
-            placeholderTextColor={Colors.textTertiary}
-            autoCapitalize="characters"
-          />
 
           {/* Dynamic sign-on questions */}
           {(data.signon_questions || []).length > 0 && (
