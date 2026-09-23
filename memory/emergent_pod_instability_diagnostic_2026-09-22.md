@@ -257,6 +257,69 @@ since the fix landed. `--reload`-storm is definitively ruled out.
 
 ---
 
+## 4a. Symptom breakdown per service — orphan port-3000 listener (v58.13.132kz finding)
+
+During the 2026-09-22 23:47 UTC live incident, we caught a second
+failure signature layered on top of the supervisord respawn pattern.
+Even after `supervisorctl restart frontend`, the frontend program
+transitioned to **FATAL: "Exited too quickly"** in ~0.7 s. Log
+excerpt from `/var/log/supervisor/frontend.err.log`:
+
+```
+Attempting to bind to HOST environment variable: 0.0.0.0
+Something is already running on port 3000.
+Done in 0.71s.
+```
+
+`netstat -tlnp | grep 3000` at the moment of failure showed a
+**live `node`/`craco start` process still listening on :3000**,
+orphaned from the previous supervisord respawn cycle. When
+supervisord respawns it kills its children, but the child's own
+child (node → craco → webpack-dev-server) can survive under the
+new session and hold the socket. The next `yarn start` sees the
+port in use, immediately exits (0.71s), and supervisord marks the
+program FATAL.
+
+### Per-service response to the pattern
+
+| Service    | Port    | Behaviour on supervisord respawn                                       | Recovery required                                    |
+|:----------:|:-------:|:-----------------------------------------------------------------------|:-----------------------------------------------------|
+| frontend   | 3000    | Orphan `craco` sometimes survives → new `yarn start` refuses to bind → FATAL. Preview 502. | `fuser -k 3000/tcp` then restart. Now automated in `.132kz`. |
+| mobile     | 3001    | Similar pattern occasionally, but Expo's own port-check reuses the port cleanly.        | Usually self-heals. Not automated.                    |
+| backend    | 8001    | Uvicorn shuts down cleanly on SIGTERM; port released; next start binds.                 | None.                                                |
+| mongodb    | 27017   | `mongod` shuts down cleanly; port released.                                             | None.                                                |
+| nginx-code-proxy | (varies) | Static config; clean SIGTERM.                                                    | None.                                                |
+| code-server | —       | Intentionally never started in this pod.                                               | N/A.                                                 |
+
+### Fix landed in `.132kz` (tenant-side)
+
+1. **`/entrypoint.sh`** — pre-supervisord orphan port sweep for
+   3000 / 8001 / 27017. Idempotent, non-fatal. Runs once per
+   container boot.
+2. **`/etc/supervisor/conf.d/supervisord.conf [program:frontend]`** —
+   command wrapped in `/bin/sh -c "fuser -k 3000/tcp; sleep 1;
+   exec yarn start"`. Runs on every frontend restart mid-life,
+   which is when the mid-life supervisord respawns hit.
+
+Verification (simulation, 2026-09-23 01:XX UTC):
+- Launched a decoy Python process binding :3000.
+- `supervisorctl restart frontend` — new wrapped command killed
+  the decoy via `fuser`, waited 1 s, exec'd `yarn start`.
+- Frontend transitioned RUNNING within 15 s.
+- `curl http://localhost:3000/` → 200.
+- Preview URL → 200 externally.
+
+### Why this still needs Emergent-side triage
+
+The `.132kz` fix stops the orphan-port class from surfacing as an
+outage, but it treats the symptom, not the root cause. The
+root-cause question — "who is SIGTERM'ing supervisord every 5–8
+minutes?" — is unchanged from Section 2 above. If the platform
+layer stops doing that, `.132kz` becomes a belt-and-braces safety
+net rather than a load-bearing fix.
+
+---
+
 ## 8. Suggested next diagnostic steps for Emergent infra team
 
 1. Pull the platform-side pod eviction / restart reason for pod

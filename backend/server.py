@@ -1368,20 +1368,30 @@ async def on_startup():
         # if the container overlay has wiped them. See file_pdf.py for the full
         # rationale. Fire-and-forget: apt runs in a background asyncio task,
         # backend boot is not blocked, and a failure here never kills startup.
-        try:
-            from file_pdf import ensure_server_tools_or_install_bg
-            status = ensure_server_tools_or_install_bg()
-            if status["action"] == "noop":
-                log.info("Server tools OK — libreoffice/tesseract/poppler all present")
-            elif status["action"] == "queued":
-                log.info(
-                    "Server tools missing (%s) — triggering async reinstall (job_id=%s)",
-                    ", ".join(status["missing"]), status["job_id"],
-                )
-            else:
-                log.info("Server tools check: %s", status)
-        except Exception as e:
-            log.warning("Server tools auto-install skipped at startup: %s", e)
+        # DISABLED 2026-09-23 (Emergent Support, ticket #261441) — this was
+        # firing an apt-get of the full LibreOffice/Tesseract/Poppler stack on
+        # EVERY backend boot, which on a CPU-capped preview pod (4 cores/8Gi)
+        # combined with Expo+frontend dev servers to trip the platform's
+        # CPU-saturation whole-container hard-kill, causing this exact install
+        # to re-fire on every resulting reboot — a self-reinforcing loop.
+        # Re-enable only after moving this to a lazy/on-demand trigger (fire on
+        # first actual conversion request) or baking the packages into the
+        # image at build time instead of installing them at runtime on boot.
+        # try:
+        #     from file_pdf import ensure_server_tools_or_install_bg
+        #     status = ensure_server_tools_or_install_bg()
+        #     if status["action"] == "noop":
+        #         log.info("Server tools OK — libreoffice/tesseract/poppler all present")
+        #     elif status["action"] == "queued":
+        #         log.info(
+        #             "Server tools missing (%s) — triggering async reinstall (job_id=%s)",
+        #             ", ".join(status["missing"]), status["job_id"],
+        #         )
+        #     else:
+        #         log.info("Server tools check: %s", status)
+        # except Exception as e:
+        #     log.warning("Server tools auto-install skipped at startup: %s", e)
+        log.info("Server tools auto-install-on-boot disabled (ticket #261441) — skipping")
 
         # Phase 3.7 — one-shot migration of seeded select fields → dynamic pickers.
         try:

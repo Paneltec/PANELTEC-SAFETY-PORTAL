@@ -1,23 +1,37 @@
-EMERGENT PREVIEW POD INSTABILITY — TL;DR (2026-09-22)
+EMERGENT PREVIEW POD INSTABILITY — TL;DR (2026-09-22, upd 2026-09-23)
 Pod slug: whs-compliance | https://whs-compliance.preview.emergentagent.com
 
-SYMPTOM: supervisord inside our container is being killed + respawned every
-5-8 min. 44 respawn events on 2026-09-22 04:00-10:10 UTC alone. Kernel
-/proc/uptime = 2h+ so it's NOT a full pod recycle — only supervisord PID is
-being SIGTERM'd. Backend/frontend/mongod/expo all restart every cycle.
+SYMPTOM 1 (root): supervisord inside our container is being killed +
+respawned every 5-8 min. 44+ respawn events on 2026-09-22 04:00-10:10 UTC
+alone; pattern continues into 2026-09-23. Kernel /proc/uptime = 2h+ so
+it's NOT a full pod recycle — only supervisord PID is SIGTERM'd.
+Backend/frontend/mongod/expo all restart every cycle.
+
+SYMPTOM 2 (secondary, seen 2026-09-22 23:47 UTC): after a supervisord
+respawn, an orphan `craco start` from the previous cycle sometimes keeps
+port 3000 bound. New `yarn start` sees "Something is already running on
+port 3000" and exits in 0.7s → supervisor marks frontend FATAL → preview
+URL returns 502. Backend/mongod recover cleanly. Only frontend is affected.
 
 IMPACT: Data is safe (last LAN delivery to Office UGREEN tower confirmed,
 14.37 TB free) but the daily backup snapshot writer cannot complete
-in-container (needs ~90s-5min uninterrupted). No fresh snapshot since
-2026-09-21T02:03 UTC.
+in-container (needs 90s-5min uninterrupted). No fresh snapshot since
+2026-09-21T02:03 UTC. During the 23:47 event the preview URL itself was
+502 for ~10 min until we cleared the orphan.
+
+TENANT-SIDE ALREADY DONE:
+* .132kv — removed uvicorn --reload (ruled out --reload storm)
+* .132kz — /entrypoint.sh fuser-kill orphan ports 3000/8001/27017 pre-boot
+* .132kz — [program:frontend] wraps yarn start in `fuser -k 3000/tcp; sleep 1;
+            exec yarn start` so mid-life restarts self-heal
+Symptom 2 will no longer surface as an outage, but the root symptom stays.
 
 TENANT-SIDE RULED OUT:
 * App OOM (cgroup oom_kill=0)
 * App exceptions (log clean)
 * Disk exhaustion (69% used, 3.1 GB free)
-* uvicorn --reload storm (fixed in ship .132kv)
 
 ASK: Pull the platform-side eviction reason for pod whs-compliance in the
-2026-09-21T22:00 → 2026-09-22T22:00 UTC window, plus the liveness-probe
+2026-09-21T22:00 → 2026-09-23T06:00 UTC window, plus the liveness-probe
 path/timeout/miss-threshold config. Full bundle at
 /app/memory/emergent_pod_instability_diagnostic_2026-09-22.md

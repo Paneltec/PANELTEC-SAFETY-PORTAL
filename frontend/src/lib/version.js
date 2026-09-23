@@ -13609,7 +13609,72 @@
 //   · `/app/mobile/` — untouched (mobile edit ban). Mobile Capture
 //     rows can get the "View original" button in a follow-up if
 //     the operator asks.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ki';
+// v58.13.132kz — Defensive orphan-port release before supervisord +
+//                 wrapped frontend start; Emergent diagnostic bundle
+//                 update with the port-3000 orphan finding.
+//
+// USER PAIN (Stephen, 2026-09-22 23:47 UTC live incident): Preview URL
+// returning 502 for 10+ minutes. `sudo supervisorctl status` showed
+// `frontend FATAL "Exited too quickly (process log may have details)"`.
+// Backend / mongod / nginx all RUNNING. Users could not log in.
+//
+// Root cause of THIS incident (secondary to the platform-level
+// supervisord respawn cycling documented in `.132kw`): after a
+// supervisord respawn, an orphan `craco start` process from the
+// previous cycle sometimes stays alive and holds :3000. Log
+// evidence from `/var/log/supervisor/frontend.err.log`:
+//   "Attempting to bind to HOST environment variable: 0.0.0.0"
+//   "Something is already running on port 3000."
+//   "Done in 0.71s."
+// Supervisor's `startretries` gets exhausted quickly at 0.7s per
+// attempt → FATAL. Frontend can't rebind without external help.
+//
+// Fixes in .132kz (two layers — belt AND braces):
+//   · `/entrypoint.sh` — new pre-supervisord block that
+//     `fuser -k`s any orphan listener on 3000 / 8001 / 27017.
+//     Idempotent, non-fatal, logs
+//     "[entrypoint] Released orphan port {N} (v58.13.132kz)" per
+//     port cleared. Runs once per container boot — covers the
+//     hard-restart case.
+//   · `/etc/supervisor/conf.d/supervisord.conf [program:frontend]` —
+//     command line changed from `yarn start` to
+//     `/bin/sh -c "fuser -k 3000/tcp 2>/dev/null; sleep 1;
+//      exec yarn start"`. Runs on every frontend restart mid-life,
+//     which is the exact window (mid-life supervisord respawn +
+//     orphan surviving) that produced this incident.
+//
+// Verified live (simulation before landing the ship):
+//   · Bound :3000 with a decoy Python listener.
+//   · `sudo supervisorctl restart frontend` — wrapped command
+//     killed the decoy via `fuser`, waited 1 s, exec'd `yarn start`.
+//   · Frontend went RUNNING within 15 s.
+//   · `curl http://localhost:3000/` → 200.
+//   · Preview URL → 200 externally.
+//
+// Emergent diagnostic bundle updated with a per-service breakdown
+// documenting how each program responds to the supervisord respawn
+// pattern (frontend: orphan port; mobile: recovers via Expo's own
+// port-check; backend/mongod: clean SIGTERM). TL;DR one-pager
+// refreshed to include this specific finding — actionable evidence
+// for Emergent Pro support.
+//
+// ── Not resolved in `.132kz` (still needs Emergent-side triage) ──
+//   · The upstream supervisord respawn cycling itself. `.132kz` is
+//     a symptom fix — it stops the orphan-port class of failure
+//     from surfacing as a 502, but does NOT address WHY supervisord
+//     is being SIGTERM'd every 5–8 minutes. That remains the open
+//     item in `.132kw`'s diagnostic bundle.
+//
+// ── Not changed ────────────────────────────────────────────────
+//   · `.132ki` (SSRA routing + view-original-PDF), `.132kw`
+//     (delivery-centric widget), `.132kv` (uvicorn --reload
+//     removal) — all untouched.
+//   · Mobile supervisor entry — untouched (mobile edit ban).
+//     Mobile's orphan-port pattern is milder and Expo recovers on
+//     its own; we can extend the fix later if needed.
+//   · Backend / mongodb supervisor entries — untouched. They shut
+//     down cleanly on SIGTERM and don't need the wrapper.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kz';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13630,7 +13695,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ki';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ki';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kz';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
