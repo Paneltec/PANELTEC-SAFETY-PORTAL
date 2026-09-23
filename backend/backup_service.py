@@ -1897,7 +1897,7 @@ def install(app, db, require_admin):
         instead of waiting for the daily scheduler."""
         return await _apply_retention_policy(db, fs)
 
-    @api_router.get("/snapshots/{snap_id}/data")
+    @api_router.api_route("/snapshots/{snap_id}/data", methods=["GET", "HEAD"])
     async def download_snapshot(request: Request, snap_id: str,
                                 authorization: Optional[str] = Header(None),
                                 token: Optional[str] = Query(None)):
@@ -1996,6 +1996,12 @@ def install(app, db, require_admin):
             }
             if status_code == 206:
                 headers["Content-Range"] = f"bytes {start}-{end}/{total_size}"
+
+            # v58.13.132ll — HEAD: return the same headers, empty body.
+            if request.method == "HEAD":
+                from fastapi import Response
+                return Response(status_code=status_code, headers=headers,
+                                  media_type="application/zip")
 
             return StreamingResponse(
                 _stream_fs(),
@@ -3201,7 +3207,7 @@ services:
     # requires this endpoint to actually honor the header.
     _RESUME_ATTEMPTS: Dict[str, int] = {}    # blob_id → count
 
-    @api_router.get("/agent/probe-blob/{blob_id}")
+    @api_router.api_route("/agent/probe-blob/{blob_id}", methods=["GET", "HEAD"])
     async def agent_probe_blob(request: Request, blob_id: str,
                                   sig: str = Query(...)):
         """Deterministic random-bytes stream, gated by the HMAC
@@ -3288,6 +3294,14 @@ services:
         }
         if status_code == 206:
             headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+
+        # v58.13.132ll — HEAD returns headers only, empty body. Do NOT
+        # decrement probe-blob state on HEAD probes (they're metadata
+        # requests, not real deliveries).
+        if request.method == "HEAD":
+            from fastapi import Response
+            return Response(status_code=status_code, headers=headers,
+                              media_type="application/octet-stream")
 
         return StreamingResponse(
             _iter(),

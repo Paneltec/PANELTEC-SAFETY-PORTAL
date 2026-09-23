@@ -195,6 +195,15 @@ def hub_pending() -> Optional[Dict[str, Any]]:
     return r.json()
 
 
+# ── Cooldown state for hub_download — v58.13.132ll ──────────
+# Guards against infinite disk-churn when a snapshot's payload is
+# permanently corrupted on the hub. After 3 consecutive sha256
+# mismatches we park the snapshot_id for 10 min so the outer poll
+# loop doesn't re-download the same broken bytes every 60s.
+_SNAPSHOT_SHA_FAILS: Dict[str, int] = {}      # snap_id → consecutive fails
+_SNAPSHOT_COOLDOWN: Dict[str, float] = {}     # snap_id → unix ts to resume
+
+
 def _resumable_get_stream(
     url: str,
     dst_part: Path,
@@ -203,30 +212,32 @@ def _resumable_get_stream(
     headers_extra: Optional[Dict[str, str]] = None,
     log_tag: str = "dl",
     max_retries: int = 10,
+    max_sha_retries: int = 3,
 ) -> Tuple[int, str]:
     """v58.13.132lk — Resumable streaming download.
+    v58.13.132ll — Hardened against three regressions surfaced by
+    the first .132lk snapshot pull:
 
-    Root cause fix for the ``.132lf`` / ``.132lj`` transport
-    stalls: Cloudflare / preview edge terminates long-lived HTTPS
-    streams around the ~250 MB mark, raising
-    ``urllib3.exceptions.IncompleteRead``. Every subsequent retry
-    started over from byte 0, so the download never completed.
-
-    Contract:
-        * Streams into ``dst_part`` (a ``.part`` sibling of the
-          final path). Caller atomic-renames on success.
-        * On connection drops, appends from
-          ``Range: bytes=<have>-<end>``. Rehashes existing bytes
-          on each attempt so the running sha256 stays correct.
-        * Backoff: 2 → 5 → 15 → 30 → 60 s (then 60 s cap).
-          Hard-fail after ``max_retries`` attempts.
-        * Verifies sha256 if ``expected_sha256`` supplied.
-        * Sends ``Mozilla/5.0 paneltec-agent`` UA so Cloudflare
-          doesn't 502 (same rule that bit the ``install.py``
-          bootstrap in .132li).
+      * FastAPI's default HEAD-on-a-GET-route returns 405 with a
+        31-byte JSON body. If the caller HEAD-probed and passed
+        that 31 as ``expected_size``, our old early-break
+        ``have >= expected_size`` accepted a 573 MB partial as
+        "success" on retry #2. Fix: **always trust the first GET
+        response's Content-Length over any caller-supplied
+        expected_size that disagrees materially**. Log the
+        correction so operators see it.
+      * On sha256 mismatch we used to raise immediately. Now we
+        wipe the ``.part``, retry the full download up to
+        ``max_sha_retries`` times, and only THEN raise. Prevents
+        the "sha fails → next poll starts over → sha fails
+        again" infinite disk-churn loop.
+      * ``expected_size <= 0`` fast-path (HEAD was 405, no
+        Content-Length available) — helper now discovers size
+        from the FIRST successful GET's Content-Length header.
 
     Returns ``(bytes_written, sha256_hex)``. Raises RuntimeError
-    only on hard failure (max_retries hit OR sha mismatch)."""
+    only on hard failure (max_retries hit OR max_sha_retries hit).
+    """
     import time as _time
     backoff = [2, 5, 15, 30, 60]
     ua_header = {"User-Agent": "Mozilla/5.0 paneltec-agent"}
@@ -235,139 +246,215 @@ def _resumable_get_stream(
 
     dst_part.parent.mkdir(parents=True, exist_ok=True)
 
-    # HEAD probe if caller didn't tell us the size — some endpoints
-    # (Dropbox temp links, our snapshot endpoint) always set
-    # Content-Length, so we can drive the resume math off that.
-    if expected_size <= 0:
-        try:
-            head = requests.head(
-                url, headers=ua_header,
-                timeout=(15, 60), allow_redirects=True,
-            )
-            if head.status_code < 400:
-                cl = head.headers.get("Content-Length")
-                if cl and cl.isdigit():
-                    expected_size = int(cl)
-        except Exception as e:   # noqa: BLE001
-            log.debug("[%s] HEAD probe failed (non-fatal): %s",
-                         log_tag, e)
-
-    last_err: Optional[str] = None
-    for attempt in range(max_retries):
-        have = dst_part.stat().st_size if dst_part.exists() else 0
-        if expected_size > 0 and have >= expected_size:
-            break
-
-        # Re-hash whatever's already on disk so sha stays correct
-        # across resumes. Reads at 1 MB / iter → constant memory.
-        h = _hashlib.sha256()
-        if have > 0:
-            with dst_part.open("rb") as fh:
-                while True:
-                    b = fh.read(1024 * 1024)
-                    if not b:
-                        break
-                    h.update(b)
-
-        req_headers = dict(ua_header)
-        if have > 0 and expected_size > 0:
-            req_headers["Range"] = f"bytes={have}-{expected_size - 1}"
-            log.info("[%s] attempt %d/%d  RESUME @ byte %d/%d",
-                       log_tag, attempt + 1, max_retries, have,
-                       expected_size)
-        else:
-            log.info("[%s] attempt %d/%d  fresh GET (have=%d expect=%d)",
-                       log_tag, attempt + 1, max_retries, have,
-                       expected_size)
-
-        try:
-            with requests.get(
-                url,
-                stream=True,
-                headers=req_headers,
-                timeout=(30, 900),
-            ) as r:
-                if r.status_code not in (200, 206):
-                    raise RuntimeError(
-                        f"HTTP {r.status_code} at byte {have}"
-                    )
-                # If we asked for Range but server ignored it
-                # (returned 200 + full body), we can't append — the
-                # bytes we're about to receive start at 0. Wipe and
-                # restart, but preserve the retry count so we don't
-                # loop forever on a broken server.
-                if have > 0 and r.status_code == 200:
-                    log.warning("[%s] server ignored Range — "
-                                   "wiping .part and restarting from 0",
-                                   log_tag)
-                    dst_part.unlink()
-                    have = 0
-                    h = _hashlib.sha256()
-
-                mode = "ab" if have > 0 else "wb"
-                with dst_part.open(mode) as fh:
-                    for chunk in r.iter_content(chunk_size=1 << 16):
-                        if not chunk:
-                            continue
-                        fh.write(chunk)
-                        h.update(chunk)
-                        have += len(chunk)
-
-            # Loop exit path only reached on clean stream end. If we
-            # know the expected size and fell short, treat as
-            # IncompleteRead — retry with resume.
-            if expected_size > 0 and have < expected_size:
-                raise RuntimeError(
-                    f"stream ended at byte {have}, expected {expected_size}"
+    sha_attempts = 0
+    while True:   # OUTER loop — sha mismatch retries
+        # HEAD probe if caller didn't give us a size AND we haven't
+        # locked one in from a prior GET.
+        if expected_size <= 0:
+            try:
+                head = requests.head(
+                    url, headers=ua_header,
+                    timeout=(15, 60), allow_redirects=True,
                 )
-            break   # SUCCESS
-        except (
-            requests.exceptions.ChunkedEncodingError,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout,
-            requests.exceptions.SSLError,
-            requests.exceptions.ReadTimeout,
-            RuntimeError,
-        ) as e:
-            last_err = f"{type(e).__name__}: {e}"
-            wait = backoff[attempt] if attempt < len(backoff) else 60
-            log.warning(
-                "[%s] attempt %d/%d failed at byte %d: %s — retry in %ds",
-                log_tag, attempt + 1, max_retries, have, last_err, wait,
-            )
-            _time.sleep(wait)
-    else:
-        raise RuntimeError(
-            f"{log_tag} exceeded {max_retries} retries "
-            f"(last_err={last_err})"
-        )
+                if head.status_code < 400:
+                    cl = head.headers.get("Content-Length")
+                    if cl and cl.isdigit():
+                        expected_size = int(cl)
+            except Exception as e:   # noqa: BLE001
+                log.debug("[%s] HEAD probe failed (non-fatal): %s",
+                             log_tag, e)
 
-    got_sha = h.hexdigest()
-    if expected_sha256 and got_sha != expected_sha256:
-        raise RuntimeError(
-            f"sha256 mismatch: got={got_sha[:12]}… "
-            f"expected={expected_sha256[:12]}…"
+        last_err: Optional[str] = None
+        for attempt in range(max_retries):
+            have = dst_part.stat().st_size if dst_part.exists() else 0
+            if expected_size > 0 and have >= expected_size:
+                break
+
+            # Rehash whatever's already on disk so sha stays
+            # correct across resumes.
+            h = _hashlib.sha256()
+            if have > 0:
+                with dst_part.open("rb") as fh:
+                    while True:
+                        b = fh.read(1024 * 1024)
+                        if not b:
+                            break
+                        h.update(b)
+
+            req_headers = dict(ua_header)
+            if have > 0 and expected_size > 0:
+                req_headers["Range"] = f"bytes={have}-{expected_size - 1}"
+                log.info("[%s] attempt %d/%d  RESUME @ byte %d/%d",
+                           log_tag, attempt + 1, max_retries, have,
+                           expected_size)
+            else:
+                log.info("[%s] attempt %d/%d  fresh GET (have=%d expect=%d)",
+                           log_tag, attempt + 1, max_retries, have,
+                           expected_size)
+
+            try:
+                with requests.get(
+                    url,
+                    stream=True,
+                    headers=req_headers,
+                    timeout=(30, 900),
+                ) as r:
+                    if r.status_code not in (200, 206):
+                        raise RuntimeError(
+                            f"HTTP {r.status_code} at byte {have}"
+                        )
+
+                    # v58.13.132ll — trust GET Content-Length over
+                    # any caller-supplied bogus size. For a 200
+                    # response C-L is total size; for a 206 it's
+                    # the size of THIS range (end-start+1), so we
+                    # only overwrite from 200s.
+                    if r.status_code == 200:
+                        cl = r.headers.get("Content-Length")
+                        if cl and cl.isdigit():
+                            true_size = int(cl)
+                            if expected_size == 0:
+                                log.info("[%s] locked size=%d "
+                                            "from GET Content-Length",
+                                            log_tag, true_size)
+                                expected_size = true_size
+                            elif (
+                                true_size > 0
+                                and abs(true_size - expected_size)
+                                    / true_size > 0.10
+                            ):
+                                log.warning(
+                                    "[%s] caller expected_size=%d "
+                                    "disagrees with GET C-L=%d by >10%%; "
+                                    "trusting server",
+                                    log_tag, expected_size, true_size,
+                                )
+                                expected_size = true_size
+
+                    # Server ignored our Range request?
+                    if have > 0 and r.status_code == 200:
+                        log.warning("[%s] server ignored Range — "
+                                       "wiping .part, restarting from 0",
+                                       log_tag)
+                        dst_part.unlink()
+                        have = 0
+                        h = _hashlib.sha256()
+
+                    mode = "ab" if have > 0 else "wb"
+                    with dst_part.open(mode) as fh:
+                        for chunk in r.iter_content(chunk_size=1 << 16):
+                            if not chunk:
+                                continue
+                            fh.write(chunk)
+                            h.update(chunk)
+                            have += len(chunk)
+
+                if expected_size > 0 and have < expected_size:
+                    raise RuntimeError(
+                        f"stream ended at byte {have}, "
+                        f"expected {expected_size}"
+                    )
+                break   # network-attempt success
+            except (
+                requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.SSLError,
+                requests.exceptions.ReadTimeout,
+                RuntimeError,
+            ) as e:
+                last_err = f"{type(e).__name__}: {e}"
+                wait = backoff[attempt] if attempt < len(backoff) else 60
+                log.warning(
+                    "[%s] attempt %d/%d failed at byte %d: %s"
+                    " — retry in %ds",
+                    log_tag, attempt + 1, max_retries, have,
+                    last_err, wait,
+                )
+                _time.sleep(wait)
+        else:
+            raise RuntimeError(
+                f"{log_tag} exceeded {max_retries} network retries "
+                f"(last_err={last_err})"
+            )
+
+        # ── SHA verify ─────────────────────────────────────
+        got_sha = h.hexdigest()
+        if not expected_sha256 or got_sha == expected_sha256:
+            return have, got_sha
+
+        # sha mismatch — likely from a corrupted partial we
+        # appended over. Wipe and try the full download again.
+        sha_attempts += 1
+        log.error(
+            "[%s] SHA MISMATCH after %d bytes  got=%s… expected=%s… "
+            "(sha_attempt %d/%d)",
+            log_tag, have, got_sha[:12], expected_sha256[:12],
+            sha_attempts, max_sha_retries,
         )
-    return have, got_sha
+        try:
+            dst_part.unlink()
+        except OSError:
+            pass
+        if sha_attempts >= max_sha_retries:
+            raise RuntimeError(
+                f"{log_tag} sha mismatch after {max_sha_retries} "
+                f"full-cycle retries (got={got_sha[:12]}… "
+                f"expected={expected_sha256[:12]}…)"
+            )
+        # Wait a bit before retrying to let any edge state clear.
+        _time.sleep(30)
+        # Loop back to top with a clean .part.
 
 
 def hub_download(snapshot_id: str, dst: Path) -> Optional[int]:
     """Stream the snapshot ZIP to disk. Returns bytes written on
-    success or None on any failure. v58.13.132lk — now uses the
-    resumable helper so Cloudflare-cut streams resume from the
-    last byte received instead of restarting from 0."""
+    success or None on any failure. v58.13.132lk — resumable
+    Range downloads. v58.13.132ll — cooldown after 3 sha-mismatch
+    full-cycles to stop infinite disk-churn on a broken pipe."""
+    import time as _t
+    now_ts = _t.time()
+    cool_until = _SNAPSHOT_COOLDOWN.get(snapshot_id, 0.0)
+    if now_ts < cool_until:
+        log.warning(
+            "hub_download %s SKIPPED — snapshot in cooldown for "
+            "another %.0fs (repeated sha mismatches)",
+            snapshot_id, cool_until - now_ts,
+        )
+        return None
+
     url = f"{HUB_URL}/api/backup/snapshots/{snapshot_id}/data"
     tmp = dst.with_suffix(dst.suffix + ".part")
     try:
-        # We don't know the expected sha up-front; hub sends
-        # `X-Snapshot-SHA256` on the initial HEAD/GET response.
-        # HEAD once here so the helper has both size + sha context.
-        head = requests.head(url, headers=_headers(),
-                                timeout=(15, 60), allow_redirects=True)
-        exp_size = int(head.headers.get("Content-Length") or "0")
-        exp_sha = head.headers.get("X-Snapshot-SHA256") or None
+        # HEAD to get Content-Length + X-Snapshot-SHA256. If the
+        # hub doesn't implement HEAD (pre-.132ll) it returns 405 —
+        # we detect and fall through with expected_size=0 so the
+        # helper discovers size from the first GET Content-Length.
+        exp_size = 0
+        exp_sha: Optional[str] = None
+        try:
+            head = requests.head(url, headers=_headers(),
+                                    timeout=(15, 60),
+                                    allow_redirects=True)
+            if head.status_code < 400:
+                cl = head.headers.get("Content-Length")
+                if cl and cl.isdigit():
+                    exp_size = int(cl)
+                exp_sha = head.headers.get("X-Snapshot-SHA256") or None
+            elif head.status_code == 405:
+                log.info("hub_download %s: HEAD not supported "
+                            "(hub pre-.132ll) — will learn size from "
+                            "first GET",
+                            snapshot_id)
+            else:
+                log.warning("hub_download %s HEAD returned %d — "
+                               "falling back to GET-only",
+                               snapshot_id, head.status_code)
+        except Exception as e:   # noqa: BLE001
+            log.warning("hub_download %s HEAD errored (%s) — "
+                           "falling back to GET-only", snapshot_id, e)
 
-        written, got_sha = _resumable_get_stream(
+        written, _got_sha = _resumable_get_stream(
             url=url,
             dst_part=tmp,
             expected_size=exp_size,
@@ -376,7 +463,30 @@ def hub_download(snapshot_id: str, dst: Path) -> Optional[int]:
             log_tag=f"snap-{snapshot_id[:8]}",
         )
         tmp.replace(dst)
+        # Success — clear any prior cooldown.
+        _SNAPSHOT_COOLDOWN.pop(snapshot_id, None)
+        _SNAPSHOT_SHA_FAILS.pop(snapshot_id, None)
         return written
+    except RuntimeError as e:
+        msg = str(e)
+        if "sha mismatch" in msg:
+            n = _SNAPSHOT_SHA_FAILS.get(snapshot_id, 0) + 1
+            _SNAPSHOT_SHA_FAILS[snapshot_id] = n
+            if n >= 3:
+                cool = 600.0   # 10 min
+                _SNAPSHOT_COOLDOWN[snapshot_id] = _t.time() + cool
+                log.error(
+                    "hub_download %s: %d consecutive sha mismatches — "
+                    "cooling down for %.0fs to break the retry loop",
+                    snapshot_id, n, cool,
+                )
+        log.error("download %s failed: %s", snapshot_id, msg)
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+        return None
     except Exception as e:  # noqa: BLE001 — log full trace
         log.error("download %s crashed: %s\n%s",
                   snapshot_id, e, traceback.format_exc())

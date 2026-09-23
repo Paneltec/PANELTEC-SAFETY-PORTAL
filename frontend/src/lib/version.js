@@ -1,5 +1,100 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132ll — HEAD support + sha-mismatch cooldown guard.
+//
+// Fallout from the .132lk shakedown: agent's first snapshot pull
+// on the new resumable transport failed in an *unexpected* way.
+// Three linked bugs, one ship:
+//
+// Bug 1 — HEAD-on-a-GET-only-route returns 405 with 31-byte body.
+//   FastAPI does NOT auto-handle HEAD when a route is declared
+//   `@router.get(...)`. Client sees `HTTP 405 / Content-Length: 31
+//   / body {"detail":"Method Not Allowed"}`. `hub_download` read
+//   the 31-byte `Content-Length` and passed it as `expected_size`
+//   to the resumable helper. Symptoms in the UGREEN log:
+//     `[snap-8a36365e] attempt 1/10  fresh GET (have=0 expect=31)`
+//   Fix: mark both endpoints `methods=["GET", "HEAD"]`. On HEAD
+//   we short-circuit to `Response(status_code=…, headers=…)` —
+//   same headers as GET but empty body. `Content-Length` now
+//   reports the ACTUAL total_size (or the range length on a
+//   Range HEAD). Verified via direct `curl -I`:
+//     `HTTP/2 200 · Content-Length: 1157734183 · Accept-Ranges:
+//      bytes · X-Snapshot-SHA256: f09fced1c8d3…`.
+//
+// Bug 2 — helper's early-break accepted a partial as "success"
+//   when the caller-supplied `expected_size` was bogus.
+//   `if expected_size > 0 and have >= expected_size: break`
+//   caused attempt #2 to exit the retry loop the instant the
+//   `.part` reached 31 bytes (from a truncated 573 MB partial).
+//   Sha then predictably mismatched — but the `.part` had
+//   already been kept for the sha-verify step (rename happens
+//   AFTER sha check, that part was fine).
+//   Fix: on every 200 GET response, read the server's
+//   Content-Length and if it disagrees with the caller-supplied
+//   `expected_size` by >10%, TRUST THE SERVER. Log a WARN so
+//   operators see the correction. Also: `expected_size == 0`
+//   fast-path now discovers the size from the first GET's
+//   Content-Length header rather than staying stuck at 0.
+//
+// Bug 3 — sha mismatch triggered infinite disk-churn.
+//   Every 60s poll cycle re-downloaded the same broken payload,
+//   sha-failed, deleted the file, went again. Fills logs, burns
+//   disk-write cycles, hides real errors behind sha-mismatch
+//   noise.
+//   Fix: two guards.
+//     · **Inside the helper** — sha mismatch now wipes the
+//       `.part` and retries the FULL download up to
+//       `max_sha_retries=3` times before raising. Each retry
+//       waits 30s to let any edge state clear.
+//     · **In `hub_download`** — outer cooldown map
+//       `_SNAPSHOT_COOLDOWN[snap_id] = ts_to_resume` set to
+//       `now + 600s` after 3 consecutive sha-mismatch cycles.
+//       While `now < ts_to_resume`, subsequent `hub_download`
+//       calls short-circuit with a WARN log and return None.
+//       Companion `_SNAPSHOT_SHA_FAILS[snap_id]` cleared on
+//       successful download.
+//
+// Backend files (`backup_service.py`):
+//   · `download_snapshot` — `api_route(methods=["GET","HEAD"])`,
+//     HEAD returns headers-only `Response(...)`.
+//   · `agent_probe_blob` — same treatment.
+//   · Both HEAD paths honor `Range` (returning 206 headers
+//     without body) so the agent's HEAD-first probe can also
+//     advertise resume capability.
+//
+// Agent files (`scripts/paneltec_backup_agent.py`):
+//   · `_resumable_get_stream` — server-Content-Length preference,
+//     sha-mismatch retry loop, `max_sha_retries` parameter.
+//   · `hub_download` — cooldown check upfront + cooldown set on
+//     3× sha-fails. HEAD-405 tolerated gracefully (falls through
+//     with `expected_size=0` and lets the helper's GET learn it).
+//   · Two new module-level dicts: `_SNAPSHOT_SHA_FAILS`,
+//     `_SNAPSHOT_COOLDOWN`.
+//
+// Verified live:
+//   · `curl -sSI .../snapshots/8a36365e-…/data → HTTP/1.1 200
+//     Content-Length: 1157734183, Accept-Ranges: bytes,
+//     X-Snapshot-SHA256: <64-char>`.
+//   · `curl -H "Range: bytes=1000000000-" .../data → HTTP/1.1
+//     206 Partial Content`.
+//
+// OPERATOR NOTE:
+//   UGREEN NAS agent needs a second stop+start so the compose
+//   bootstrap re-fetches `install.py` and picks up the sha-retry
+//   + cooldown helper. After restart the pending
+//   8a36365e-… snapshot should either finish clean (agent log
+//   `snap-8a36365e … RESUME @ byte X/Y → complete`) OR enter
+//   cooldown with a clear log line — no more infinite retry.
+//
+// NOT changed:
+//   · HMAC canonicals (unchanged since .132lj).
+//   · Dropbox enum data (`dropbox_files_enum` — 145,035 rows).
+//   · Bytes-copy engine — still deferred to .132lm.
+//   · GridFS legacy snapshot branch — no HEAD, no Range (dead
+//     code post-.132jh purge; kept as insurance).
+//   · `/app/mobile/` — untouched (ban).
+//   · `MOBILE_BUNDLE_VERSION` — unchanged.
+
 // v58.13.132lk — Transport hardening: HTTP Range / resumable
 // downloads on both sides of the NAS agent tunnel.
 //
@@ -14464,7 +14559,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lk';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ll';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -14485,7 +14580,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lk';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lk';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ll';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
