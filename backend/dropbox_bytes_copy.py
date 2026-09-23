@@ -114,6 +114,15 @@ async def latest_status() -> Optional[Dict[str, Any]]:
     )
 
 
+async def get_run(run_id: str) -> Optional[Dict[str, Any]]:
+    """v58.13.132mg — Look up a specific migration run doc by
+    id. Used by the resume endpoint to fetch the agent_id + state
+    of an interrupted run before firing a fresh task."""
+    return await db[_STATUS_COLL].find_one(
+        {"run_id": run_id}, {"_id": 0},
+    )
+
+
 # ── Idempotency: check the NAS-side sidecar for existing file ─
 async def _agent_has_file(agent_id: str, nas_path: str,
                              expected_size: int,
@@ -341,7 +350,12 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
         })
         last_flush = now
 
-    async for row in db[_ENUM_COLL].find({}, {
+    async for row in db[_ENUM_COLL].find({
+        # v58.13.132mg — resume support: skip rows already copied
+        # in a previous (possibly interrupted) run. `copy_state` is
+        # stamped after each successful `fetch_and_put` below.
+        "copy_state": {"$ne": "copied"},
+    }, {
         "_id": 0, "dropbox_id": 1, "dropbox_path": 1,
         "dropbox_rev": 1, "size": 1, "content_hash": 1,
     }).sort("size", 1):   # small files first — quick wins
@@ -402,9 +416,21 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
                 # Generous timeout for the 13.7 GB zip; agent's
                 # own resumable helper does its own retry chain.
                 timeout_s=6 * 3600.0,
+                # v58.13.132mg — target ugreen-nas explicitly so the
+                # freshest-wins default in `enqueue_op` doesn't
+                # route ops to a stale Office Pi that can't serve
+                # `fetch_and_put`.
+                agent_id=agent_id,
             )
             files_copied += 1
             bytes_transferred += int(wr.get("size") or size)
+            # v58.13.132mg — mark enum row as copied for resume idempotency.
+            await db[_ENUM_COLL].update_one(
+                {"dropbox_id": row["dropbox_id"]},
+                {"$set": {"copy_state": "copied",
+                             "copied_at": _now_iso(),
+                             "copied_by_run_id": run_id}},
+            )
         except Exception as e:   # noqa: BLE001
             files_failed += 1
             errors.append({"path": path, "phase": "fetch_and_put",

@@ -1,5 +1,103 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132mg — SDS filename expiry parsing + Dropbox migration
+// picker fix + restart-recovery scaffolding.
+//
+// THREE-part ship, all backend + frontend, no mobile:
+//
+// PART A · Migration picker fix (blocks real Dropbox → NAS run).
+//   Diagnosed in-session: `nas_client.fetch_and_put()` did NOT
+//   forward `agent_id` to `enqueue_op()`. Migration engine passed
+//   ugreen-nas explicitly, but `enqueue_op` defaulted to the
+//   most-recent poller (`_default_agent_id()`), which was routing
+//   ops to a stale `Office Pi` agent that couldn't serve
+//   `fetch_and_put`. Op sat `in_flight` on Office Pi for 12+ min
+//   with no ack, migration made zero progress.
+//   Fix: threaded `agent_id` through `fetch_and_put` →
+//   `enqueue_op` and updated the Dropbox copy engine to pass its
+//   own `agent_id` down.
+//
+// PART B · Restart-recovery scaffolding.
+//   Every ship in this session (`.132mb`, `.132md`, `.132mf`, now
+//   this one) requires a backend restart which kills any in-flight
+//   migration. The `.132mb` outer try/except safety net doesn't
+//   fire on a hard SIGTERM shutdown — asyncio task cancellation
+//   doesn't route through user-level except handlers before the
+//   loop dies. So state docs stay frozen at `state: running`.
+//   Fix:
+//     · Backend startup hook `sweep_zombie_migration_runs()` (in
+//       `integrations_dropbox.py`): on boot, mark any
+//       `state=running` doc whose `updated_at` is >5 min old as
+//       `interrupted`, and force-error any `in_flight` `nas_ops`
+//       rows on that run (so a resume doesn't wait forever on a
+//       ghost).
+//     · New endpoint `POST /api/dropbox/migration/{run_id}/resume`
+//       (admin only): fires a fresh copy task using the original
+//       `agent_id`. Enum walker filters `copy_state != "copied"`
+//       so already-migrated files are skipped.
+//     · Copy engine now stamps `copy_state=copied` + `copied_at`
+//       + `copied_by_run_id` on each `dropbox_files_enum` row
+//       after a successful `fetch_and_put`. Idempotent resume.
+//
+// PART C · SDS filename expiry parsing.
+//   Legacy SDS documents encode the expiry as part of the
+//   filename. Real examples from Stephen's Tasmania Dropbox:
+//     Rage_Gold_3Exp1.8.24.pdf       → 2024-08-01 (past)
+//     HPL_4000_3Exp25.2.26.pdf       → 2026-02-25
+//     LOCTITELB8150EXP012029.pdf     → 2029-01-01
+//     bp-butaneEXP042025.pdf         → 2025-04-01 (past)
+//     HHS2000EXP2029.pdf             → 2029-12-31 (year-only)
+//     JotacoteQDEXP062028.pdf        → 2028-06-01 (QD prefix)
+//   Two regex families:
+//     · Dotted DMY (Australian, DD.MM.YY[YY]): matches optional
+//       `_N` cycle-marker prefix + `Exp` + date. e.g. `_3Exp1.8.24`.
+//     · Compact `EXP` + 4/6/8 digits: YYYY (year-only, EoY
+//       fallback), MMYYYY, DDMMYYYY. Optional `QD` prefix.
+//   Sanity: reject dates >20 years past or future.
+//
+//   New helpers:
+//     · backend `filename_expiry.py` — `parse_filename_expiry()`
+//                                        + `expiry_bucket()`
+//     · frontend `src/lib/filenameExpiry.js` — mirror parser +
+//                                                 `resolveDisplay()`
+//                                                 (prefers backend
+//                                                  fields when the
+//                                                  backfill has
+//                                                  landed)
+//     · frontend `src/components/document-library/ExpiryBadge.jsx`
+//       — colour-coded chip (green >6mo, amber ≤6mo, red past,
+//         grey unknown).
+//
+//   Backend endpoint:
+//     · `GET /api/document-library/expiries?status=…`
+//       (admin only). Returns files bucketed by expiry status
+//       for the future "SDS Expiring Soon" dashboard widget.
+//
+//   Backfill script:
+//     · `scripts/backfill_filename_expiry.py` — dry-run by
+//       default, `--run` to commit. Populates `display_name`
+//       + `expires_at` on `doc_files`. Idempotent. Reports
+//       matched / unparseable / already-backfilled counts.
+//
+//   Frontend wiring: `pages/DocumentLibrary.jsx` main folder
+//   row and `pages/SharedWithMe.jsx` table filename. Both use
+//   `resolveDisplay(file)` which prefers backend `display_name`
+//   + `expires_at` if present, else falls back to the local
+//   parser so rows work correctly during the deploy window
+//   before the backfill runs.
+//
+// Unit tests (backend): 12/12 pass on the real example set from
+// Stephen's screenshots (`filename_expiry` tests).
+//
+// Not touched (intentional):
+//   · Actual filenames in Mongo — `doc_files.filename` stays
+//     authoritative. Backfill only ADDS `display_name` +
+//     `expires_at`.
+//   · NAS storage paths — untouched.
+//   · Mobile app — ports of `.132mf` + `.132mg` deferred.
+//   · `.132me` auth-lockout fix — still parked awaiting user
+//     green-light. NOT bundled.
+
 // v58.13.132mf — Display-only strip of legacy hex-ID filename prefix.
 //
 // Legacy bulk imports stamped a 12- or 13-char hex + dash prefix
@@ -15035,7 +15133,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mf';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mg';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -15056,7 +15154,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mf';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132mf';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132mg';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

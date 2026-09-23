@@ -683,3 +683,35 @@ async def seed_shares_from_shared_reference(
         "folders": len(folders),
         "files_scanned": len(files),
     }
+
+
+# ── v58.13.132mg — Expiry-code queries ───────────────────────────
+@router.get("/expiries")
+async def list_by_expiry(status: str = "all",
+                            user: dict = Depends(_require_admin)):
+    """Return doc_files with a parsed `expires_at`, bucketed by
+    status. `status` is one of `expired`, `expiring_soon`, `ok`,
+    `unknown`, or `all`. Powers the future "SDS Expiring Soon"
+    dashboard widget."""
+    from datetime import date, timedelta
+    today = date.today()
+    soon_cutoff = today + timedelta(days=183)
+    q: Dict[str, Any] = {"org_id": user["org_id"], "deleted_at": None}
+    if status == "expired":
+        q["expires_at"] = {"$lt": today.isoformat(), "$ne": None}
+    elif status == "expiring_soon":
+        q["expires_at"] = {"$gte": today.isoformat(),
+                              "$lte": soon_cutoff.isoformat()}
+    elif status == "ok":
+        q["expires_at"] = {"$gt": soon_cutoff.isoformat()}
+    elif status == "unknown":
+        q["$or"] = [{"expires_at": None}, {"expires_at": {"$exists": False}}]
+    # `all` — no extra filter.
+    rows = []
+    async for f in db.doc_files.find(q, {
+        "_id": 0, "id": 1, "filename": 1, "display_name": 1,
+        "expires_at": 1, "folder_id": 1, "size_bytes": 1,
+        "mime": 1, "created_at": 1,
+    }).sort([("expires_at", 1)]).limit(500):
+        rows.append(f)
+    return {"status": status, "count": len(rows), "files": rows}

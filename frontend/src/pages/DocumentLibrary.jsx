@@ -26,6 +26,9 @@ import HardDeleteModal from '../components/document-library/HardDeleteModal';
 import FolderAdminToolbar from '../components/document-library/FolderAdminToolbar';
 // v58.13.132mf — display-only strip of legacy hex-id filename prefix.
 import { displayFilename } from '../lib/displayFilename';
+// v58.13.132mg — expiry-code parsing + badge.
+import { resolveDisplay } from '../lib/filenameExpiry';
+import ExpiryBadge from '../components/document-library/ExpiryBadge';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
@@ -2291,8 +2294,11 @@ export function DocumentLibraryFolder() {
                                 ? `Open in new window — ${displayFilename(f.filename)}`
                                 : `Download — ${displayFilename(f.filename)}`}
                               data-testid={`file-open-${f.id}`}>
-                              {displayFilename(f.filename)}
+                              {resolveDisplay(f).name}
                             </button>
+                            {(() => { const r = resolveDisplay(f); return r.expiresAt ? (
+                              <ExpiryBadge bucket={r.bucket} expiresAt={r.expiresAt} testId={`file-expiry-${f.id}`} />
+                            ) : null; })()}
                             {f._search_match_field && (
                               <span
                                 data-testid={`file-match-field-${f.id}`}

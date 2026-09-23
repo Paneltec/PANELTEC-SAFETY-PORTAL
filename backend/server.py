@@ -851,6 +851,21 @@ async def on_startup():
         log.warning("disk_hygiene.cron install failed: %s", _e)
 
     await ensure_indexes()
+    # v58.13.132mg — Sweep zombie Dropbox migration runs at boot.
+    # If a previous uvicorn worker died mid-migration (any restart
+    # during a `state=running` run), the state doc gets frozen with
+    # no task alive to update it. Mark stale rows as `interrupted`
+    # so admins can see + POST to /api/dropbox/migration/{id}/resume.
+    try:
+        from integrations_dropbox import sweep_zombie_migration_runs
+        _sweep = await sweep_zombie_migration_runs()
+        if _sweep.get("marked_interrupted"):
+            log.warning(
+                "migration_sweep.startup marked_interrupted=%d",
+                _sweep["marked_interrupted"],
+            )
+    except Exception as _e:  # noqa: BLE001
+        log.warning("migration_sweep.startup failed: %s", _e)
     # v58.13.132hf — Boot-trigger the doc_files extracted_text
     # backfill 5 minutes after startup. Admin can cancel via
     # POST /api/document-library/admin/backfill-extracted-text/cancel.

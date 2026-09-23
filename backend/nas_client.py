@@ -78,7 +78,8 @@ async def put_file(path: str, body: bytes,
 async def fetch_and_put(path: str, source_url: str,
                           expected_sha256: str, expected_size: int,
                           meta: Optional[Dict[str, Any]] = None,
-                          timeout_s: float = 30 * 60.0) -> Dict[str, Any]:
+                          timeout_s: float = 30 * 60.0,
+                          agent_id: Optional[str] = None) -> Dict[str, Any]:
     """v58.13.132lj — streaming transport. Agent downloads directly
     from `source_url` (typically a Dropbox `files_get_temporary_link`
     URL or a pod-served probe blob URL) to a temp file on the NAS,
@@ -86,6 +87,13 @@ async def fetch_and_put(path: str, source_url: str,
     `<NAS_ROOT>/paneltec-files/<path>`. Body bytes never traverse
     the pod-to-agent HTTP body — signed URL is the transport, HMAC
     signs `path|source_url|expected_sha256|expected_size`.
+
+    v58.13.132mg — `agent_id` param added. If omitted, `enqueue_op`
+    falls back to the most-recent-poller default (freshest-wins) —
+    which was routing Dropbox-migration ops to a stale Office Pi
+    agent that couldn't handle `fetch_and_put`. Callers that care
+    which agent runs the op (the Dropbox → NAS migration engine
+    passes `958bf283-…` for `ugreen-nas`) MUST thread the id here.
 
     Default timeout 30 min (bulk-copy jobs will call with longer).
     Returns `{path, size, sha256, mtime}` — same shape as `put_file`."""
@@ -96,7 +104,7 @@ async def fetch_and_put(path: str, source_url: str,
         "expected_size": int(expected_size),
     })
     row = await enqueue_op("fetch_and_put", path, body_b64=None,
-                             meta=full_meta)
+                             meta=full_meta, agent_id=agent_id)
     settled = await wait_for_result(row["id"], timeout_s=timeout_s)
     status = settled.get("status")
     if status == "done":

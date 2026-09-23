@@ -705,3 +705,91 @@ async def dropbox_migration_status(
     import dropbox_bytes_copy as bcopy
     s = await bcopy.latest_status()
     return s or {"state": "none"}
+
+
+# ── v58.13.132mg — Restart-recovery + resume endpoint ─────────────
+async def sweep_zombie_migration_runs() -> Dict[str, int]:
+    """Called once on backend startup. Marks any `state=running`
+    migration doc whose `updated_at` is older than 5 min as
+    `interrupted` — the previous uvicorn worker died mid-run and
+    the task can't recover its own state doc from a hard SIGTERM.
+    Returns `{marked_interrupted}` for the startup log."""
+    from datetime import datetime, timezone, timedelta
+    from db import db as _db   # v58.13.132mg — canonical db module
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    n = 0
+    async for run in _db.dropbox_migration_run.find(
+        {"state": {"$in": ["running", "dry-run-running"]},
+         "updated_at": {"$lt": cutoff}},
+        {"_id": 0, "run_id": 1},
+    ):
+        rid = run["run_id"]
+        r = await _db.dropbox_migration_run.update_one(
+            {"run_id": rid,
+             "state": {"$in": ["running", "dry-run-running"]}},
+            {"$set": {
+                "state": "interrupted",
+                "updated_at": now_iso,
+                "interrupted_at": now_iso,
+                "interrupt_reason": "backend restart (auto-swept on boot)",
+            }},
+        )
+        if r.modified_count:
+            n += 1
+            log.warning(
+                "[migration-sweep] marked run %s as interrupted", rid,
+            )
+        # Also clear any stale in_flight ops on this run so a resume
+        # doesn't wait forever on a ghost.
+        await _db.nas_ops.update_many(
+            {"meta.run_id": rid, "status": "in_flight"},
+            {"$set": {
+                "status": "error",
+                "error": ("orphaned — agent-ack never received "
+                          "before backend restart"),
+                "finished_at": now_iso,
+            }},
+        )
+    return {"marked_interrupted": n}
+
+
+@router.post("/migration/{run_id}/resume")
+async def dropbox_migration_resume(
+    run_id: str,
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """Resume a run that was `interrupted` by a previous restart.
+    Fires a fresh copy task using the same `agent_id` from the
+    interrupted run doc. Skips enum rows with
+    `copy_state=copied` so already-transferred files aren't
+    re-copied. Idempotent — resuming a completed run is a no-op."""
+    import dropbox_bytes_copy as bcopy
+    run = await bcopy.get_run(run_id)
+    if not run:
+        raise HTTPException(404, f"run {run_id} not found")
+    if run.get("state") not in {"interrupted", "failed", "cancelled"}:
+        raise HTTPException(
+            409,
+            f"run state is {run.get('state')!r} — "
+            "only interrupted/failed/cancelled runs can be resumed",
+        )
+    agent_id = run.get("agent_id")
+    if not agent_id:
+        raise HTTPException(422, "run has no agent_id — cannot resume")
+    new_run_id = f"copy-{secrets.token_hex(6)}"
+    task = asyncio.create_task(
+        bcopy.run_copy_job(new_run_id, agent_id, dry_run=False),
+    )
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    log.info(
+        "dropbox_migration RESUMED old_run=%s new_run=%s agent=%s",
+        run_id, new_run_id, agent_id,
+    )
+    return {
+        "resumed_from": run_id,
+        "new_run_id": new_run_id,
+        "state": "started",
+        "agent_id": agent_id,
+    }
