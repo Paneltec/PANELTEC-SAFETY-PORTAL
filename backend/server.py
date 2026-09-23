@@ -108,6 +108,7 @@ from workspaces import router as workspaces_router  # noqa: E402
 # public site scan router at /api/sites (Phase 4.12, sites_qr.py). Phase B
 # (.132cb-b) will absorb the FK rename + retire /api/workspaces.
 from sites_admin import router as sites_admin_router  # noqa: E402
+from integrations_dropbox import router as dropbox_router  # noqa: E402  — v58.13.132lb
 from org_settings import router as org_router  # noqa: E402
 from mobile_modules import router as mobile_modules_router  # noqa: E402
 
@@ -605,6 +606,7 @@ api.include_router(workspaces_router)
 # v58.13.132cb — /api/sites/admin (Phase A). Kept adjacent to
 # workspaces_router so the .132cb-b retire is a one-line drop.
 api.include_router(sites_admin_router)
+api.include_router(dropbox_router)  # v58.13.132lb — /api/dropbox/health
 app.include_router(org_router)
 app.include_router(mobile_modules_router)
 api.include_router(email_router)

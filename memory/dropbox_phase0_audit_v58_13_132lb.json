@@ -1,0 +1,35 @@
+{
+  "_schema": "dropbox_phase0_audit",
+  "_ship": "v58.13.132lb",
+  "_blocked_reason": "files.metadata.read scope missing on Dropbox app 8619475",
+  "connected": true,
+  "team_admin": false,
+  "team_folder_found": false,
+  "team_folder_name": "Paneltec-General Administration",
+  "team_folder_id": null,
+  "team_namespace_id": null,
+  "root_folder_id": "2673752851",
+  "account_email": "stephen@paneltec.com.au",
+  "account_type": "business",
+  "is_team_member": true,
+  "top_level": [],
+  "top_level_folder_count": null,
+  "top_level_file_count": null,
+  "top_level_bytes": null,
+  "level2_folder_count": null,
+  "level2_file_count": null,
+  "level2_bytes": null,
+  "sampled_subtrees": [],
+  "estimated_total_files": null,
+  "estimated_total_bytes": null,
+  "errors": [
+    {
+      "step": "team_get_info",
+      "detail": "BadInputError \u2014 token is not team-scoped"
+    },
+    {
+      "step": "files_list_folder",
+      "detail": "BadInputError \u2014 missing scope files.metadata.read"
+    }
+  ]
+}

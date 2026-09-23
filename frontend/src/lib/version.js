@@ -1,5 +1,63 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132lb — Dropbox integration Phase 0 (audit-only, backend).
+//
+// Standing brief (Stephen): stand up a Dropbox link to the team
+// folder `Paneltec-General Administration` so we can later mirror
+// its contents into `doc_folders` / `doc_files`. This ship is
+// Phase 0 — connect + audit ONLY. Zero mutations to any Mongo
+// collection.
+//
+// ── Backend ────────────────────────────────────────────────────
+//   · `backend/integrations_dropbox.py` NEW — admin-gated
+//     `GET /api/dropbox/health`. Live-probes the token and
+//     overlays projections from the audit artifact when present.
+//     Redacts the token defensively before returning any error
+//     string. Admin gate mirrors the `.132kt` set (legacy:
+//     admin/hseq_lead/supervisor/manager; role_id: admin,
+//     hseq_manager, hseq_manager_2, hseq_manager_readonly,
+//     hseq_manager_creator, responsible_manager,
+//     report_emailing_admin).
+//   · `backend/scripts/dropbox_phase0_audit.py` NEW — probes the
+//     Dropbox account, walks top-2 levels, samples 3 random
+//     level-2 subtrees for size projection, writes
+//     `/app/memory/dropbox_phase0_audit_v58_13_132lb.json`.
+//   · `backend/.env` — appended DROPBOX_APP_KEY / _APP_SECRET /
+//     _ACCESS_TOKEN / _TEAM_FOLDER_NAME. `.env` is gitignored —
+//     verified via `git check-ignore backend/.env`.
+//   · `backend/requirements.txt` — pinned `dropbox==12.2.2` +
+//     transitive `stone==3.5.4`.
+//   · `backend/server.py` — mounted `dropbox_router` at
+//     `/api/dropbox`.
+//
+// ── AUDIT FINDING (blocker for Phase 1) ────────────────────────
+//   The delivered access token is USER-scoped (individual OAuth
+//   for stephen@paneltec.com.au, business account,
+//   is_teammember=True, root_ns=2673752851) but the Dropbox app
+//   registration (ID 8619475) is missing the `files.metadata.read`
+//   scope, so /2/files/list_folder returns:
+//     BadInputError('… missing scope files.metadata.read')
+//   Team-scoped endpoints (/2/team/*) are also blocked because
+//   the token isn't team-scoped.
+//
+//   → Fix in Dropbox App Console → Permissions:
+//       · files.metadata.read       (list + metadata)
+//       · files.content.read        (download — Phase 2)
+//       · team_info.read + team_data.member  (team folder listing)
+//     then REGENERATE the token — sl.u.* tokens don't inherit
+//     newly-granted scopes retroactively.
+//
+//   Audit artifact:
+//     /app/memory/dropbox_phase0_audit_v58_13_132lb.json
+//   Ship memo:
+//     /app/memory/v58_13_132lb_dropbox_phase0_audit.md
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `doc_folders` / `doc_files` collections — zero writes.
+//   · Any download / webhook wiring (Phases 2/3).
+//   · `/app/mobile/` — untouched (ban).
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+
 // v160.3.9.58.13.132cd — Sidebar version pill: raise + darken.
 //
 // User pain (verbatim, Stephen): "cant see the version pill in the
@@ -13674,7 +13732,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kz';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132lb';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13695,7 +13753,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132kz';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132kz';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132lb';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
