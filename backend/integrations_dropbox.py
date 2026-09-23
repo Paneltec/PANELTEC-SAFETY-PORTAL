@@ -1,11 +1,14 @@
 """v58.13.132lb — Dropbox integration Phase 0 (audit-only).
 v58.13.132ld — Added OAuth authorize + refresh-token flow (Pivot C).
+v58.13.132le — Added Phase 1 folder-tree mirror trigger + status.
 
 Endpoints:
 
-  GET  /api/dropbox/health          (admin)  — connect + scope diagnostic
-  GET  /api/dropbox/oauth/start     (admin)  — begin OAuth authorize flow
-  POST /api/dropbox/oauth/callback  (public) — code → token exchange
+  GET  /api/dropbox/health              (admin)  — connect + scope diagnostic
+  GET  /api/dropbox/oauth/start         (admin)  — begin OAuth authorize flow
+  POST /api/dropbox/oauth/callback      (public) — code → token exchange
+  POST /api/dropbox/mirror-run          (admin)  — kick off async folder mirror
+  GET  /api/dropbox/mirror-status/{id}  (admin)  — poll mirror job progress
 
 The `/dropbox/callback` frontend route lives on the React app (not on
 this router) because the pod's ingress routes non-`/api/*` paths to
@@ -24,19 +27,23 @@ Admin gate mirrors the mobile+web `.132kt` set.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 import secrets
 import time
+from collections import deque
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Deque, Dict, Optional
 
 import requests
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from auth import get_current_user
 
+log = logging.getLogger("paneltec.dropbox")
 router = APIRouter(prefix="/dropbox", tags=["dropbox"])
 
 # In-process CSRF-state store. 5-minute TTL. Sufficient because a
@@ -52,7 +59,10 @@ _DROPBOX_REDIRECT_URI = (
 _DROPBOX_AUTHORIZE_URL = "https://www.dropbox.com/oauth2/authorize"
 _DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 # Space-separated per Dropbox spec (though the SDK also accepts a list).
-_DROPBOX_SCOPES = "files.metadata.read files.content.read sharing.read"
+_DROPBOX_SCOPES = (
+    "account_info.read "
+    "files.metadata.read files.content.read sharing.read"
+)
 
 
 # ── admin gate (.132kt parity) ──────────────────────────────────
@@ -321,15 +331,30 @@ def _live_probe() -> Dict[str, Any]:
         out["diagnostic"] = _redact(f"client init failed: {e}")
         return out
 
-    # Identity probe.
+    # Identity probe — nice-to-have. Needs `account_info.read` scope
+    # which is NOT in our default scope set (`files.metadata.read
+    # files.content.read sharing.read`). Failing here is expected on
+    # tokens minted without account_info.read; it must NOT flip
+    # `connected` to false because the data-plane below is what
+    # actually decides whether the mirror pipeline can work.
     try:
         me = dbx_user.users_get_current_account()
-        out["connected"] = True
         out["account_email"] = me.email
         out["root_namespace_id"] = me.root_info.root_namespace_id
     except Exception as e:  # noqa: BLE001
-        out["diagnostic"] = _redact(f"users_get_current_account failed: {e}")
-        return out
+        msg = _redact(str(e))
+        if "account_info.read" in msg:
+            # Fall back to a hard-coded root ns lookup — we captured
+            # this during the `.132lb` OAuth completion. Not ideal
+            # (would break if the account moves teams) but keeps the
+            # health endpoint functional without re-consenting the
+            # user to widen scopes.
+            out["root_namespace_id"] = os.environ.get(
+                "DROPBOX_ROOT_NAMESPACE_ID", "2673752851"
+            )
+        else:
+            out["diagnostic"] = _redact(f"users_get_current_account failed: {e}")
+            # Non-fatal — keep going.
 
     # Team-scoped probe (nice-to-have; will fail on user-scoped tokens).
     try:
@@ -343,29 +368,36 @@ def _live_probe() -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Scope + team-folder probe.
+    # Scope + team-folder probe — THIS is the authoritative
+    # "connected" signal because it's what the mirror pipeline
+    # actually calls. Data-plane success flips `connected: true`
+    # regardless of whether the identity endpoint worked.
     try:
         from dropbox.common import PathRoot
         from dropbox.files import FolderMetadata
+        team_folder_path = "/" + out["team_folder_name"]
         dbx_root = dbx_user.with_path_root(
             PathRoot.namespace_id(out["root_namespace_id"])
         )
-        res = dbx_root.files_list_folder("", recursive=False)
+        res = dbx_root.files_list_folder(
+            team_folder_path, recursive=False,
+        )
+        # If we got here, the token can list files. That's the
+        # scope we care about.
+        out["connected"] = True
         out["scopes_ok"] = True
         folders = 0
         files = 0
-        target = out["team_folder_name"].strip().lower()
         for e in res.entries:
             if isinstance(e, FolderMetadata):
                 folders += 1
-                if e.name.strip().lower() == target:
-                    out["team_folder_found"] = True
-                    sfid = getattr(e, "shared_folder_id", None)
-                    out["team_folder_id"] = sfid or e.id
             else:
                 files += 1
         out["top_level_folder_count"] = folders
         out["top_level_file_count"] = files
+        out["team_folder_found"] = True
+        # team_folder_id is captured in the .132lb artifact; overlay
+        # in the /health handler picks it up.
     except Exception as e:  # noqa: BLE001
         msg = _redact(str(e))
         if "files.metadata.read" in msg:
@@ -373,6 +405,13 @@ def _live_probe() -> Dict[str, Any]:
                 "Dropbox app is missing the `files.metadata.read` scope. "
                 "Grant it in App Console → Permissions then reconnect "
                 "via the OAuth flow."
+            )
+        elif "not_found" in msg.lower() or "path/not_found" in msg:
+            out["diagnostic"] = (
+                f"Team folder path {team_folder_path!r} not found in the "
+                f"authorised account's root namespace. Check the "
+                f"`DROPBOX_TEAM_FOLDER_NAME` env var + the account has "
+                f"the folder mounted."
             )
         else:
             out["diagnostic"] = f"list_folder failed: {msg}"
@@ -420,7 +459,151 @@ def dropbox_health(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
         )
         if payload["top_level_folder_count"] is None:
             payload["top_level_folder_count"] = art.get("top_level_folder_count")
+        # team_folder_id — always prefer the artifact when the live
+        # probe couldn't capture it (data-plane list_folder doesn't
+        # return the shared_folder_id for the folder we're inside).
+        if not payload["team_folder_id"] and art.get("team_folder_id"):
+            payload["team_folder_id"] = art.get("team_folder_id")
         if not payload["team_folder_found"] and art.get("team_folder_found"):
             payload["team_folder_found"] = True
-            payload["team_folder_id"] = art.get("team_folder_id")
     return payload
+
+
+# ── Phase 1 mirror trigger + status ────────────────────────────
+#
+# In-process job registry. Keys are job_id → dict; keeps only the
+# last 8 jobs to bound memory. Restart-safe? No — jobs in flight at
+# restart are lost. We accept that: the mirror is idempotent, so a
+# restart just means the admin re-fires it. Real durability would
+# require persisting to Mongo (`dropbox_mirror_jobs`) — deferred to
+# a later phase if we ever need multi-worker deployment.
+_MIRROR_JOBS: Dict[str, Dict[str, Any]] = {}
+_MIRROR_JOB_ORDER: Deque[str] = deque(maxlen=8)
+_MIRROR_LOCK = asyncio.Lock()
+
+
+def _mirror_progress_handler(job_id: str):
+    def _on(evt: Dict[str, Any]) -> None:
+        job = _MIRROR_JOBS.get(job_id)
+        if not job:
+            return
+        job["last_event"] = evt
+        if evt.get("phase") == "upsert":
+            job["progress"] = {
+                "index": evt.get("index"),
+                "total": evt.get("total"),
+                "created": evt.get("created"),
+                "updated": evt.get("updated"),
+                "depth": evt.get("depth"),
+                "current_path": evt.get("current_path"),
+            }
+        elif evt.get("phase") == "walk":
+            job["walk"] = {"folders_seen": evt.get("folders_seen")}
+        elif evt.get("phase") == "done":
+            job["summary"] = evt.get("totals")
+    return _on
+
+
+async def _run_mirror_job(job_id: str, dry_run: bool) -> None:
+    """Background task — never raises; errors captured in job state."""
+    from dropbox_folder_mirror import run_mirror
+    _MIRROR_JOBS[job_id]["status"] = "running"
+    try:
+        summary = await run_mirror(
+            dry_run=dry_run,
+            on_progress=_mirror_progress_handler(job_id),
+        )
+        _MIRROR_JOBS[job_id]["summary"] = summary
+        _MIRROR_JOBS[job_id]["status"] = (
+            "completed" if not summary.get("errors") else "failed"
+        )
+    except Exception as e:  # noqa: BLE001
+        _MIRROR_JOBS[job_id]["status"] = "failed"
+        _MIRROR_JOBS[job_id]["error"] = _redact(str(e))
+        log.exception("mirror job %s crashed", job_id)
+    finally:
+        _MIRROR_JOBS[job_id]["finished_at"] = time.time()
+
+
+@router.post("/mirror-run")
+async def dropbox_mirror_run(
+    body: Optional[Dict[str, Any]] = Body(default=None),
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """Kick off the Phase 1 folder-tree mirror as an async task.
+    Returns immediately with `{job_id, status: started}`.
+    Body (optional): `{"dry_run": true}` for a read-only walk.
+    A single job may be in flight at a time; a second POST while
+    another is running returns 409 with the running job's id."""
+    async with _MIRROR_LOCK:
+        for jid in _MIRROR_JOB_ORDER:
+            j = _MIRROR_JOBS.get(jid)
+            if j and j.get("status") in {"queued", "running"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "mirror job already running",
+                        "job_id": jid,
+                        "started_at": j.get("started_at"),
+                    },
+                )
+
+        dry_run = bool((body or {}).get("dry_run"))
+        job_id = f"mirror-{secrets.token_hex(6)}"
+        _MIRROR_JOBS[job_id] = {
+            "job_id": job_id,
+            "dry_run": dry_run,
+            "status": "queued",
+            "started_at": time.time(),
+            "started_by": user.get("email") or user.get("id"),
+            "finished_at": None,
+            "walk": None,
+            "progress": None,
+            "summary": None,
+            "last_event": None,
+            "error": None,
+        }
+        _MIRROR_JOB_ORDER.append(job_id)
+        asyncio.create_task(_run_mirror_job(job_id, dry_run))
+
+    return {"job_id": job_id, "status": "started", "dry_run": dry_run}
+
+
+@router.get("/mirror-status/{job_id}")
+def dropbox_mirror_status(
+    job_id: str,
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """Poll a mirror job's live progress + final summary."""
+    j = _MIRROR_JOBS.get(job_id)
+    if not j:
+        raise HTTPException(404, "job_id not found (or evicted from ring buffer)")
+    return {
+        "job_id": j["job_id"],
+        "dry_run": j["dry_run"],
+        "status": j["status"],
+        "started_at": j["started_at"],
+        "finished_at": j["finished_at"],
+        "walk": j["walk"],
+        "progress": j["progress"],
+        "summary": j["summary"],
+        "error": j["error"],
+    }
+
+
+@router.get("/mirror-jobs")
+def dropbox_mirror_jobs(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
+    """List the last N mirror jobs (bounded ring buffer, most-recent last)."""
+    return {
+        "jobs": [
+            {
+                "job_id": jid,
+                "dry_run": _MIRROR_JOBS[jid]["dry_run"],
+                "status": _MIRROR_JOBS[jid]["status"],
+                "started_at": _MIRROR_JOBS[jid]["started_at"],
+                "finished_at": _MIRROR_JOBS[jid]["finished_at"],
+            }
+            for jid in list(_MIRROR_JOB_ORDER)
+            if jid in _MIRROR_JOBS
+        ],
+    }

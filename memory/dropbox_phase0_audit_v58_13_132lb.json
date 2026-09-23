@@ -1,35 +1,156 @@
 {
   "_schema": "dropbox_phase0_audit",
-  "_ship": "v58.13.132lb",
-  "_blocked_reason": "files.metadata.read scope missing on Dropbox app 8619475",
+  "_ship_original": "v58.13.132lb",
+  "_ship_finalised": "v58.13.132ld",
   "connected": true,
   "team_admin": false,
-  "team_folder_found": false,
+  "scopes_ok": true,
+  "team_folder_found": true,
   "team_folder_name": "Paneltec-General Administration",
-  "team_folder_id": null,
+  "team_folder_id": "5079287136",
   "team_namespace_id": null,
   "root_folder_id": "2673752851",
-  "account_email": "stephen@paneltec.com.au",
-  "account_type": "business",
-  "is_team_member": true,
-  "top_level": [],
-  "top_level_folder_count": null,
-  "top_level_file_count": null,
-  "top_level_bytes": null,
-  "level2_folder_count": null,
-  "level2_file_count": null,
-  "level2_bytes": null,
-  "sampled_subtrees": [],
-  "estimated_total_files": null,
-  "estimated_total_bytes": null,
-  "errors": [
+  "team_folder_path": "/Paneltec-General Administration",
+  "top_level": [
     {
-      "step": "team_get_info",
-      "detail": "BadInputError \u2014 token is not team-scoped"
+      "type": "folder",
+      "name": "Customers",
+      "path_lower": "/paneltec-general administration/customers"
     },
     {
-      "step": "files_list_folder",
-      "detail": "BadInputError \u2014 missing scope files.metadata.read"
+      "type": "folder",
+      "name": "General Administration",
+      "path_lower": "/paneltec-general administration/general administration"
+    },
+    {
+      "type": "folder",
+      "name": "Employee's",
+      "path_lower": "/paneltec-general administration/employee's"
+    },
+    {
+      "type": "folder",
+      "name": "Plant & Equipment",
+      "path_lower": "/paneltec-general administration/plant & equipment"
+    },
+    {
+      "type": "folder",
+      "name": "Software",
+      "path_lower": "/paneltec-general administration/software"
+    },
+    {
+      "type": "folder",
+      "name": "Patricks Folder",
+      "path_lower": "/paneltec-general administration/patricks folder"
+    },
+    {
+      "type": "folder",
+      "name": "Underground Asset Site Location Records",
+      "path_lower": "/paneltec-general administration/underground asset site location records"
+    },
+    {
+      "type": "folder",
+      "name": "Historical JSEAS",
+      "path_lower": "/paneltec-general administration/historical jseas"
+    },
+    {
+      "type": "folder",
+      "name": "Amandas Folder",
+      "path_lower": "/paneltec-general administration/amandas folder"
+    },
+    {
+      "type": "folder",
+      "name": "Stormy's folder",
+      "path_lower": "/paneltec-general administration/stormy's folder"
+    },
+    {
+      "type": "folder",
+      "name": "Enviro Solutions Tasmania",
+      "path_lower": "/paneltec-general administration/enviro solutions tasmania"
+    },
+    {
+      "type": "folder",
+      "name": "Viatec Traffic Solutions",
+      "path_lower": "/paneltec-general administration/viatec traffic solutions"
+    },
+    {
+      "type": "folder",
+      "name": "Taswater - 26A Ravenswood Rd - 240924",
+      "path_lower": "/paneltec-general administration/taswater - 26a ravenswood rd - 240924"
+    },
+    {
+      "type": "folder",
+      "name": "CCTV",
+      "path_lower": "/paneltec-general administration/cctv"
+    },
+    {
+      "type": "folder",
+      "name": "logo",
+      "path_lower": "/paneltec-general administration/logo"
+    },
+    {
+      "type": "folder",
+      "name": "Truck & Vehicle Finance Documents 2021",
+      "path_lower": "/paneltec-general administration/truck & vehicle finance documents 2021"
+    },
+    {
+      "type": "folder",
+      "name": "Risk & Compliance",
+      "path_lower": "/paneltec-general administration/risk & compliance"
+    },
+    {
+      "type": "folder",
+      "name": "Incoming Attachments",
+      "path_lower": "/paneltec-general administration/incoming attachments"
+    },
+    {
+      "type": "file",
+      "name": "Paneltec - Drain Cleaning Services V1.mp4",
+      "size": 89112713,
+      "path_lower": "/paneltec-general administration/paneltec - drain cleaning services v1.mp4"
+    },
+    {
+      "type": "file",
+      "name": "Customers - Shortcut.lnk",
+      "size": 1264,
+      "path_lower": "/paneltec-general administration/customers - shortcut.lnk"
+    },
+    {
+      "type": "file",
+      "name": "DJI_20260520131548_0021_D.MP4",
+      "size": 805758905,
+      "path_lower": "/paneltec-general administration/dji_20260520131548_0021_d.mp4"
     }
-  ]
+  ],
+  "top_level_folder_count": 18,
+  "top_level_file_count": 3,
+  "top_level_bytes": 894872882,
+  "level2_folder_count": 378,
+  "level2_file_count": 69,
+  "level2_bytes": 24303284046,
+  "sampled_subtrees": [
+    {
+      "path": "/paneltec-general administration/risk & compliance/pressure vessels & tanks",
+      "files": 4,
+      "folders": 6,
+      "bytes": 760587,
+      "truncated": false
+    },
+    {
+      "path": "/paneltec-general administration/customers/extractas",
+      "files": 1,
+      "folders": 1,
+      "bytes": 88711,
+      "truncated": false
+    },
+    {
+      "path": "/paneltec-general administration/customers/incitec pivot",
+      "files": 6,
+      "folders": 3,
+      "bytes": 1154670,
+      "truncated": false
+    }
+  ],
+  "estimated_total_files": 1447,
+  "estimated_total_bytes": 25448652928,
+  "errors": []
 }

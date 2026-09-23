@@ -1,5 +1,97 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132le — Dropbox integration Phase 1: folder tree mirror.
+//
+// Standing brief: mirror the full folder tree of
+// `/Paneltec-General Administration` from Dropbox into
+// `doc_folders`. Folder structure only — file bytes are Phase 2.
+//
+// ── Backend ────────────────────────────────────────────────────
+//   · `backend/dropbox_folder_mirror.py` NEW — reusable async
+//     mirror engine:
+//       · `run_mirror(dry_run, on_progress, org_id)` → summary dict.
+//       · `ensure_indexes()` — creates 3 idempotent Mongo indexes:
+//           doc_folders_dropbox_folder_id  (org_id, dropbox_folder_id) sparse
+//           doc_folders_dropbox_path_lower (org_id, dropbox_path_lower) sparse
+//           doc_folders_source             (org_id, source) sparse
+//       · Recursive walk via `/2/files/list_folder(recursive=true)`
+//         at the account's root namespace path
+//         `/Paneltec-General Administration`. Single logical call
+//         with cursor pagination.
+//       · Idempotent upsert keyed on `dropbox_folder_id`:
+//         · existing row → UPDATE (name, parent, path, last_seen).
+//         · new row → INSERT with `source=dropbox`,
+//           `shared_reference=false`, slug-normalised name.
+//       · Parent lookup via in-memory `path_to_id` seeded on the
+//         anchor row + fallback to Mongo `dropbox_path_lower` for
+//         re-runs where children are seen before parents.
+//       · Depth-sorted walk order guarantees parents land first.
+//       · Stale drift detector counts rows with older
+//         `dropbox_last_seen_at` than the run start; non-
+//         destructive (Phase 3 will act on these).
+//   · `backend/scripts/dropbox_phase1_mirror.py` NEW — CLI:
+//       `python backend/scripts/dropbox_phase1_mirror.py --dry-run`
+//       `python backend/scripts/dropbox_phase1_mirror.py`
+//   · `backend/integrations_dropbox.py` — three new endpoints:
+//       · POST /api/dropbox/mirror-run          (admin) — fire-and-
+//         forget async trigger, returns `{job_id, status:started}`.
+//         409 if a job is already running (single-flight guard).
+//         Optional `{"dry_run": true}` body.
+//       · GET  /api/dropbox/mirror-status/{id}  (admin) — poll
+//         `{status, walk, progress, summary, error}`.
+//       · GET  /api/dropbox/mirror-jobs         (admin) — list
+//         the last 8 jobs (in-memory ring buffer).
+//     Jobs live in an in-process dict; a supervisor restart loses
+//     in-flight jobs (the mirror is idempotent so a re-fire is
+//     the recovery). Migrate to Mongo if we ever go multi-worker.
+//
+// ── AUDIT vs the .132lb projection ─────────────────────────────
+//   The Phase 0 audit projected ~1,447 folders in `/Paneltec-
+//   General Administration` based on top-2-level totals plus a
+//   3-random-subtree sample. The FULL recursive walk revealed
+//   **15,049 folders** — 10× the projection. Reason: three
+//   subtrees (`CCTV/Jago Crt/…`, `General Administration/
+//   Viatec Traffic Solutions/Bevs PC Backup June 2020`, and
+//   `Customers/CCTV/Taswater - … CCTV Investigation`) contain
+//   full Windows filesystem dumps with locale directories,
+//   libvlc translation subfolders, and AppData caches nested up
+//   to 15 levels deep. The .132lb sample of 3 shallow-3 subtrees
+//   couldn't have caught this — those samples were 1-2 MB Risk
+//   & Compliance / Customers folders.
+//
+//   No corrective action needed for Phase 1 — the mirror
+//   faithfully replicates what's in Dropbox (that was the brief).
+//   Recommendations documented in the ship memo for Stephen to
+//   consider before Phase 2 bytes-mirroring lands.
+//
+// ── Verification (curl + Mongo) ────────────────────────────────
+//   · Dry-run: folders_seen=15049 · created=15048 · updated=0 ·
+//     skipped_missing_parent=1 · max_depth=16 · elapsed=237.9s.
+//   · Real run: folders_seen=15049 · created=15048 · updated=0 ·
+//     skipped_missing_parent=1 · max_depth=16 · elapsed=225.7s.
+//   · Idempotence re-run: folders_seen=15049 · created=0 ·
+//     updated=15048 · skipped_missing_parent=1 · elapsed=270.3s.
+//   · Mongo state — `doc_folders` where `org_id=3116f250-…`:
+//       · total=15,117 (15,049 mirrored + 68 pre-existing)
+//       · source=dropbox : 15,049 (all `shared_reference=false`)
+//       · pre-existing   :     68 (SDS, IMS, Uncategorised etc.
+//         untouched — non-regression confirmed).
+//   · Anchor row: id=d875b827-…, name=`Paneltec-General
+//     Administration`, parent_folder_id=null, source=dropbox,
+//     dropbox_folder_id=5079287136,
+//     dropbox_path=/Paneltec-General Administration,
+//     shared_reference=false, slug=paneltec-general-administration.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · doc_files — zero writes (Phase 2 only).
+//   · No file bytes downloaded.
+//   · No auto-set shared_reference=true on any mirrored folder.
+//   · Existing pre-mirror folders (SDS, IMS, Uncategorised, etc.)
+//     untouched.
+//   · /app/mobile/ — untouched (ban).
+//   · .132lc doc-tool swap — untouched.
+//   · MOBILE_BUNDLE_VERSION — unchanged.
+
 // v58.13.132ld — Dropbox OAuth authorize + refresh-token flow.
 //
 // Standing brief (Stephen, following `.132lb`): the token minted from
@@ -13900,7 +13992,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ld';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132le';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -13921,7 +14013,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ld';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132ld';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132le';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
