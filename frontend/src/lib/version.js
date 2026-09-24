@@ -1,5 +1,66 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mm — Dropbox migration auto-resume watchdog.
+//
+// Standing issue: migration keeps hitting `interrupted` (backend
+// restarts, network blips, Dropbox permission errors on specific
+// files, etc.). Was manual /resume every time. This ship makes it
+// automatic.
+//
+// Two triggers:
+//   1. **Boot-time.** `sweep_zombie_migration_runs()` (existing
+//      startup hook from `.132mg`) extended: after marking stale
+//      `running` runs as `interrupted`, immediately fire the resume
+//      flow for the most recent interrupted run per `agent_id`
+//      (dedupe so a fleet doesn't double-fire).
+//   2. **Periodic.** New APScheduler job every 5 min:
+//      · `state=running` + `updated_at` > 10 min old →
+//        mark `interrupted` (task is dead, doc is stuck).
+//      · `state=interrupted` + non-terminal reason → auto-resume.
+//
+// Safety net:
+//   · Terminal `interrupt_reason` values NEVER auto-resume:
+//     `user_cancelled`, `hard_fail_limit_hit`. Set them from admin
+//     UI / hard-error paths to force a manual look.
+//   · 5-strike cap: consecutive auto-resumes without `files_copied`
+//     advancing → set state=`needs_attention` on 6th tick. Counter
+//     resets whenever files_copied advances past the snapshot
+//     stored at the last auto-resume (`last_progress_files_copied`).
+//
+// New fields on `dropbox_migration_run`:
+//   · `auto_resume_count: int` — strike counter.
+//   · `last_auto_resume_at: iso` — last fire time.
+//   · `last_progress_files_copied: int` — snapshot for strike reset.
+//   · `last_auto_resumed_into: str` — pointer to child run_id.
+//   · `needs_attention_reason: str | null` — set on cap hit.
+//
+// New collection `migration_watchdog_settings`:
+//   · Single doc `{key: "watchdog", enabled: bool, updated_at,
+//     updated_by}`. Default `enabled: true` when doc absent.
+//
+// New endpoints (admin-only):
+//   · POST /api/dropbox/migration/watchdog/pause
+//   · POST /api/dropbox/migration/watchdog/resume
+//
+// Extended endpoint:
+//   · GET /api/dropbox/migration/status now returns:
+//       - watchdog_enabled: bool
+//       - auto_resume_count: int
+//       - last_auto_resume_at: iso
+//       - needs_attention: bool
+//
+// Non-goals (documented so future ships don't second-guess):
+//   · Never auto-resume user_cancelled runs.
+//   · Never auto-resume hard-permanent-fail runs (auth revoked,
+//     quota exceeded — a future ship should set those reasons).
+//   · Never cascade into infinite loops (5-strike cap enforces).
+//
+// Migration state at ship: pre-ship the resumed run
+// `copy-19a839780d6f` was showing state=running with a stale
+// `updated_at` (task died on the `.132mk` restart; the shutdown-
+// time state=failed write raced the MongoClient close and lost).
+// This ship's watchdog will unstick it within one tick.
+
 // v58.13.132mk — Tasmanian WHS legislation ingest (Phase 1) + bundled
 // `.132mj` licence-ticket parser. Backend-only; version pill/SW cache
 // bump in lockstep.
@@ -15349,7 +15410,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mk';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mm';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

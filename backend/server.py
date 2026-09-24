@@ -1514,6 +1514,22 @@ async def on_startup():
                 log.info("APScheduler job registered — org_archive_rules_daily at 03:30 UTC")
             except Exception as e:
                 log.warning("org_archive_rules scheduler hook failed: %s", e)
+            # v58.13.132mm — Migration auto-resume watchdog. Fires every
+            # 5 min. Force-interrupts stale-running runs (>10 min without
+            # progress) then auto-resumes any interrupted runs (one per
+            # agent) whose interrupt_reason isn't user_cancelled /
+            # hard_fail_limit_hit. Respects a 5-strike cap on consecutive
+            # resumes without files_copied advancing → flips run to
+            # needs_attention on the 6th cycle.
+            try:
+                from integrations_dropbox import watchdog_tick
+                scheduler.add_job(watchdog_tick, "interval", minutes=5,
+                                  id="dropbox_migration_watchdog",
+                                  max_instances=1, coalesce=True,
+                                  replace_existing=True)
+                log.info("APScheduler job registered — dropbox_migration_watchdog every 5 min")
+            except Exception as e:
+                log.warning("dropbox_migration_watchdog scheduler hook failed: %s", e)
             # Phase 4.8 — daily snapshot of engine_hours_total + odometer_km_total
             # for every Navixy-synced asset. 01:00 UTC keeps it ahead of the
             # working-day boundary in AU.

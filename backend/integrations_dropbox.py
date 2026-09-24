@@ -704,16 +704,127 @@ async def dropbox_migration_status(
     """Latest run doc from `dropbox_migration_run`."""
     import dropbox_bytes_copy as bcopy
     s = await bcopy.latest_status()
-    return s or {"state": "none"}
+    if not s:
+        s = {"state": "none"}
+    # v58.13.132mm — surface watchdog telemetry on the status payload
+    # so the admin UI can render "auto-resumed 3× · needs attention".
+    s["watchdog_enabled"] = await _watchdog_enabled()
+    s["auto_resume_count"] = s.get("auto_resume_count") or 0
+    s["last_auto_resume_at"] = s.get("last_auto_resume_at")
+    s["needs_attention"] = bool(s.get("needs_attention_reason"))
+    return s
 
 
 # ── v58.13.132mg — Restart-recovery + resume endpoint ─────────────
+# Extended in v58.13.132mm — auto-resume watchdog (boot + periodic).
+_AUTO_RESUME_TERMINAL_REASONS = {
+    "user_cancelled", "hard_fail_limit_hit",
+}
+# Cap consecutive auto-resumes without progress. On the 6th cycle
+# without any files_copied advance we flip state=needs_attention.
+_AUTO_RESUME_MAX_STRIKES = 5
+# Periodic-watchdog cutoffs.
+_WATCHDOG_RUNNING_STALE_MIN = 10
+_WATCHDOG_INTERRUPT_STALE_MIN = 1
+
+
+async def _watchdog_enabled() -> bool:
+    """Read the global watchdog on/off flag. Default: enabled."""
+    from db import db as _db
+    doc = await _db.migration_watchdog_settings.find_one(
+        {"key": "watchdog"}, {"_id": 0, "enabled": 1},
+    )
+    if not doc:
+        return True
+    return bool(doc.get("enabled", True))
+
+
+async def _launch_resume_task(run_doc: dict, *, source: str) -> Optional[str]:
+    """Fire a resume for `run_doc`. Enforces the 5-strike cap and
+    updates auto_resume counters on the ORIGINAL run doc before
+    starting the new task. Returns new_run_id, or None if skipped."""
+    from datetime import datetime, timezone
+    from db import db as _db
+    import dropbox_bytes_copy as bcopy
+
+    original_id = run_doc.get("run_id")
+    agent_id = run_doc.get("agent_id")
+    if not original_id or not agent_id:
+        log.warning(
+            "[watchdog] cannot auto-resume %s: missing run_id/agent_id",
+            original_id,
+        )
+        return None
+
+    reason = (run_doc.get("interrupt_reason") or "").strip().lower()
+    if reason in _AUTO_RESUME_TERMINAL_REASONS:
+        log.info(
+            "[watchdog] skipping %s: terminal reason=%r",
+            original_id, reason,
+        )
+        return None
+
+    strikes = int(run_doc.get("auto_resume_count") or 0)
+    files_copied = int(run_doc.get("files_copied") or 0)
+    last_progress_at = run_doc.get("last_progress_files_copied")
+    # Reset strike counter each time files_copied advances vs the
+    # snapshot taken at the last auto-resume.
+    if last_progress_at is None or files_copied > int(last_progress_at):
+        strikes = 0
+
+    if strikes >= _AUTO_RESUME_MAX_STRIKES:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await _db.dropbox_migration_run.update_one(
+            {"run_id": original_id},
+            {"$set": {
+                "state": "needs_attention",
+                "needs_attention_reason": (
+                    f"auto-resume hit {strikes}-strike cap without "
+                    "files_copied advancing — investigate"
+                ),
+                "updated_at": now_iso,
+            }},
+        )
+        log.warning(
+            "[watchdog] %s hit 5-strike cap → state=needs_attention",
+            original_id,
+        )
+        return None
+
+    new_run_id = f"copy-{secrets.token_hex(6)}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await _db.dropbox_migration_run.update_one(
+        {"run_id": original_id},
+        {"$set": {
+            "auto_resume_count": strikes + 1,
+            "last_auto_resume_at": now_iso,
+            "last_progress_files_copied": files_copied,
+            "last_auto_resumed_into": new_run_id,
+            "updated_at": now_iso,
+        }},
+    )
+    task = asyncio.create_task(
+        bcopy.run_copy_job(new_run_id, agent_id, dry_run=False),
+    )
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    log.warning(
+        "[watchdog:%s] AUTO-RESUME %s -> %s (strike %d/%d)",
+        source, original_id, new_run_id, strikes + 1,
+        _AUTO_RESUME_MAX_STRIKES,
+    )
+    return new_run_id
+
+
 async def sweep_zombie_migration_runs() -> Dict[str, int]:
     """Called once on backend startup. Marks any `state=running`
     migration doc whose `updated_at` is older than 5 min as
     `interrupted` — the previous uvicorn worker died mid-run and
     the task can't recover its own state doc from a hard SIGTERM.
-    Returns `{marked_interrupted}` for the startup log."""
+    v58.13.132mm — Auto-fires resume for the most recent interrupted
+    run per agent (unless watchdog is paused or reason is terminal).
+    Returns `{marked_interrupted, auto_resumed}` for the startup log.
+    """
     from datetime import datetime, timezone, timedelta
     from db import db as _db   # v58.13.132mg — canonical db module
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
@@ -751,7 +862,129 @@ async def sweep_zombie_migration_runs() -> Dict[str, int]:
                 "finished_at": now_iso,
             }},
         )
-    return {"marked_interrupted": n}
+    # v58.13.132mm — Auto-resume the most recent interrupted run per
+    # agent (dedupe by agent_id so we don't double-fire on a fleet).
+    auto_resumed = 0
+    if await _watchdog_enabled():
+        seen_agents: set = set()
+        cursor = _db.dropbox_migration_run.find(
+            {"state": "interrupted"},
+            sort=[("updated_at", -1)],
+        )
+        async for run in cursor:
+            agent_id = run.get("agent_id") or ""
+            if not agent_id or agent_id in seen_agents:
+                continue
+            seen_agents.add(agent_id)
+            new_id = await _launch_resume_task(run, source="boot")
+            if new_id:
+                auto_resumed += 1
+    return {"marked_interrupted": n, "auto_resumed": auto_resumed}
+
+
+async def watchdog_tick() -> Dict[str, Any]:
+    """v58.13.132mm — Periodic watchdog. APScheduler fires this
+    every 5 min. Two behaviours:
+      · state=running + updated_at > 10 min old → mark interrupted
+        (the state doc is stuck; the task is dead).
+      · state=interrupted + non-terminal reason → auto-resume
+        (respects the 5-strike cap).
+    Skipped when the watchdog is globally paused."""
+    from datetime import datetime, timezone, timedelta
+    from db import db as _db
+
+    if not await _watchdog_enabled():
+        return {"ok": True, "skipped": "watchdog_paused"}
+
+    now = datetime.now(timezone.utc)
+    running_cutoff = (
+        now - timedelta(minutes=_WATCHDOG_RUNNING_STALE_MIN)
+    ).isoformat()
+    marked = 0
+    resumed = 0
+
+    # 1. Force-interrupt stale-running runs.
+    async for run in _db.dropbox_migration_run.find(
+        {"state": {"$in": ["running", "dry-run-running"]},
+         "updated_at": {"$lt": running_cutoff}},
+        {"_id": 0, "run_id": 1},
+    ):
+        rid = run["run_id"]
+        r = await _db.dropbox_migration_run.update_one(
+            {"run_id": rid,
+             "state": {"$in": ["running", "dry-run-running"]}},
+            {"$set": {
+                "state": "interrupted",
+                "interrupted_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "interrupt_reason": "watchdog (stale updated_at)",
+            }},
+        )
+        if r.modified_count:
+            marked += 1
+            log.warning(
+                "[watchdog] force-interrupted stale run %s", rid,
+            )
+
+    # 2. Auto-resume interrupted runs, one per agent.
+    seen_agents: set = set()
+    async for run in _db.dropbox_migration_run.find(
+        {"state": "interrupted"},
+        sort=[("updated_at", -1)],
+    ):
+        agent_id = run.get("agent_id") or ""
+        if not agent_id or agent_id in seen_agents:
+            continue
+        seen_agents.add(agent_id)
+        new_id = await _launch_resume_task(run, source="tick")
+        if new_id:
+            resumed += 1
+
+    return {
+        "ok": True, "marked_interrupted": marked, "auto_resumed": resumed,
+    }
+
+
+@router.post("/migration/watchdog/pause")
+async def dropbox_watchdog_pause(
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """v58.13.132mm — Globally pause the auto-resume watchdog."""
+    from datetime import datetime, timezone
+    from db import db as _db
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await _db.migration_watchdog_settings.update_one(
+        {"key": "watchdog"},
+        {"$set": {
+            "enabled": False,
+            "updated_at": now_iso,
+            "updated_by": user.get("id") or user.get("email") or "unknown",
+        }},
+        upsert=True,
+    )
+    log.warning("[watchdog] PAUSED by %s", user.get("email"))
+    return {"watchdog_enabled": False, "updated_at": now_iso}
+
+
+@router.post("/migration/watchdog/resume")
+async def dropbox_watchdog_resume(
+    user: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    """v58.13.132mm — Re-enable the auto-resume watchdog."""
+    from datetime import datetime, timezone
+    from db import db as _db
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await _db.migration_watchdog_settings.update_one(
+        {"key": "watchdog"},
+        {"$set": {
+            "enabled": True,
+            "updated_at": now_iso,
+            "updated_by": user.get("id") or user.get("email") or "unknown",
+        }},
+        upsert=True,
+    )
+    log.info("[watchdog] RESUMED by %s", user.get("email"))
+    return {"watchdog_enabled": True, "updated_at": now_iso}
 
 
 @router.post("/migration/{run_id}/resume")
