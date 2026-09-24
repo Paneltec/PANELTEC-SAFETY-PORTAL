@@ -22,6 +22,8 @@ import {
   ArrowDownload20Regular as Download,
   Eye20Regular as Eye,
   BookOpen20Regular,
+  // v58.13.132mt — icon for the dashboard "Database Schema" tile.
+  Database20Regular,
 } from '@fluentui/react-icons';
 
 const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye, HardHat, Award, UserCog, Users2, FolderOpen, Truck, ClipboardList };
@@ -687,21 +689,41 @@ export default function Dashboard() {
               Relabelled to "Admin Quick Reference" with subtitle
               "Quick reference for administrators". Teal palette +
               BookOpen icon retained; route + admin-role gate
-              unchanged. */}
+              unchanged.
+
+              v58.13.132mt — Added a new "Database Schema" pill ABOVE
+              the Admin Quick Reference. Amber accent signals a
+              technical / handover reference surface (distinct from
+              teal quick-reference and slate sidebar admin manual).
+              Both pills stack vertically inside a single admin-gated
+              column so the greeting-band layout stays compact. */}
           {isAdminRole(getUser()) && (
-            <a
-              href="/manuals/admin?ctx=admin"
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="dashboard-user-manual-btn-v157"
-              className="self-start sm:self-end shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg no-underline bg-teal-500 hover:bg-teal-400 text-white border border-teal-400/60 shadow-sm transition-colors"
-            >
-              <BookOpen20Regular className="shrink-0" />
-              <span className="flex flex-col items-start leading-tight">
-                <span className="text-xs sm:text-sm font-semibold">Admin Quick Reference</span>
-                <span className="text-[10px] opacity-85">Quick reference for administrators</span>
-              </span>
-            </a>
+            <div className="flex flex-col gap-2 self-start sm:self-end shrink-0">
+              <a
+                href="/app/admin/schema"
+                data-testid="dashboard-database-schema-btn-v157"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg no-underline bg-amber-500 hover:bg-amber-400 text-white border border-amber-400/60 shadow-sm transition-colors"
+              >
+                <Database20Regular className="shrink-0" />
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="text-xs sm:text-sm font-semibold">Database Schema</span>
+                  <span className="text-[10px] opacity-85">System reference for developers &amp; handover</span>
+                </span>
+              </a>
+              <a
+                href="/manuals/admin?ctx=admin"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="dashboard-user-manual-btn-v157"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg no-underline bg-teal-500 hover:bg-teal-400 text-white border border-teal-400/60 shadow-sm transition-colors"
+              >
+                <BookOpen20Regular className="shrink-0" />
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="text-xs sm:text-sm font-semibold">Admin Quick Reference</span>
+                  <span className="text-[10px] opacity-85">Quick reference for administrators</span>
+                </span>
+              </a>
+            </div>
           )}
         </div>
       </div>

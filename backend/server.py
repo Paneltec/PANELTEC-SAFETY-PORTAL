@@ -724,11 +724,17 @@ api.include_router(admin_active_sessions_router)
 # v58.13.81 — admin-only test-data purge endpoint.
 from admin_purge_test_data import router as admin_purge_router  # noqa: E402
 api.include_router(admin_purge_router)
-# v58.13.132gh — admin surface for byte-less file records (Stephen's
-# 410s). Read-only scan + hard-remove for cleanup after the
-# GridFS sweep in `scripts/migrate_ephemeral_to_gridfs.py`.
+# v58.13.132gh — Post-incident admin surface for byte-less file
+# records. Grouped list of doc_files that opened as 410s (bytes
+# missing on disk, no GridFS blob). Read-only scan + hard-remove
+# for cleanup after the GridFS sweep in
+# `scripts/migrate_ephemeral_to_gridfs.py`.
 from admin_missing_files import router as admin_missing_files_router  # noqa: E402
 api.include_router(admin_missing_files_router)
+# v58.13.132mt — Admin schema inspector. Read-only DB reference for
+# handover / integration. Mounted at /api/schema/*.
+from admin_schema import router as admin_schema_router  # noqa: E402
+api.include_router(admin_schema_router)
 # v58.13.132gl-b — Equipment Register admin CRUD.
 # v58.13.132gs Phase 1 — categories_router MUST mount before the
 # main equipment_register_router so `/equipment/categories` isn't

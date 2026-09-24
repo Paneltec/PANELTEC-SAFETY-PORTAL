@@ -73,6 +73,8 @@ import AdminAssignDailyJobs from '@/pages/AdminAssignDailyJobs';
 // v58.13.132gh — Post-incident admin surface for byte-less file
 // records. Landing page + dashboard banner both link here.
 import AdminMissingFiles from '@/pages/AdminMissingFiles';
+// v58.13.132mt — Admin DB schema inspector (handover reference).
+import AdminSchema from '@/pages/AdminSchema';
 // v58.13.132gl-b — Equipment Register page.
 import EquipmentRegister from '@/pages/EquipmentRegister';
 // v58.13.131c — SmartFill fuel-anomaly inbox route.
@@ -421,6 +423,8 @@ function App() {
               <Route path="settings/backup" element={<BackupTab />} />
               {/* v58.13.132gh — Files needing reupload (post-incident admin surface). */}
               <Route path="settings/missing-files" element={<AdminMissingFiles />} />
+              {/* v58.13.132mt — Admin DB schema inspector (handover reference). */}
+              <Route path="admin/schema" element={<AdminSchema />} />
               {/* v58.13.132gl-b — Equipment Register. */}
               <Route path="equipment" element={<EquipmentRegister />} />
               <Route path="forms" element={<Forms />} />

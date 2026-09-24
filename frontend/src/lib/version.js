@@ -1,5 +1,63 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mt — Admin DB schema inspector.
+//
+// Handover prep: build an in-app reference doc for the entire
+// database (~150 collections) so a future MySQL-shop team taking
+// over has a full manifest of collections, indexes, field types
+// (with dotted paths for nested fields), and one PII-redacted
+// sample doc per collection.
+//
+// Backend (`backend/admin_schema.py`, mounted at `/api/schema/*`):
+//   · GET /api/schema/collections               — fast list
+//       (collStats + 100-doc sample, top-level types only)
+//   · GET /api/schema/collection/{name}         — deep inspect
+//       (200-doc sample, depth-3 walk, dotted paths, indexes,
+//        redacted sample doc)
+//   · GET /api/schema/export?format=json|md     — downloadable
+//       full-DB dump as JSON or Markdown
+//   All admin-only (`role == 'admin'`); non-admins get 403.
+//   Results cached in a new `schema_cache` collection with a
+//   6-hour TTL. `?refresh=true` bypasses cache.
+//   Failure-tolerant: per-collection try/except with a `failed`
+//   array in the response; system collections skipped; every
+//   query bounded by `.max_time_ms(15000)`.
+//   PII redaction: aggressive path-pattern matcher replaces
+//   sample values with the literal string "REDACTED" for
+//   emails, phones, DOBs, passwords, tokens, hashes,
+//   TFN/ABN/ACN, PIN/OTP, and personal names.
+//
+// Frontend:
+//   · `pages/AdminSchema.jsx` — new page at `/app/admin/schema`
+//     (mounted inside AppShell, consistent with `/app/admin/visitors`).
+//     Toolbar (Refresh / Export JSON / Export Markdown / Print all),
+//     left-rail collection search + list, right pane with
+//     tabbed detail (Fields / Indexes / Sample doc), print CSS
+//     to hide `.no-print` and expand the pane to full width.
+//     Neutral admin palette (slate, no theme).
+//   · `pages/Dashboard.jsx` — added a new "Database Schema" pill
+//     ABOVE the "Admin Quick Reference" pill in the greeting-band
+//     header. Amber accent + `Database20Regular` icon; admin-role
+//     gated; testid `dashboard-database-schema-btn-v157`.
+//   · `App.js` — route `/app/admin/schema → AdminSchema`.
+//
+// Files touched:
+//   · backend/admin_schema.py                                           (new)
+//   · backend/server.py                                                 (router include)
+//   · frontend/src/pages/AdminSchema.jsx                                (new)
+//   · frontend/src/pages/Dashboard.jsx                                  (tile stack)
+//   · frontend/src/App.js                                               (route)
+//   · frontend/src/lib/version.js                                       (bump)
+//   · frontend/public/service-worker.js                                 (bump)
+//   · memory/v58_13_132mt_admin_schema_inspector.md                     (new)
+//
+// Route decision: the user brief said "/admin/schema". Existing
+// admin surfaces (e.g. `/app/admin/visitors`) live INSIDE the
+// AppShell so they inherit auth + sidebar. Kept the same shape
+// here as `/app/admin/schema`. Moving to a bare top-level route
+// is a 3-line change if ever needed.
+
+
 // v58.13.132ms — Rename Dashboard tile "Worker Quick Guide" →
 // "Admin Quick Reference".
 //
@@ -15716,7 +15774,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ms';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mt';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
