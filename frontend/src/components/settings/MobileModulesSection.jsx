@@ -563,6 +563,82 @@ function PhonePreview({ canEdit }) {
             <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-5 rounded-b-2xl flex items-center justify-center" style={{ background: '#0A0A0A' }}>
               <span className="block w-1.5 h-1.5 rounded-full" style={{ background: '#F5B301' }} />
             </div>
+            {/* v58.13.132mn — Expo dev server is intentionally stopped in
+                this pod (supervisor `mobile` program → STOPPED), so the
+                previous <iframe src="https://<sub>.expo.preview...">
+                returned HTTP 502 from the edge and the browser rendered a
+                broken-image glyph inside the bezel. Replaced the iframe
+                with a static placeholder that still respects the bezel
+                dimensions + preserves the URL-generation contract
+                (computeExpoUrl / computeExpoResetUrl / iframeRef stay in
+                place so restoring is a one-line revert once the Expo
+                dev server is running again).
+
+                The user still needs to be able to eyeball the exact
+                preview URL that WOULD be loaded — surface it here so
+                admins can copy it into a device browser / paste into
+                a live Expo tunnel manually.
+
+                Reversal recipe:
+                  1. Delete this whole placeholder block.
+                  2. Restore the original <iframe> block from `.132mm`.
+                  3. Ensure `mobile` supervisor program is running.
+            */}
+            <div
+              ref={iframeRef}
+              data-testid="mobile-preview-placeholder"
+              className="w-full h-full rounded-[24px] flex flex-col items-center justify-center px-6 text-center"
+              style={{ background: '#F5F5F7', border: 0 }}
+            >
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                style={{ background: '#E4E4E7' }}
+                aria-hidden
+              >
+                <Phone20Regular style={{ width: 28, height: 28, color: '#6B6B6B' }} />
+              </div>
+              <div
+                className="text-sm font-semibold mb-1"
+                style={{ color: '#0A0A0A' }}
+              >
+                Live device preview offline
+              </div>
+              <div
+                className="text-xs leading-relaxed mb-4 max-w-[240px]"
+                style={{ color: '#6B6B6B' }}
+              >
+                The Expo dev server that powers the in-bezel render is
+                not running in this environment. Your role &amp; worker
+                selections are still captured — copy the preview URL
+                below to open it in a real device browser.
+              </div>
+              <div
+                className="w-full max-w-[240px] rounded-xl px-3 py-2 mb-3 text-[10px] font-mono break-all text-left"
+                style={{ background: '#FFFFFF', color: '#0A0A0A', border: '1px solid #E4E4E7' }}
+                data-testid="mobile-preview-url"
+              >
+                {src || '(no URL — pick a role)'}
+              </div>
+              {src && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      navigator.clipboard?.writeText(src);
+                    } catch (_) { /* clipboard unavailable */ }
+                  }}
+                  className="text-[11px] font-semibold px-3 py-1.5 rounded-lg"
+                  style={{ background: '#0A0A0A', color: '#FFFFFF' }}
+                  data-testid="mobile-preview-copy-url"
+                >
+                  Copy preview URL
+                </button>
+              )}
+            </div>
+            {/* v58.13.132mn — Original iframe kept commented out for
+                fast restore if / when the Expo dev server is brought
+                back online.
+
             <iframe
               ref={iframeRef}
               src={src || 'about:blank'}
@@ -571,16 +647,6 @@ function PhonePreview({ canEdit }) {
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               referrerPolicy="no-referrer-when-downgrade"
               onLoad={(e) => {
-                // v58.13.132in — Belt-and-braces role-label handoff.
-                // The Expo web build runs on a different subdomain
-                // (`<sub>.expo.preview...` vs `<sub>.preview...`), so
-                // the parent frame can't write into the iframe's
-                // localStorage directly. Post the label to the iframe;
-                // a follow-up mobile ship can subscribe and clobber
-                // the stale `paneltec_role_label` ahead of Profile
-                // mount. Until then the URL query param
-                // `preview_role_label` (see computeExpoUrl) covers
-                // the same intent.
                 try {
                   const SCOPE_LABELS = {
                     paneltec_civil: 'Paneltec Civil',
@@ -596,11 +662,12 @@ function PhonePreview({ canEdit }) {
                     role_label: label,
                     role_id: role,
                   }, '*');
-                } catch (_) { /* cross-origin — best-effort only */ }
+                } catch (_) {}
               }}
               className="w-full h-full rounded-[24px] block"
               style={{ border: 0, background: '#F5F5F7' }}
             />
+            */}
           </div>
         </div>
 

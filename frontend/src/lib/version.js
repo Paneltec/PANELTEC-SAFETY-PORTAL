@@ -1,5 +1,74 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mn — Fix admin Live Preview phone-bezel showing a broken
+// image glyph.
+//
+// Symptom: Admin → Settings → Mobile Modules → Live Preview page. The
+// role dropdown, worker dropdown (69 workers), Reset/Exit buttons and
+// warning banner all render fine, but the phone bezel body shows only
+// a browser-provided broken-image glyph.
+//
+// Root cause: `frontend/src/components/settings/MobileModulesSection.jsx`
+// (`PhonePreview`, ~L566 pre-fix) renders an <iframe src={src}> where
+// `src` comes from `computeExpoUrl()` — a URL rewrite of
+// REACT_APP_BACKEND_URL to `<sub>.expo.preview.emergentagent.com`.
+// That subdomain is served by the pod's `supervisor mobile` program
+// running `yarn expo start --port 3001`. In this pod the `mobile`
+// program is intentionally STOPPED (verified via `supervisorctl status`),
+// so the Cloudflare/K8s ingress returns HTTP 502 `retry-after: 60` on
+// every request. Chromium's default failed-iframe rendering is the
+// broken-image glyph the user sees.
+//
+// Verified inline pre-fix:
+//   $ curl -sSI https://whs-compliance.expo.preview.emergentagent.com/
+//   HTTP/2 502
+//   retry-after: 60
+//   cf-ray: a3fedfe9da791187-ORD
+//
+// Fix: replace the <iframe> with a static placeholder that lives inside
+// the same bezel dimensions. The placeholder:
+//   · Uses a Phone20Regular fluent icon in a soft-grey chip.
+//   · Says "Live device preview offline" + a one-line explanation.
+//   · Echoes the exact computed preview URL (`src`) in a monospace
+//     block — admins still need to see what URL WOULD be loaded so
+//     they can verify their role/worker/token/scope selections are
+//     wiring through correctly.
+//   · Offers a "Copy preview URL" button (clipboard API, best-effort).
+//   · When no role is picked, shows "(no URL — pick a role)".
+//
+// Kept intact (reversal is a one-block swap):
+//   · `computeExpoUrl()` — URL rewrite logic.
+//   · `computeExpoResetUrl()` — reset flow.
+//   · `iframeRef` — moved onto the placeholder div so the parent
+//     component's imperative "clear + repoint" logic still has a
+//     valid ref target (no NPE risk).
+//   · The original <iframe> block (including the postMessage
+//     role-label handoff from `.132in`) is left as a `{/* … */}`
+//     JSX comment block directly below the placeholder for a
+//     zero-guessing revert once Expo is running again.
+//
+// Non-goals (per user brief):
+//   · Do NOT re-enable the `mobile` supervisor program — pod is
+//     configured with it STOPPED for a reason.
+//   · Do NOT touch backend / migration / watchdog code.
+//   · Do NOT modify the URL-generation contract (mobile team may
+//     still be relying on the shape of `computeExpoUrl` output).
+//
+// Files touched:
+//   · frontend/src/components/settings/MobileModulesSection.jsx  (+~90/-45)
+//   · frontend/src/lib/version.js                                 (this block + running version)
+//   · frontend/public/service-worker.js                           (cache version)
+//
+// Ship discipline notes:
+//   · Defensive `git reset` between `git add <files>` and `git commit`
+//     applied for the first time this session — see ship memo. Prevents
+//     the parallel-actor near-miss that hit `.132mm`'s first commit
+//     attempt (SHA `586bbcdc`, reverted before push).
+//   · Parallel-actor files (`craco.config.js`, `.bak_ticket*` memos,
+//     `backend/tests/test_v58_13_132m[bf]_*.py`, `test_reports/*`)
+//     remain untracked / dirty and NOT staged.
+//   · No `testing_agent`, no `finish` tool, no backend restart.
+
 // v58.13.132mm — Dropbox migration auto-resume watchdog.
 //
 // Standing issue: migration keeps hitting `interrupted` (backend
@@ -15410,7 +15479,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mm';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mn';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
