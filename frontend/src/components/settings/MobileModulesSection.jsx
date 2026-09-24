@@ -251,6 +251,11 @@ function PhonePreview({ canEdit }) {
   // v58.13.132o — Preview-as-worker binding state.
   const [previewWorkerId, setPreviewWorkerId] = useState('');
   const [workers, setWorkers] = useState([]);
+  // v58.13.132mp — iframe fallback state. Show the placeholder inside
+  // the bezel when the iframe fails to load (Expo dev server offline,
+  // 502 from edge, or 10s timeout with no `onLoad`).
+  const [iframeErrored, setIframeErrored] = useState(false);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   // v160.3.9.33.3 → v58.4 — live-fetched roles now enriched with
   // `user_count` from the backend so the dropdown can prioritise
   // in-use roles and hide unassigned ones behind a checkbox.
@@ -313,6 +318,26 @@ function PhonePreview({ canEdit }) {
   const rebuild = (r = role, wId = previewWorkerId) =>
     setSrc(computeExpoUrl(r, getToken(), wId));
   useEffect(() => { rebuild(role, previewWorkerId); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v58.13.132mp — Iframe watchdog. Reset loaded/errored state on
+  // every `src` change and trip `iframeErrored=true` if the iframe
+  // hasn't fired `onLoad` within 10 s. Covers Expo bundler crashes,
+  // edge 502s during a mobile-supervisor restart, and CORS/CSP
+  // blocks that don't fire the `onError` event.
+  useEffect(() => {
+    if (!src) return;
+    setIframeErrored(false);
+    setIframeLoaded(false);
+    const watchdog = setTimeout(() => {
+      // Use functional setState so we don't need `iframeLoaded` in
+      // the effect deps (which would double-fire on load).
+      setIframeLoaded((loaded) => {
+        if (!loaded) setIframeErrored(true);
+        return loaded;
+      });
+    }, 10000);
+    return () => clearTimeout(watchdog);
+  }, [src]);
 
   const onRoleChange = (e) => {
     const r = e.target.value;
@@ -563,111 +588,116 @@ function PhonePreview({ canEdit }) {
             <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-5 rounded-b-2xl flex items-center justify-center" style={{ background: '#0A0A0A' }}>
               <span className="block w-1.5 h-1.5 rounded-full" style={{ background: '#F5B301' }} />
             </div>
-            {/* v58.13.132mn — Expo dev server is intentionally stopped in
-                this pod (supervisor `mobile` program → STOPPED), so the
-                previous <iframe src="https://<sub>.expo.preview...">
-                returned HTTP 502 from the edge and the browser rendered a
-                broken-image glyph inside the bezel. Replaced the iframe
-                with a static placeholder that still respects the bezel
-                dimensions + preserves the URL-generation contract
-                (computeExpoUrl / computeExpoResetUrl / iframeRef stay in
-                place so restoring is a one-line revert once the Expo
-                dev server is running again).
-
-                The user still needs to be able to eyeball the exact
-                preview URL that WOULD be loaded — surface it here so
-                admins can copy it into a device browser / paste into
-                a live Expo tunnel manually.
-
-                Reversal recipe:
-                  1. Delete this whole placeholder block.
-                  2. Restore the original <iframe> block from `.132mm`.
-                  3. Ensure `mobile` supervisor program is running.
+            {/* v58.13.132mp — Restore the live Expo-web iframe now that
+                the `mobile` supervisor program is running (autostart=true
+                so it survives pod restarts). The `.132mn` placeholder is
+                retained as a graceful fallback inside the same bezel:
+                shown only when the iframe fails to load (`onError` fires
+                or a 10s watchdog trips without a matching `onLoad`).
+                The `iframeRef` stays on the <iframe> element itself so
+                imperative repointing keeps working.
             */}
-            <div
-              ref={iframeRef}
-              data-testid="mobile-preview-placeholder"
-              className="w-full h-full rounded-[24px] flex flex-col items-center justify-center px-6 text-center"
-              style={{ background: '#F5F5F7', border: 0 }}
-            >
+            {!iframeErrored && (
+              <iframe
+                ref={iframeRef}
+                src={src || 'about:blank'}
+                title="Paneltec Civil mobile preview"
+                data-testid="mobile-preview-iframe"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                referrerPolicy="no-referrer-when-downgrade"
+                onLoad={(e) => {
+                  setIframeLoaded(true);
+                  // v58.13.132in — Belt-and-braces role-label handoff.
+                  // The Expo web build runs on a different subdomain
+                  // (`<sub>.expo.preview...` vs `<sub>.preview...`), so
+                  // the parent frame can't write into the iframe's
+                  // localStorage directly. Post the label to the iframe;
+                  // a follow-up mobile ship can subscribe and clobber
+                  // the stale `paneltec_role_label` ahead of Profile
+                  // mount. Until then the URL query param
+                  // `preview_role_label` (see computeExpoUrl) covers
+                  // the same intent.
+                  try {
+                    const SCOPE_LABELS = {
+                      paneltec_civil: 'Paneltec Civil',
+                      viatec_traffic: 'Viatec Traffic Solutions',
+                      admin: 'Admin',
+                      external_contractor: 'External Contractor',
+                    };
+                    const label = SCOPE_LABELS[role]
+                      || String(role || '').replace(/_/g, ' ')
+                          .replace(/\b\w/g, (c) => c.toUpperCase());
+                    e.currentTarget.contentWindow?.postMessage({
+                      type: 'paneltec_preview_role_label',
+                      role_label: label,
+                      role_id: role,
+                    }, '*');
+                  } catch (_) { /* cross-origin — best-effort only */ }
+                }}
+                onError={() => setIframeErrored(true)}
+                className="w-full h-full rounded-[24px] block"
+                style={{ border: 0, background: '#F5F5F7' }}
+              />
+            )}
+            {iframeErrored && (
               <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-                style={{ background: '#E4E4E7' }}
-                aria-hidden
+                data-testid="mobile-preview-placeholder"
+                className="w-full h-full rounded-[24px] flex flex-col items-center justify-center px-6 text-center"
+                style={{ background: '#F5F5F7', border: 0 }}
               >
-                <Phone20Regular style={{ width: 28, height: 28, color: '#6B6B6B' }} />
-              </div>
-              <div
-                className="text-sm font-semibold mb-1"
-                style={{ color: '#0A0A0A' }}
-              >
-                Live device preview offline
-              </div>
-              <div
-                className="text-xs leading-relaxed mb-4 max-w-[240px]"
-                style={{ color: '#6B6B6B' }}
-              >
-                The Expo dev server that powers the in-bezel render is
-                not running in this environment. Your role &amp; worker
-                selections are still captured — copy the preview URL
-                below to open it in a real device browser.
-              </div>
-              <div
-                className="w-full max-w-[240px] rounded-xl px-3 py-2 mb-3 text-[10px] font-mono break-all text-left"
-                style={{ background: '#FFFFFF', color: '#0A0A0A', border: '1px solid #E4E4E7' }}
-                data-testid="mobile-preview-url"
-              >
-                {src || '(no URL — pick a role)'}
-              </div>
-              {src && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      navigator.clipboard?.writeText(src);
-                    } catch (_) { /* clipboard unavailable */ }
-                  }}
-                  className="text-[11px] font-semibold px-3 py-1.5 rounded-lg"
-                  style={{ background: '#0A0A0A', color: '#FFFFFF' }}
-                  data-testid="mobile-preview-copy-url"
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                  style={{ background: '#E4E4E7' }}
+                  aria-hidden
                 >
-                  Copy preview URL
-                </button>
-              )}
-            </div>
-            {/* v58.13.132mn — Original iframe kept commented out for
-                fast restore if / when the Expo dev server is brought
-                back online.
-
-            <iframe
-              ref={iframeRef}
-              src={src || 'about:blank'}
-              title="Paneltec Civil mobile preview"
-              data-testid="mobile-preview-iframe"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              referrerPolicy="no-referrer-when-downgrade"
-              onLoad={(e) => {
-                try {
-                  const SCOPE_LABELS = {
-                    paneltec_civil: 'Paneltec Civil',
-                    viatec_traffic: 'Viatec Traffic Solutions',
-                    admin: 'Admin',
-                    external_contractor: 'External Contractor',
-                  };
-                  const label = SCOPE_LABELS[role]
-                    || String(role || '').replace(/_/g, ' ')
-                        .replace(/\b\w/g, (c) => c.toUpperCase());
-                  e.currentTarget.contentWindow?.postMessage({
-                    type: 'paneltec_preview_role_label',
-                    role_label: label,
-                    role_id: role,
-                  }, '*');
-                } catch (_) {}
-              }}
-              className="w-full h-full rounded-[24px] block"
-              style={{ border: 0, background: '#F5F5F7' }}
-            />
-            */}
+                  <Phone20Regular style={{ width: 28, height: 28, color: '#6B6B6B' }} />
+                </div>
+                <div
+                  className="text-sm font-semibold mb-1"
+                  style={{ color: '#0A0A0A' }}
+                >
+                  Live device preview unavailable
+                </div>
+                <div
+                  className="text-xs leading-relaxed mb-4 max-w-[240px]"
+                  style={{ color: '#6B6B6B' }}
+                >
+                  The Expo dev server isn&apos;t responding. Try{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setIframeErrored(false); setIframeLoaded(false); }}
+                    className="underline font-semibold"
+                    style={{ color: '#0A0A0A' }}
+                    data-testid="mobile-preview-retry"
+                  >
+                    reloading
+                  </button>
+                  , or copy the URL below to open it in a device browser.
+                </div>
+                <div
+                  className="w-full max-w-[240px] rounded-xl px-3 py-2 mb-3 text-[10px] font-mono break-all text-left"
+                  style={{ background: '#FFFFFF', color: '#0A0A0A', border: '1px solid #E4E4E7' }}
+                  data-testid="mobile-preview-url"
+                >
+                  {src || '(no URL — pick a role)'}
+                </div>
+                {src && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        navigator.clipboard?.writeText(src);
+                      } catch (_) { /* clipboard unavailable */ }
+                    }}
+                    className="text-[11px] font-semibold px-3 py-1.5 rounded-lg"
+                    style={{ background: '#0A0A0A', color: '#FFFFFF' }}
+                    data-testid="mobile-preview-copy-url"
+                  >
+                    Copy preview URL
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

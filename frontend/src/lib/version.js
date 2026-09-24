@@ -1,5 +1,75 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mp — Bring the admin Live Preview iframe back online.
+//
+// `.132mn` swapped the phone-bezel iframe for a static "offline"
+// placeholder because Expo dev server (supervisor `mobile` program)
+// was intentionally STOPPED and the iframe was rendering CF's 502
+// as a broken-image glyph. User corrected the scope: they want the
+// ACTUAL iframe rendering the mobile app, not a placeholder.
+//
+// Fix: two operational changes + one component swap.
+//   1. `sudo supervisorctl start mobile` — Expo boots on
+//      localhost:3001, Metro Bundler picks up
+//      EXPO_PACKAGER_PROXY_URL=whs-compliance.expo.preview.emergentagent.com.
+//      Verified inline: external subdomain now returns HTTP/2 200
+//      with 59.8 KB of real Expo web app HTML (was 502).
+//   2. `/etc/supervisor/conf.d/supervisord.conf` — flipped
+//      `autostart=false → autostart=true` for `[program:mobile]`
+//      so the Expo bundler comes back after pod restarts.
+//      `supervisorctl reread + update` applied.
+//   3. `MobileModulesSection.jsx` (`PhonePreview`, ~L562) —
+//      restored the <iframe src={src}> as the primary render;
+//      kept the `.132mn` placeholder as a graceful fallback inside
+//      the same bezel. Fallback shown only when the iframe fails
+//      to load (either `onError` fires OR the new 10s watchdog
+//      timeout trips without a matching `onLoad`).
+//
+// New behaviour matrix (PhonePreview):
+//   · iframe loads OK (typical case)  → iframe renders, `iframeLoaded=true`
+//   · iframe fires onError            → placeholder shown, "Reload" button
+//   · iframe never fires onLoad in 10s → same placeholder path
+//   · user clicks "Reload" in fallback → resets `iframeErrored=false`,
+//                                        `iframeLoaded=false`, iframe
+//                                        remounts and retries
+//   · role/worker changes             → src updates → watchdog resets
+//                                        (state reset in useEffect[src])
+//
+// Fallback UI keeps the same test IDs from `.132mn`:
+//   · `mobile-preview-placeholder` (fallback container)
+//   · `mobile-preview-url` (monospace URL echo)
+//   · `mobile-preview-copy-url` (clipboard button)
+//   · `mobile-preview-retry` (NEW — inline reload button)
+// Primary iframe reverts to its historical test id:
+//   · `mobile-preview-iframe`
+//
+// URL-generation contract unchanged:
+//   · `computeExpoUrl(role, token, workerId)` still emits
+//     https://<sub>.expo.preview.emergentagent.com/?...
+//   · `computeExpoResetUrl()` unchanged.
+//   · `iframeRef` moved back onto the <iframe>. External imperative
+//     "clear + repoint" code still finds a valid ref target.
+//
+// Files touched:
+//   · frontend/src/components/settings/MobileModulesSection.jsx  (~+130/-90)
+//   · frontend/src/lib/version.js
+//   · frontend/public/service-worker.js
+//   · /etc/supervisor/conf.d/supervisord.conf                    (NOT staged
+//     for git — it's an infra file, not source code, and lives outside
+//     /app. Documented here so the ops trail is auditable.)
+//   · memory/v58_13_132mp_admin_phone_preview_restore.md
+//
+// Ship discipline notes:
+//   · Defensive `git reset` pattern (introduced in `.132mn`) applied
+//     again. The parallel-actor stowaway files were re-staged during
+//     this ship too — 12 files unstaged before commit. Root cause of
+//     the auto-staging still unknown; the defensive pattern remains
+//     the mitigation.
+//   · No `/app/mobile/*` touch — the Expo runtime is a service, its
+//     code is out of scope per user's standing directive.
+//   · No `testing_agent`, no `finish` tool, no backend restart.
+//   · Migration + watchdog untouched; verified running in ship report.
+
 // v58.13.132mn — Fix admin Live Preview phone-bezel showing a broken
 // image glyph.
 //
@@ -15479,7 +15549,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mn';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mp';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
