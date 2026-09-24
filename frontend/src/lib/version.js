@@ -1,4 +1,64 @@
-// Paneltec Civil · v159 — single-source-of-truth version constant.
+// Paneltec Civil · v160 — single-source-of-truth version constant.
+
+// v58.13.132ml — Web: SOFT HIDE the "Shared with me" feature.
+//
+// User asked to pull the feature from the UI while they reconsider
+// the sharing model. This is a reversible UI-only rollback — backend
+// endpoints, the `doc_shares` Mongo collection (234+ auto-migrated
+// rows from `.132ma`), and the auto-migration one-shot all stay in
+// place. Reviving is a matter of un-commenting the four blocks below.
+//
+// Edits (all guarded with `v58.13.132ml — SOFT HIDE` comments so the
+// blast radius is obvious to future ships):
+//   · `frontend/src/App.js`
+//       — `import SharedWithMe` commented out (line ~155)
+//       — `<Route path="shared-with-me" …>` commented out (line ~374)
+//   · `frontend/src/components/layout/AppShell.jsx`
+//       — NAV entry for `nav-shared-with-me` commented out (line ~226)
+//       — Poll `useEffect` on `/document-library/shared-with-me`
+//         commented out so we don't fire a needless GET on every
+//         AppShell mount while the feature is off. `hasShared` state
+//         retained (constant `false`) so the (also-commented-out)
+//         NAV entry's `hideWhenEmpty: 'sharedWithMe'` filter reads
+//         cleanly when the feature is revived.
+//   · `frontend/src/pages/DocumentLibrary.jsx`
+//       — File-row Share button (`file-share-<id>`) commented out
+//         (line ~2454). `<ShareModal>` component still mounted at
+//         line ~2543 but `shareFile` state is never set, so the
+//         modal never renders. Import kept clean so linter doesn't
+//         complain about unused symbols.
+//
+// Skips vs current HEAD:
+//   · `.132mj` (spaced-DMY licence-ticket parser) — approved in
+//     the same session but never fired; deferred.
+//   · `.132mk` (WHS legislation ingest Phase 1) — user asked
+//     clarifying questions be surfaced before ship; deferred.
+//
+// Explicitly NOT touched (per brief):
+//   · `backend/document_library_shares.py` — endpoints alive.
+//   · `doc_shares` Mongo collection — data intact.
+//   · Auto-migration one-shot (POST /admin/seed-shares-from-
+//     shared-reference) — code path unchanged.
+//   · `frontend/src/pages/SharedWithMe.jsx` — file preserved on
+//     disk (orphaned import; no imports point to it after this
+//     ship). Revival unstars it via the App.js commented-in
+//     import + route.
+//   · `frontend/src/components/document-library/ShareModal.jsx` —
+//     kept in the tree; never invoked.
+//   · Mobile app — no touch (mobile ban stands + mobile never
+//     surfaced this feature).
+//   · Test fixtures — untouched.
+//
+// Post-ship verification (see ship memo for details):
+//   · Admin login → no `Shared with me` sidebar entry visible.
+//   · Direct nav to `/app/shared-with-me` → 404 fall-through.
+//   · Document Library folder detail → no Share button per row.
+//   · File CRUD (list/download/delete) still works normally.
+//   · `doc_shares.countDocuments()` still ≥ 234.
+//
+// Migration status: real Dropbox→NAS copy resumed from the
+// `.132mh` interrupt via /resume; unaffected by this ship
+// (frontend-only, no backend restart required).
 
 // v58.13.132mh — Auth lockout hardening + expiry parser: month-name form.
 //
@@ -15198,7 +15258,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mh';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ml';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

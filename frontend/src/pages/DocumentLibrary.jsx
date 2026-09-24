@@ -2450,12 +2450,17 @@ export function DocumentLibraryFolder() {
                                 <ArchiveIcon size={14} />
                               </button>
                             )}
-                            {canEdit && (
+                            {/* v58.13.132ml — SOFT HIDE of the file-row
+                                Share button. ShareModal + backend
+                                endpoints (POST /files/{id}/shares etc.)
+                                preserved for future revival. Uncomment
+                                this block to restore. */}
+                            {/* {canEdit && (
                               <button onClick={() => setShareFile(f)} data-testid={`file-share-${f.id}`}
                                 className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Share with users or all workers">
                                 <ShareIcon />
                               </button>
-                            )}
+                            )} */}
                             {canEdit && (
                               <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
                                 className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete (30-day archive)">

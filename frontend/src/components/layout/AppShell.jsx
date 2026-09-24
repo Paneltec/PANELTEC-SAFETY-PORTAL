@@ -223,7 +223,11 @@ const NAV = [
     // this via `hideWhenEmpty: 'sharedWithMe'` when the current user
     // has zero active shares (poll `/document-library/shared-with-me`
     // on mount, empty array → nav item omitted).
-    { to: '/app/shared-with-me', label: 'Shared with me', icon: FolderOpen24Regular, iconActive: FolderOpen24Filled, testid: 'nav-shared-with-me', pastel: 'lavender', hideWhenEmpty: 'sharedWithMe' },
+    // v58.13.132ml — SOFT HIDE. Nav entry commented out; the poll on
+    // mount is also disabled below. Backend endpoints + doc_shares
+    // collection preserved. Uncomment this line + the poll useEffect
+    // to restore the feature.
+    // { to: '/app/shared-with-me', label: 'Shared with me', icon: FolderOpen24Regular, iconActive: FolderOpen24Filled, testid: 'nav-shared-with-me', pastel: 'lavender', hideWhenEmpty: 'sharedWithMe' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: ArrowDownload24Regular, iconActive: ArrowDownload24Filled, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
     // v58.13.120d — "Plant & Vehicles" sidebar entry retired. The
     // legacy `/app/vehicles` route still redirects to `/app/fleet`
@@ -292,7 +296,15 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
   // have a share (admins with no explicit shares get an empty list
   // here and the item stays hidden — admins already see the full
   // library via the main Document Library entry).
-  const [hasShared, setHasShared] = useState(false);
+  // v58.13.132ml — SOFT HIDE. Poll disabled to avoid a needless
+  // /document-library/shared-with-me GET on every AppShell mount
+  // while the feature is hidden. `hasShared` stays `false` so the
+  // (also-commented-out) NAV entry never appears. Backend endpoint
+  // remains reachable for future revival — restore this block AND
+  // the NAV entry above to re-enable the feature.
+  const [hasShared, _setHasShared] = useState(false);
+  void _setHasShared;
+  /*
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -306,6 +318,7 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
     })();
     return () => { cancelled = true; };
   }, []);
+  */
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
       {NAV.map((group) => {

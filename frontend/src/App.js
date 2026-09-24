@@ -152,7 +152,11 @@ import DropboxCallback from '@/pages/DropboxCallback';  // v58.13.132ld
 // been deleted; import removed to prevent a build-time resolve error.
 import DocumentLibrary, { DocumentLibraryFolder } from '@/pages/DocumentLibrary';
 // v58.13.132mb — Phase 2 web UI: non-admin "Shared with me" surface.
-import SharedWithMe from '@/pages/SharedWithMe';
+// v58.13.132ml — SOFT HIDE. Import + route commented out to remove the
+// feature from the UI while preserving the backend (doc_shares
+// collection + endpoints remain intact). Uncomment both lines to
+// restore. Do NOT delete `pages/SharedWithMe.jsx`.
+// import SharedWithMe from '@/pages/SharedWithMe';
 import Suppliers from '@/pages/Suppliers';
 import Workers from '@/pages/Workers';
 import FormAssignmentsAdmin from '@/pages/FormAssignmentsAdmin';
@@ -371,7 +375,10 @@ function App() {
               <Route path="document-library" element={<DocumentLibrary />} />
               <Route path="document-library/:folderId" element={<DocumentLibraryFolder />} />
               {/* v58.13.132mb — Phase 2: non-admin visible files. */}
-              <Route path="shared-with-me" element={<SharedWithMe />} />
+              {/* v58.13.132ml — SOFT HIDE. Route commented out; backend
+                  endpoints + doc_shares collection preserved. Uncomment
+                  (and the import above) to restore. */}
+              {/* <Route path="shared-with-me" element={<SharedWithMe />} /> */}
 
               <Route path="settings/org" element={<OrgSettings />} />
               {/* v58.13.132cb — Workspaces surface retired (Phase A of
