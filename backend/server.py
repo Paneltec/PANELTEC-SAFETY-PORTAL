@@ -113,6 +113,8 @@ from workspaces import router as workspaces_router  # noqa: E402
 from sites_admin import router as sites_admin_router  # noqa: E402
 from integrations_dropbox import router as dropbox_router  # noqa: E402  — v58.13.132lb
 from integrations_nas import router as nas_router  # noqa: E402  — v58.13.132lf
+# v58.13.132mk — Tasmanian WHS legislation ingest (Phase 1: read-only).
+from whs_legislation.api import router as whs_legislation_router  # noqa: E402
 from org_settings import router as org_router  # noqa: E402
 from mobile_modules import router as mobile_modules_router  # noqa: E402
 
@@ -620,7 +622,9 @@ api.include_router(workspaces_router)
 # v58.13.132cb — /api/sites/admin (Phase A). Kept adjacent to
 # workspaces_router so the .132cb-b retire is a one-line drop.
 api.include_router(sites_admin_router)
-api.include_router(dropbox_router)  # v58.13.132lb — /api/dropbox/health
+api.include_router(dropbox_router)
+# v58.13.132mk — Tasmanian WHS legislation reingest + status endpoints.
+api.include_router(whs_legislation_router)  # v58.13.132lb — /api/dropbox/health
 api.include_router(nas_router)  # v58.13.132lf — /api/nas/health + /probe
 app.include_router(org_router)
 app.include_router(mobile_modules_router)
@@ -872,6 +876,12 @@ async def on_startup():
         await ensure_login_attempts_index()
     except Exception as _e:  # noqa: BLE001
         log.warning("login_attempts.ttl_index setup failed: %s", _e)
+    # v58.13.132mk — ensure the whs_legislation collection indexes exist.
+    try:
+        from whs_legislation.ingest import ensure_indexes as _whs_ensure
+        await _whs_ensure()
+    except Exception as _e:  # noqa: BLE001
+        log.warning("whs_legislation indexes setup failed: %s", _e)
     # v58.13.132hf — Boot-trigger the doc_files extracted_text
     # backfill 5 minutes after startup. Admin can cancel via
     # POST /api/document-library/admin/backfill-extracted-text/cancel.

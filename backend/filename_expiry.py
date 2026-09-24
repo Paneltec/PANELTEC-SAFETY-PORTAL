@@ -73,13 +73,28 @@ _MONTH_NUM = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
 }
+# v58.13.132mk-a (bundled .132mj) — Space-separated DD MM YYYY.
+# Real examples from Licences & Tickets folder:
+#   CPR - MLinford - EXP 21 11 2026.pdf         → 2026-11-21
+#   TasWater LOTO - ML - EXP 28 08 2028.pdf     → 2028-08-28
+#   MVC Induction - ML - EXP 14 01 2027.pdf     → 2027-01-14
+#   TasRail Track Safety - ML - EXP 30 07 2028  → 2028-07-30
+#   Class C Licence - ML - EXP 02 03 2028.pdf   → 2028-03-02
+# Australian order (DD MM YYYY). Invalid combos (day 32, month 13,
+# 29 Feb non-leap) fall through as unparseable via date() ValueError.
+_SPACED_DMY_RE = re.compile(
+    r"EXP\s+(\d{1,2})\s+(\d{1,2})\s+(20\d{2})",
+    re.IGNORECASE,
+)
 # STRIP_RE removes the expiry clause + separator artefacts.
-# Two variants: (a) dotted DMY (which can have a `_3` cycle prefix
-# — strip that too) and (b) compact EXP (only strip a `QD` prefix
+# Three variants: (a) dotted DMY (which can have a `_3` cycle prefix
+# — strip that too), (b) compact EXP (only strip a `QD` prefix
 # or explicit `_N`/`-N` separator; digits directly-attached to the
-# product code stay). Match longest first via alternation.
+# product code stay), (c) monthname EXP, and now (d) spaced DMY.
+# Match longest first via alternation.
 _STRIP_JUNK_RE = re.compile(
-    r"(?:[_\- ]?(?:E|e)xp[\s_\-]+"
+    r"(?:[_\- ]?(?:E|e)xp\s+\d{1,2}\s+\d{1,2}\s+20\d{2})"
+    r"|(?:[_\- ]?(?:E|e)xp[\s_\-]+"
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
     r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
     r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s_\-]+20\d{2})"
@@ -173,6 +188,25 @@ def _parse_monthname(name: str, *, today: Optional[date] = None
     return parsed, m.group(0)
 
 
+def _parse_spaced_dmy(name: str, *, today: Optional[date] = None
+                        ) -> Optional[tuple[date, str]]:
+    """v58.13.132mk-a (bundled .132mj) — `EXP DD MM YYYY` licence-ticket form.
+    Australian day-month-year, space-separated. Rejects day/month/year
+    combos that datetime.date() itself rejects (e.g. 32 01, 05 13,
+    29 02 non-leap)."""
+    m = _SPACED_DMY_RE.search(name)
+    if not m:
+        return None
+    try:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        parsed = date(y, mo, d)
+    except (ValueError, TypeError):
+        return None
+    if not _sanity_ok(parsed, today=today):
+        return None
+    return parsed, m.group(0)
+
+
 def parse_filename_expiry(name: Optional[str],
                              *, today: Optional[date] = None,
                              ) -> ParsedExpiry:
@@ -197,7 +231,13 @@ def parse_filename_expiry(name: Optional[str],
         _parse_monthname(stem, today=today)
         if not (dotted or compact) else None
     )
-    hit = dotted or compact or monthname
+    # v58.13.132mk-a — spaced_dmy tried last so it doesn't collide
+    # with monthname (`Exp Nov 2021`) or compact (`EXP042025`).
+    spaced_dmy = (
+        _parse_spaced_dmy(stem, today=today)
+        if not (dotted or compact or monthname) else None
+    )
+    hit = dotted or compact or monthname or spaced_dmy
 
     if not hit:
         return ParsedExpiry(name, None, None)

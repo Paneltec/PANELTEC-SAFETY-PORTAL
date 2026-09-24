@@ -1,5 +1,96 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mk — Tasmanian WHS legislation ingest (Phase 1) + bundled
+// `.132mj` licence-ticket parser. Backend-only; version pill/SW cache
+// bump in lockstep.
+//
+// Ship label ordering note: `.132mk` was planned before `.132ml` but
+// user shipped the small Shared-with-me hide first as `.132ml`. This
+// commit lands `.132mk` on top of `.132ml`. Both labels are valid;
+// the pill will show `.132mk` after this ship.
+//
+// PART A — `.132mj` bundled: spaced-DMY licence-ticket parser.
+//   Extended `filename_expiry.py` with a 4th expiry family:
+//     `EXP\s+(\d{1,2})\s+(\d{1,2})\s+(20\d{2})` (case-insensitive)
+//     — Australian day-month-year, space-separated. Real examples:
+//       CPR - MLinford - EXP 21 11 2026.pdf   → 2026-11-21
+//       TasWater LOTO - ML - EXP 28 08 2028.pdf → 2028-08-28
+//       MVC Induction - ML - EXP 14 01 2027.pdf → 2027-01-14
+//   Fallback chain: dotted → compact → monthname → spaced_dmy.
+//   `_STRIP_JUNK_RE` extended so display_name strips the matched
+//   clause plus surrounding whitespace/underscore/dash. Validation
+//   via `datetime.date()` — invalid combos (day 32, month 13,
+//   29 Feb non-leap) fall through as unparseable.
+//   Backfill run: expected 7 additional rows parse (115 → 122 / 391).
+//
+// PART B — WHS legislation ingest, Phase 1 (read-only lookup only).
+//   Per user brief: "the OH&S feature is only information related
+//   enquiry" — no writes, no workflow integrations, no editing.
+//   Phase 1 = fetch + parse + Mongo write. Phase 2 (future) adds
+//   embeddings + semantic search + Ask Intelligence chat. Phase 3
+//   (future) adds the mauve-themed web UI.
+//
+//   New backend module `backend/whs_legislation/`:
+//     · `__init__.py` — module marker + phase roadmap.
+//     · `parser.py` — HTML (BS4) walker for Tas Act + Regs pages;
+//       PDF (PyMuPDF) walker for Codes of Practice. Tracks
+//       Part > Division > Section hierarchy in `full_path`.
+//       Chunks >8 KB sections at paragraph boundaries with
+//       `_chunk_N` id suffixes.
+//     · `ingest.py` — orchestration. Fetches:
+//         - Tas WHS Act 2012:  legislation.tas.gov.au HTML view
+//         - Tas WHS Reg 2022:  legislation.tas.gov.au HTML view
+//         - Codes of Practice: enumerates PDFs on
+//           worksafe.tas.gov.au/topics/laws-and-compliance/
+//           codes-of-practice landing page (any host — includes
+//           Safe Work Australia model COPs Tas has adopted).
+//       Writes to Mongo `whs_legislation` collection with the
+//       schema in the ship brief. `embedding` field stored as
+//       `null` in Phase 1 (Phase 2 backfills). Idempotency via
+//       `ingest_run_id`: stale rows for a doc that succeeded
+//       this run are purged post-write. Source fetch failures
+//       don't delete existing rows for that doc.
+//     · `embed.py` — Phase 1 stub returning None. Kept as a real
+//       module so Phase 2 can drop in an Emergent-LLM-key OpenAI
+//       `text-embedding-3-small` call without callsite changes.
+//     · `api.py` — three admin endpoints:
+//         · POST /api/legislation/reingest
+//         · GET  /api/legislation/reingest/status?run_id=…
+//         · GET  /api/legislation/sources
+//       Reingest guarded — refuses if another run is active.
+//
+//   Mongo collections:
+//     · `whs_legislation` — one row per section (or chunk of a
+//       section). Unique compound index on
+//       `(doc_id, section_number, chunk_suffix)`. Full-text index
+//       on `(section_title, section_text)` for Phase 2 hybrid
+//       search. Vector index deferred — pod uses local MongoDB
+//       (not Atlas), so vector storage is app-layer cosine when
+//       Phase 2 lands.
+//     · `whs_legislation_ingest_runs` — progress + errors per run.
+//
+//   `on_startup` hook wires `ensure_indexes()` idempotently.
+//
+//   New pip dep: `beautifulsoup4==4.15.0` (soupsieve 2.10 auto-
+//   installed as transitive). Already-installed `lxml==6.1.1`
+//   used as BS4's parser. `pymupdf==1.28.2` already present.
+//   `httpx==0.28.1` already present.
+//
+// Future work (documented per user request in the memo):
+//   · Phase 2 will add embeddings + semantic search + AI chat.
+//     Reingest endpoint will trigger BOTH text-only refresh AND
+//     embedding refresh once Phase 2 is built — schema is ready
+//     for that.
+//   · Phase 3 will add a mauve-themed web UI for the lookup.
+//
+// Migration status at ship time: `copy-19a839780d6f` (resumed
+// from the .132mh-era interrupted run `copy-4bf7807b3d19`) was
+// live and running (~65 files/h) when this ship landed. Backend
+// restart during this ship will interrupt it — manual /resume
+// fired post-ship, new run_id reported in the ship report. The
+// upcoming `.132mm` watchdog will auto-heal this from restart 3
+// onward.
+
 // v58.13.132ml — Web: SOFT HIDE the "Shared with me" feature.
 //
 // User asked to pull the feature from the UI while they reconsider
@@ -15258,7 +15349,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ml';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mk';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

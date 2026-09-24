@@ -145,3 +145,4 @@ pypdf==6.19.0
 pymupdf==1.28.2
 dropbox==12.2.2  # v58.13.132lb — Dropbox integration Phase 0
 stone==3.5.4  # transitive: dropbox stub compiler
+beautifulsoup4==4.15.0
