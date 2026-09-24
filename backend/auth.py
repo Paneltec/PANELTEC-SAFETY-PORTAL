@@ -522,16 +522,23 @@ async def signup(body: SignupIn):
 @__import__("rate_limit", fromlist=["limiter"]).limiter.limit("5/minute")
 async def login(request: Request, body: LoginIn):
     email = body.email.lower()
+    # v58.13.132mh — capture forensic signal for auth_lockout.
+    _ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() \
+        or (request.client.host if request.client else None)
+    _ua = request.headers.get("user-agent")
     # Phase 4.7 — lockout pre-check. Locked accounts return 423 with a
     # friendly message; admins can unlock via /api/users/{id}/unlock.
     if await is_locked(email):
+        await record_login_attempt(email, success=False, ip=_ip,
+                                       user_agent=_ua, reason="locked")
         raise HTTPException(status_code=423,
                             detail="Account temporarily locked after too many failed attempts. "
                                    "Try again in 15 minutes or ask your admin to unlock.",
                             headers={"X-Auth-Reason": "locked"})
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(body.password, user["password_hash"]):
-        await record_login_attempt(email, success=False)
+        await record_login_attempt(email, success=False, ip=_ip,
+                                       user_agent=_ua, reason="bad-password")
         # v58.13.132du — When a legitimate user hasn't completed
         # first-sign-in yet (has `must_change_password=true` AND a
         # live `reset_token_hash` or `pin_hash`), the naked
@@ -564,7 +571,9 @@ async def login(request: Request, body: LoginIn):
     # until an admin picks a role. Block sign-in with 403 + friendly detail
     # so the UI can show a helpful message and won't silently 401.
     if user.get("activation_status") == "pending_activation":
-        await record_login_attempt(email, success=False)
+        await record_login_attempt(email, success=False, ip=_ip,
+                                       user_agent=_ua,
+                                       reason="activation-pending")
         raise HTTPException(status_code=403,
                             detail="Your account is being set up. Please contact your administrator to activate it.",
                             headers={"X-Auth-Reason": "activation-pending"})

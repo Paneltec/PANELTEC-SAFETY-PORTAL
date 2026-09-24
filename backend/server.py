@@ -866,6 +866,12 @@ async def on_startup():
             )
     except Exception as _e:  # noqa: BLE001
         log.warning("migration_sweep.startup failed: %s", _e)
+    # v58.13.132mh — ensure the login_attempts TTL index exists.
+    try:
+        from auth_lockout import ensure_login_attempts_index
+        await ensure_login_attempts_index()
+    except Exception as _e:  # noqa: BLE001
+        log.warning("login_attempts.ttl_index setup failed: %s", _e)
     # v58.13.132hf — Boot-trigger the doc_files extracted_text
     # backfill 5 minutes after startup. Admin can cancel via
     # POST /api/document-library/admin/backfill-extracted-text/cancel.

@@ -58,13 +58,32 @@ _COMPACT_RE = re.compile(
     r"(?:QD)?EXP(\d{4,8})",
     re.IGNORECASE,
 )
+# v58.13.132mh — MONTHNAME form.  `Exp Nov 2021` / `Exp February 2022`
+# used consistently on TasWater Induction PDFs. English month name
+# (short or full), followed by a 4-digit year in 20xx.
+_MONTHNAME_RE = re.compile(
+    r"Exp[\s_\-]+"
+    r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+    r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+    r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"[\s_\-]+(20\d{2})",
+    re.IGNORECASE,
+)
+_MONTH_NUM = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
 # STRIP_RE removes the expiry clause + separator artefacts.
 # Two variants: (a) dotted DMY (which can have a `_3` cycle prefix
 # — strip that too) and (b) compact EXP (only strip a `QD` prefix
 # or explicit `_N`/`-N` separator; digits directly-attached to the
 # product code stay). Match longest first via alternation.
 _STRIP_JUNK_RE = re.compile(
-    r"(?:[_\- ]\d+)?[_\- ]?(?:QD)?(?:E|e)xp[\d.\-/]*",
+    r"(?:[_\- ]?(?:E|e)xp[\s_\-]+"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+    r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+    r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s_\-]+20\d{2})"
+    r"|(?:(?:[_\- ]\d+)?[_\- ]?(?:QD)?(?:E|e)xp[\d.\-/]*)",
     re.IGNORECASE,
 )
 
@@ -138,6 +157,22 @@ def _parse_compact(name: str, *, today: Optional[date] = None
     return parsed, m.group(0)
 
 
+def _parse_monthname(name: str, *, today: Optional[date] = None
+                       ) -> Optional[tuple[date, str]]:
+    m = _MONTHNAME_RE.search(name)
+    if not m:
+        return None
+    mon_key = m.group(1)[:3].lower()
+    year = int(m.group(2))
+    try:
+        parsed = date(year, _MONTH_NUM[mon_key], 1)
+    except (ValueError, KeyError):
+        return None
+    if not _sanity_ok(parsed, today=today):
+        return None
+    return parsed, m.group(0)
+
+
 def parse_filename_expiry(name: Optional[str],
                              *, today: Optional[date] = None,
                              ) -> ParsedExpiry:
@@ -158,7 +193,11 @@ def parse_filename_expiry(name: Optional[str],
 
     dotted = _parse_dotted(stem, today=today)
     compact = _parse_compact(stem, today=today) if not dotted else None
-    hit = dotted or compact
+    monthname = (
+        _parse_monthname(stem, today=today)
+        if not (dotted or compact) else None
+    )
+    hit = dotted or compact or monthname
 
     if not hit:
         return ParsedExpiry(name, None, None)

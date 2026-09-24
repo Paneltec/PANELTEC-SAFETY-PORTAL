@@ -1,5 +1,70 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v58.13.132mh — Auth lockout hardening + expiry parser: month-name form.
+//
+// Two bundled backend fixes:
+//
+// PART A — Auth lockout time-window decay + forensic trail.
+//   Stephen was locked out twice in ~24 h with no forensic record.
+//   Root cause (diagnosed earlier this session): `failed_login_attempts`
+//   was a running cumulative counter with no time decay — resets only
+//   on successful login. Two typos on Tuesday + two typos on Wednesday
+//   + one typo on Thursday = lockout, with no timestamp to distinguish
+//   "user typo" from "bot burst".
+//   Fix in `backend/auth_lockout.py`:
+//     · Sliding 30-min window — new `last_failed_login_at` field. If
+//       last fail was >30 min ago, counter resets to 1 (this attempt),
+//       otherwise it's previous+1. Aligns with the `auth.py` comment
+//       "5 failures / 15 min per email" which was aspirational before.
+//     · `login_attempts` collection — one row per failed attempt with
+//       email, user_id, ip (X-Forwarded-For preferred), user_agent,
+//       timestamp, reason (bad-password | locked | unknown-email |
+//       activation-pending). Two indexes: TTL 90 days on `timestamp`,
+//       compound `email + timestamp desc` for support queries.
+//     · Lockout WARNING log now includes IP + first 80 chars of UA.
+//   Frontend: no change.
+//
+// PART B — Expiry parser: month-name form.
+//   `.132mg` parser missed the `Exp Nov 2021` / `Exp February 2022`
+//   form used consistently on TasWater Induction PDFs.
+//   Fix in `backend/filename_expiry.py`:
+//     · New `_MONTHNAME_RE` — English month name (short or full) +
+//       4-digit year (20xx). Case-insensitive. Sets day=1.
+//     · Ordered fallback: dotted → compact → monthname.
+//     · `_STRIP_JUNK_RE` extended to strip the matched clause + any
+//       flanking separators.
+//   Backfill re-run: 6 additional TasWater Induction rows parsed
+//   (total 115 / 391 parsed, up from 109 pre-ship). The remaining 16
+//   unparseable are documented in
+//   `memory/v58_13_132mg_unparseable_expiry_original22.json` +
+//   `memory/v58_13_132mg_unparseable_expiry.json`:
+//     · 7 licence-ticket rows use `EXP DD MM YYYY` space-separated
+//       (e.g. `CPR - MLinford - EXP 21 11 2026`) — new pattern
+//       family, not extended this ship. Candidate for `.132mj`.
+//     · 5 WHS-procedure docs (`WHS-28a_…_Exposure`) were false
+//       positives on the regex query — the substring `Exp` in
+//       `Exposure` triggered inclusion. Not real expiry files.
+//     · 4 typos / malformed dates (`EXPO0228`, `EXP12207`,
+//       `_4Exp31.78.25`, `_3Exp019.11.23`) — data-entry issues that
+//       should be corrected at source, not parsed around.
+//
+// Startup change: `server.on_startup` now also calls
+// `ensure_login_attempts_index()`.
+//
+// Migration status: `copy-2919b63f4fcf` was live when this ship
+// landed. Backend restart during this ship will interrupt it —
+// but thanks to `.132mg` restart-recovery scaffolding, it will be
+// marked `interrupted` and can be resumed with
+// `POST /api/dropbox/migration/copy-2919b63f4fcf/resume`.
+//
+// Not shipped:
+//   · `EXP DD MM YYYY` space-separated parser (7 licence rows) —
+//     deferred pending user decision on whether to add another
+//     pattern family or fix at source.
+//   · Mobile parity for `.132mf` / `.132mg` / `.132mh` — handoff
+//     brief drafted in the ship report, not yet delegated to
+//     `e1_expo_frontend_dev`.
+
 // v58.13.132mg — SDS filename expiry parsing + Dropbox migration
 // picker fix + restart-recovery scaffolding.
 //
@@ -15133,7 +15198,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mg';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mh';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -15154,7 +15219,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mg';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132mg';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132mh';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
