@@ -15,6 +15,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
 import { isProvisioned, setDeviceId, isPreviewSession, hasValidSession } from '../../src/services/auth';
+import * as Application from 'expo-application';
+import { SHIP_LABEL } from '../../src/lib/version';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -149,6 +151,10 @@ export default function WelcomeScreen() {
           Your device ID links this phone to your worker account.{'\n'}
           Contact your supervisor if you don&apos;t have a QR code.
         </Text>
+
+        <Text testID="welcome-version-label" style={s.versionFooter}>
+          v{Application.nativeApplicationVersion || require('../../app.json').expo.version} · build {Application.nativeBuildVersion || require('../../app.json').expo.android.versionCode} · {SHIP_LABEL}
+        </Text>
       </View>
     </KeyboardAvoidingView>
   );
@@ -218,6 +224,10 @@ const s = StyleSheet.create({
 
   footer: {
     color: 'rgba(255,255,255,0.3)', fontSize: 11, textAlign: 'center',
-    lineHeight: 16, marginTop: 'auto', paddingBottom: 24,
+    lineHeight: 16, marginTop: 'auto', paddingBottom: 8,
+  },
+  versionFooter: {
+    color: 'rgba(255,255,255,0.15)', fontSize: 10, textAlign: 'center',
+    fontFamily: 'monospace', paddingBottom: 24,
   },
 });

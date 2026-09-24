@@ -26,6 +26,8 @@ import {
   fetchDeviceHint, fullWipe, clearDeviceHintCache,
   type DeviceHintResponse,
 } from '../../src/services/auth';
+import * as Application from 'expo-application';
+import { SHIP_LABEL } from '../../src/lib/version';
 
 type State = 'ready' | 'submitting' | 'error' | 'rate_limited';
 
@@ -275,6 +277,7 @@ export default function PinEntryScreen() {
 
       <Text style={s.footer}>
         {deviceId ? `Device: ${deviceId.slice(0, 16)}…` : 'No device ID'}
+        {'  ·  '}v{Application.nativeApplicationVersion || require('../../app.json').expo.version} · build {Application.nativeBuildVersion || require('../../app.json').expo.android.versionCode} · {SHIP_LABEL}
       </Text>
     </View>
   );

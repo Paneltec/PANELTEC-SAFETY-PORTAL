@@ -1,8 +1,9 @@
 /**
- * Settings tab — v58.13.132ku
+ * Settings tab — v58.13.132mo
  * Profile info, app version, updates, admin tools, sign out.
  * Help & Support section with manual links.
  * App / Admin Manual gated to admin-qualifying roles (.132ku).
+ * About section with version details + clipboard copy (.132mo).
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -12,11 +13,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { Colors } from '../../src/theme/colors';
 import Wordmark from '../../src/components/Wordmark';
 import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet } from '../../src/services/apiClient';
-import { MOBILE_BUNDLE_VERSION } from '../../src/lib/version';
+import { MOBILE_BUNDLE_VERSION, SHIP_LABEL } from '../../src/lib/version';
 import {
   getSimulateRole, setSimulateRole, ROLE_OPTIONS,
   type SimulateRoleId,
@@ -47,6 +49,9 @@ export default function SettingsScreen() {
   const [simRole, setSimRole] = useState<SimulateRoleId>('');
   const [showSignOut, setShowSignOut] = useState(false);
   const [debugTaps, setDebugTaps] = useState(0);
+  const [showAbout, setShowAbout] = useState(false);
+  const [backendVersion, setBackendVersion] = useState<string | null>(null);
+  const [copiedToast, setCopiedToast] = useState(false);
 
   const update = useUpdateCheck();
 
@@ -258,6 +263,100 @@ export default function SettingsScreen() {
             <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
           )}
         </TouchableOpacity>
+
+        {/* About — expanded inline */}
+        <TouchableOpacity
+          testID="settings-about-toggle"
+          style={s.row}
+          onPress={async () => {
+            mediumHaptic();
+            const next = !showAbout;
+            setShowAbout(next);
+            if (next && backendVersion === null) {
+              try {
+                const res = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/`);
+                if (res.ok) {
+                  const data = await res.json();
+                  setBackendVersion(data.version || 'unknown');
+                } else {
+                  setBackendVersion('unavailable');
+                }
+              } catch {
+                setBackendVersion('unavailable');
+              }
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[s.rowIcon, { backgroundColor: '#F3E8FF' }]}>
+            <Ionicons name="information-circle-outline" size={20} color="#7C3AED" />
+          </View>
+          <View style={s.rowContent}>
+            <Text style={s.rowTitle}>About</Text>
+            <Text style={s.rowSub}>Version info & diagnostics</Text>
+          </View>
+          <Ionicons name={showAbout ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textTertiary} />
+        </TouchableOpacity>
+
+        {showAbout && (
+          <View testID="settings-about-panel" style={s.aboutPanel}>
+            <View style={s.aboutRow}>
+              <Text style={s.aboutLabel}>Client version</Text>
+              <Text testID="about-client-version" style={s.aboutValue}>
+                v{Application.nativeApplicationVersion || require('../../app.json').expo.version}
+              </Text>
+            </View>
+            <View style={s.aboutRow}>
+              <Text style={s.aboutLabel}>Build number</Text>
+              <Text testID="about-build-number" style={s.aboutValue}>
+                {Application.nativeBuildVersion || require('../../app.json').expo.android.versionCode}
+              </Text>
+            </View>
+            <View style={s.aboutRow}>
+              <Text style={s.aboutLabel}>Ship label</Text>
+              <Text testID="about-ship-label" style={s.aboutValue}>{SHIP_LABEL}</Text>
+            </View>
+            <View style={s.aboutRow}>
+              <Text style={s.aboutLabel}>Bundle tag</Text>
+              <Text testID="about-bundle-tag" style={[s.aboutValue, { fontSize: 11 }]}>{MOBILE_BUNDLE_VERSION}</Text>
+            </View>
+            <View style={[s.aboutRow, { borderBottomWidth: 0 }]}>
+              <Text style={s.aboutLabel}>Backend version</Text>
+              {backendVersion === null ? (
+                <ActivityIndicator size="small" color={Colors.orange} />
+              ) : (
+                <Text testID="about-backend-version" style={s.aboutValue}>{backendVersion}</Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              testID="about-copy-btn"
+              style={s.aboutCopyBtn}
+              onPress={async () => {
+                const clientVer = Application.nativeApplicationVersion || require('../../app.json').expo.version;
+                const buildNum = Application.nativeBuildVersion || require('../../app.json').expo.android.versionCode;
+                const info = [
+                  `Paneltec Civil Mobile`,
+                  `Client: v${clientVer}`,
+                  `Build: ${buildNum}`,
+                  `Ship: ${SHIP_LABEL}`,
+                  `Bundle: ${MOBILE_BUNDLE_VERSION}`,
+                  `Backend: ${backendVersion || 'unknown'}`,
+                ].join('\n');
+                await Clipboard.setStringAsync(info);
+                setCopiedToast(true);
+                mediumHaptic();
+                setTimeout(() => setCopiedToast(false), 2000);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name={copiedToast ? 'checkmark-circle' : 'copy-outline'} size={18} color={copiedToast ? Colors.success : '#7C3AED'} />
+              <Text style={[s.aboutCopyText, copiedToast && { color: Colors.success }]}>
+                {copiedToast ? 'Copied to clipboard!' : 'Copy version info'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Admin Tools */}
         {isAdmin && (
@@ -497,4 +596,23 @@ const s = StyleSheet.create({
   // Footer
   footer: { alignItems: 'center', marginTop: 24, gap: 6, opacity: 0.3 },
   versionText: { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
+
+  // About panel (.132mo)
+  aboutPanel: {
+    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+  },
+  aboutRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+  },
+  aboutLabel: { fontSize: 13, fontWeight: '600', color: Colors.textTertiary },
+  aboutValue: { fontSize: 13, fontWeight: '700', color: Colors.ink, fontFamily: 'monospace' },
+  aboutCopyBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 12, paddingVertical: 12, borderRadius: 12,
+    borderWidth: 1.5, borderColor: '#7C3AED30', backgroundColor: '#F5F3FF',
+    minHeight: 48,
+  },
+  aboutCopyText: { fontSize: 14, fontWeight: '700', color: '#7C3AED' },
 });
