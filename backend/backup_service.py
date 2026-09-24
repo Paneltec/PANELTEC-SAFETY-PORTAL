@@ -1352,24 +1352,25 @@ def install(app, db, require_admin):
         total_docs = 0
 
         # v58.13.132mq — Stream the snapshot straight into a temp file
-        # under `/tmp` (mounted on the pod's 95 GB overlay, not the
-        # 9.8 GB /app volume) instead of buffering the whole zip in
-        # memory via `io.BytesIO()`. Previously a 1.5 GB DB blew up
-        # into an 8.7 GB in-memory JSON zip (GridFS chunks got JSON-
-        # str-escaped, ~7× inflation). The all-in-memory path was
-        # silently OOM-killed by the pod cgroup, which is why the
-        # scheduler saw every attempt vanish without a traceback.
+        # under the LAN drop-zone (same filesystem as the final path,
+        # so the atomic `os.replace()` doesn't hit `EXDEV / Invalid
+        # cross-device link`). Previously wrote to `/tmp` which is
+        # on the overlay filesystem while `/app/backups/outgoing/`
+        # is on `/dev/nvme0n2` — rename(2) can't cross filesystems.
+        # See `.132mq-fix1` in the memo.
         #
-        # Each collection is now streamed doc-by-doc into a JSON
-        # array — no more `cursor.to_list(length=None)` loading the
-        # whole collection at once. Restore path is untouched: the
-        # zip layout (`manifest.json` + `mongo/<cname>.json`) is
-        # byte-identical to the pre-.132mq output.
+        # Peak-RAM bound is still doc-by-doc regardless of temp
+        # location: each collection streams into the zip entry via
+        # `z.open(entry, 'w', force_zip64=True).write(row_json)`.
         temp_path: Optional[str] = None
         try:
             import tempfile
+            # Ensure drop-zone exists before we place the temp file
+            # in it — mkdir is idempotent.
+            _dz = _lan_drop_zone()
+            os.makedirs(_dz, exist_ok=True)
             tmp_f = tempfile.NamedTemporaryFile(
-                dir="/tmp", suffix=".zip", prefix="bkzip-",
+                dir=_dz, suffix=".zip", prefix=f"bkzip-{snap_id[:8]}-",
                 delete=False,
             )
             temp_path = tmp_f.name
@@ -1438,8 +1439,7 @@ def install(app, db, require_admin):
             # LAN_DELIVERY_DROP_ZONE and register a metadata-only row
             # in `bk_snapshots`. No GridFS write. Pod-side footprint
             # is bounded by _enforce_pod_side_retention() below.
-            drop_zone = _lan_drop_zone()
-            os.makedirs(drop_zone, exist_ok=True)
+            drop_zone = _dz
             filepath = os.path.join(drop_zone,
                                     f"paneltec-snapshot-{snap_id}.zip")
             # Before writing this snapshot, enforce the "≤ MAX_UNSHIPPED
