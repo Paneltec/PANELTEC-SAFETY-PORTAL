@@ -679,12 +679,15 @@ export default function Dashboard() {
               "Admin User Manual" sidebar entry so the two surfaces are
               distinguishable at a glance:
                 · Label: "Worker Quick Guide" (was "User Manual")
-                · Palette: teal accent (was orange gradient) — signals
-                  a lighter, worker-facing quick-reference affordance
-                  vs. the formal admin manual in the sidebar
+                · Palette: teal accent (was orange gradient)
                 · Subtitle: "Quick reference for field workers"
-              Route (`/manuals/admin?ctx=admin`) and admin-role gate are
-              intentionally unchanged per user brief. */}
+
+              v58.13.132ms — Web portal is admin-only (workers use the
+              mobile app), so the "Worker" framing was misleading.
+              Relabelled to "Admin Quick Reference" with subtitle
+              "Quick reference for administrators". Teal palette +
+              BookOpen icon retained; route + admin-role gate
+              unchanged. */}
           {isAdminRole(getUser()) && (
             <a
               href="/manuals/admin?ctx=admin"
@@ -695,8 +698,8 @@ export default function Dashboard() {
             >
               <BookOpen20Regular className="shrink-0" />
               <span className="flex flex-col items-start leading-tight">
-                <span className="text-xs sm:text-sm font-semibold">Worker Quick Guide</span>
-                <span className="text-[10px] opacity-85">Quick reference for field workers</span>
+                <span className="text-xs sm:text-sm font-semibold">Admin Quick Reference</span>
+                <span className="text-[10px] opacity-85">Quick reference for administrators</span>
               </span>
             </a>
           )}

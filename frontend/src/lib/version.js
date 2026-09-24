@@ -1,5 +1,28 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132ms — Rename Dashboard tile "Worker Quick Guide" →
+// "Admin Quick Reference".
+//
+// Reason: the web portal is admin-only (field workers use the mobile
+// app). The `.132mr` label "Worker Quick Guide" was misleading —
+// workers never see this tile because it's admin-role-gated.
+//
+// Ship (label/subtitle only; palette, icon, route, gate all unchanged):
+//   · frontend/src/pages/Dashboard.jsx
+//       - Title:    "Worker Quick Guide" → "Admin Quick Reference"
+//       - Subtitle: "Quick reference for field workers" →
+//                   "Quick reference for administrators"
+//   · Teal accent + BookOpen20Regular glyph RETAINED per user brief.
+//   · testid `dashboard-user-manual-btn-v157` RETAINED.
+//   · Sidebar "Admin User Manual" entry (`.132mr`) UNCHANGED.
+//
+// Files touched:
+//   · frontend/src/pages/Dashboard.jsx                                        (label + subtitle)
+//   · frontend/src/lib/version.js                                             (RUNNING_VERSION bump)
+//   · frontend/public/service-worker.js                                       (CACHE_VERSION bump)
+//   · memory/v58_13_132ms_rename_worker_to_admin_quick_reference.md           (new)
+
+
 // v58.13.132mr — Differentiate the two "User Manual" surfaces so users
 // stop conflating them.
 //
@@ -15693,7 +15716,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mr';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132ms';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
