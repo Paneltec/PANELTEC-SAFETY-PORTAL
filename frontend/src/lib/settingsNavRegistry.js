@@ -23,6 +23,10 @@ import {
   Diagram24Regular, Diagram24Filled,
   Mail24Regular, Mail24Filled,
   BookOpen24Regular, BookOpen24Filled,
+  // v58.13.132mr — Formal glyph for the Admin User Manual entry
+  // (differentiates from the worker-facing "Worker Quick Guide" pill
+  // on the dashboard).
+  BookInformation24Regular, BookInformation24Filled,
   ShieldTask24Regular, ShieldTask24Filled,
 } from '@fluentui/react-icons';
 
@@ -69,7 +73,12 @@ export const SETTINGS_NAV_REGISTRY = [
   { key: 'backup_restore',     label: 'Backup & Restore',    route: '/app/settings/backup',             icon: CloudArrowUp24Regular,    iconActive: CloudArrowUp24Filled,    testid: 'nav-settings-backup',             requiresCan: ['users', 'edit'],               description: 'Local + NAS backup schedule and restore controls' },
   { key: 'program_schematic',  label: 'Program Schematic',   route: '/app/settings/schematic',          icon: Diagram24Regular,         iconActive: Diagram24Filled,         testid: 'nav-settings-schematic',          requiresCan: ['users', 'edit'],               description: 'Interactive data-flow map of the whole platform' },
   { key: 'email_outbox',       label: 'Email outbox',        route: '/app/outbox',                      icon: Mail24Regular,            iconActive: Mail24Filled,            testid: 'nav-outbox',                                                                    description: 'Outbound email queue, status, and retries' },
-  { key: 'user_manual',        label: 'User Manual',         route: '/app/help',                        icon: BookOpen24Regular,        iconActive: BookOpen24Filled,        testid: 'nav-help',                                                                      description: 'This manual' },
+  // v58.13.132mr — Renamed "User Manual" → "Admin User Manual" and
+  // swapped the icon to BookInformation so this Settings-section row
+  // is visually distinct from the worker-facing "Worker Quick Guide"
+  // pill on the dashboard greeting band. Key/route/testid unchanged
+  // (`user_manual` / `/app/help` / `nav-help`) so nav-layout persists.
+  { key: 'user_manual',        label: 'Admin User Manual',   route: '/app/help',                        icon: BookInformation24Regular, iconActive: BookInformation24Filled, testid: 'nav-help',                                                                      description: 'Complete guide for administrators' },
 ];
 
 export const SETTINGS_NAV_BY_KEY = Object.fromEntries(

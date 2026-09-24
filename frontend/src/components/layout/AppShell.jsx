@@ -45,6 +45,10 @@ import {
   Trophy24Regular, Trophy24Filled,
   Mail24Regular, Mail24Filled,
   BookOpen24Regular, BookOpen24Filled,
+  // v58.13.132mr — Formal "book with information dot" glyph for the
+  // Admin User Manual sidebar entry (differentiates it from the
+  // worker-facing "Worker Quick Guide" affordance on the dashboard).
+  BookInformation24Regular, BookInformation24Filled,
   // v160.3.7q — Program Schematic nav item.
   Diagram24Regular, Diagram24Filled,
   // v58.13.132eq — Quick Links sidebar entry (read-only shared bookmarks).
@@ -264,7 +268,12 @@ const NAV = [
     // Phase 4.11 (v121) — top-level Help entry so the user manual is
     // discoverable from anywhere in the app, not just the dashboard
     // header button.
-    { to: '/app/help', label: 'User Manual', icon: BookOpen24Regular, iconActive: BookOpen24Filled, testid: 'nav-help', pastel: 'lavender' },
+    // v58.13.132mr — Renamed to "Admin User Manual" and repainted
+    // slate (was lavender) + swapped to BookInformation glyph so this
+    // sidebar entry is unmistakably distinct from the worker-facing
+    // "Worker Quick Guide" pill in the dashboard greeting band. Route
+    // (`/app/help`) is intentionally unchanged.
+    { to: '/app/help', label: 'Admin User Manual', icon: BookInformation24Regular, iconActive: BookInformation24Filled, testid: 'nav-help', pastel: 'slate', description: 'Complete guide for administrators' },
   ]},
 ];
 
@@ -394,7 +403,7 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
                           isActive
                             ? 'sidebar-active text-slate-900'
                             : 'sidebar-idle text-slate-700 hover:text-slate-900'
-                        }`} title={collapsed ? it.label : undefined}>
+                        }`} title={collapsed ? it.label : (it.description || undefined)}>
                       {({ isActive }) => (
                         <>
                           <IconFilled

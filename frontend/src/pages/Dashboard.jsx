@@ -670,30 +670,34 @@ export default function Dashboard() {
                     : `${m.records_needing_attention} record${m.records_needing_attention === 1 ? '' : 's'} need attention — quick review recommended.`)}
             </p>
           </div>
-          {/* v58.13.132kt — Consolidated User Manual affordance.
-              Previously we rendered TWO buttons on this page (one here
-              in the greeting band, one on the "Live Compliance
-              Dashboard" hero card below). Both were wired to the
-              legacy `.docx` PIN-gated downloader (`.132ge`), so the
-              user saw a broken flow ("this board won't open in a
-              pdf"). This ship:
-                · Removes the duplicate on the hero card.
-                · Retains this single orange button in the greeting band.
-                · Rewires it to open the new HTML admin manual
-                  (`.132kq`, `/manuals/admin`) in a new tab, letting the
-                  user print-to-PDF from the browser's print dialog.
-                · Gates it behind the shared admin-role check
-                  (`isAdminRole`) so field workers no longer see it. */}
+          {/* v58.13.132kt — Consolidated User Manual affordance (single
+              admin-only button in the greeting band; the duplicate on the
+              hero card below was removed). Opens the HTML admin manual
+              (`.132kq`, `/manuals/admin`) in a new tab.
+
+              v58.13.132mr — Visually differentiated from the admin-menu
+              "Admin User Manual" sidebar entry so the two surfaces are
+              distinguishable at a glance:
+                · Label: "Worker Quick Guide" (was "User Manual")
+                · Palette: teal accent (was orange gradient) — signals
+                  a lighter, worker-facing quick-reference affordance
+                  vs. the formal admin manual in the sidebar
+                · Subtitle: "Quick reference for field workers"
+              Route (`/manuals/admin?ctx=admin`) and admin-role gate are
+              intentionally unchanged per user brief. */}
           {isAdminRole(getUser()) && (
             <a
               href="/manuals/admin?ctx=admin"
               target="_blank"
               rel="noopener noreferrer"
               data-testid="dashboard-user-manual-btn-v157"
-              className="btn-primary-gradient self-start sm:self-end shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs sm:text-sm no-underline"
+              className="self-start sm:self-end shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg no-underline bg-teal-500 hover:bg-teal-400 text-white border border-teal-400/60 shadow-sm transition-colors"
             >
-              <BookOpen20Regular />
-              User Manual
+              <BookOpen20Regular className="shrink-0" />
+              <span className="flex flex-col items-start leading-tight">
+                <span className="text-xs sm:text-sm font-semibold">Worker Quick Guide</span>
+                <span className="text-[10px] opacity-85">Quick reference for field workers</span>
+              </span>
             </a>
           )}
         </div>

@@ -1,5 +1,59 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mr — Differentiate the two "User Manual" surfaces so users
+// stop conflating them.
+//
+// Symptom: TWO affordances both labelled "User Manual" appeared in the
+// app — one on the dashboard greeting band (orange pill, `.132kt`),
+// one in the sidebar under Settings (lavender row, Phase 4.11 / v121).
+// From a support perspective these looked identical, which caused
+// confusion about "why do I see this in two places" and "which one is
+// the real manual for me".
+//
+// Ship (UI-only, labels + styling; routes unchanged):
+//   · Dashboard button (`pages/Dashboard.jsx`):
+//       - Renamed "User Manual" → "Worker Quick Guide".
+//       - Repainted from the orange `btn-primary-gradient` to a
+//         solid teal accent (bg-teal-500 / border-teal-400/60) —
+//         reads as "lighter, friendly quick reference".
+//       - Added a small subtitle line: "Quick reference for field
+//         workers" below the title.
+//       - Icon `BookOpen20Regular` retained (fluentui). Route
+//         `/manuals/admin?ctx=admin` and the `isAdminRole` gate
+//         are UNCHANGED per user brief.
+//   · Sidebar entry (`components/layout/AppShell.jsx`):
+//       - Renamed "User Manual" → "Admin User Manual".
+//       - Repainted pastel from `lavender` → `slate` so it matches
+//         the rest of the Settings section (admin territory tone).
+//       - Icon swapped from `BookOpen24{Regular,Filled}` →
+//         `BookInformation24{Regular,Filled}` (formal, "book with
+//         info dot"). Import added in the fluentui-icons block.
+//       - Added a `description` field ("Complete guide for
+//         administrators") + minor renderer tweak so hovering the
+//         expanded sidebar row shows the description as a native
+//         `title` tooltip. Zero layout change (sidebar rows stay
+//         single-line).
+//   · Route (`/app/help`) unchanged.
+//   · No backend, no mobile touched.
+//
+// Files touched:
+//   · frontend/src/pages/Dashboard.jsx                 (~+18/-13)
+//   · frontend/src/components/layout/AppShell.jsx      (~+13/-3)
+//   · frontend/src/lib/version.js                      (RUNNING_VERSION bump)
+//   · frontend/public/service-worker.js                (CACHE_VERSION bump)
+//   · memory/v58_13_132mr_user_manual_distinguish.md   (new)
+//
+// Verification:
+//   · grep -rn '"User Manual"' frontend/src → 2 canonical hits
+//     (Dashboard button + sidebar entry) both replaced. Other hits
+//     inside `UserManualDownloader.jsx`, `UserManual.jsx` H1,
+//     `RoleMatrixEditor.jsx` permission label, and `appFeatureRegistry.js`
+//     retained intentionally per user scope ("Leave others alone").
+//   · Frontend hot-reloaded — no console errors.
+//   · Screenshots captured for dashboard greeting band + admin
+//     sidebar (see ship memo).
+
+
 // v58.13.132mq — Backup pipeline hardening: streaming zip, shutdown-safe
 // lock, orphan sweep, ephemeral-collection excludes.
 //
@@ -15639,7 +15693,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mq';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mr';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
