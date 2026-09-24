@@ -1,5 +1,95 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mq — Backup pipeline hardening: streaming zip, shutdown-safe
+// lock, orphan sweep, ephemeral-collection excludes.
+//
+// Symptom: last successful snapshot was 29 h stale. Portal showed
+// "ATTENTION — approaching 24 h threshold". Root cause diagnostic
+// found:
+//   · Snapshot task was building the entire zip in `io.BytesIO()` →
+//     a 1.5 GB DB blew up into an 8.7 GB in-memory zip because
+//     GridFS chunks were being JSON-str-escaped (~7× inflation).
+//     Pod cgroup OOM-killed the task silently every time.
+//   · Lock reclaim path works, but each attempt would grow the zip
+//     for 10-15 min, then die → next reclaim → repeat. 7 stale-
+//     reclaims logged over 29 h.
+//   · Orphaned /tmp/tmp20d25t9r.zip (8.7 GB) sat under /tmp for
+//     ~55 min after its writer was killed.
+//
+// This ship (F2 + F3 + F4 bundled per user's approval):
+//
+// PART F3 — Streaming serializer (`backup_service.py`).
+//   · Snapshot now streams straight into a NamedTemporaryFile
+//     under /tmp (95 GB overlay, plenty of room) via
+//     `zipfile.ZipFile(path, "w", ZIP_DEFLATED, allowZip64=True)`.
+//   · Per-collection: replaced `cursor.to_list(length=None)` + one-shot
+//     `json.dumps(rows)` with an async iterator that streams doc-by-doc
+//     into a `[…]` JSON array using `z.open(entry, "w").write(…)`.
+//     Peak RAM is now bounded by ONE doc, not by whole-collection load.
+//   · Final SHA-256 read in 4 MB blocks from the temp file — no more
+//     `hashlib.sha256(data).hexdigest()` on an 8 GB bytes object.
+//   · `os.replace(temp_path, filepath)` atomically renames into the
+//     LAN drop-zone. The old staging.part write-then-rename is gone
+//     because the temp file already IS the final payload.
+//   · finally-clause unlinks the temp file if we crashed before
+//     rename (best-effort, silent-fail).
+//   · Restore path (`.132eh` line 2700-ish) is UNCHANGED. Zip layout
+//     (`manifest.json` + `mongo/<cname>.json`) is byte-identical to
+//     pre-.132mq output. Added `serializer_v2: true` field to manifest
+//     for future format detection but not read by any current code.
+//
+// PART F3.b — EXCLUDE_COLLECTIONS widened.
+//   Added to skip list:
+//     · bulk_import_failed_pdfs.chunks   (325 MB, per-run recovery bucket)
+//     · bulk_import_failed_pdfs.files
+//     · preview_pdf_cache                (pdftoppm render cache)
+//     · doc_files_pdf_cache              (same)
+//     · bulk_import_pdf_cache            (Claude vision extraction cache)
+//   All 5 are regeneratable; none contribute to disaster recovery.
+//   Expected dump size drop: 8.7 GB → ~600 MB (dominated by
+//   `upload_storage.chunks` which stays in the dump because it may
+//   contain active user uploads).
+//
+// PART F2 — Shutdown-safe lock (`backup_service.py` + `server.py`).
+//   · New `mark_backup_lock_interrupted_on_shutdown(db)` helper.
+//     Called from `on_shutdown` before `close_db()`. If a snapshot
+//     is claimed as `in_progress`, mark it `in_progress=false` +
+//     `interrupted_at + interrupt_reason=backend restart`. Next boot
+//     doesn't have to wait 30 min for the stale-reclaim threshold.
+//   · Silent-fail so shutdown never blocks.
+//
+// PART F2.b + F4 — Orphan /tmp/*.zip sweep.
+//   · New `sweep_orphan_snapshot_temps(max_age_hours=24)` helper.
+//     Globs /tmp/bkzip-*.zip AND /tmp/tmp*.zip; unlinks anything
+//     older than 24 h. Runs on every boot (`server.on_startup`).
+//   · Logs `scanned / unlinked / bytes_reclaimed` for the boot log.
+//   · Not aggressive: 24 h cutoff means in-flight zips from a
+//     concurrent worker are never touched.
+//
+// PART F4 — Stale "Office Pi" agent deletion.
+//   Executed inline post-restart (out-of-band Python one-liner
+//   documented in the ship memo). NOT in this codebase change —
+//   it's a one-shot DB write, not a source-code fix.
+//
+// Files touched:
+//   · backend/backup_service.py                  (~+130/-25)
+//   · backend/server.py                          (~+27/-0)
+//   · frontend/src/lib/version.js
+//   · frontend/public/service-worker.js
+//   · memory/v58_13_132mq_backup_hardening.md    (new)
+//
+// Ship discipline:
+//   · Defensive git-reset pattern applied.
+//   · No `/app/mobile/*` touch.
+//   · No `testing_agent`, no `finish` tool.
+//   · Backend restart REQUIRED to pick up the streaming serializer
+//     + shutdown hook + boot sweep. Restart will interrupt the
+//     currently-running Dropbox migration; the .132mm watchdog
+//     auto-resumes it on boot.
+//   · Post-ship: F1 (clear lock + delete orphan zip + fire Backup
+//     Now) will run against the new streaming code and produce the
+//     first fresh snapshot in 29 h.
+
 // v58.13.132mp — Bring the admin Live Preview iframe back online.
 //
 // `.132mn` swapped the phone-bezel iframe for a static "offline"
@@ -15549,7 +15639,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mp';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mq';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

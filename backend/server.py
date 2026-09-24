@@ -882,6 +882,21 @@ async def on_startup():
         await _whs_ensure()
     except Exception as _e:  # noqa: BLE001
         log.warning("whs_legislation indexes setup failed: %s", _e)
+    # v58.13.132mq — Sweep any orphaned /tmp/*.zip snapshot artifacts
+    # left behind by a killed snapshot task on the previous run. The
+    # 8.7 GB `/tmp/tmp20d25t9r.zip` from the .132mp era was the
+    # canonical example. Runs on every boot; 24 h age threshold so
+    # in-flight zips from a concurrent restart are never touched.
+    try:
+        from backup_service import sweep_orphan_snapshot_temps
+        _sw = sweep_orphan_snapshot_temps(max_age_hours=24)
+        log.info(
+            "backup temp sweep — scanned=%d unlinked=%d bytes_reclaimed=%.1f MB",
+            _sw["scanned"], _sw["unlinked"],
+            _sw["bytes_reclaimed"] / 1e6,
+        )
+    except Exception as _e:  # noqa: BLE001
+        log.warning("backup temp sweep failed: %s", _e)
     # v58.13.132hf — Boot-trigger the doc_files extracted_text
     # backfill 5 minutes after startup. Admin can cancel via
     # POST /api/document-library/admin/backfill-extracted-text/cancel.
@@ -1812,6 +1827,17 @@ async def on_startup():
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    # v58.13.132mq — F2: mark backup lock as interrupted before we tear
+    # down the loop. Without this, a snapshot mid-flight leaves
+    # `in_progress=true` and we wait 30 min for the stale-reclaim
+    # threshold. The .132mp-era stuck-lock cascade was the canonical
+    # symptom.
+    try:
+        from backup_service import mark_backup_lock_interrupted_on_shutdown
+        from db import db as _db
+        await mark_backup_lock_interrupted_on_shutdown(_db)
+    except Exception as _e:  # non-fatal
+        log.warning("backup_lock shutdown marker failed: %s", _e)
     # v58.13.15 — Cancel any in-flight bulk_import background tasks
     # with a bounded drain budget BEFORE the loop tears down. Without
     # this the untracked `_run_job` tasks would hold `loop.close()` open

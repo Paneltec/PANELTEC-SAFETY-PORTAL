@@ -284,6 +284,72 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ── v58.13.132mq — Shutdown-safe backup helpers (F2 + F4) ────────
+async def mark_backup_lock_interrupted_on_shutdown(db_) -> None:
+    """Called from `server.on_shutdown` before the loop tears down.
+    If a snapshot is claimed as `in_progress`, mark it interrupted
+    so the next boot doesn't have to wait 30 min for the stale-
+    reclaim threshold. Best-effort — silent-fail so shutdown never
+    blocks."""
+    try:
+        r = await db_.system_backup_lock.update_one(
+            {"_id": _BACKUP_LOCK_DOC_ID, "in_progress": True},
+            {"$set": {
+                "in_progress": False,
+                "interrupted_at": _now_iso(),
+                "interrupt_reason": "backend restart during snapshot",
+            }},
+        )
+        if r.modified_count:
+            logger.warning(
+                "backup_lock.marked_interrupted_on_shutdown — "
+                "next boot / next scheduled fire will retry cleanly"
+            )
+    except Exception as _e:  # noqa: BLE001
+        logger.warning(
+            "backup_lock shutdown marker failed: %s", _e,
+        )
+
+
+def sweep_orphan_snapshot_temps(max_age_hours: int = 24) -> Dict[str, int]:
+    """v58.13.132mq — F2 + F4 helper. Unlinks `/tmp/bkzip-*.zip` and
+    the legacy `/tmp/tmp*.zip` snapshot artifacts older than
+    `max_age_hours`. Called from server on_startup. Returns
+    `{scanned, unlinked, bytes_reclaimed}` for the boot log."""
+    import glob
+    import time
+    scanned = 0
+    unlinked = 0
+    bytes_reclaimed = 0
+    cutoff = time.time() - (max_age_hours * 3600)
+    patterns = ["/tmp/bkzip-*.zip", "/tmp/tmp*.zip"]
+    for pattern in patterns:
+        for path in glob.glob(pattern):
+            scanned += 1
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            if st.st_mtime > cutoff:
+                continue  # still fresh — leave alone
+            try:
+                bytes_reclaimed += st.st_size
+                os.unlink(path)
+                unlinked += 1
+                logger.info(
+                    "backup.temp_sweep unlinked %s (%.1f MB, age %.1f h)",
+                    path, st.st_size / 1e6,
+                    (time.time() - st.st_mtime) / 3600,
+                )
+            except OSError as _e:
+                logger.warning(
+                    "backup.temp_sweep unlink failed for %s: %s",
+                    path, _e,
+                )
+    return {"scanned": scanned, "unlinked": unlinked,
+            "bytes_reclaimed": bytes_reclaimed}
+
+
 def _hash_token(t: str) -> str:
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
@@ -468,6 +534,15 @@ async def _migrate_plaintext_dest_passwords(db_) -> Dict[str, int]:
 #   • email_outbox          – already retried by the mail worker
 #   • comms_outbox_blocked  – Safe-Mode-captured messages; regen on next send
 #   • active_signons        – QR sign-on session heartbeats (short-lived)
+#
+# v58.13.132mq widened again to cover the ephemeral bulk-import GridFS
+# bucket + regeneratable render caches. Backing these up was ballooning
+# a 1.5 GB DB into an 8.7 GB in-memory zip (see .132mq memo). Values
+# per `bk_snapshots` size stats before the ship:
+#   • bulk_import_failed_pdfs.chunks    ~325 MB / 1429 docs  (per-run recovery bucket)
+#   • bulk_import_failed_pdfs.files     ~ small metadata
+#   • preview_pdf_cache                 ~ 12 MB / 13 docs    (mtime-driven render cache)
+#   • doc_files_pdf_cache               ~ 32 MB / 87 docs    (render cache)
 EXCLUDE_COLLECTIONS = {
     # Library FTS cache — derived from documents, can be rebuilt.
     "library_bm25_chunks",
@@ -478,6 +553,19 @@ EXCLUDE_COLLECTIONS = {
     "email_outbox",
     "comms_outbox_blocked",
     "active_signons",
+    # v58.13.132mq — bulk-import ephemeral GridFS bucket. Populated
+    # only while a Pre-Starts import run is failing; entries are
+    # replayable from the source zip.
+    "bulk_import_failed_pdfs.chunks",
+    "bulk_import_failed_pdfs.files",
+    # v58.13.132mq — pdftoppm-rendered PDF thumbnails. Regenerable
+    # from doc_files on-demand.
+    "preview_pdf_cache",
+    "doc_files_pdf_cache",
+    # v58.13.132mq — Claude vision extraction cache. Regenerable
+    # (paid API call, but reproducible), and dominates the dump
+    # when a large bulk-import has just run.
+    "bulk_import_pdf_cache",
 }
 
 
@@ -1260,26 +1348,65 @@ def install(app, db, require_admin):
             return {"ok": False, "skipped": True, "reason": reason}
 
         snap_id = str(uuid.uuid4())
-        zbuf = io.BytesIO()
         included: List[str] = []
         total_docs = 0
 
+        # v58.13.132mq — Stream the snapshot straight into a temp file
+        # under `/tmp` (mounted on the pod's 95 GB overlay, not the
+        # 9.8 GB /app volume) instead of buffering the whole zip in
+        # memory via `io.BytesIO()`. Previously a 1.5 GB DB blew up
+        # into an 8.7 GB in-memory JSON zip (GridFS chunks got JSON-
+        # str-escaped, ~7× inflation). The all-in-memory path was
+        # silently OOM-killed by the pod cgroup, which is why the
+        # scheduler saw every attempt vanish without a traceback.
+        #
+        # Each collection is now streamed doc-by-doc into a JSON
+        # array — no more `cursor.to_list(length=None)` loading the
+        # whole collection at once. Restore path is untouched: the
+        # zip layout (`manifest.json` + `mongo/<cname>.json`) is
+        # byte-identical to the pre-.132mq output.
+        temp_path: Optional[str] = None
         try:
-            with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
+            import tempfile
+            tmp_f = tempfile.NamedTemporaryFile(
+                dir="/tmp", suffix=".zip", prefix="bkzip-",
+                delete=False,
+            )
+            temp_path = tmp_f.name
+            tmp_f.close()
+
+            with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED,
+                                    allowZip64=True) as z:
                 collections = await db.list_collection_names()
                 for cname in sorted(collections):
                     if cname in EXCLUDE_COLLECTIONS or cname.startswith("system."):
                         continue
                     if cname.startswith("bk_fs."):
                         continue
-                    cursor = db[cname].find({}, {"_id": 0})
-                    rows = await cursor.to_list(length=None)
-                    z.writestr(
-                        f"mongo/{cname}.json",
-                        json.dumps(rows, default=str, ensure_ascii=False),
-                    )
+                    # Stream doc-by-doc into a JSON array entry. Uses
+                    # `ZipFile.open(..., "w")` which returns a
+                    # write-only file-like whose bytes are compressed
+                    # incrementally.
+                    doc_count = 0
+                    with z.open(f"mongo/{cname}.json", "w",
+                                force_zip64=True) as zf:
+                        zf.write(b"[")
+                        first = True
+                        cursor = db[cname].find({}, {"_id": 0})
+                        async for row in cursor:
+                            payload = json.dumps(
+                                row, default=str, ensure_ascii=False,
+                            ).encode("utf-8")
+                            if first:
+                                zf.write(payload)
+                                first = False
+                            else:
+                                zf.write(b",")
+                                zf.write(payload)
+                            doc_count += 1
+                        zf.write(b"]")
                     included.append(cname)
-                    total_docs += len(rows)
+                    total_docs += doc_count
 
                 manifest = {
                     "snapshot_id": snap_id,
@@ -1288,11 +1415,24 @@ def install(app, db, require_admin):
                     "collections": included,
                     "total_documents": total_docs,
                     "app": "paneltec-hub",
+                    # v58.13.132mq — serializer version marker. Restore
+                    # keeps reading legacy (unmarked) snapshots with
+                    # the same code path; presence of `serializer_v2`
+                    # signals streaming-writer output (byte-identical
+                    # layout, just faster/smaller in practice).
+                    "serializer_v2": True,
                 }
                 z.writestr("manifest.json", json.dumps(manifest, indent=2))
 
-            data = zbuf.getvalue()
-            sha = hashlib.sha256(data).hexdigest()
+            size = os.path.getsize(temp_path)
+
+            # SHA-256 of the final zip. Read in 4 MB blocks so we
+            # never hold the whole zip in RAM again.
+            hasher = hashlib.sha256()
+            with open(temp_path, "rb") as f:
+                for block in iter(lambda: f.read(4 * 1024 * 1024), b""):
+                    hasher.update(block)
+            sha = hasher.hexdigest()
 
             # v58.13.132jh — Filesystem drop-zone. Write the ZIP under
             # LAN_DELIVERY_DROP_ZONE and register a metadata-only row
@@ -1311,19 +1451,19 @@ def install(app, db, require_admin):
                     evicted, _lan_max_unshipped(),
                 )
 
-            # Atomic write: staging .part → rename so a partial write
-            # never confuses the Pi.
-            staging = filepath + ".part"
-            with open(staging, "wb") as f:
-                f.write(data)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(staging, filepath)
+            # v58.13.132mq — Atomic move: the temp file IS the payload
+            # already, so we just rename it into the drop-zone
+            # (`os.replace` is atomic on the same filesystem). No more
+            # read-into-RAM-then-write. `temp_path=None` after this
+            # so the finally-cleanup below doesn't unlink our now-
+            # renamed file.
+            os.replace(temp_path, filepath)
+            temp_path = None
 
             await db.bk_snapshots.insert_one({
                 "id": snap_id,
                 "created_at": _now_iso(),
-                "size": len(data),
+                "size": size,
                 "sha256": sha,
                 "collections": included,
                 "total_documents": total_docs,
@@ -1347,7 +1487,7 @@ def install(app, db, require_admin):
 
             await _release_backup_lock(db, ok=True)
             return {"ok": True, "snapshot_id": snap_id,
-                    "size": len(data), "sha256": sha,
+                    "size": size, "sha256": sha,
                     "documents": total_docs,
                     "filepath": filepath}
         except Exception:
@@ -1357,6 +1497,23 @@ def install(app, db, require_admin):
             # the original error.
             await _release_backup_lock(db, ok=False)
             raise
+        finally:
+            # v58.13.132mq — Best-effort cleanup of the temp zip if
+            # we crashed before renaming it into the drop-zone. On
+            # the happy path `temp_path` is `None` (we renamed it
+            # already), so this is a no-op.
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                    logger.info(
+                        "backup.snapshot temp cleanup: unlinked %s",
+                        temp_path,
+                    )
+                except OSError as _e:
+                    logger.warning(
+                        "backup.snapshot temp cleanup failed for %s: %s",
+                        temp_path, _e,
+                    )
 
     # Paneltec Civil (v143) — expose `_do_snapshot` on app.state so the
     # AsyncIOScheduler in server.py can register it as a cron job without
