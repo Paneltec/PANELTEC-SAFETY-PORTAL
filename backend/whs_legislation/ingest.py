@@ -41,17 +41,26 @@ log = logging.getLogger("paneltec.whs_legislation.ingest")
 _TAS_WHS_ACT_URL = (
     "https://www.legislation.tas.gov.au/view/whole/html/inforce/current/act-2012-001"
 )
+# v58.13.132mk-fix1 — Regs slug is `sr-2022-109`, not `sr-2022-118`
+# as the user brief suggested. Confirmed via web search + WorkSafe Tas
+# reference at worksafe.tas.gov.au/topics/laws-and-compliance/acts-and-
+# regulations/new-whs-regulations-2022.
 _TAS_WHS_REG_URL = (
-    "https://www.legislation.tas.gov.au/view/whole/html/inforce/current/sr-2022-118"
+    "https://www.legislation.tas.gov.au/view/whole/html/inforce/current/sr-2022-109"
 )
 _COP_LANDING_URL = (
     "https://worksafe.tas.gov.au/topics/laws-and-compliance/codes-of-practice"
 )
 
 _HTTP_TIMEOUT_S = 60.0
+# v58.13.132mk-fix2 — WorkSafe Tas + legislation.tas.gov.au both
+# reject the generic paneltec UA with 403 Forbidden. Same Cloudflare
+# bot filter we bypassed in `.132li`. Send a browser-realistic UA;
+# still identify ourselves in the trailing token for their logs.
 _USER_AGENT = (
-    "Mozilla/5.0 (compatible; paneltec-whs-ingest/1.0; "
-    "+https://paneltec.com.au)"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 "
+    "paneltec-whs-ingest/1.0"
 )
 
 

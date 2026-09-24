@@ -107,26 +107,31 @@ def parse_legislation_html(
     doc_title: str,
 ) -> List[ParsedSection]:
     """Walk a legislation.tas.gov.au 'whole HTML' view and extract
-    sections. Best-effort — falls through to coarse chunking if the
-    heading structure isn't recognised.
+    sections. Tas legislation uses a specific structure:
+      · Section heading: `<P class="HeadingParagraph"><B class="HeadingStyle">19.</B>
+                          <B class="HeadingStyle">Primary duty of care</B></P>`
+      · Division / Part heading: `<blockquote class="OtherHeadingParagraph">
+                                   <span class="HeadingName">Division 2 - Primary duty of care</span></blockquote>`
+      · Body: `<BLOCKQUOTE class="Paragraph">…</BLOCKQUOTE>` /
+              `<BLOCKQUOTE class="FlatParagraph">…</BLOCKQUOTE>`
+    Falls through to coarse chunking if none of these appear.
+    v58.13.132mk-fix3.
     """
     soup = BeautifulSoup(html, "lxml")
 
-    # Strip nav / footer / script / style content.
+    # Strip nav / footer / script / style / hidden-print / navbar.
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
+    for cls in ("hidden-print", "navbar", "navbar-collapse",
+                "container-fluid navbar",):
+        for el in soup.find_all(class_=cls):
+            el.decompose()
 
     body = soup.body or soup
-    # Try to narrow to a main-content region if the source marks one.
-    main = body.find(
-        ["main", "article", "div"],
-        attrs={"id": re.compile(r"content|main", re.I)},
-    ) or body
 
     sections: List[ParsedSection] = []
     part = ""
     division = ""
-    chapter = ""
     current: Optional[ParsedSection] = None
     body_parts: List[str] = []
     html_parts: List[str] = []
@@ -136,80 +141,116 @@ def parse_legislation_html(
         if current is None:
             return
         joined = "\n\n".join(x for x in body_parts if x.strip())
-        current.section_text = _clean_text(joined) if not joined.strip() else joined.strip()
+        current.section_text = joined.strip()
         current.section_html = "\n".join(html_parts)
         sections.append(current)
         current = None
         body_parts = []
         html_parts = []
 
-    def push_container(kind: str, num: str, title: str):
-        nonlocal part, division, chapter
-        k = kind.lower()
-        label = f"{kind.title()} {num}"
-        if title:
-            label = f"{label} — {title}"
-        if k == "part" or k == "chapter":
-            part = label
-            division = ""
-        elif k == "division" or k == "subdivision":
-            division = label
-        elif k == "schedule":
-            part = label
-            division = ""
-
     def make_full_path(section_num: str, title: str) -> str:
-        crumbs = [c for c in (chapter, part, division) if c]
-        section_label = f"s.{section_num} {title}".strip()
-        crumbs.append(section_label)
+        crumbs = [c for c in (part, division) if c]
+        crumbs.append(f"s.{section_num} {title}".strip())
         return " > ".join(crumbs)
 
-    # Walk any block-level element in doc order.
-    walk_tags = main.find_all(
-        ["h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "li", "table"],
+    # Tas structural + section headings + body paragraphs, all
+    # emitted in document order. `descendants` is expensive on a
+    # 500 KB doc, so pre-filter by class name via a CSS selector.
+    interesting = body.find_all(
+        ["p", "P", "blockquote", "BLOCKQUOTE", "div", "span",
+         "h1", "h2", "h3", "h4"],
         recursive=True,
     )
-    for el in walk_tags:
-        if not isinstance(el, Tag):
-            continue
-        text = _clean_text(el.get_text(" ", strip=True))
-        if not text:
-            continue
 
-        # Structural container heading?
-        m_struct = _STRUCT_RE.match(text)
-        if m_struct and el.name in ("h1", "h2", "h3", "h4"):
-            flush()
-            kind, num, title = m_struct.group(1), m_struct.group(2), m_struct.group(3)
-            push_container(kind, num, _clean_text(title))
+    _seen: set = set()
+    for el in interesting:
+        if id(el) in _seen:
             continue
+        classes = " ".join(el.get("class", []))
 
-        # Section heading?
-        if el.name in ("h1", "h2", "h3", "h4", "h5"):
-            m_sec = _SECTION_HEADING_RE.match(text)
-            if m_sec:
+        # Structural heading (Part / Division / Chapter / Schedule)
+        if isinstance(el, Tag) and (
+            "OtherHeadingParagraph" in classes
+            or "PartHeadingParagraph" in classes
+            or "ChapterHeadingParagraph" in classes
+        ):
+            heading_span = el.find(class_=re.compile(r"HeadingName|HeadingStyle"))
+            text = _clean_text(
+                (heading_span or el).get_text(" ", strip=True),
+            )
+            if text:
                 flush()
-                sec_num, sec_title = m_sec.group(1), _clean_text(m_sec.group(2))
-                current = ParsedSection(
-                    section_number=f"s.{sec_num}",
-                    section_title=sec_title,
-                    section_text="",
-                    parent_section=division or part,
-                    full_path=make_full_path(sec_num, sec_title),
-                )
-                continue
+                low = text.lower()
+                if low.startswith("part ") or low.startswith("chapter "):
+                    part = text
+                    division = ""
+                elif low.startswith("division ") or low.startswith("subdivision "):
+                    division = text
+                elif low.startswith("schedule "):
+                    part = text
+                    division = ""
+            # Mark all descendants as seen so we don't double-emit.
+            for c in el.find_all(True):
+                _seen.add(id(c))
+            _seen.add(id(el))
+            continue
 
-        # Body block — accumulate into the current section.
-        if current is not None:
-            body_parts.append(text)
-            html_parts.append(str(el))
+        # Section heading (numbered)
+        if isinstance(el, Tag) and "HeadingParagraph" in classes:
+            # First B is the number, second B is the title. Some sections
+            # use just one B with combined content.
+            bolds = el.find_all(class_=re.compile(r"HeadingStyle"))
+            if not bolds:
+                # No structured heading — treat as regular body para.
+                continue
+            num_text = _clean_text(bolds[0].get_text(" ", strip=True))
+            title_text = ""
+            if len(bolds) >= 2:
+                title_text = _clean_text(bolds[1].get_text(" ", strip=True))
+            num_m = re.match(r"(\d+[A-Za-z]*)\.?", num_text)
+            if not num_m:
+                continue
+            flush()
+            sec_num = num_m.group(1)
+            current = ParsedSection(
+                section_number=f"s.{sec_num}",
+                section_title=title_text or "(untitled)",
+                section_text="",
+                parent_section=division or part,
+                full_path=make_full_path(sec_num, title_text),
+            )
+            for c in el.find_all(True):
+                _seen.add(id(c))
+            _seen.add(id(el))
+            continue
+
+        # Body paragraph — accumulate into current section.
+        if isinstance(el, Tag) and (
+            "Paragraph" in classes or "FlatParagraph" in classes
+        ) and "HeadingParagraph" not in classes:
+            if current is None:
+                # Content before first section — put in preamble.
+                current = ParsedSection(
+                    section_number="s.preamble",
+                    section_title="Preamble",
+                    section_text="",
+                    parent_section=part,
+                    full_path=(f"{part} > Preamble" if part else "Preamble"),
+                )
+            text = _clean_text(el.get_text(" ", strip=True))
+            if text:
+                body_parts.append(text)
+                html_parts.append(str(el))
+            for c in el.find_all(True):
+                _seen.add(id(c))
+            _seen.add(id(el))
 
     flush()
 
     # Fallback: if we got zero sections but there's real content,
     # emit one big "whole document" section so the doc isn't lost.
     if not sections:
-        whole = _clean_text(main.get_text("\n", strip=True))
+        whole = _clean_text(body.get_text("\n", strip=True))
         if whole:
             sections.append(ParsedSection(
                 section_number="whole",
