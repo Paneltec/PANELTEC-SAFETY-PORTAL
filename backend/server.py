@@ -1318,6 +1318,16 @@ async def on_startup():
             await seed_import_matcher_templates_on_startup()
         except Exception as e:
             log.warning("Import matcher template seed failed: %s", e)
+        # v58.13.132mw — Seed a canonical SWMS `form_templates` row per
+        # org so the bulk-import classifier's ("swms", "swms") keyword
+        # rule finally has a target to match against. Idempotent.
+        try:
+            from swms_template_seed import seed_swms_template_on_startup
+            _sw = await seed_swms_template_on_startup()
+            log.info("[migrate-swms-template] summary orgs=%s seeded=%s skipped=%s",
+                     _sw.get("orgs_scanned"), _sw.get("seeded"), _sw.get("skipped_existing"))
+        except Exception as e:
+            log.warning("SWMS template seed failed: %s", e)
         # v58.13.132hq — Backfill worker_company_id on existing rows.
         # v58.13.132hv — REMOVED. worker_companies feature purged.
         # v160.3.3 — HR docs dedup index.

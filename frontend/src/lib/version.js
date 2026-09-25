@@ -1,5 +1,55 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mw — SWMS seed + swms_router mirror + Pre-starts stale-
+// filter one-shot reset. Follow-up to `.132mv`'s parse-pipeline fix
+// once the diagnostic confirmed that:
+//   1. `form_templates` had ZERO rows with `category: "swms"` on
+//      any org, so the bulk-import classifier's
+//      `_CATEGORY_KEYWORDS ("swms", "swms")` rule had nothing to
+//      resolve against.
+//   2. `swms_router` (`crud.py:854`) was the only Capture-tab
+//      router without `mirror_categories`, so even a
+//      `template_category_snapshot: "swms"` submission would have
+//      stayed invisible.
+//   3. Pre-starts imports were already surfacing on the API
+//      (`GET /api/pre-starts` → 197 of 200 imported=true), but a
+//      stale persisted `LS_TYPE_KEY` filter hid them from users
+//      whose selection didn't intersect the loaded types.
+//
+// Backend:
+//   · New `backend/swms_template_seed.py` — idempotent per-org
+//     seed of one canonical SWMS template (14 fields incl. task,
+//     hazards, controls, PPE, high-risk categories, sign-off
+//     signature) run on backend startup, mirroring the pattern
+//     used by `white_card_seed.py` / `seed_cert_kinds_on_startup`.
+//   · `backend/crud.py:854` — added `mirror_categories=["swms"]`
+//     to `swms_router` so `form_submissions` rows with
+//     `template_category_snapshot: "swms"` surface on the SWMS tab.
+//   · `backend/server.py` startup — invokes the SWMS seed with a
+//     summary log line + warning-only error handling (never
+//     blocks boot).
+//
+// Frontend:
+//   · `pages/PreStarts.jsx` — one-shot `LS_FILTER_RESET_KEY`
+//     (`pt.prestarts.filter_reset_v132mw`) flushes any stored
+//     `LS_TYPE_KEY` value on first render after this ship. Users
+//     can re-apply a filter and it will persist as before.
+//
+// Files touched:
+//   · backend/swms_template_seed.py                                  (new)
+//   · backend/crud.py                                                (mirror)
+//   · backend/server.py                                              (startup hook)
+//   · frontend/src/pages/PreStarts.jsx                               (one-shot reset)
+//   · frontend/src/lib/version.js                                    (bump)
+//   · frontend/public/service-worker.js                              (bump)
+//   · memory/v58_13_132mw_swms_seed_and_prestarts_filter_reset.md    (new)
+//
+// Non-goals:
+//   · `.132kn` SWMS team-scoping — deferred (separate concern
+//     from the "imports don't appear" complaint; needs its own
+//     ship once end-to-end SWMS import visibility is confirmed).
+
+
 // v58.13.132mv — Fix "Could not parse the PDF" 500 on every
 // admin PDF import (SWMS / Incident / Pre-start / SSRA).
 //
@@ -15872,7 +15922,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mv';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mw';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

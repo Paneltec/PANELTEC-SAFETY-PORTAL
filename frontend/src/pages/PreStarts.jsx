@@ -42,6 +42,19 @@ import { inferTemplateType, paletteForType } from '../lib/preStartsPalette';
 // and the New Pre-Start form below (untouched).
 
 const LS_TYPE_KEY = 'pt.prestarts.type_filter';
+// v58.13.132mw — One-shot filter-reset key. Prior to `.132mw` the
+// SWMS PDF-import classifier could hit `_CATEGORY_KEYWORDS
+// ("swms", "swms")` in `bulk_import_template_inference.py`, and the
+// Pre-starts backend correctly mirrored `pre_start` +
+// `plant_pre_start` — but users whose `LS_TYPE_KEY` was set to a
+// specific type saw an empty grid whenever their filter didn't
+// intersect the currently-loaded types (e.g. filter set to
+// "Trailer Pre-start" while only "Weekly Pre-Start" rows loaded on
+// this page). Flushing the persisted filter once, on first render
+// after this ship, restores the "All" default and surfaces the
+// backend's 197 imported rows. Users can re-apply a filter and it
+// will persist as before.
+const LS_FILTER_RESET_KEY = 'pt.prestarts.filter_reset_v132mw';
 
 // v160.3.9.58.10.2 — Split the search string into whitespace tokens
 // (drop empties). Case-insensitive AND-match.
@@ -100,6 +113,14 @@ export default function PreStartsList() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [typeFilter, setTypeFilter] = useState(() => {
+    // v58.13.132mw — One-shot stale-filter reset. See LS_FILTER_RESET_KEY.
+    try {
+      if (!localStorage.getItem(LS_FILTER_RESET_KEY)) {
+        localStorage.removeItem(LS_TYPE_KEY);
+        localStorage.setItem(LS_FILTER_RESET_KEY, '1');
+        return 'All';
+      }
+    } catch { /* private-mode / storage disabled → skip reset */ }
     try { return localStorage.getItem(LS_TYPE_KEY) || 'All'; } catch { return 'All'; }
   });
 

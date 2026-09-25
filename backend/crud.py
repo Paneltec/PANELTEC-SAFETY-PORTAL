@@ -851,7 +851,18 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
 # `general` and `toolbox` are catch-all for the /forms tab (per-template
 # view via FormSubmissions.jsx) — deliberately NOT mirrored here so a
 # submission never double-lands in two Capture tabs.
-swms_router       = build_router("swms",         "swms",                SwmsIn,        "swms",         "swms")
+swms_router       = build_router("swms",         "swms",                SwmsIn,        "swms",         "swms",
+                                 # v58.13.132mw — Union `form_submissions` rows
+                                 # with `template_category_snapshot: "swms"` so
+                                 # PDF-imported SWMS records surface on the SWMS
+                                 # tab. Prior to this ship the SWMS router had no
+                                 # mirror at all (the only Capture tab without one
+                                 # — see the diagnostic in
+                                 # `memory/v58_13_132mw_swms_seed_and_prestarts_filter_reset.md`),
+                                 # so any classifier hit of `_CATEGORY_KEYWORDS
+                                 # ("swms", "swms")` in `bulk_import_template_inference.py`
+                                 # was silently invisible to the tab.
+                                 mirror_categories=["swms"])
 prestarts_router  = build_router("pre-starts",   "pre_starts",          PreStartIn,    "pre_starts",   "pre_start",
                                  mirror_categories=["pre_start", "plant_pre_start"])
 diary_router      = build_router("site-diary",   "site_diary_entries",  SiteDiaryIn,   "site_diary",   "site_diary",
