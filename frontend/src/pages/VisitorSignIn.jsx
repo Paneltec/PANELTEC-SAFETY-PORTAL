@@ -2,10 +2,18 @@
 // Wired to the site QR flow: scan → /scan/site/:token/visitor.
 // No auth. Persists visitor_id in localStorage keyed by site so a
 // repeat visit shows the "Sign out" button.
+//
+// v58.13.132mu — Added a signature capture pad (uses the shared
+// `SignaturePad` component — same code path as SWMS/Pre-start
+// sign-off). The visitor must draw a signature before the submit
+// button un-disables. Payload gains `signature` (base64 PNG data
+// URL). Legacy fields "Who are you visiting" + "Vehicle rego"
+// remain removed (retired in .132lh).
 import React, { useEffect, useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import QRCode from 'qrcode';
+import SignaturePad from '../components/SignaturePad';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const api = axios.create({ baseURL: `${BACKEND}/api` });
@@ -28,8 +36,11 @@ export default function VisitorSignIn() {
     // to match the mobile visitor-form field removal shipped as
     // `.132lg`. Site QR-flow now captures name / company / phone /
     // purpose / induction only.
+    // v58.13.132mu — Added `signature` (base64 PNG data URL, drawn
+    // via the shared SignaturePad).
     name: '', company: '', phone: '', purpose: PURPOSES[0],
     induction_acknowledged: false,
+    signature: null,
   });
 
   useEffect(() => {
@@ -69,6 +80,9 @@ export default function VisitorSignIn() {
     e.preventDefault();
     if (!form.name.trim()) return setError('Please enter your name.');
     if (!form.induction_acknowledged) return setError('You must acknowledge the safety induction.');
+    // v58.13.132mu — Signature is now mandatory. The submit button
+    // is disabled until one is drawn, but check here as well.
+    if (!form.signature) return setError('Please add your signature before signing in.');
     setBusy(true); setError('');
     try {
       const { data } = await api.post(`/public/visitor/site/${token}/signin`, form);
@@ -170,7 +184,9 @@ export default function VisitorSignIn() {
           {/* v58.13.132lh — Removed "Who are you visiting?" + "Vehicle rego"
               fields to match mobile `.132lg`. Site sign-in stays focused
               on the compliance-critical inputs (name, company, phone,
-              purpose, induction acknowledgement). */}
+              purpose, induction acknowledgement).
+              v58.13.132mu — Signature pad added (shared component; same
+              code path used by SWMS + Pre-start sign-off). Required. */}
           <label className={`flex items-start gap-3 rounded-lg px-3 py-3 border cursor-pointer ${form.induction_acknowledged ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-amber-50 border-amber-300 text-amber-900'}`}>
             <input type="checkbox" checked={form.induction_acknowledged}
               onChange={(e) => setForm({ ...form, induction_acknowledged: e.target.checked })}
@@ -180,8 +196,20 @@ export default function VisitorSignIn() {
               I acknowledge the site safety induction and agree to follow all posted safety instructions while on site.
             </span>
           </label>
+          <div data-testid="visitor-signature-field">
+            <span className="block text-xs font-semibold text-slate-700 mb-1">Signature *</span>
+            <SignaturePad
+              value={form.signature}
+              onChange={(dataUrl) => setForm((f) => ({ ...f, signature: dataUrl }))}
+              ariaLabel="Draw your signature"
+              testId="visitor-signature-pad"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Sign with your finger, stylus, or mouse. Required for sign-in.
+            </p>
+          </div>
           {error && <div className="text-sm text-rose-700" data-testid="visitor-error">{error}</div>}
-          <button type="submit" disabled={busy || !form.induction_acknowledged}
+          <button type="submit" disabled={busy || !form.induction_acknowledged || !form.signature}
             className="w-full py-3 rounded-xl bg-emerald-600 text-white text-base font-semibold hover:bg-emerald-700 disabled:opacity-50"
             data-testid="visitor-submit-btn">
             {busy ? 'Signing in…' : 'Sign in'}

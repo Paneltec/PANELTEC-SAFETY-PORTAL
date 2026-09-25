@@ -48,9 +48,19 @@ class VisitorSigninIn(BaseModel):
     company: Optional[str] = Field(None, max_length=120)
     phone: Optional[str] = Field(None, max_length=32)
     purpose: Optional[str] = Field(None, max_length=32)          # Contractor | Delivery | Client | Other
-    visiting_person: Optional[str] = Field(None, max_length=120)
-    vehicle_rego: Optional[str] = Field(None, max_length=16)
+    # v58.13.132mu — `visiting_person` and `vehicle_rego` retired
+    # from the web sign-in payload. Legacy records already in
+    # `site_visitors` keep whatever they were captured with; the
+    # admin viewer renders those fields conditionally when present.
+    # Mobile still emits these on some paths (out of scope for
+    # this ship; mobile is edit-banned).
     induction_acknowledged: bool
+    # v58.13.132mu — Signature data URL (base64 PNG from the
+    # shared SignaturePad component). Optional at the API layer so
+    # legacy clients don't 422, but the web submit button is
+    # disabled until the visitor draws one. Max ~200 KB matches
+    # the pad's typical output at 600x180.
+    signature: Optional[str] = Field(None, max_length=250_000)
     gps_lat: Optional[float] = None
     gps_lng: Optional[float] = None
 
@@ -130,8 +140,10 @@ async def public_visitor_signin(request: Request, scan_token: str, body: Visitor
         "company": (body.company or "").strip() or None,
         "phone": (body.phone or "").strip() or None,
         "purpose": (body.purpose or "").strip() or None,
-        "visiting_person": (body.visiting_person or "").strip() or None,
-        "vehicle_rego": (body.vehicle_rego or "").strip().upper() or None,
+        # v58.13.132mu — visiting_person / vehicle_rego dropped from
+        # the write path; legacy rows retain them, new rows carry a
+        # signature instead.
+        "signature": (body.signature or None),
         "induction_acknowledged": True,
         "signed_in_at": now,
         "signed_out_at": None,

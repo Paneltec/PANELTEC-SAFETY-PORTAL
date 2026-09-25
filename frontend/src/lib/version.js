@@ -1,5 +1,53 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mu — Visitor sign-in: signature capture + legacy-field
+// write-path removal.
+//
+// Context: user reported still seeing "Who are you visiting" and
+// "Vehicle rego" on the site-QR sign-in. Web verification confirmed
+// both the public web form (`pages/VisitorSignIn.jsx`, .132lh) and
+// the authenticated site-scan flow (`pages/SiteScanResolver.jsx`)
+// are ALREADY clean — the surviving occurrence is the mobile-app
+// visitor step-4 form (`/app/mobile/app/visitor/[siteId]/step4.tsx`)
+// which is edit-banned in this workspace. This ship therefore
+// focuses on the web-side asks: (1) confirm removal (no code
+// change needed), (2) add signature capture.
+//
+// Frontend:
+//   · pages/VisitorSignIn.jsx — imported the shared SignaturePad
+//     component (same code path as SWMS + Pre-start sign-off).
+//     Added a `signature` slot to the form state, a mandatory
+//     signature block below the induction acknowledgement, and a
+//     guard on submit (submit disabled + client + server checks).
+//   · pages/AdminVisitors.jsx — the detail drawer now hides the
+//     legacy "Visiting person" and "Vehicle rego" rows unless the
+//     record actually carries those fields (historical audit
+//     data). New rows show a "Signature" row with an inline
+//     preview of the captured PNG.
+//
+// Backend (`backend/visitor_signins.py`):
+//   · Retired `visiting_person` and `vehicle_rego` fields from the
+//     public `VisitorSigninIn` request model AND from the doc
+//     inserted into `site_visitors`. Legacy rows keep whatever they
+//     had; the admin viewer renders them conditionally.
+//   · Added `signature: Optional[str]` (data URL, max 250 KB) to
+//     both the request model and the doc.
+//   · No migration on existing rows; no schema change.
+//
+// Files touched:
+//   · backend/visitor_signins.py                                   (model + doc)
+//   · frontend/src/pages/VisitorSignIn.jsx                         (signature pad + guard)
+//   · frontend/src/pages/AdminVisitors.jsx                         (conditional legacy rows + preview)
+//   · frontend/src/lib/version.js                                  (bump)
+//   · frontend/public/service-worker.js                            (bump)
+//   · memory/v58_13_132mu_visitor_signin_signature.md              (new)
+//
+// Mobile impact: the mobile `visitor/[siteId]/step4.tsx` still
+// posts to the same endpoint — the removed fields are simply
+// dropped by pydantic on the way in. No mobile-side breakage.
+// Mobile can catch up on signature capture in a later mobile ship.
+
+
 // v58.13.132mt — Admin DB schema inspector.
 //
 // Handover prep: build an in-app reference doc for the entire
@@ -15774,7 +15822,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mt';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mu';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

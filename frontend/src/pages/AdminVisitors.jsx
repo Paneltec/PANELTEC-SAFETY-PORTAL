@@ -141,8 +141,14 @@ function DetailDrawer({ visitorId, onClose, onDeleted, onSignedOut }) {
               </Section>
               <Section title="Visit">
                 <KV label="Purpose">{row.purpose || '—'}</KV>
-                <KV label="Visiting person">{row.visiting_person || '—'}</KV>
-                <KV label="Vehicle rego">{row.vehicle_rego || '—'}</KV>
+                {/* v58.13.132mu — Legacy fields "Visiting person" and
+                    "Vehicle rego" no longer captured on new sign-ins
+                    (retired in `.132lh`; write path removed in `.132mu`).
+                    Rendered conditionally so historical records still
+                    surface them for audit; new records will not show
+                    these rows. */}
+                {row.visiting_person && <KV label="Visiting person">{row.visiting_person}</KV>}
+                {row.vehicle_rego && <KV label="Vehicle rego">{row.vehicle_rego}</KV>}
               </Section>
               <Section title="Safety">
                 <KV label="Induction acknowledged">
@@ -150,6 +156,17 @@ function DetailDrawer({ visitorId, onClose, onDeleted, onSignedOut }) {
                     ? <span className="inline-flex px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase">Yes</span>
                     : <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase">No</span>}
                 </KV>
+                {/* v58.13.132mu — Signature preview (base64 PNG data URL). */}
+                {row.signature && (
+                  <KV label="Signature">
+                    <img
+                      src={row.signature}
+                      alt="Visitor signature"
+                      className="border border-slate-200 rounded-lg bg-white max-h-24"
+                      data-testid="visitor-detail-signature"
+                    />
+                  </KV>
+                )}
               </Section>
               <Section title="Timeline">
                 <KV label="Signed in">{row.signed_in_at ? new Date(row.signed_in_at).toLocaleString() : '—'}</KV>
