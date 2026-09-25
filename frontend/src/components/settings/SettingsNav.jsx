@@ -28,6 +28,9 @@ import {
   ChevronDown20Regular, ChevronRight20Regular,
   ReOrderDotsVertical20Regular, Add20Regular,
   Delete20Regular, FolderAdd20Regular,
+  // v58.13.132n0 — Small "opens external" glyph rendered next to the
+  // label on entries carrying `externalUrl` (Dropbox launcher etc.).
+  Open16Regular,
 } from '@fluentui/react-icons';
 
 import api, { apiError } from '../../lib/api';
@@ -404,6 +407,53 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
   // context has a matching positive-total entry.
   const badge = reg.badgeKey ? badges[reg.badgeKey] : null;
   const badgeTotal = badge && badge.total > 0 ? badge.total : 0;
+  // v58.13.132n0 — External-URL launcher branch. Registry entries
+  // that set `reg.externalUrl` render an `<a target="_blank">` in
+  // place of the internal `<NavLink>` so clicking pops a new tab.
+  // Mirrors the Fleet Register → Live Board "Open in new tab"
+  // pattern used for Navixy. Nothing changes for the 99% of entries
+  // that are internal routes.
+  if (reg.externalUrl) {
+    return (
+      <li ref={setNodeRef} style={style} className="group relative">
+        {isAdmin && !navCollapsed && (
+          <button
+            type="button"
+            className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-[#2563EB] hover:text-[#1D4ED8] cursor-grab active:cursor-grabbing p-0.5"
+            data-testid={`${reg.testid}-drag-handle`}
+            {...attributes} {...listeners}
+            title="Drag to reorder"
+          >
+            <ReOrderDotsVertical20Regular style={{ width: 12, height: 12 }} />
+          </button>
+        )}
+        <a
+          href={reg.externalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onItemClick}
+          data-testid={reg.testid}
+          className={`flex items-center gap-3 rounded-lg py-2 text-sm transition-all ${
+            inFolder ? 'pr-2.5 pl-6' : 'pr-2.5 pl-4'
+          } sidebar-idle text-slate-700 hover:text-slate-900`}
+          title={navCollapsed ? reg.label : undefined}
+        >
+          <IconFilled
+            className="shrink-0 transition-colors sidebar-icon text-slate-500 group-hover:text-slate-700"
+            style={{ width: 20, height: 20 }}
+          />
+          {!navCollapsed && <span className="truncate flex-1">{reg.label}</span>}
+          {!navCollapsed && (
+            <Open16Regular
+              className="text-slate-400 shrink-0"
+              style={{ width: 12, height: 12 }}
+              aria-hidden
+            />
+          )}
+        </a>
+      </li>
+    );
+  }
   return (
     <li ref={setNodeRef} style={style} className="group relative">
       {isAdmin && !navCollapsed && (

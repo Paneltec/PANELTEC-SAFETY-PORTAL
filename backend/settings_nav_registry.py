@@ -49,6 +49,14 @@ SETTINGS_NAV_ITEMS: list[dict[str, Any]] = [
     # layouts persist unchanged and will surface the entry only
     # after an admin explicitly adds it via the drag/drop tray.
     {"key": "phone_preview",      "label": "Phone Preview",        "route": "/app/phone-preview",                 "admin_only": False, "resource": "mobile_preview"},
+    # v58.13.132n0 — External bookmark to the Paneltec Dropbox team
+    # folder. The frontend registry adds `externalUrl` so the sidebar
+    # entry opens in a new tab (SettingsNav renders an <a target="_blank">
+    # in place of the NavLink); backend only needs the key to satisfy
+    # the layout-validator whitelist. `route` is a placeholder pointing
+    # to the Integrations settings page so any legacy code path that
+    # coerces the entry into a router link still lands somewhere sane.
+    {"key": "dropbox_launcher",   "label": "Dropbox",              "route": "/app/settings/integrations",         "admin_only": False, "resource": "integrations"},
 ]
 
 SETTINGS_NAV_KEYS: set[str] = {it["key"] for it in SETTINGS_NAV_ITEMS}

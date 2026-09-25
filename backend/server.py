@@ -1592,13 +1592,24 @@ async def on_startup():
             # hard_fail_limit_hit. Respects a 5-strike cap on consecutive
             # resumes without files_copied advancing → flips run to
             # needs_attention on the 6th cycle.
+            #
+            # v58.13.132n0 — Register the APScheduler job ONLY when the
+            # `migration_watchdog_settings.enabled` flag is True. Users
+            # who abandon the NAS migration flip the flag to False; on
+            # next restart the job is not registered at all (belt-
+            # and-braces with the internal `_watchdog_enabled()` guard
+            # inside `watchdog_tick`).
             try:
-                from integrations_dropbox import watchdog_tick
-                scheduler.add_job(watchdog_tick, "interval", minutes=5,
-                                  id="dropbox_migration_watchdog",
-                                  max_instances=1, coalesce=True,
-                                  replace_existing=True)
-                log.info("APScheduler job registered — dropbox_migration_watchdog every 5 min")
+                from integrations_dropbox import watchdog_tick, _watchdog_enabled
+                _wd_on = await _watchdog_enabled()
+                if _wd_on:
+                    scheduler.add_job(watchdog_tick, "interval", minutes=5,
+                                      id="dropbox_migration_watchdog",
+                                      max_instances=1, coalesce=True,
+                                      replace_existing=True)
+                    log.info("APScheduler job registered — dropbox_migration_watchdog every 5 min")
+                else:
+                    log.info("APScheduler job SKIPPED — dropbox_migration_watchdog (migration_watchdog_settings.enabled=False)")
             except Exception as e:
                 log.warning("dropbox_migration_watchdog scheduler hook failed: %s", e)
             # Phase 4.8 — daily snapshot of engine_hours_total + odometer_km_total

@@ -32,6 +32,10 @@ import {
   // sidebar entry. `Phone24Regular` matches the visual language of the
   // preview UI itself (which uses `Phone20Regular` on its own header).
   Phone24Regular, Phone24Filled,
+  // v58.13.132n0 — Cloud glyph for the external Dropbox launcher.
+  // Fluent UI has no Dropbox-branded icon; `Cloud24Regular` is the
+  // closest generic representation of cloud file storage.
+  Cloud24Regular, Cloud24Filled,
 } from '@fluentui/react-icons';
 
 // Ordered registry — keys are stable and immutable across releases.
@@ -90,6 +94,14 @@ export const SETTINGS_NAV_REGISTRY = [
   // `requiresCan`); direct navigation to `/app/phone-preview` shows
   // an Access-denied card (`PhonePreviewPage.jsx`).
   { key: 'phone_preview',      label: 'Phone Preview',       route: '/app/phone-preview',               icon: Phone24Regular,           iconActive: Phone24Filled,           testid: 'nav-phone-preview',               requiresCan: ['mobile_preview', 'view'],      description: 'Live preview of the mobile app as any role or specific worker' },
+  // v58.13.132n0 — External bookmark to the Paneltec Dropbox team
+  // folder. Renders as a sidebar entry that opens
+  // `https://www.dropbox.com/home/Paneltec-General%20Administration`
+  // in a new tab (same "Open in new tab" pattern used by the Navixy
+  // Live Board fallback in `FleetRegister.jsx`). No SSO handoff —
+  // Dropbox shows its own login page. Gated behind
+  // `integrations.view` to match other integrations-tier UI.
+  { key: 'dropbox_launcher',   label: 'Dropbox',             route: '/app/settings/integrations',       icon: Cloud24Regular,           iconActive: Cloud24Filled,           testid: 'nav-dropbox-launcher',            requiresCan: ['integrations', 'view'],        description: 'Open the Paneltec Dropbox team folder in a new tab', externalUrl: 'https://www.dropbox.com/home/Paneltec-General%20Administration' },
 ];
 
 export const SETTINGS_NAV_BY_KEY = Object.fromEntries(
