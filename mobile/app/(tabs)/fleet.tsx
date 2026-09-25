@@ -253,7 +253,7 @@ export default function FleetScreen() {
             style={[s.tagFilterText, selectedTag && { color: Colors.orange, fontWeight: '700' }]}
             numberOfLines={1}
           >
-            {selectedTag || `All tags (${enrichedAssets.length})`}
+            {selectedTag || 'All tags'}
           </Text>
           <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
           {selectedTag && (
@@ -352,7 +352,7 @@ export default function FleetScreen() {
                 onPress={() => { selectTag(null); setShowTagPicker(false); }}
               >
                 <Text style={[s.tagOptionText, !selectedTag && s.tagOptionTextActive]}>
-                  All tags ({enrichedAssets.length})
+                  All tags
                 </Text>
                 {!selectedTag && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
               </TouchableOpacity>
@@ -364,7 +364,7 @@ export default function FleetScreen() {
                   onPress={() => { selectTag(t.label); setShowTagPicker(false); }}
                 >
                   <Text style={[s.tagOptionText, selectedTag === t.label && s.tagOptionTextActive]}>
-                    {t.label} ({t.count})
+                    {t.label}
                   </Text>
                   {selectedTag === t.label && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
                 </TouchableOpacity>

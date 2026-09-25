@@ -91,9 +91,6 @@ export default function CategoryDetailScreen() {
                   ) : (
                     <>
                       <Text style={s.fieldCount}>{t.fields?.length || 0} fields</Text>
-                      {t.submission_count > 0 && (
-                        <Text style={s.subCount}>{t.submission_count} submitted</Text>
-                      )}
                     </>
                   )}
                 </View>
