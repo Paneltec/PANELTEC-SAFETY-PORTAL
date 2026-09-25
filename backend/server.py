@@ -112,6 +112,8 @@ from workspaces import router as workspaces_router  # noqa: E402
 # (.132cb-b) will absorb the FK rename + retire /api/workspaces.
 from sites_admin import router as sites_admin_router  # noqa: E402
 from integrations_dropbox import router as dropbox_router  # noqa: E402  — v58.13.132lb
+# v58.13.132n2 — In-app Dropbox file browser (list/download/upload/mkdir/delete).
+from dropbox_browse import router as dropbox_browse_router  # noqa: E402
 from integrations_nas import router as nas_router  # noqa: E402  — v58.13.132lf
 # v58.13.132mk — Tasmanian WHS legislation ingest (Phase 1: read-only).
 from whs_legislation.api import router as whs_legislation_router  # noqa: E402
@@ -623,6 +625,8 @@ api.include_router(workspaces_router)
 # workspaces_router so the .132cb-b retire is a one-line drop.
 api.include_router(sites_admin_router)
 api.include_router(dropbox_router)
+# v58.13.132n2 — /api/dropbox/browse{,/download,/upload,/mkdir}
+api.include_router(dropbox_browse_router)
 # v58.13.132mk — Tasmanian WHS legislation reingest + status endpoints.
 api.include_router(whs_legislation_router)  # v58.13.132lb — /api/dropbox/health
 api.include_router(nas_router)  # v58.13.132lf — /api/nas/health + /probe

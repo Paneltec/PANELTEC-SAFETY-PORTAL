@@ -95,13 +95,14 @@ export const SETTINGS_NAV_REGISTRY = [
   // an Access-denied card (`PhonePreviewPage.jsx`).
   { key: 'phone_preview',      label: 'Phone Preview',       route: '/app/phone-preview',               icon: Phone24Regular,           iconActive: Phone24Filled,           testid: 'nav-phone-preview',               requiresCan: ['mobile_preview', 'view'],      description: 'Live preview of the mobile app as any role or specific worker' },
   // v58.13.132n0 — External bookmark to the Paneltec Dropbox team
-  // folder. Renders as a sidebar entry that opens
-  // `https://www.dropbox.com/home/Paneltec-General%20Administration`
-  // in a new tab (same "Open in new tab" pattern used by the Navixy
-  // Live Board fallback in `FleetRegister.jsx`). No SSO handoff —
-  // Dropbox shows its own login page. Gated behind
-  // `integrations.view` to match other integrations-tier UI.
-  { key: 'dropbox_launcher',   label: 'Dropbox',             route: '/app/settings/integrations',       icon: Cloud24Regular,           iconActive: Cloud24Filled,           testid: 'nav-dropbox-launcher',            requiresCan: ['integrations', 'view'],        description: 'Open the Paneltec Dropbox team folder in a new tab', externalUrl: 'https://www.dropbox.com/home/Paneltec-General%20Administration' },
+  // folder. RENDERS AS AN INTERNAL NAVLINK IN .132n2 — the
+  // external-tab launcher is superseded by the in-app file browser
+  // at `/app/dropbox` (see `pages/DropboxBrowser.jsx` and the new
+  // `backend/dropbox_browse.py` router). The old `externalUrl`
+  // branch in `SortableItem` stays in the codebase as dormant
+  // infrastructure so future ships can register external-only
+  // sidebar entries without re-plumbing the branch.
+  { key: 'dropbox_launcher',   label: 'Dropbox',             route: '/app/dropbox',                     icon: Cloud24Regular,           iconActive: Cloud24Filled,           testid: 'nav-dropbox-launcher',            requiresCan: ['integrations', 'view'],        description: 'Browse and manage files in the Paneltec Dropbox team folder without leaving the app' },
 ];
 
 export const SETTINGS_NAV_BY_KEY = Object.fromEntries(

@@ -70,7 +70,12 @@ _DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 # Space-separated per Dropbox spec (though the SDK also accepts a list).
 _DROPBOX_SCOPES = (
     "account_info.read "
-    "files.metadata.read files.content.read sharing.read"
+    "files.metadata.read files.content.read sharing.read "
+    # v58.13.132n2 — write scopes for the in-app Dropbox file browser
+    # (`backend/dropbox_browse.py`). Existing refresh tokens minted
+    # before this change are read-only; admins must re-authorise via
+    # `/api/dropbox/oauth/start` to mint a token with write scopes.
+    "files.content.write"
 )
 
 
