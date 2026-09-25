@@ -419,7 +419,19 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
         {isAdmin && !navCollapsed && (
           <button
             type="button"
-            className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-[#2563EB] hover:text-[#1D4ED8] cursor-grab active:cursor-grabbing p-0.5"
+            // v58.13.132n1b — `z-10` is CRITICAL. Without it the
+            // sibling <a> underneath (which has `.sidebar-idle` →
+            // `position: relative` in index.css) paints ON TOP of
+            // this button because both are positioned and both have
+            // `z-index: auto`; per the CSS painting spec the LATER
+            // sibling in DOM order wins. Result: elementFromPoint()
+            // on the button's centre returns the anchor, pointerdown
+            // never fires on the button, and dnd-kit's PointerSensor
+            // (bound only to the button via {...listeners}) never
+            // activates. Setting `z-10` on the button gives it a
+            // higher stacking level and restores pointer routing.
+            // This is the real fix for the drag-handle regression.
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 text-[#2563EB] hover:text-[#1D4ED8] cursor-grab active:cursor-grabbing p-0.5"
             data-testid={`${reg.testid}-drag-handle`}
             {...attributes} {...listeners}
             title="Drag to reorder"
@@ -433,13 +445,11 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
           rel="noopener noreferrer"
           onClick={onItemClick}
           // v58.13.132n1 — Suppress Chrome's native HTML5 "drag this link"
-          // behaviour. Without these, once the pointer crosses the 4px
-          // activation constraint on the sibling drag-handle button,
-          // the browser initiates a native anchor-drag on the anchor
-          // it happens to be over — which cancels pointer capture and
-          // prevents dnd-kit's PointerSensor from ever seeing the
-          // pointerup that would fire `handleDragEnd`. Broke every
-          // sub-nav reorder, not just this row.
+          // behaviour. Belt-and-braces alongside the `z-10` fix on the
+          // sibling drag-handle button: even if a future CSS change ever
+          // re-inverts the stacking order and pointer events land on
+          // this anchor, the native anchor-drag can't hijack pointer
+          // capture from dnd-kit.
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
           data-testid={reg.testid}
@@ -472,8 +482,15 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
           /* v160.3.8.5 — Bright-blue grip. Previous slate-400 was
              barely visible on the cream sidebar. Uses Tailwind
              blue-600 (`#2563EB`) idle → blue-700 (`#1D4ED8`) on
-             hover. Reveal-on-row-hover behaviour unchanged. */
-          className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-[#2563EB] hover:text-[#1D4ED8] cursor-grab active:cursor-grabbing p-0.5"
+             hover. Reveal-on-row-hover behaviour unchanged.
+             v58.13.132n1b — `z-10` is CRITICAL. The sibling <a>
+             (which carries `.sidebar-idle` → `position: relative`
+             in index.css) otherwise paints on top and captures the
+             pointerdown; dnd-kit's PointerSensor (bound only here
+             via {...listeners}) then never activates and the whole
+             sub-nav becomes non-draggable. See the externalUrl
+             branch above for the full rationale. */
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 text-[#2563EB] hover:text-[#1D4ED8] cursor-grab active:cursor-grabbing p-0.5"
           data-testid={`${reg.testid}-drag-handle`}
           {...attributes} {...listeners}
           title="Drag to reorder"
@@ -484,12 +501,10 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
       <NavLink
         to={reg.route}
         onClick={onItemClick}
-        // v58.13.132n1 — Suppress Chrome's native HTML5 "drag this
-        // link" behaviour on the underlying <a>. See the externalUrl
-        // branch above for the full rationale; without these the
-        // browser hijacks pointer capture the moment the mouse
-        // crosses the 4px sortable-activation threshold and
-        // dnd-kit's PointerSensor never sees pointerup.
+        // v58.13.132n1 — Belt-and-braces alongside the `z-10` fix
+        // above: suppress Chrome's native HTML5 anchor-drag so
+        // pointer capture stays with dnd-kit even if a future CSS
+        // change ever re-inverts the stacking order.
         draggable={false}
         onDragStart={(e) => e.preventDefault()}
         data-testid={reg.testid}
