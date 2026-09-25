@@ -1,5 +1,55 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132mv — Fix "Could not parse the PDF" 500 on every
+// admin PDF import (SWMS / Incident / Pre-start / SSRA).
+//
+// ROOT CAUSE
+//   `backend/scripts/deep_parse_legacy_pdfs.py::parse_pdf()` shells
+//   out to `pdftotext -layout` from poppler-utils. The pod's Docker
+//   image no longer ships poppler-utils — it was purged when the
+//   codebase migrated to pymupdf/openpyxl in `.132lc`. Every
+//   parse_pdf() call therefore raised `FileNotFoundError`, which
+//   the outer catch in `backend/imports.py:597` rethrew as
+//   `HTTPException(500, "Could not parse the PDF")`. All 4 admin
+//   import types funnel through the same endpoint
+//   (`POST /api/imports/pdf`) so they all failed with the same
+//   error string.
+//
+//   apt-get install poppler-utils is unavailable (the pod's apt
+//   sources don't ship it), so restoring the binary was not an
+//   option in-container.
+//
+// FIX
+//   Replaced the `subprocess.run(["pdftotext", "-layout", …])` call
+//   with a pymupdf-based helper `_pymupdf_layout_text()` that
+//   reconstructs multi-column, layout-preserved text by walking
+//   `page.get_text("dict")` → blocks → lines → spans, sorting each
+//   line's spans left-to-right, and emitting a proportional number
+//   of spaces between adjacent spans (gap / char-width, where
+//   char-width = font-size * 0.5). Downstream logic that depends
+//   on `BLANK_MULTIPLE_SPACES_RE.split(…)` for column-aware label
+//   /value pair detection now still sees the multi-space separators
+//   it expects.
+//
+// VERIFICATION (against live DB)
+//   · 15 / 15 real bulk-import failed PDFs parse cleanly through
+//     parse_pdf() (no exceptions).
+//   · POST /api/imports/pdf with a previously-failing SSRA sample
+//     → HTTP 409 "Already imported" (idempotent match works).
+//   · POST /api/imports/pdf with a fresh synthetic SSRA
+//     → HTTP 200 status=imported, template matched, category
+//     routed to /app/risk-assessments.
+//
+// Files touched:
+//   · backend/scripts/deep_parse_legacy_pdfs.py             (+_pymupdf_layout_text, parse_pdf swap)
+//   · frontend/src/lib/version.js                            (bump)
+//   · frontend/public/service-worker.js                      (bump)
+//   · memory/v58_13_132mv_pdf_parse_pipeline_fix.md          (new)
+//
+// Backend restart required (Python module cache reload). Backup
+// lock stayed clean; migration watchdog auto-resumed at 04:13 UTC.
+
+
 // v58.13.132mu — Visitor sign-in: signature capture + legacy-field
 // write-path removal.
 //
@@ -15822,7 +15872,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mu';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mv';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

@@ -110,12 +110,82 @@ def normalise_value(raw: str, label: str) -> str:
     return raw.strip()
 
 
+def _pymupdf_layout_text(pdf_path: str) -> str:
+    """v58.13.132mv — pymupdf-based layout-preserving text extractor,
+    drop-in replacement for `pdftotext -layout` (which the pod's Docker
+    image no longer ships; poppler-utils was purged when the codebase
+    swapped to pymupdf in `.132lc`).
+
+    Strategy: iterate `page.get_text("dict")` → blocks → lines → spans.
+    For each line, sort spans by `x0`, estimate a char-width from the
+    span's font size (`h * 0.5` is a robust approximation across
+    Simpro/VTS PDFs), and emit spans separated by a proportional number
+    of spaces so downstream `BLANK_MULTIPLE_SPACES_RE.split(…)` still
+    sees the multi-space column separators the SSRA/pre-start parsers
+    depend on.
+
+    Timeouts / error handling: pymupdf raises `pymupdf.EmptyFileError`
+    on truncated PDFs and `pymupdf.FileDataError` on truly malformed
+    ones — the caller (`imports.py`) already wraps `parse_pdf` in a
+    try/except so those propagate cleanly as "Could not parse the PDF".
+    """
+    import pymupdf  # imported lazily so unit tests that mock the DB
+                    # don't need pymupdf on their bench.
+    out: list[str] = []
+    with pymupdf.open(pdf_path) as doc:
+        for page in doc:
+            page_dict = page.get_text("dict")
+            # Collect (y_center, spans) per text-line for row grouping.
+            lines: list[tuple[float, list[dict]]] = []
+            for block in page_dict.get("blocks", []):
+                # Skip image blocks (block["type"] == 1).
+                if block.get("type", 0) != 0:
+                    continue
+                for line in block.get("lines", []):
+                    spans = line.get("spans") or []
+                    if not spans:
+                        continue
+                    y_center = (line["bbox"][1] + line["bbox"][3]) / 2
+                    lines.append((y_center, spans))
+            # Sort lines top→bottom.
+            lines.sort(key=lambda t: t[0])
+            for _y, spans in lines:
+                spans_sorted = sorted(spans, key=lambda s: s["bbox"][0])
+                parts: list[str] = []
+                prev_x1: float | None = None
+                prev_char_w: float = 5.0
+                for s in spans_sorted:
+                    x0 = s["bbox"][0]
+                    text = s.get("text", "")
+                    if not text:
+                        continue
+                    if prev_x1 is not None:
+                        gap = x0 - prev_x1
+                        # Rough char-width: half the font-size height.
+                        char_w = max(prev_char_w, 3.0)
+                        space_count = max(1, int(round(gap / char_w))) if gap > 0 else 0
+                        parts.append(" " * space_count)
+                    parts.append(text)
+                    prev_x1 = s["bbox"][2]
+                    prev_char_w = max(3.0, (s.get("size") or 10) * 0.5)
+                out.append("".join(parts).rstrip())
+            # Page break as a blank line.
+            out.append("")
+    return "\n".join(out)
+
+
 def parse_pdf(pdf_path: str) -> dict:
     """Return {'meta': {…}, 'items': [(n, label, value), …],
     'pairs': [(label, value), …], 'raw_lines': [str, …],
     'bullets': {section: [item_text, …]}}.
 
-    v160.3.0-adjust-16b changes:
+    v58.13.132mv — Text extraction migrated from `pdftotext -layout`
+    (poppler-utils) to `_pymupdf_layout_text()`. See helper docstring
+    for the mechanic. Downstream parsing (label/value pair detection,
+    section-header bullets, GPS regex, respondent scrape) is
+    unchanged — it operates on `txt.splitlines()`.
+
+    v160.3.0-adjust-16b changes (retained):
       * Removed the "orphan short line → I confirm" continuation heuristic
         that polluted the pair list (was assigning "pumps"→"I confirm" and
         cascading spurious fuzzy matches).
@@ -126,9 +196,7 @@ def parse_pdf(pdf_path: str) -> dict:
         right-column bullet items indented under them — used by the SSRA
         family to answer `TAILGATE — Discuss X` style multi-select fields.
     """
-    r = subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
-                       capture_output=True, timeout=30)
-    txt = r.stdout.decode("utf-8", errors="replace")
+    txt = _pymupdf_layout_text(pdf_path)
     lines = txt.splitlines()
     meta: dict = {}
     items = []
