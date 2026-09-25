@@ -118,15 +118,71 @@ def _team_root_arg(path: str) -> str:
     return path
 
 
-# ── Dropbox client (reuses existing namespace-scoped factory) ──
+# ── Dropbox client (team-folder-scoped path root) ──────────────
+# `.132n2a` fix: `_get_dbx_root_client()` scopes to the USER'S
+# root namespace (`DROPBOX_ROOT_NAMESPACE_ID` — `2673752851` for
+# stephen@paneltec.com.au). That's fine for the migration engine
+# (it enumerates the shared team folder path from the user's root),
+# but it's the WRONG scope for the browse endpoints:
+#
+#   · LIST would return the user's PRIVATE root (6 personal folders)
+#     instead of the team folder (18 folders, 1447 files).
+#   · WRITE (mkdir / upload / delete) fails with `no_write_permission`
+#     because the Dropbox app is a Team app and can't mutate a user's
+#     private namespace via a shared-folder mount.
+#
+# Fix: for browse only, rewrite `path_root` to the TEAM FOLDER's
+# namespace ID. Paths are then interpreted as relative to the team
+# folder root — which matches what `_normalise_path` already
+# produces (`""` = team folder root, `"/Foo/Bar"` = subfolder).
+# The migration engine's client (`_get_dbx_root_client`) is
+# untouched — its enum logic depends on the user-namespace shape.
+_TEAM_NS_FALLBACK = "5079287136"  # captured in `.132lb` audit
+
+
+def _get_team_namespace_id() -> str:
+    """Team folder namespace ID lookup, in priority order:
+
+      1. `DROPBOX_TEAM_FOLDER_ID` env var (explicit override).
+      2. `.132lb` audit artifact (same source `/health` uses).
+      3. Hardcoded fallback (matches `_live_probe` behaviour).
+    """
+    env = os.environ.get("DROPBOX_TEAM_FOLDER_ID", "").strip()
+    if env:
+        return env
+    # Read artifact directly to avoid a circular import against
+    # `integrations_dropbox`. The path is stable — the audit is
+    # only re-run when the source folder is rebuilt (rare).
+    try:
+        import json
+        from pathlib import Path
+        art_path = Path("/app/memory/dropbox_phase0_audit_v58_13_132lb.json")
+        if art_path.exists():
+            art = json.loads(art_path.read_text())
+            tfi = (art.get("team_folder_id") or "").strip()
+            if tfi:
+                return tfi
+    except Exception as exc:
+        log.warning("team_folder_id artifact read failed: %s", exc)
+    return _TEAM_NS_FALLBACK
+
+
 def _get_dbx():
-    """Returns a team-namespace-scoped Dropbox client. Uses the
-    same OAuth refresh-token plumbing as the migration engine —
-    zero new secrets."""
+    """Returns a Dropbox client scoped to the TEAM FOLDER's
+    namespace via `with_path_root(PathRoot.namespace_id(<team>))`.
+    All browse paths are interpreted relative to the team folder
+    root — matching `_normalise_path`'s output contract."""
     # Late import so this module can be imported even when the
     # dropbox SDK isn't installed (unit tests can mock it).
     from dropbox_folder_mirror import _get_dbx_root_client
-    return _get_dbx_root_client()
+    from dropbox.common import PathRoot
+    team_ns = _get_team_namespace_id()
+    # `with_path_root` returns a NEW client with a fresh header —
+    # calling it again on an already-scoped client cleanly
+    # overrides the previous path_root selection.
+    return _get_dbx_root_client().with_path_root(
+        PathRoot.namespace_id(team_ns)
+    )
 
 
 # ── entry serialisation ────────────────────────────────────────
