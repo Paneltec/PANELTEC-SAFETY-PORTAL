@@ -42,6 +42,13 @@ SETTINGS_NAV_ITEMS: list[dict[str, Any]] = [
     {"key": "program_schematic",  "label": "Program Schematic",    "route": "/app/settings/schematic",            "admin_only": True,  "resource": None},
     {"key": "email_outbox",       "label": "Email outbox",         "route": "/app/outbox",                        "admin_only": False, "resource": None},
     {"key": "user_manual",        "label": "User Manual",          "route": "/app/help",                          "admin_only": False, "resource": None},
+    # v58.13.132mz — Standalone "Phone Preview" entry. Gated by the
+    # dedicated `mobile_preview` resource (see `permissions.py`).
+    # Placement: last in the registry — consumers slot it into the
+    # Settings sub-nav via `default_layout()`; existing per-org
+    # layouts persist unchanged and will surface the entry only
+    # after an admin explicitly adds it via the drag/drop tray.
+    {"key": "phone_preview",      "label": "Phone Preview",        "route": "/app/phone-preview",                 "admin_only": False, "resource": "mobile_preview"},
 ]
 
 SETTINGS_NAV_KEYS: set[str] = {it["key"] for it in SETTINGS_NAV_ITEMS}

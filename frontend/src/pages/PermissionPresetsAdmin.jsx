@@ -1,5 +1,15 @@
 // Phase 3.21 Item 4 — Permission Presets admin page.
 //
+// v58.13.132mz — Subtitle rewritten now that the phone preview no
+// longer lives inside this page. New copy: "Curate role presets,
+// choose which mobile-app modules each role sees, and grant
+// phone-preview access via the mobile_preview.view cell." The phone
+// preview itself moved to `/app/phone-preview` (see
+// `pages/PhonePreviewPage.jsx`) reachable via a dedicated sidebar
+// entry. The `mobile_preview.view` matrix cell defined in
+// `backend/permissions.py` gates BOTH the sidebar entry AND the
+// standalone page.
+//
 // Two-pane layout:
 //   LEFT  : list of every preset (6 built-in read-only + N custom). Click selects.
 //   RIGHT : detail view (label, description, the full matrix grid) + edit /
@@ -126,7 +136,7 @@ export default function PermissionPresetsAdmin() {
   return (
     <div className="max-w-7xl mx-auto" data-testid="presets-admin-page">
       <PageHeader crumb="Settings / Permissions Matrix" title="Permissions Matrix"
-        subtitle="Curate role presets and decide which modules show up on the mobile app."
+        subtitle="Curate role presets, choose which mobile-app modules each role sees, and grant phone-preview access via the mobile_preview.view cell."
         action={canEdit && tab === 'presets' && (
           <button onClick={() => setCreateOpen(true)} data-testid="preset-create-btn"
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">

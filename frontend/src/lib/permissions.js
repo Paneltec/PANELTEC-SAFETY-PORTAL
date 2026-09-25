@@ -82,3 +82,19 @@ export const OPEN_VIEW_SUPPORTED = {
 
 // 6-action matrix (v159.2 added `team_view`).
 export const ACTIONS = ['open', 'view', 'edit', 'delete', 'email', 'team_view'];
+
+// v58.13.132mz — Dedicated permission cell for the admin mock-phone
+// preview widget on Settings → Permissions Matrix → Mobile App
+// Modules. Only `view` is semantically meaningful (checked by
+// `MobileModulesSection` before rendering `PhonePreview`); the
+// other action cells still render in the matrix because the
+// backend returns them, but they are not wired to any runtime gate.
+// `OPEN_VIEW_SUPPORTED` stays `true` so the `view` cell renders as
+// a checkbox rather than a dash; `EMAIL_SUPPORTED` /
+// `DELETE_SUPPORTED` / `TEAM_VIEW_SUPPORTED` are `false` because
+// none of those semantics apply.
+RESOURCE_LABELS.mobile_preview = 'Mobile phone preview';
+EMAIL_SUPPORTED.mobile_preview = false;
+DELETE_SUPPORTED.mobile_preview = false;
+TEAM_VIEW_SUPPORTED.mobile_preview = false;
+OPEN_VIEW_SUPPORTED.mobile_preview = true;

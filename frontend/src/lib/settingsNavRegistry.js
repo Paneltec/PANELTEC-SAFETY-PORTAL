@@ -28,6 +28,10 @@ import {
   // on the dashboard).
   BookInformation24Regular, BookInformation24Filled,
   ShieldTask24Regular, ShieldTask24Filled,
+  // v58.13.132mz — Phone/device glyph for the Mobile Phone Preview
+  // sidebar entry. `Phone24Regular` matches the visual language of the
+  // preview UI itself (which uses `Phone20Regular` on its own header).
+  Phone24Regular, Phone24Filled,
 } from '@fluentui/react-icons';
 
 // Ordered registry — keys are stable and immutable across releases.
@@ -79,6 +83,13 @@ export const SETTINGS_NAV_REGISTRY = [
   // pill on the dashboard greeting band. Key/route/testid unchanged
   // (`user_manual` / `/app/help` / `nav-help`) so nav-layout persists.
   { key: 'user_manual',        label: 'Admin User Manual',   route: '/app/help',                        icon: BookInformation24Regular, iconActive: BookInformation24Filled, testid: 'nav-help',                                                                      description: 'Complete guide for administrators' },
+  // v58.13.132mz — Standalone Mobile Phone Preview page. Gated on
+  // the dedicated `mobile_preview.view` cell (see backend
+  // `permissions.py` PERMISSIONS_SCHEMA). Presets that don't grant
+  // the cell hide the sidebar entry (SettingsNav filters via
+  // `requiresCan`); direct navigation to `/app/phone-preview` shows
+  // an Access-denied card (`PhonePreviewPage.jsx`).
+  { key: 'phone_preview',      label: 'Phone Preview',       route: '/app/phone-preview',               icon: Phone24Regular,           iconActive: Phone24Filled,           testid: 'nav-phone-preview',               requiresCan: ['mobile_preview', 'view'],      description: 'Live preview of the mobile app as any role or specific worker' },
 ];
 
 export const SETTINGS_NAV_BY_KEY = Object.fromEntries(

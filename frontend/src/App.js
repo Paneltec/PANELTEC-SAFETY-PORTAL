@@ -88,6 +88,10 @@ import WorkerScanResolver from '@/pages/WorkerScanResolver';
 import UsersManagement from '@/pages/UsersManagement';
 import MyApps from '@/pages/MyApps';
 import PermissionPresetsAdmin from '@/pages/PermissionPresetsAdmin';
+// v58.13.132mz — Standalone phone preview page (moved out of the
+// Permission Presets → Mobile App Modules tab, reachable via a
+// dedicated sidebar entry). Gated on `mobile_preview.view`.
+import PhonePreviewPage from '@/pages/PhonePreviewPage';
 // v160.3.9.31-4a — Phase 4a: Roles Admin (system-role viewer + custom-role editor).
 import RolesAdmin from '@/pages/RolesAdmin';
 // v58.13.61 — Users + Roles merged into a single tabbed shell.
@@ -403,6 +407,8 @@ function App() {
               <Route path="settings/program-schematic" element={<Navigate to="/app/settings/schematic" replace />} />
               <Route path="settings/my-apps" element={<MyApps />} />
               <Route path="settings/permission-presets" element={<PermissionPresetsAdmin />} />
+              {/* v58.13.132mz — Standalone Mobile Phone Preview page. */}
+              <Route path="phone-preview" element={<PhonePreviewPage />} />
               {/* v160.3.9.31-4a — Phase 4a: Roles Admin page. */}
               {/* v58.13.61 — Roles Admin merged as a tab under
                   Users & Permissions. Old URL redirects for a

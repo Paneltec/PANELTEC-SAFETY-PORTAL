@@ -1338,6 +1338,36 @@ async def on_startup():
                      _fc.get("matched"), _fc.get("modified"))
         except Exception as e:
             log.warning("false-needs-attention cleanup failed: %s", e)
+        # v58.13.132mz — Backfill `mobile_preview.view` alongside
+        # `users.view` on roles, presets, and user overrides so the
+        # decoupled phone-preview gate preserves the pre-`.132mz`
+        # behaviour on first boot. Idempotent — marker in bk_migrations.
+        try:
+            from scripts.seed_mobile_preview_v132mz import (
+                seed_mobile_preview_permission_on_startup as _seed_mp,
+            )
+            _mp = await _seed_mp()
+            _mp_summary = _mp.get("summary") or {}
+            log.info(
+                "[v132mz] mobile_preview seed already_done=%s roles=%s/%s presets=%s/%s overrides=%s/%s",
+                _mp.get("already_done"),
+                _mp_summary.get("roles_updated"),
+                _mp_summary.get("roles_scanned"),
+                _mp_summary.get("presets_updated"),
+                _mp_summary.get("presets_scanned"),
+                _mp_summary.get("user_overrides_updated"),
+                _mp_summary.get("user_overrides_scanned"),
+            )
+            # Invalidate in-memory role-token cache so the fresh
+            # `mobile_preview.view` on admin's role is picked up
+            # immediately without a second restart.
+            try:
+                from permissions import _bust_role_cache
+                _bust_role_cache()
+            except Exception:
+                pass
+        except Exception as e:
+            log.warning("mobile_preview seed failed: %s", e)
         # v58.13.132hq — Backfill worker_company_id on existing rows.
         # v58.13.132hv — REMOVED. worker_companies feature purged.
         # v160.3.3 — HR docs dedup index.

@@ -109,6 +109,14 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     # `db.user_permissions` (see startup seed in `server.py`).
     "comms_safe_mode": {"label": "Comms Safe Mode",        "email_supported": False, "delete_supported": False},
     "sites_visitors":  {"label": "Site visitors",           "email_supported": False, "delete_supported": True},
+    # v58.13.132mz — Dedicated permission cell for the admin "mock phone
+    # preview" iframe on Settings → Permissions Matrix → Mobile App
+    # Modules. Only `view` is semantically meaningful — the other
+    # cells render as toggles in the matrix but have no runtime
+    # gates behind them. Previously the preview inherited from
+    # `users.view`; decoupling lets admins hand out phone-preview
+    # access without also granting the full user-permissions surface.
+    "mobile_preview":  {"label": "Mobile phone preview",     "email_supported": False, "delete_supported": False},
 }
 
 RESOURCES: list[str] = list(PERMISSIONS_SCHEMA.keys())
@@ -306,6 +314,23 @@ for _r in ("member", "auditor", "contractor", "worker"):
     if _r in ROLE_DEFAULTS:
         ROLE_DEFAULTS[_r]["sites_visitors"] = _grant()  # all False
 del _r
+
+# v58.13.132mz — Dedicated `mobile_preview` cell defaults.
+# Admin already picked up `mobile_preview.view=True` via the
+# `_all(True)` comprehension at the top of ROLE_DEFAULTS.
+# Every OTHER seeded role in the hardcoded fallback is explicitly
+# denied so that decoupling behaviour matches the intent: only
+# admins can open the mock phone preview by default; other roles
+# require an explicit token in `roles.permission_tokens[]` or a
+# per-user override in `db.user_permissions`. The `auditor` role
+# is built via a comprehension that grants view=True on every
+# resource except `users`; we clobber it here so a read-only
+# auditor doesn't silently gain preview access.
+for _role in ROLE_DEFAULTS:
+    if _role == "admin":
+        continue
+    ROLE_DEFAULTS[_role]["mobile_preview"] = _grant()  # every action False
+del _role
 
 
 async def _get_overrides(user_id: str) -> Dict[str, Dict[str, bool]]:

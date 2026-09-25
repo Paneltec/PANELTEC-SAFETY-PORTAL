@@ -1,6 +1,15 @@
 // Phase 4.3 — Mobile App Module allocator (per-role).
 // Phase 4.4 — Live "preview as role" phone-bezel iframe pinned to the right.
 //
+// v58.13.132mz — The phone-bezel preview MOVED OUT of this tab and
+// now lives at `/app/phone-preview` (see `pages/PhonePreviewPage.jsx`),
+// reachable via the "Phone Preview" sidebar entry. The `PhonePreview`
+// component below is still defined here (and now `export`ed) so the
+// standalone page can import it without duplicating any logic; this
+// component is no longer rendered inside the tab. Access to the
+// standalone page is gated on the new `mobile_preview.view` cell
+// registered in `permissions.py`.
+//
 // Tab inside the Permission Presets / Matrix admin page. Admin sees a grid
 // where rows are mobile modules and columns are roles (Worker, Supervisor,
 // Contractor, Admin). Toggles control visibility on the Expo mobile app.
@@ -233,7 +242,18 @@ function computeExpoResetUrl() {
   return u.toString();
 }
 
-function PhonePreview({ canEdit }) {
+// v58.13.132mz — `PhonePreview` is exported so the standalone
+// `/app/phone-preview` page can render it without duplicating any
+// logic. Inside this file it is no longer rendered as part of the
+// Mobile App Modules tab (removed 2026-09-25); the tab is now a
+// single-column module matrix.
+export function PhonePreview({ canEdit, canOpenPreview = true }) {
+  // v58.13.132mz — Standalone page at `/app/phone-preview` gates on
+  // `mobile_preview.view` at the ROUTE level (see `PhonePreviewPage.jsx`),
+  // so callers reaching this component are already authorised. The
+  // `canOpenPreview=true` default preserves backwards compatibility
+  // if any pre-`.132mz` caller instantiates it without the prop.
+  void canOpenPreview;
   // v58.13.132q — Strict 3-scope dropdown, persist last selection in
   // localStorage so refreshes remember it. Default: `paneltec_civil`.
   const LS_PREVIEW_SCOPE = 'perms.previewDropdown.scope';
@@ -1011,9 +1031,11 @@ export default function MobileModulesSection({ canEdit }) {
         </a>
       </div>
 
-      {/* Phase 4.4 — Two-column layout: matrix on the left, sticky
-          phone-bezel preview on the right (stacks on < lg). */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
+      {/* v58.13.132mz — Preview panel removed from this tab; it now
+          lives at `/app/phone-preview` reachable via the sidebar
+          "Phone Preview" entry. Tab is now a single-column module
+          matrix. */}
+      <div className="grid grid-cols-1 items-start">
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           {/* v58.13.132bn — Column strip simplified: the matrix now
               renders exactly the 4 core roles in Stephen's canonical
@@ -1166,7 +1188,8 @@ export default function MobileModulesSection({ canEdit }) {
           </div>
         </div>
 
-        <PhonePreview canEdit={canEdit} />
+        {/* v58.13.132mz — <PhonePreview /> render removed; preview
+            moved to the dedicated `/app/phone-preview` page. */}
       </div>
 
       {/* Sticky save bar — appears only when dirty so the page stays calm. */}
