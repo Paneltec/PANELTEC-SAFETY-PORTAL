@@ -432,6 +432,16 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
           target="_blank"
           rel="noopener noreferrer"
           onClick={onItemClick}
+          // v58.13.132n1 — Suppress Chrome's native HTML5 "drag this link"
+          // behaviour. Without these, once the pointer crosses the 4px
+          // activation constraint on the sibling drag-handle button,
+          // the browser initiates a native anchor-drag on the anchor
+          // it happens to be over — which cancels pointer capture and
+          // prevents dnd-kit's PointerSensor from ever seeing the
+          // pointerup that would fire `handleDragEnd`. Broke every
+          // sub-nav reorder, not just this row.
+          draggable={false}
+          onDragStart={(e) => e.preventDefault()}
           data-testid={reg.testid}
           className={`flex items-center gap-3 rounded-lg py-2 text-sm transition-all ${
             inFolder ? 'pr-2.5 pl-6' : 'pr-2.5 pl-4'
@@ -474,6 +484,14 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
       <NavLink
         to={reg.route}
         onClick={onItemClick}
+        // v58.13.132n1 — Suppress Chrome's native HTML5 "drag this
+        // link" behaviour on the underlying <a>. See the externalUrl
+        // branch above for the full rationale; without these the
+        // browser hijacks pointer capture the moment the mouse
+        // crosses the 4px sortable-activation threshold and
+        // dnd-kit's PointerSensor never sees pointerup.
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
         data-testid={reg.testid}
         className={({ isActive }) =>
           `flex items-center gap-3 rounded-lg py-2 text-sm transition-all ${
