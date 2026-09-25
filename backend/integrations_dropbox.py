@@ -720,6 +720,21 @@ async def dropbox_migration_status(
 _AUTO_RESUME_TERMINAL_REASONS = {
     "user_cancelled", "hard_fail_limit_hit",
 }
+# v58.13.132my — Interrupt reasons that are NOT the migration's fault
+# (backend restarts, boot-time zombie sweeps). Auto-resuming these
+# does NOT increment the strike counter and never trips the cap —
+# they're artefactual, not evidence of a stuck fetch_and_put.
+_AUTO_RESUME_NON_STRIKING_REASON_PREFIXES = (
+    "backend_restart",
+    "backend restart",   # legacy string from sweep_zombie_migration_runs
+)
+
+
+def _is_non_striking_reason(reason: str) -> bool:
+    r = (reason or "").strip().lower()
+    return any(r.startswith(p) for p in _AUTO_RESUME_NON_STRIKING_REASON_PREFIXES)
+
+
 # Cap consecutive auto-resumes without progress. On the 6th cycle
 # without any files_copied advance we flip state=needs_attention.
 _AUTO_RESUME_MAX_STRIKES = 5
@@ -764,6 +779,11 @@ async def _launch_resume_task(run_doc: dict, *, source: str) -> Optional[str]:
         )
         return None
 
+    # v58.13.132my — Restart-caused interrupts don't reflect a real
+    # copy failure. Skip strike accounting entirely so a dev-heavy
+    # restart cascade can't burn through the 5-strike budget.
+    non_striking = _is_non_striking_reason(reason)
+
     strikes = int(run_doc.get("auto_resume_count") or 0)
     files_copied = int(run_doc.get("files_copied") or 0)
     last_progress_at = run_doc.get("last_progress_files_copied")
@@ -772,7 +792,7 @@ async def _launch_resume_task(run_doc: dict, *, source: str) -> Optional[str]:
     if last_progress_at is None or files_copied > int(last_progress_at):
         strikes = 0
 
-    if strikes >= _AUTO_RESUME_MAX_STRIKES:
+    if strikes >= _AUTO_RESUME_MAX_STRIKES and not non_striking:
         now_iso = datetime.now(timezone.utc).isoformat()
         await _db.dropbox_migration_run.update_one(
             {"run_id": original_id},
@@ -793,10 +813,14 @@ async def _launch_resume_task(run_doc: dict, *, source: str) -> Optional[str]:
 
     new_run_id = f"copy-{secrets.token_hex(6)}"
     now_iso = datetime.now(timezone.utc).isoformat()
+    # v58.13.132my — Skip strike increment when the interrupt was
+    # restart-caused. Everything else on the counter row is still
+    # written so the run history stays intact.
+    new_strikes = strikes if non_striking else strikes + 1
     await _db.dropbox_migration_run.update_one(
         {"run_id": original_id},
         {"$set": {
-            "auto_resume_count": strikes + 1,
+            "auto_resume_count": new_strikes,
             "last_auto_resume_at": now_iso,
             "last_progress_files_copied": files_copied,
             "last_auto_resumed_into": new_run_id,
@@ -809,9 +833,10 @@ async def _launch_resume_task(run_doc: dict, *, source: str) -> Optional[str]:
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
     log.warning(
-        "[watchdog:%s] AUTO-RESUME %s -> %s (strike %d/%d)",
-        source, original_id, new_run_id, strikes + 1,
+        "[watchdog:%s] AUTO-RESUME %s -> %s (strike %d/%d%s)",
+        source, original_id, new_run_id, new_strikes,
         _AUTO_RESUME_MAX_STRIKES,
+        " · non-striking (restart)" if non_striking else "",
     )
     return new_run_id
 
@@ -1026,3 +1051,140 @@ async def dropbox_migration_resume(
         "state": "started",
         "agent_id": agent_id,
     }
+
+
+
+# ── v58.13.132my — graceful-shutdown hook + false-cap cleanup ─────
+async def shutdown_migration_jobs(*, drain_timeout_s: float = 2.0) -> Dict[str, Any]:
+    """Called from FastAPI's `on_shutdown` before the event loop tears
+    down. Mirrors `.132mq`'s backup shutdown pattern:
+
+      1. Cancel all tracked `_BACKGROUND_TASKS`. The tasks' own
+         `except BaseException` handlers will TRY to write a final
+         status via motor — but motor's sync-in-thread executor gets
+         cancelled by the loop teardown, so we can't rely on that.
+      2. Wait bounded (`drain_timeout_s`) for the cancellations to
+         propagate.
+      3. Fallback bulk-update: any doc still in `state=running` is
+         forcibly flipped to `state=interrupted` +
+         `interrupt_reason=backend_restart`. Uses motor's async
+         `update_many` — NOT sync pymongo. This step is what
+         actually guarantees the run doc reflects reality after a
+         SIGTERM.
+
+    Never blocks shutdown indefinitely — the bounded wait is
+    strict, and the final DB write is a single `update_many` with
+    a short server-side deadline.
+    """
+    from datetime import datetime, timezone
+    from db import db as _db
+
+    log.warning(
+        "[migration-shutdown] entering (drain=%.1fs)", drain_timeout_s,
+    )
+    report: Dict[str, Any] = {
+        "tasks_cancelled": 0,
+        "wait_completed": False,
+        "docs_flipped": 0,
+    }
+
+    # 1 — cancel every tracked background task.
+    live = [t for t in list(_BACKGROUND_TASKS) if not t.done()]
+    for t in live:
+        t.cancel()
+    report["tasks_cancelled"] = len(live)
+
+    # 2 — bounded drain so the tasks' finalizers get a chance to
+    # run. asyncio.wait swallows CancelledError from the awaited
+    # tasks so we don't have to catch it.
+    if live:
+        try:
+            await asyncio.wait(live, timeout=drain_timeout_s)
+            report["wait_completed"] = True
+        except Exception as e:  # noqa: BLE001 — must never block shutdown
+            log.warning("[migration-shutdown] drain wait failed: %s", e)
+
+    # 3 — best-effort DB fix-up for anything left as state=running.
+    # Uses motor's async client (NOT sync pymongo) so a mid-loop
+    # SIGTERM doesn't hang us mid-write.
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        r = await _db.dropbox_migration_run.update_many(
+            {"state": {"$in": ["running", "dry-run-running"]}},
+            {"$set": {
+                "state": "interrupted",
+                "interrupt_reason": "backend_restart",
+                "interrupted_at": now_iso,
+                "updated_at": now_iso,
+            }},
+        )
+        report["docs_flipped"] = r.modified_count
+        if r.modified_count:
+            log.warning(
+                "[migration-shutdown] flipped %d state=running "
+                "doc(s) to interrupted (backend_restart)",
+                r.modified_count,
+            )
+    except Exception as e:  # noqa: BLE001 — never block shutdown
+        log.warning("[migration-shutdown] db flip failed: %s", e)
+
+    log.warning("[migration-shutdown] exiting report=%s", report)
+    return report
+
+
+async def cleanup_false_needs_attention_on_startup() -> Dict[str, Any]:
+    """One-shot idempotent cleanup for the false-positive
+    `state=needs_attention` flags produced by the pre-`.132my`
+    strike accounting when the strike cascade was entirely
+    restart-caused.
+
+    Targets:
+      · The specific run flagged by the user (`copy-25b404b74680`).
+      · Every historical run whose `needs_attention_reason` starts
+        with `"auto-resume hit"` — that string is only ever written
+        by `_launch_resume_task` when the 5-strike cap is hit, and
+        after `.132my` those strikes are only accumulated on real
+        failures (restart-caused interrupts skip strike accounting).
+        Clearing historical instances is safe and idempotent.
+
+    Effect: `state=needs_attention` → `state=interrupted`,
+    `interrupt_reason=backend_restart`, `needs_attention_reason`
+    unset. This lets the watchdog auto-resume them on the next
+    tick without hitting the (now-cleared) cap.
+    """
+    from datetime import datetime, timezone
+    from db import db as _db
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    query = {
+        "$or": [
+            {"run_id": "copy-25b404b74680"},
+            {"needs_attention_reason": {
+                "$regex": "^auto-resume hit", "$options": "i",
+            }},
+        ],
+    }
+    # Count before flipping so we can report both the target
+    # doc-set and the audit-friendly modified count.
+    matched = await _db.dropbox_migration_run.count_documents(query)
+    r = await _db.dropbox_migration_run.update_many(
+        query,
+        {
+            "$set": {
+                "state": "interrupted",
+                "interrupt_reason": "backend_restart",
+                "updated_at": now_iso,
+            },
+            "$unset": {"needs_attention_reason": "", "needs_attention": ""},
+        },
+    )
+    report = {"matched": matched, "modified": r.modified_count}
+    if r.modified_count:
+        log.warning(
+            "[cleanup-false-needs-attention] cleared %d run(s) "
+            "(matched=%d)",
+            r.modified_count, matched,
+        )
+    else:
+        log.info("[cleanup-false-needs-attention] no rows to clear")
+    return report

@@ -1,5 +1,62 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132my — Migration shutdown hardening: graceful drain +
+// non-striking restart reasons + false-cap cleanup.
+//
+// Follow-up to `.132mm`'s watchdog and `.132mq`'s backup-shutdown
+// hardening. The diagnostic behind this ship (see
+// memory/v58_13_132my_migration_shutdown_hardening.md) showed that
+// every backend restart during active development killed the
+// in-flight `fetch_and_put` mid-poll, leaving the run doc as
+// `state=running` with a stale `updated_at`. Watchdog auto-resumed
+// on each 5-min tick, and 5 restart-caused cancellations tripped
+// the 5-strike cap into a false `state=needs_attention`.
+//
+// A — Graceful shutdown for the migration task
+//   New `integrations_dropbox.shutdown_migration_jobs()`, wired
+//   into server.py's `on_shutdown`. Cancels tracked
+//   `_BACKGROUND_TASKS`, waits bounded 2s for the finalizers to
+//   run, then does a **motor (async)** `update_many` to flip
+//   every `state=running` doc to `state=interrupted` +
+//   `interrupt_reason="backend_restart"`. Uses motor — not sync
+//   pymongo — so the SIGTERM/loop-teardown can't cancel the write
+//   mid-flight (which was the pre-`.132my` failure mode).
+//
+// B — Don't burn strikes on restart interrupts
+//   `_launch_resume_task` now checks `interrupt_reason` against a
+//   new `_AUTO_RESUME_NON_STRIKING_REASON_PREFIXES` set
+//   (`{"backend_restart", "backend restart"}` — covers both my
+//   new shutdown hook and the legacy `sweep_zombie_migration_runs`
+//   boot-sweep reason string). Non-striking resumes: strike
+//   counter NOT incremented, cap NOT checked. Real failures (NAS
+//   put errors, Dropbox 5xx, unhandled exceptions) still strike
+//   and still hit the cap.
+//
+// C — One-shot cleanup of the pre-existing false flags
+//   New `cleanup_false_needs_attention_on_startup()` runs on boot.
+//   Targets `copy-25b404b74680` explicitly plus any historical run
+//   whose `needs_attention_reason` starts with `"auto-resume
+//   hit"` (only ever written on the 5-strike cap). Clears the
+//   flag + flips state to `interrupted` +
+//   `interrupt_reason=backend_restart` so the watchdog will
+//   auto-resume them cleanly on the next tick. Idempotent no-op
+//   after first successful run.
+//
+// Files touched:
+//   · backend/integrations_dropbox.py    (non-striking set + shutdown + cleanup)
+//   · backend/server.py                  (on_startup cleanup call + on_shutdown drain)
+//   · frontend/src/lib/version.js        (bump)
+//   · frontend/public/service-worker.js  (bump)
+//   · memory/v58_13_132my_migration_shutdown_hardening.md  (new)
+//
+// Non-goals:
+//   · No changes to `dropbox_bytes_copy.run_copy_job`'s inner
+//     except handler — its motor call still races SIGTERM, but
+//     the new shutdown-side `update_many` is now the guaranteed
+//     final-state writer.
+//   · No mobile touched.
+
+
 // v58.13.132mw — SWMS seed + swms_router mirror + Pre-starts stale-
 // filter one-shot reset. Follow-up to `.132mv`'s parse-pipeline fix
 // once the diagnostic confirmed that:
@@ -15922,7 +15979,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132mw';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132my';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in

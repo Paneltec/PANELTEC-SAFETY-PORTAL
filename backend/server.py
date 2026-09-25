@@ -1328,6 +1328,16 @@ async def on_startup():
                      _sw.get("orgs_scanned"), _sw.get("seeded"), _sw.get("skipped_existing"))
         except Exception as e:
             log.warning("SWMS template seed failed: %s", e)
+        # v58.13.132my — Clear the false `state=needs_attention` on any
+        # dropbox_migration_run whose strike cascade was entirely
+        # restart-caused. Idempotent (no-op after first successful run).
+        try:
+            from integrations_dropbox import cleanup_false_needs_attention_on_startup
+            _fc = await cleanup_false_needs_attention_on_startup()
+            log.info("[cleanup-false-needs-attention] summary matched=%s modified=%s",
+                     _fc.get("matched"), _fc.get("modified"))
+        except Exception as e:
+            log.warning("false-needs-attention cleanup failed: %s", e)
         # v58.13.132hq — Backfill worker_company_id on existing rows.
         # v58.13.132hv — REMOVED. worker_companies feature purged.
         # v160.3.3 — HR docs dedup index.
@@ -1865,6 +1875,21 @@ async def on_shutdown():
         await shutdown_bulk_import_jobs()
     except Exception as e:  # non-fatal — server must still shut down
         log.warning("bulk_import shutdown handler failed: %s", e)
+    # v58.13.132my — Graceful shutdown for the Dropbox migration
+    # background task(s). Cancels tracked tasks, bounded 2s drain,
+    # then a motor (async) update_many to flip anything still in
+    # state=running to state=interrupted with
+    # interrupt_reason=backend_restart. Without this the run doc
+    # stays as state=running with a stale updated_at, forcing the
+    # watchdog to wait 10 min to detect it AND burning strikes on
+    # every restart. Combined with the non-striking-reasons check
+    # in _launch_resume_task, dev restarts no longer poison the
+    # 5-strike budget.
+    try:
+        from integrations_dropbox import shutdown_migration_jobs
+        await shutdown_migration_jobs()
+    except Exception as e:  # non-fatal — server must still shut down
+        log.warning("dropbox_migration shutdown failed: %s", e)
     sched = getattr(app.state, "scheduler", None)
     if sched is not None:
         try:
