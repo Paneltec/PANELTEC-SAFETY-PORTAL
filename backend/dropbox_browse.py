@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
@@ -46,6 +47,11 @@ _TEAM_FOLDER_ROOT = "/" + _TEAM_FOLDER_NAME  # e.g. "/Paneltec-General Administr
 # Dropbox's rate quota. 5 concurrent uploads is generous but
 # capped enough to leave headroom for the migration engine.
 _UPLOAD_SEMS: Dict[str, asyncio.Semaphore] = {}
+
+# `.132n2b` — separate per-user semaphore for preview streams so
+# a burst of preview clicks can't block an in-flight upload (and
+# vice-versa). Same 5-concurrent cap as uploads.
+_PREVIEW_SEMS: Dict[str, asyncio.Semaphore] = {}
 
 # Chunked upload threshold — files bigger than 150 MB must use
 # `/2/files/upload_session/*` per Dropbox spec.
@@ -260,6 +266,12 @@ def _wrap_dropbox_error(exc: Exception, verb: str) -> HTTPException:
         return HTTPException(409, f"path conflict during {verb}")
     if "not_found" in lower or "path_not_found" in lower:
         return HTTPException(404, f"path not found for {verb}")
+    # `.132n2b` — `files_get_preview` responds with these codes when
+    # the source file has no rendered preview available (either the
+    # extension isn't supported, or Dropbox rendered a preview that
+    # is now permanently unavailable).
+    if "unsupported_extension" in lower or "unsupported_content" in lower or "in_progress" in lower:
+        return HTTPException(400, f"no preview available for this file")
     return HTTPException(502, f"Dropbox {verb} failed: {type(exc).__name__}")
 
 
@@ -455,3 +467,124 @@ async def _chunked_upload(dbx, contents: bytes, dest_path: str):
                         autorename=False, mute=True)
     res = await asyncio.to_thread(dbx.files_upload_session_finish, last, cursor, commit)
     return res
+
+
+
+# ── `.132n2b` — inline preview proxy ──────────────────────────
+#
+# Dispatch table: which Dropbox call to make per source extension.
+#   · office types           → `files_get_preview` (returns PDF or HTML
+#                               depending on source; xlsx/ods → HTML,
+#                               docx/rtf/pptx → PDF)
+#   · everything else that
+#     the frontend flags as
+#     inline-previewable      → `files_download` (raw file bytes streamed
+#                               back with the file's own mime type)
+#
+# Why we can't just use Dropbox temp links for the "raw" cases:
+# `files_get_temporary_link` responses carry
+# `Content-Disposition: attachment` + `Content-Security-Policy:
+# sandbox`, both of which force browsers to trigger a save dialog
+# rather than render inline. Proxying the bytes through this
+# endpoint lets us re-write the disposition to `inline` and
+# forward the correct `Content-Type` so the caller's
+# <iframe>/<img>/<video>/<audio> paints as expected.
+_PREVIEW_OFFICE_EXTS = {
+    ".doc", ".docx", ".rtf",
+    ".ppt", ".pptx",
+    ".xls", ".xlsm", ".xlsx",
+    ".ods", ".odt", ".odp",
+}
+
+
+@router.get("/preview")
+async def preview_file(
+    path: str = Query(..., description="Full Dropbox path to a file"),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Stream file bytes back to the caller for inline browser
+    display. Two upstream Dropbox calls dispatched by extension:
+
+      · Office formats (`.doc/.docx/.rtf/.ppt/.pptx/.xls/.xlsm/
+        .xlsx/.ods/.odt/.odp`) → `/2/files/get_preview` — Dropbox
+        renders a preview (PDF for text-flow docs, HTML for
+        spreadsheets) and streams it here.
+      · Everything else → `/2/files/download` — raw file bytes
+        streamed straight back to the caller.
+
+    Response headers, regardless of dispatch branch:
+      · Content-Type — forwarded from Dropbox (`get_preview`) OR
+        the guessed mime for the source name (`download`).
+      · Content-Disposition — `inline; filename="…"`. Overrides
+        Dropbox's default `attachment` so browsers render the
+        payload in-place.
+      · Cache-Control — `private, max-age=60`. Short cache so a
+        rapid double-click doesn't re-fetch; stale after a minute
+        so post-edit re-previews stay honest.
+
+    Errors:
+      · 400 — trying to preview the team-folder root, or the file
+              type isn't previewable per Dropbox.
+      · 404 — file no longer exists.
+      · 502 — any other Dropbox API failure.
+    """
+    resolved = _normalise_path(path)
+    if resolved == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot preview the team folder root")
+
+    user_key = str(user.get("id") or user.get("user_email") or "anon")
+    sem = _PREVIEW_SEMS.setdefault(user_key, asyncio.Semaphore(5))
+
+    ext = os.path.splitext(resolved)[1].lower()
+    use_get_preview = ext in _PREVIEW_OFFICE_EXTS
+
+    async with sem:
+        dbx = _get_dbx()
+        try:
+            if use_get_preview:
+                # (FileMetadata, requests.Response). `.iter_content(…)`
+                # streams the rendered preview back chunk-by-chunk.
+                meta, response = await asyncio.to_thread(
+                    dbx.files_get_preview, resolved,
+                )
+            else:
+                # Same tuple shape; Dropbox streams the raw file
+                # bytes as the response body.
+                meta, response = await asyncio.to_thread(
+                    dbx.files_download, resolved,
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[browse.preview] %s: %s", resolved, exc)
+            raise _wrap_dropbox_error(exc, "get_preview")
+
+    # Determine content type. `get_preview` populates the response
+    # Content-Type reliably (application/pdf for docx, text/html for
+    # xlsx). `files_download` responses use `application/octet-stream`
+    # so we guess from the source filename instead.
+    upstream_ct = (response.headers.get("Content-Type") or "").split(";")[0].strip()
+    if use_get_preview:
+        content_type = upstream_ct or "application/pdf"
+    else:
+        guessed = _guess_mime(os.path.basename(resolved))
+        content_type = guessed or upstream_ct or "application/octet-stream"
+
+    def _iter():
+        # 64 KiB chunks — small enough to start the caller's render
+        # pipeline within the first RTT, big enough to avoid excess
+        # syscall/HTTP framing overhead on multi-MB payloads.
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if chunk:
+                yield chunk
+
+    safe_name = os.path.basename(resolved).replace('"', '')
+    return StreamingResponse(
+        _iter(),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{safe_name}"',
+            "Cache-Control": "private, max-age=60",
+        },
+    )

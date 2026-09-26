@@ -1,5 +1,9 @@
 // v58.13.132n2 — Dropbox in-app file browser page.
 //
+// `.132n2b` — File-row clicks now open <FilePreviewModal> instead
+// of popping the raw Dropbox temp link in a new tab. Downloads
+// still available from inside the modal.
+//
 // Replaces the external-tab launcher from `.132n0`. Renders at
 // `/app/dropbox` (gated on `integrations.view` via the sidebar
 // entry + a route-level guard here for deep-links). Talks to
@@ -8,12 +12,13 @@
 // Phase A + B scope (this ship):
 //   · list folder (breadcrumb, sortable columns)
 //   · download file (opens temporary link in new tab)
+//   · inline preview (`.132n2b`, per-type dispatch)
 //   · upload file (button + drag-drop, chunked >150MB server-side)
 //   · new folder
 //   · delete (with confirm)
 //   · client-side filter box
 //
-// Phase C deferred: rename, move, previews, server-side search,
+// Phase C deferred: rename, move, server-side search,
 // tags/comments.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -21,6 +26,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import { PageHeader } from '@/components/capture/Ui';
+import FilePreviewModal from '@/components/dropbox/FilePreviewModal';
 import {
   Folder24Regular, Document24Regular, DocumentPdf24Regular,
   Image24Regular, Video24Regular, DocumentTable24Regular,
@@ -50,6 +56,8 @@ export default function DropboxBrowser() {
   const [confirmDelete, setConfirmDelete] = useState(null); // entry to delete
   const [mkdirModal, setMkdirModal] = useState(null); // null | { name: '' }
   const [dragOver, setDragOver] = useState(false);
+  // `.132n2b` — file entry being previewed in the modal (null when closed).
+  const [previewEntry, setPreviewEntry] = useState(null);
   const fileInputRef = useRef(null);
 
   const refresh = useCallback(async () => {
@@ -115,12 +123,11 @@ export default function DropboxBrowser() {
       setPath(e.path);
       return;
     }
-    try {
-      const { data } = await api.get('/dropbox/browse/download', { params: { path: e.path } });
-      window.open(data.url, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      toast.error(`Download failed: ${apiError(err)}`);
-    }
+    // `.132n2b` — file click opens the inline preview modal.
+    // The modal itself handles per-type rendering + a Download
+    // button (which routes back to the same /download temp-link
+    // endpoint the pre-`.132n2b` flow used).
+    setPreviewEntry(e);
   };
 
   const doUpload = async (files) => {
@@ -409,6 +416,14 @@ export default function DropboxBrowser() {
             Drop files to upload to <span className="font-mono">{path || TEAM_ROOT_LABEL}</span>
           </div>
         </div>
+      )}
+
+      {/* v58.13.132n2b — inline file preview modal. */}
+      {previewEntry && (
+        <FilePreviewModal
+          entry={previewEntry}
+          onClose={() => setPreviewEntry(null)}
+        />
       )}
     </div>
   );
