@@ -1658,6 +1658,31 @@ async def on_startup():
                          "every 60s + bulk_import_retention daily 03:00 Sydney")
             except Exception as e:
                 log.warning("bulk_import scheduler hooks failed: %s", e)
+            # v58.13.132p2a — EAS APK auto-ingest watchdog.
+            # Every 5 min: check EAS for a newer FINISHED Android
+            # build than what's on disk; if so, download + swap the
+            # APK and refresh android_manifest.json. Kill switch:
+            # `eas_watchdog_settings.enabled = False` (checked at
+            # registration AND inside the tick).
+            try:
+                from eas_ingest_watchdog import (
+                    watchdog_tick as eas_apk_ingest_tick,
+                    watchdog_enabled as eas_apk_ingest_enabled,
+                )
+                if await eas_apk_ingest_enabled():
+                    scheduler.add_job(
+                        eas_apk_ingest_tick, "interval", minutes=5,
+                        id="eas_apk_ingest_watchdog",
+                        max_instances=1, coalesce=True,
+                        replace_existing=True,
+                    )
+                    log.info("APScheduler job registered — "
+                             "eas_apk_ingest_watchdog every 5 min")
+                else:
+                    log.info("APScheduler job SKIPPED — "
+                             "eas_apk_ingest_watchdog (settings.enabled=False)")
+            except Exception as e:
+                log.warning("eas_apk_ingest_watchdog scheduler hook failed: %s", e)
             # Phase 4.19 (v143) — MongoDB backup snapshots.
             # Cadence per user brief: every 6h + a Sydney COB (17:00 mon-fri).
             # Both wrap `_do_snapshot` (defined in backup_service.install()) which
@@ -1869,6 +1894,18 @@ async def on_startup():
                 except Exception as e:
                     log.warning("meter_history first-run backfill failed: %s", e)
             _asyncio.create_task(_meter_history_first_run())
+            # v58.13.132p2a — Boot check for the EAS APK ingest
+            # watchdog. Runs one iteration immediately so we don't
+            # wait for the first 5-minute tick after a backend
+            # restart. Fires in the background — a mid-flight ingest
+            # download must not delay the /startup response.
+            async def _eas_ingest_boot_check():
+                try:
+                    from eas_ingest_watchdog import run_boot_check
+                    await run_boot_check()
+                except Exception as e:  # noqa: BLE001
+                    log.warning("eas_apk_ingest boot check failed: %s", e)
+            _asyncio.create_task(_eas_ingest_boot_check())
             log.info("APScheduler started — navixy_sync_counters every 15 min")
         except Exception as e:
             log.warning("APScheduler failed to start: %s", e)

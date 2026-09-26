@@ -238,28 +238,68 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
 
     Never overwrites the existing on-disk APK/manifest until the new
     file is fully downloaded + sha256'd, so a mid-flight failure leaves
-    the previous binary intact and the endpoint keeps serving it."""
+    the previous binary intact and the endpoint keeps serving it.
+
+    v58.13.132p2a — Thin HTTP wrapper around
+    :func:`_ingest_latest_finished_android`, which is also called by
+    the periodic `eas_apk_ingest_watchdog` scheduler job."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="admin only")
-
-    token = os.environ.get("EXPO_TOKEN")
-    if not token:
-        raise HTTPException(
-            status_code=501,
-            detail=(
-                "EXPO_TOKEN not set in backend env. Add it to "
-                "backend/.env then `sudo supervisorctl restart backend` "
-                "before calling this endpoint. Do NOT commit the token."
-            ),
-        )
 
     log.warning("apk_ingest.invoked by user_id=%s email=%s",
                 user.get("id"), user.get("email"))
 
-    # 1. Query EAS for the app id via `me.accounts.apps`, then fetch
-    #    the latest internal Android build for that app id.
+    result = await _ingest_latest_finished_android(
+        source="admin_button",
+        actor_user_id=user.get("id"),
+    )
+
+    if not result.get("ok"):
+        code = result.get("http_status") or 502
+        raise HTTPException(status_code=code, detail=result.get("reason") or "ingest failed")
+    return {
+        "ok": True,
+        "manifest": result["manifest"],
+        "message": result.get("message", ""),
+    }
+
+
+async def _ingest_latest_finished_android(
+    *,
+    source: str,
+    actor_user_id: Optional[str] = None,
+) -> dict:
+    """Pure ingest routine — safe to call from HTTP handlers AND from
+    the APScheduler background job.
+
+    Returns a structured dict. Never raises.
+
+        {"ok": True,  "manifest": {...}, "action": "ingested|no-op|same-build",
+         "message": str, "build_id": str, "version": str}
+
+        {"ok": False, "reason": str, "http_status": int}
+
+    v58.13.132p2a — factored out of the admin endpoint so the
+    `eas_apk_ingest_watchdog` scheduler can call it without going
+    through HTTP + fake auth.
+
+    `source` is stamped onto the audit-log row so we can tell which
+    ingests were manual vs. scheduled.
+    """
+    token = os.environ.get("EXPO_TOKEN")
+    if not token:
+        # Not a hard error for the scheduler — surface it clearly so
+        # the tick logs a warning and moves on.
+        return {
+            "ok": False, "http_status": 501,
+            "reason": (
+                "EXPO_TOKEN not set in backend env. Add it to "
+                "backend/.env then `sudo supervisorctl restart backend`."
+            ),
+        }
+
+    # 1. Query EAS for the latest FINISHED Android build id.
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        # --- Step 1: resolve appId from slug. -------------------------
         try:
             r1 = await client.post(
                 _EAS_GRAPHQL,
@@ -268,24 +308,19 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
                 json={"query": _ME_APPS_QUERY},
             )
         except httpx.HTTPError as exc:
-            raise HTTPException(status_code=502,
-                                detail=f"EAS unreachable: {exc}")
+            return {"ok": False, "http_status": 502,
+                    "reason": f"EAS unreachable: {exc}"}
         if r1.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"EAS GraphQL (me) HTTP {r1.status_code}: {r1.text[:200]}",
-            )
+            return {"ok": False, "http_status": 502,
+                    "reason": f"EAS GraphQL (me) HTTP {r1.status_code}: {r1.text[:200]}"}
         p1 = r1.json()
         if "errors" in p1:
-            raise HTTPException(
-                status_code=502,
-                detail=f"EAS GraphQL (me) error: {p1['errors']!r}",
-            )
+            return {"ok": False, "http_status": 502,
+                    "reason": f"EAS GraphQL (me) error: {p1['errors']!r}"}
         accounts = ((p1.get("data") or {}).get("me") or {}).get("accounts") or []
         app_id: Optional[str] = None
         for acc in accounts:
             if acc.get("name") and acc["name"].lower() != _EAS_ACCOUNT.lower():
-                # Skip other accounts the token can see.
                 continue
             for a in acc.get("apps") or []:
                 if a.get("slug") == _EAS_APP_SLUG:
@@ -294,13 +329,10 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
             if app_id:
                 break
         if not app_id:
-            raise HTTPException(
-                status_code=502,
-                detail=f"EAS app slug {_EAS_APP_SLUG!r} not visible on "
-                       f"account {_EAS_ACCOUNT!r}",
-            )
+            return {"ok": False, "http_status": 502,
+                    "reason": f"EAS app slug {_EAS_APP_SLUG!r} not visible "
+                              f"on account {_EAS_ACCOUNT!r}"}
 
-        # --- Step 2: fetch latest FINISHED internal Android build. ----
         try:
             r2 = await client.post(
                 _EAS_GRAPHQL,
@@ -310,19 +342,15 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
                       "variables": {"appId": app_id}},
             )
         except httpx.HTTPError as exc:
-            raise HTTPException(status_code=502,
-                                detail=f"EAS unreachable: {exc}")
+            return {"ok": False, "http_status": 502,
+                    "reason": f"EAS unreachable: {exc}"}
         if r2.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"EAS GraphQL (builds) HTTP {r2.status_code}: {r2.text[:200]}",
-            )
+            return {"ok": False, "http_status": 502,
+                    "reason": f"EAS GraphQL (builds) HTTP {r2.status_code}: {r2.text[:200]}"}
         payload = r2.json()
         if "errors" in payload:
-            raise HTTPException(
-                status_code=502,
-                detail=f"EAS GraphQL (builds) error: {payload['errors']!r}",
-            )
+            return {"ok": False, "http_status": 502,
+                    "reason": f"EAS GraphQL (builds) error: {payload['errors']!r}"}
         target = ((payload.get("data") or {}).get("app") or {}).get("byId") or {}
         builds = target.get("builds") or []
         pick = next(
@@ -332,11 +360,9 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
             None,
         )
         if not pick:
-            raise HTTPException(
-                status_code=404,
-                detail="No FINISHED internal Android build with an "
-                       "artifact URL found on the last 5 builds.",
-            )
+            return {"ok": False, "http_status": 404,
+                    "reason": "No FINISHED internal Android build with an "
+                              "artifact URL found on the last 5 builds."}
 
         build_id = pick["id"]
         artifact_url = pick["artifacts"]["buildUrl"]
@@ -344,6 +370,34 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
         app_build_version = pick.get("appBuildVersion") or "unknown"
         completed_at = pick.get("completedAt") or _now_iso()
         git_sha = pick.get("gitCommitHash") or ""
+
+        # Same-build short-circuit — cheap idempotency for the
+        # scheduler (avoids re-downloading 141 MB every 5 min).
+        current = _read_manifest() or {}
+        if current.get("eas_build_id") == build_id:
+            return {
+                "ok": True, "action": "same-build",
+                "manifest": current, "build_id": build_id,
+                "version": app_version,
+                "message": f"Latest FINISHED build {build_id} is already on disk. No-op.",
+            }
+
+        # Version-code monotonicity guard (belt-and-braces).
+        try:
+            new_code = int(app_build_version)
+            cur_code = int(current.get("version_code") or 0)
+        except (TypeError, ValueError):
+            new_code, cur_code = None, None
+        if new_code is not None and cur_code is not None and new_code < cur_code:
+            return {
+                "ok": False, "http_status": 409,
+                "reason": (
+                    f"Refusing to downgrade — EAS latest build "
+                    f"versionCode {new_code} < manifest {cur_code}. "
+                    f"If this is intentional, delete android_manifest.json "
+                    f"and re-run."
+                ),
+            }
 
         # 2. Download the APK to a temp file first, hash it, then swap.
         APK_DIR.mkdir(parents=True, exist_ok=True)
@@ -356,10 +410,8 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
         try:
             async with client.stream("GET", artifact_url) as resp:
                 if resp.status_code != 200:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"EAS artifact HTTP {resp.status_code}",
-                    )
+                    return {"ok": False, "http_status": 502,
+                            "reason": f"EAS artifact HTTP {resp.status_code}"}
                 with open(tmp_path, "wb") as f:
                     async for chunk in resp.aiter_bytes(1024 * 512):
                         f.write(chunk)
@@ -367,15 +419,13 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
                         total += len(chunk)
         except httpx.HTTPError as exc:
             tmp_path.unlink(missing_ok=True)
-            raise HTTPException(status_code=502,
-                                detail=f"APK download failed: {exc}")
+            return {"ok": False, "http_status": 502,
+                    "reason": f"APK download failed: {exc}"}
 
     if total < 5_000_000:  # sanity — a real APK is >5MB
         tmp_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Downloaded artifact suspiciously small ({total} bytes)",
-        )
+        return {"ok": False, "http_status": 502,
+                "reason": f"Downloaded artifact suspiciously small ({total} bytes)"}
 
     sha256 = sha.hexdigest()
 
@@ -393,35 +443,37 @@ async def android_ingest_from_eas(user: dict = Depends(get_current_user)):
         "bundle_id": "com.emergent.whscompliance.fv5aib",
         "git_commit": git_sha,
         "synced_at": _now_iso(),
-        "synced_by_user_id": user.get("id"),
+        "synced_by_user_id": actor_user_id,
+        "synced_by_source": source,
     }
     APK_MANIFEST.write_text(json.dumps(manifest, indent=2))
 
-    # 4. Insert an audit trail row in mobile_downloads_manifest.
+    # 4. Audit trail (best-effort).
     try:
         await db.mobile_downloads_manifest.insert_one({
             **manifest,
-            "artifact_url": artifact_url,   # signed URL, expires quickly
+            "artifact_url": artifact_url,
             "created_at": _now_iso(),
         })
     except Exception as exc:  # noqa: BLE001
-        # Best-effort audit — never fail the request if Mongo blips.
         log.warning("apk_ingest.audit_log_failed: %s", exc)
 
-    log.warning("apk_ingest.done user_id=%s build_id=%s version=%s "
-                "size_mb=%.1f sha256=%s",
-                user.get("id"), build_id, app_version,
+    log.warning("apk_ingest.done source=%s user_id=%s build_id=%s "
+                "version=%s size_mb=%.1f sha256=%s",
+                source, actor_user_id, build_id, app_version,
                 total / (1024 * 1024), sha256)
 
     return {
-        "ok": True,
-        "manifest": manifest,
+        "ok": True, "action": "ingested",
+        "manifest": manifest, "build_id": build_id,
+        "version": app_version,
         "message": (
             f"Fresh APK from EAS build {build_id} written to disk. "
             f"/api/mobile/downloads/android/latest.apk now serves "
             f"version {app_version} (build {app_build_version})."
         ),
     }
+
 
 
 def _now_iso() -> str:
