@@ -666,3 +666,16 @@
 - **Files modified**: mobile/src/lib/parseJobSms.ts, mobile/src/lib/__tests__/parseJobSms.test.ts, mobile/src/components/PasteJobSmsModal.tsx, mobile/app/job/import.tsx, mobile/app.json, mobile/src/lib/version.ts, mobile/jest.config.js, mobile/package.json, mobile/yarn.lock
 - **Web files referenced**: backend/sms_parser.py (parser logic source)
 - **Dependencies added**: jest, ts-jest, @types/jest (all devDependencies)
+
+## Iteration .132p1b — Phase 2B: Android SMS BroadcastReceiver via Expo Config Plugin
+- **Commit**: b740dc62
+- **Date**: 2026-09-26
+- **Changes**:
+  - Restructured config plugin into 3 modular mods (withSmsPermissions, withSmsReceiver, withNativeReceiverCode)
+  - Created SmsReceiver.kt template with sender + body filtering, DeviceEventEmitter emit, SharedPrefs fallback
+  - Added smsPermissions.ts: PermissionsAndroid.requestMultiple with explanation dialog + denied banner
+  - Updated smsReceiver.ts: retry on foreground, postAndNotify, debugFireTestSms()
+  - Updated home.tsx: permission request on mount, denied banner, debug button
+  - Verified via expo prebuild: Manifest has RECEIVE_SMS/READ_SMS + <receiver> block
+- **Files modified**: plugins/expo-sms-receiver/*, src/lib/smsReceiver.ts, src/lib/smsPermissions.ts, src/lib/version.ts, app/(tabs)/home.tsx, memory/mobile/commit_log.md
+- **Prebuild verified**: AndroidManifest.xml, SmsReceiver.kt copied to correct package path

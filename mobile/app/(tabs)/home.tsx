@@ -292,7 +292,7 @@ export default function HomeScreen() {
   }
 
   // ── helpers for job detail ──
-  const openMapsToAddress = (address: string) => {
+  const handleOpenMaps = (address: string) => {
     const encoded = encodeURIComponent(address);
     const url = Platform.select({
       ios: `maps://?daddr=${encoded}&dirflg=d`,
@@ -304,13 +304,18 @@ export default function HomeScreen() {
     );
   };
 
-  const formatIssuedDate = (iso?: string) => {
+  const formatTime = (iso?: string) => {
     if (!iso) return '';
-    const d = new Date(iso);
-    const day = d.toLocaleDateString('en-AU', { weekday: 'short' });
-    const date = d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-    const time = d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
-    return `${day}, ${date} · ${time}`;
+    return new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
+  };
+
+  const formatJobDate = (dateStr?: string) => {
+    if (!dateStr) return '—';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return dateStr; }
   };
 
   const handleAcceptJob = async (job: any) => {
@@ -345,55 +350,62 @@ export default function HomeScreen() {
     setJobActioning(false);
   };
 
-  // ── Ad-hoc Job Detail view ──
+  // ── Job Detail view — Phase 3 redesign (.132p2) ──
   if (viewMode === 'job_detail') {
     const job = todayJob || MOCK_AD_HOC_JOB;
     const isMocked = !todayJob || job._mocked;
-    const isPending = job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new';
+    const isIssued = job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new' || job.status === 'issued';
     const isAccepted = job.status === 'accepted';
     const isDeclined = job.status === 'declined';
-    const address = job.address || job.site_address || '';
-    const truckLabel = [job.truck_name, job.truck_reg].filter(Boolean).join(' · ');
+    const address = job.address || job.site_address || job.site_name || '';
+    const truckFull = job.truck_name
+      ? [job.truck_name, job.truck_reg].filter(Boolean).join(' - ')
+      : job.truck || '';
 
-    // Filter current user out of work mates
+    // Filter current user from crew
     const currentName = (user?.name || user?.display_name || user?.full_name || '').trim().toUpperCase();
-    const filteredStaff = Array.isArray(job.staff_names)
-      ? job.staff_names.filter((n: string) => n.trim().toUpperCase() !== currentName)
-      : [];
-    const staffLabel = filteredStaff.length > 0 ? filteredStaff.join(', ') : '';
+    const crewRaw: string[] = Array.isArray(job.staff_names) ? job.staff_names
+      : Array.isArray(job.staff) ? job.staff
+      : (typeof job.staff === 'string' ? job.staff.split(',').map((s: string) => s.trim()) : []);
+    const filteredCrew = crewRaw.filter((n: string) => n.trim().toUpperCase() !== currentName);
+    const crewLabel = filteredCrew.length > 0 ? filteredCrew.join(', ') : '—';
 
+    const jobDate = job.date || job.job_date || job.issued_at || '';
     const jobNotes = job.notes || '';
+    const siteName = job.site_name || job.title || '';
+
+    // Status chip config
+    const chipConfig = isIssued
+      ? { label: `NEW · issued ${formatTime(job.issued_at || job.assigned_at || job.created_at)}`, color: Colors.orange, bg: '#FFF7ED', border: '#FDBA7480' }
+      : isAccepted
+      ? { label: `ACCEPTED · at ${formatTime(job.accepted_at)}`, color: Colors.success, bg: '#D1FAE5', border: '#10B98140' }
+      : { label: `DECLINED · at ${formatTime(job.declined_at)}`, color: '#9CA3AF', bg: '#F3F4F6', border: '#D1D5DB' };
+
+    // Field table data
+    const fieldRows: { label: string; value: string }[] = [
+      { label: 'TRUCK', value: truckFull || '—' },
+      { label: 'DATE', value: formatJobDate(jobDate) },
+      { label: 'SITE', value: siteName || '—' },
+      { label: 'CUSTOMER', value: job.customer || '—' },
+      { label: 'CREW', value: crewLabel },
+    ];
 
     return (
       <View testID="home-job-detail" style={[s.container, { paddingTop: insets.top }]}>
         {/* Header */}
-        <View style={s.jdHeader}>
-          <TouchableOpacity testID="job-detail-back" onPress={() => setViewMode('home')} style={s.backBtn}>
+        <View style={jd.header}>
+          <TouchableOpacity testID="job-detail-back" onPress={() => setViewMode('home')} style={jd.backBtn}>
             <Ionicons name="chevron-back" size={24} color={Colors.white} />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={s.jdTitle} numberOfLines={1}>{job.title || job.site_name || 'Job Assignment'}</Text>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={jd.headerTitle} numberOfLines={2}>{siteName || address || 'Job Assignment'}</Text>
           </View>
-          {isPending && (
-            <View style={s.jdNewPill}>
-              <Text style={s.jdNewPillText}>NEW</Text>
-            </View>
-          )}
-          {isAccepted && (
-            <View style={[s.jdNewPill, { backgroundColor: Colors.successSoft }]}>
-              <Text style={[s.jdNewPillText, { color: Colors.success }]}>ACCEPTED</Text>
-            </View>
-          )}
-          {isDeclined && (
-            <View style={[s.jdNewPill, { backgroundColor: Colors.errorSoft }]}>
-              <Text style={[s.jdNewPillText, { color: Colors.error }]}>DECLINED</Text>
-            </View>
-          )}
+          <View style={[jd.chip, { backgroundColor: chipConfig.bg, borderColor: chipConfig.border }]}>
+            <Text style={[jd.chipText, { color: chipConfig.color }]}>{chipConfig.label}</Text>
+          </View>
         </View>
-        {/* Issued caption */}
-        <Text style={s.jdIssued}>ISSUED {formatIssuedDate(job.issued_at || job.assigned_at).toUpperCase()}</Text>
 
-        <ScrollView contentContainerStyle={s.jdScroll}>
+        <ScrollView contentContainerStyle={jd.scroll} showsVerticalScrollIndicator={false}>
           {isMocked && (
             <View style={s.mockBadge}>
               <Ionicons name="flask-outline" size={12} color="#DC2626" />
@@ -401,194 +413,183 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* Map preview card */}
+          {/* Map card (fallback — no Google Maps key) */}
           <TouchableOpacity
             testID="job-detail-map-card"
-            style={s.jdMapCard}
-            onPress={() => address && openMapsToAddress(address)}
+            style={jd.mapCard}
+            onPress={() => address && handleOpenMaps(address)}
             activeOpacity={0.7}
           >
-            <View style={s.jdMapIconWrap}>
-              <Ionicons name="map-outline" size={48} color={Colors.textTertiary} />
+            <View style={jd.mapIconRow}>
+              <View style={jd.mapPin}>
+                <Ionicons name="location" size={24} color={Colors.orange} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 14 }}>
+                <Text style={jd.mapAddress} numberOfLines={2}>{address || 'No address'}</Text>
+                <Text style={jd.mapDistance}>Tap to open in Maps</Text>
+              </View>
+              <Ionicons name="navigate" size={20} color={Colors.orange} />
             </View>
-            <Text style={s.jdMapLabel}>Tap to open in Google Maps</Text>
           </TouchableOpacity>
 
-          {/* Address row */}
-          {!!address && (
-            <TouchableOpacity
-              testID="job-detail-address-row"
-              style={s.jdAddressRow}
-              onPress={() => openMapsToAddress(address)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="location" size={18} color={Colors.orange} />
-              <Text style={s.jdAddressText}>{address}</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Detail card */}
-          <View style={s.jdDetailCard}>
-            {/* SITE */}
-            <View style={s.jdDetailRow}>
-              <Text style={s.jdDetailLabel}>SITE</Text>
-              <Text style={s.jdDetailValue} numberOfLines={1}>{job.site_name || '—'}</Text>
-            </View>
-            {/* ADDRESS */}
-            {!!address && (<>
-              <View style={s.jdDivider} />
-              <View style={s.jdDetailRow}>
-                <Text style={s.jdDetailLabel}>ADDRESS</Text>
-                <Text style={s.jdDetailValue} numberOfLines={2}>{address}</Text>
+          {/* Field table */}
+          <View style={jd.fieldCard}>
+            {fieldRows.map((row, i) => (
+              <View key={row.label}>
+                {i > 0 && <View style={jd.fieldDivider} />}
+                <View style={jd.fieldRow}>
+                  <Text style={jd.fieldLabel}>{row.label}</Text>
+                  <Text style={jd.fieldValue} numberOfLines={row.label === 'CREW' ? 3 : 1}>{row.value}</Text>
+                </View>
               </View>
-            </>)}
-            {/* CUSTOMER */}
-            {!!job.customer && (<>
-              <View style={s.jdDivider} />
-              <View style={s.jdDetailRow}>
-                <Text style={s.jdDetailLabel}>CUSTOMER</Text>
-                <Text style={s.jdDetailValue}>{job.customer}</Text>
-              </View>
-            </>)}
-            {/* TRUCK */}
-            {!!truckLabel && (<>
-              <View style={s.jdDivider} />
-              <View style={s.jdDetailRow}>
-                <Text style={s.jdDetailLabel}>TRUCK</Text>
-                <Text style={s.jdDetailValue}>{truckLabel}</Text>
-              </View>
-            </>)}
-            {/* WHEN */}
-            <View style={s.jdDivider} />
-            <View style={s.jdDetailRow}>
-              <Text style={s.jdDetailLabel}>WHEN</Text>
-              <Text style={s.jdDetailValue}>{formatIssuedDate(job.issued_at || job.assigned_at) || job.start_time || '—'}</Text>
-            </View>
-            {/* YOUR WORK MATES */}
-            {!!staffLabel && (<>
-              <View style={s.jdDivider} />
-              <View style={[s.jdDetailRow, { alignItems: 'flex-start' }]}>
-                <Text style={[s.jdDetailLabel, { marginTop: 2 }]}>YOUR WORK{'\n'}MATES</Text>
-                <Text style={s.jdDetailValue}>{staffLabel}</Text>
-              </View>
-            </>)}
-            {/* TASK (only if present) */}
-            {!!job.task && (<>
-              <View style={s.jdDivider} />
-              <View style={s.jdDetailRow}>
-                <Text style={s.jdDetailLabel}>TASK</Text>
-                <Text style={s.jdDetailValue} numberOfLines={2}>{job.task}</Text>
-              </View>
-            </>)}
+            ))}
+            {/* NOTES — expandable, inside card */}
+            {!!jobNotes && (
+              <>
+                <View style={jd.fieldDivider} />
+                <TouchableOpacity
+                  testID="job-detail-notes-toggle"
+                  onPress={() => setNotesExpanded(!notesExpanded)}
+                  activeOpacity={0.7}
+                  style={jd.fieldRow}
+                >
+                  <Text style={jd.fieldLabel}>NOTES</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={jd.fieldValue} numberOfLines={notesExpanded ? undefined : 3}>{jobNotes}</Text>
+                    {!notesExpanded && jobNotes.length > 100 && (
+                      <Text style={jd.notesMore}>Show more ›</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
 
-          {/* Notes card (visually distinct, expandable) */}
-          {!!jobNotes && (
-            <TouchableOpacity
-              testID="job-detail-notes-toggle"
-              style={s.jdNotesCard}
-              onPress={() => setNotesExpanded(!notesExpanded)}
-              activeOpacity={0.7}
-            >
-              <View style={s.jdNotesHeader}>
-                <Ionicons name="document-text-outline" size={16} color={Colors.orange} />
-                <Text style={s.jdNotesLabel}>NOTES</Text>
-                <Ionicons name={notesExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textTertiary} />
-              </View>
-              <Text style={s.jdNotesText} numberOfLines={notesExpanded ? undefined : 4}>{jobNotes}</Text>
-              {!notesExpanded && jobNotes.length > 150 && (
-                <Text style={s.jdNotesShowMore}>Show more</Text>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {/* Action row 1 — Decide */}
-          {isPending ? (
-            <View style={s.jdActionRow}>
-              <TouchableOpacity
-                testID="job-detail-decline-btn"
-                style={s.jdDeclineBtn}
-                onPress={() => handleDeclineJob(job)}
-                disabled={jobActioning}
-                activeOpacity={0.7}
-              >
-                {jobActioning ? <ActivityIndicator size="small" color={Colors.textTertiary} /> : (
-                  <Text style={s.jdDeclineBtnText}>DECLINE</Text>
-                )}
-              </TouchableOpacity>
-              <Animated.View style={[
-                s.jdAcceptBtnWrap,
-                {
-                  shadowColor: '#10B981',
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowRadius: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [4, 14] }),
-                  shadowOpacity: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.6] }),
-                  elevation: 4,
-                },
-              ]}>
+          {/* ── State 1: BEFORE ACCEPT ── */}
+          {isIssued && (
+            <>
+              {/* Decision row */}
+              <View style={jd.decisionRow}>
                 <TouchableOpacity
-                  testID="job-detail-accept-btn"
-                  style={s.jdAcceptBtn}
-                  onPress={() => handleAcceptJob(job)}
+                  testID="job-detail-decline-btn"
+                  style={jd.declineBtn}
+                  onPress={() => handleDeclineJob(job)}
                   disabled={jobActioning}
                   activeOpacity={0.7}
                 >
-                  {jobActioning ? <ActivityIndicator size="small" color={Colors.white} /> : (
-                    <Text style={s.jdAcceptBtnText}>ACCEPT JOB</Text>
+                  {jobActioning ? <ActivityIndicator size="small" color={Colors.textTertiary} /> : (
+                    <Text style={jd.declineBtnText}>DECLINE</Text>
                   )}
                 </TouchableOpacity>
-              </Animated.View>
-            </View>
-          ) : (
-            <View style={s.jdStatusPillRow}>
-              <View style={[s.jdStatusPill, isAccepted ? { backgroundColor: Colors.successSoft } : { backgroundColor: Colors.errorSoft }]}>
-                <Ionicons
-                  name={isAccepted ? 'checkmark-circle' : 'close-circle'}
-                  size={16}
-                  color={isAccepted ? Colors.success : Colors.error}
-                />
-                <Text style={[s.jdStatusPillText, { color: isAccepted ? Colors.success : Colors.error }]}>
-                  {isAccepted
-                    ? `Accepted at ${new Date(job.accepted_at || Date.now()).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}`
-                    : `Declined at ${new Date(job.declined_at || Date.now()).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}`}
+                <Animated.View style={[
+                  jd.acceptBtnWrap,
+                  {
+                    shadowColor: '#16A34A',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowRadius: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [4, 16] }),
+                    shadowOpacity: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.5] }),
+                    elevation: 4,
+                  },
+                ]}>
+                  <TouchableOpacity
+                    testID="job-detail-accept-btn"
+                    style={jd.acceptBtn}
+                    onPress={() => handleAcceptJob(job)}
+                    disabled={jobActioning}
+                    activeOpacity={0.7}
+                  >
+                    {jobActioning ? <ActivityIndicator size="small" color={Colors.white} /> : (
+                      <Text style={jd.acceptBtnText}>ACCEPT JOB</Text>
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+              {/* Locked action row */}
+              <View style={jd.lockedRow}>
+                <View style={jd.lockedBtn}>
+                  <Ionicons name="lock-closed" size={13} color="#9CA3AF" />
+                  <Text style={jd.lockedBtnText}>NAVIGATE</Text>
+                </View>
+                <View style={jd.lockedBtn}>
+                  <Ionicons name="lock-closed" size={13} color="#9CA3AF" />
+                  <Text style={jd.lockedBtnText}>SIGN ON AT SITE</Text>
+                </View>
+              </View>
+              <Text style={jd.footerCaption}>
+                Accept to unlock Navigate and Sign On.{'\n'}The office is notified straight away.
+              </Text>
+            </>
+          )}
+
+          {/* ── State 2: AFTER ACCEPT ── */}
+          {isAccepted && (
+            <>
+              {/* Accepted pill */}
+              <View style={jd.acceptedPill}>
+                <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
+                <Text style={jd.acceptedPillText}>
+                  ACCEPTED at {formatTime(job.accepted_at)}
                 </Text>
               </View>
+              {/* Pre-start truck button */}
+              <TouchableOpacity
+                testID="job-detail-prestart-btn"
+                style={jd.prestartBtn}
+                onPress={() => {
+                  router.push({ pathname: '/forms', params: { form: 'prestart', truck: truckFull } });
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="clipboard-outline" size={20} color={Colors.white} />
+                <Text style={jd.prestartBtnText} numberOfLines={1}>
+                  PRE-START MY TRUCK — {truckFull || 'Truck'}
+                </Text>
+              </TouchableOpacity>
+              {/* Navigate + Sign On */}
+              <View style={jd.actionRow}>
+                <TouchableOpacity
+                  testID="job-detail-navigate-btn"
+                  style={jd.navBtn}
+                  onPress={() => address && handleOpenMaps(address)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="navigate" size={18} color={Colors.white} />
+                  <Text style={jd.navBtnText}>NAVIGATE</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="job-detail-signon-btn"
+                  style={jd.signOnBtn}
+                  onPress={() => {
+                    Alert.alert('Sign On', 'Sign-on at site is coming in Phase 4.\nUse the "Sign On" tile on Home for now.');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="create-outline" size={18} color={Colors.ink} />
+                  <Text style={jd.signOnBtnText}>SIGN ON AT SITE</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+
+          {/* ── State 3: DECLINED ── */}
+          {isDeclined && (
+            <View style={jd.declinedBlock}>
+              <Ionicons name="close-circle-outline" size={36} color="#9CA3AF" />
+              <Text style={jd.declinedTitle}>You declined this job</Text>
+              <Text style={jd.declinedSub}>The office has been notified.</Text>
+              <TouchableOpacity
+                testID="job-detail-back-home"
+                style={jd.backHomeBtn}
+                onPress={() => setViewMode('home')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={16} color={Colors.info} />
+                <Text style={jd.backHomeBtnText}>Back to Home</Text>
+              </TouchableOpacity>
             </View>
           )}
 
-          {/* Action row 2 — Work (navigate + sign on) */}
-          <View style={s.jdActionRow}>
-            <TouchableOpacity
-              testID="job-detail-navigate-btn"
-              style={[s.jdNavBtn, !isAccepted && s.jdBtnDisabled]}
-              onPress={() => address && openMapsToAddress(address)}
-              disabled={!isAccepted}
-              activeOpacity={0.7}
-            >
-              {!isAccepted && <Ionicons name="lock-closed" size={14} color={Colors.textTertiary} style={{ marginRight: 4 }} />}
-              <Ionicons name="navigate-outline" size={18} color={isAccepted ? '#92400E' : Colors.textTertiary} />
-              <Text style={[s.jdNavBtnText, !isAccepted && { color: Colors.textTertiary }]}>NAVIGATE</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="job-detail-signon-btn"
-              style={[s.jdSignOnBtn, !isAccepted && s.jdBtnDisabled]}
-              onPress={() => {
-                // Route to sign-on flow — currently stub
-                Alert.alert('Sign On', 'Sign-on flow coming soon. Use the "Sign On" tile on the Home screen for now.');
-              }}
-              disabled={!isAccepted}
-              activeOpacity={0.7}
-            >
-              {!isAccepted && <Ionicons name="lock-closed" size={14} color={Colors.textTertiary} style={{ marginRight: 4 }} />}
-              <Ionicons name="create-outline" size={18} color={isAccepted ? Colors.info : Colors.textTertiary} />
-              <Text style={[s.jdSignOnBtnText, !isAccepted && { color: Colors.textTertiary }]}>SIGN ON</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer caption */}
-          <Text style={s.jdFooter}>
-            Navigate and Sign On unlock once you accept.{'\n'}The office sees your answer straight away.
-          </Text>
+          <View style={{ height: 40 }} />
         </ScrollView>
       </View>
     );
@@ -1095,117 +1096,9 @@ const s = StyleSheet.create({
   },
   siteOptionText: { fontSize: 15, fontWeight: '600', color: Colors.ink, flex: 1 },
 
-  // Job detail — redesign v132n5m2
-  jdHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.navy, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14,
-  },
-  jdTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
-  jdNewPill: {
-    backgroundColor: '#FFF7ED', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 4, marginLeft: 10,
-  },
-  jdNewPillText: { fontSize: 11, fontWeight: '800', color: Colors.orange },
-  jdIssued: {
-    fontSize: 11, fontWeight: '700', color: Colors.orange, letterSpacing: 0.5,
-    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 6,
-  },
-  jdScroll: { padding: 16, paddingBottom: 40 },
-  jdMapCard: {
-    backgroundColor: Colors.surface, borderRadius: 18, padding: 28,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
-    minHeight: 160,
-  },
-  jdMapIconWrap: { marginBottom: 12, opacity: 0.5 },
-  jdMapLabel: { fontSize: 14, fontWeight: '600', color: Colors.textTertiary },
-  jdAddressRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 4, paddingVertical: 10, marginBottom: 10,
-  },
-  jdAddressText: { fontSize: 14, fontWeight: '600', color: Colors.white, flex: 1 },
-  jdDetailCard: {
-    backgroundColor: Colors.surface, borderRadius: 18, paddingHorizontal: 18,
-    paddingVertical: 6, marginBottom: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
-  },
-  jdDetailRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 14, minHeight: 48,
-  },
-  jdDetailLabel: { fontSize: 11, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 0.5, width: 90 },
-  jdDetailValue: { fontSize: 14, fontWeight: '600', color: Colors.ink, flex: 1, textAlign: 'right' },
-  jdDivider: { height: 1, backgroundColor: Colors.borderLight },
-  jdActionRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  jdDeclineBtn: {
-    flex: 1, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.surface, minHeight: 54,
-  },
-  jdDeclineBtnText: { fontSize: 14, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 0.5 },
-  jdAcceptBtnWrap: { flex: 1.6, borderRadius: 14 },
-  jdAcceptBtn: {
-    backgroundColor: Colors.success, borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
-    minHeight: 54,
-  },
-  jdAcceptBtnText: { fontSize: 14, fontWeight: '800', color: Colors.white, letterSpacing: 0.5 },
-  jdStatusPillRow: { alignItems: 'center', marginBottom: 12 },
-  jdStatusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
-  },
-  jdStatusPillText: { fontSize: 13, fontWeight: '700' },
-  jdNavBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderWidth: 1.5, borderColor: '#92400E40', borderRadius: 14,
-    paddingVertical: 16, backgroundColor: Colors.surface, minHeight: 54,
-  },
-  jdNavBtnText: { fontSize: 13, fontWeight: '800', color: '#92400E', letterSpacing: 0.3 },
-  jdSignOnBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderWidth: 1.5, borderColor: `${Colors.info}40`, borderRadius: 14,
-    paddingVertical: 16, backgroundColor: Colors.surface, minHeight: 54,
-  },
-  jdSignOnBtnText: { fontSize: 13, fontWeight: '800', color: Colors.info, letterSpacing: 0.3 },
-  jdBtnDisabled: { opacity: 0.4, borderColor: Colors.border },
-  jdFooter: {
-    fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center',
-    lineHeight: 18, marginTop: 8,
-  },
-  jdNotesCard: {
-    backgroundColor: '#F8FAFC', borderRadius: 14, padding: 16, marginBottom: 20,
-    borderWidth: 1, borderColor: Colors.borderLight,
-  },
-  jdNotesHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8,
-  },
-  jdNotesLabel: {
-    fontSize: 11, fontWeight: '700', color: Colors.orange,
-    letterSpacing: 0.5, flex: 1,
-  },
-  jdNotesText: { fontSize: 14, color: Colors.textSecondary, lineHeight: 21 },
-  jdNotesShowMore: {
-    fontSize: 12, fontWeight: '700', color: Colors.info, marginTop: 6,
-  },
-
-  // Legacy job card (kept for compatibility)
-  jobCard: {
-    backgroundColor: Colors.surface, borderRadius: 18, padding: 18, marginBottom: 12,
-  },
-  jobStatusPill: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 10 },
-  jobStatusText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-  jobTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink, marginBottom: 12 },
-  jobRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  jobRowText: { fontSize: 13, color: Colors.textSecondary },
-  notesCard: {
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16,
-    borderLeftWidth: 3, borderLeftColor: Colors.orange,
-  },
-  notesLabel: { fontSize: 11, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 0.5, marginBottom: 6, textTransform: 'uppercase' },
-  notesText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  // Job detail — Phase 3 redesign (.132p2)
+  // Styles now in separate `jd` stylesheet below
+  jdHeader: {}, // unused — kept to avoid references breaking
   mockBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginVertical: 12,
@@ -1213,3 +1106,112 @@ const s = StyleSheet.create({
   },
   mockBadgeText: { fontSize: 11, fontWeight: '700', color: '#DC2626' },
 });
+
+// ── Job Detail stylesheet — Phase 3 (.132p2) ──
+const CARD_BG = '#F5F5F0';
+const CARD_BORDER = '#E5E5E0';
+
+const jd = StyleSheet.create({
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#111827', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14,
+  },
+  backBtn: { padding: 4, marginRight: 8 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: Colors.white, lineHeight: 26 },
+  chip: {
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1.5, marginLeft: 8, flexShrink: 0, maxWidth: 180,
+  },
+  chipText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+  scroll: { padding: 16, paddingBottom: 40 },
+  // Map card (fallback)
+  mapCard: {
+    backgroundColor: CARD_BG, borderRadius: 16, padding: 18,
+    borderWidth: 1, borderColor: CARD_BORDER, marginBottom: 14,
+  },
+  mapIconRow: { flexDirection: 'row', alignItems: 'center' },
+  mapPin: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center',
+  },
+  mapAddress: { fontSize: 15, fontWeight: '700', color: Colors.ink, lineHeight: 20 },
+  mapDistance: { fontSize: 12, color: Colors.textTertiary, marginTop: 3 },
+  // Field table
+  fieldCard: {
+    backgroundColor: CARD_BG, borderRadius: 16, paddingHorizontal: 18,
+    paddingVertical: 4, marginBottom: 20,
+    borderWidth: 1, borderColor: CARD_BORDER,
+  },
+  fieldRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, minHeight: 48,
+  },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: '#6B7280', letterSpacing: 0.5, width: 80 },
+  fieldValue: { fontSize: 14, fontWeight: '600', color: Colors.ink, flex: 1, textAlign: 'right' },
+  fieldDivider: { height: 1, backgroundColor: CARD_BORDER },
+  notesMore: { fontSize: 12, fontWeight: '700', color: Colors.info, marginTop: 4, textAlign: 'right' },
+  // Decision row (issued)
+  decisionRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  declineBtn: {
+    flex: 1, borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surface, minHeight: 56,
+  },
+  declineBtnText: { fontSize: 15, fontWeight: '800', color: '#6B7280', letterSpacing: 0.5 },
+  acceptBtnWrap: { flex: 1.6, borderRadius: 14 },
+  acceptBtn: {
+    backgroundColor: '#16A34A', borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
+    minHeight: 56,
+  },
+  acceptBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white, letterSpacing: 0.5 },
+  // Locked row (issued)
+  lockedRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  lockedBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14,
+    paddingVertical: 14, backgroundColor: '#F9FAFB', minHeight: 50, opacity: 0.5,
+  },
+  lockedBtnText: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.3 },
+  footerCaption: {
+    fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center',
+    lineHeight: 18, marginTop: 4,
+  },
+  // Accepted state
+  acceptedPill: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#D1FAE5', borderRadius: 14, paddingVertical: 14, marginBottom: 14,
+  },
+  acceptedPillText: { fontSize: 14, fontWeight: '800', color: '#16A34A' },
+  prestartBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#16A34A', borderRadius: 14, paddingVertical: 16, marginBottom: 12,
+    minHeight: 56,
+  },
+  prestartBtnText: { fontSize: 14, fontWeight: '800', color: Colors.white, letterSpacing: 0.3 },
+  actionRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  navBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 16, minHeight: 56,
+  },
+  navBtnText: { fontSize: 14, fontWeight: '800', color: Colors.white, letterSpacing: 0.3 },
+  signOnBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 14,
+    paddingVertical: 16, backgroundColor: Colors.surface, minHeight: 56,
+  },
+  signOnBtnText: { fontSize: 13, fontWeight: '800', color: Colors.ink, letterSpacing: 0.3 },
+  // Declined state
+  declinedBlock: {
+    alignItems: 'center', paddingVertical: 24, gap: 8,
+  },
+  declinedTitle: { fontSize: 16, fontWeight: '700', color: '#9CA3AF' },
+  declinedSub: { fontSize: 13, color: '#9CA3AF', marginBottom: 8 },
+  backHomeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: `${Colors.info}40`, borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 20, marginTop: 8,
+  },
+  backHomeBtnText: { fontSize: 14, fontWeight: '700', color: Colors.info },
+});
+
