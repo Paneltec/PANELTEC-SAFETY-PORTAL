@@ -5,12 +5,17 @@
     "version": "1.0.48",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
-    "scheme": "paneltec-mobile",
+    "scheme": ["paneltec-mobile", "paneltec"],
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.whscompliance.fv5aib",
       "buildNumber": "170",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan QR codes for site sign-on and vehicle ID",
+        "NSPhotoLibraryUsageDescription": "Attach photos to hazard and incident reports",
+        "NSLocationWhenInUseUsageDescription": "Show your location on the site map"
+      },
       "associatedDomains": [
         "applinks:whs-compliance.preview.emergentagent.com",
         "applinks:paneltec.com.au",
@@ -23,6 +28,10 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.emergent.whscompliance.fv5aib",
+      "permissions": [
+        "android.permission.RECEIVE_SMS",
+        "android.permission.READ_SMS"
+      ],
       "versionCode": 170,
       "intentFilters": [
         {
@@ -69,7 +78,8 @@
       "expo-secure-store",
       "expo-sharing",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      ["./plugins/expo-sms-receiver/app.plugin.js", { "senderFilter": "Paneltec01" }]
     ],
     "experiments": {
       "typedRoutes": true

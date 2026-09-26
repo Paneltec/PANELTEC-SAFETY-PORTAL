@@ -17,6 +17,8 @@ import { MOCK_COMPLIANCE_LIST, MOCK_AD_HOC_JOB } from '../../src/services/mockDa
 import { acceptDailyJob, declineDailyJob } from '../../src/services/dailyJobs';
 import { useUpdateCheck } from '../../src/features/updates/useUpdateCheck';
 import UpdateBanner from '../../src/features/updates/UpdateBanner';
+import PasteJobSmsModal from '../../src/components/PasteJobSmsModal';
+import { startSmsListener, stopSmsListener, setOnJobCreated } from '../../src/lib/smsReceiver';
 
 type ViewMode = 'home' | 'signed_on' | 'job_detail';
 
@@ -42,6 +44,27 @@ export default function HomeScreen() {
   const [hasNotification, setHasNotification] = useState(false);
   const [jobActioning, setJobActioning] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [showPasteModal, setShowPasteModal] = useState(false);
+
+  // Accept button pulse animation
+  const acceptPulseAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const job = todayJob || MOCK_AD_HOC_JOB;
+    const isPendingJob = job && (job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new');
+    if (isPendingJob && viewMode === 'job_detail') {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(acceptPulseAnim, { toValue: 1, duration: 1000, useNativeDriver: false }),
+          Animated.timing(acceptPulseAnim, { toValue: 0, duration: 1000, useNativeDriver: false }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      acceptPulseAnim.setValue(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayJob?.status, viewMode, acceptPulseAnim]);
 
   // Pulse animation for new-job tile
   const pulseAnim = useRef(new Animated.Value(0)).current;
@@ -69,6 +92,19 @@ export default function HomeScreen() {
 
   // Update check
   const update = useUpdateCheck();
+
+  // Start Android SMS listener
+  useEffect(() => {
+    startSmsListener();
+    setOnJobCreated((job: any) => {
+      setTodayJob(job);
+      setJobLoading(false);
+    });
+    return () => {
+      stopSmsListener();
+      setOnJobCreated(null);
+    };
+  }, []);
 
   // Sign-on state
   const [signedOnSite, setSignedOnSite] = useState<string | null>(null);
@@ -466,17 +502,28 @@ export default function HomeScreen() {
                   <Text style={s.jdDeclineBtnText}>DECLINE</Text>
                 )}
               </TouchableOpacity>
-              <TouchableOpacity
-                testID="job-detail-accept-btn"
-                style={s.jdAcceptBtn}
-                onPress={() => handleAcceptJob(job)}
-                disabled={jobActioning}
-                activeOpacity={0.7}
-              >
-                {jobActioning ? <ActivityIndicator size="small" color={Colors.white} /> : (
-                  <Text style={s.jdAcceptBtnText}>ACCEPT JOB</Text>
-                )}
-              </TouchableOpacity>
+              <Animated.View style={[
+                s.jdAcceptBtnWrap,
+                {
+                  shadowColor: '#10B981',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowRadius: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [4, 14] }),
+                  shadowOpacity: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.6] }),
+                  elevation: 4,
+                },
+              ]}>
+                <TouchableOpacity
+                  testID="job-detail-accept-btn"
+                  style={s.jdAcceptBtn}
+                  onPress={() => handleAcceptJob(job)}
+                  disabled={jobActioning}
+                  activeOpacity={0.7}
+                >
+                  {jobActioning ? <ActivityIndicator size="small" color={Colors.white} /> : (
+                    <Text style={s.jdAcceptBtnText}>ACCEPT JOB</Text>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
             </View>
           ) : (
             <View style={s.jdStatusPillRow}>
@@ -722,7 +769,7 @@ export default function HomeScreen() {
             outputRange: [0, 0.35],
           });
           return (
-            <>
+            <View>
               {isNewJob && (
                 <View testID="home-new-job-banner" style={s.newJobBanner}>
                   <Ionicons name="notifications" size={16} color={Colors.success} />
@@ -763,17 +810,38 @@ export default function HomeScreen() {
                   <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
                 </TouchableOpacity>
               </Animated.View>
-            </>
+            </View>
           );
         })() : (
-          <View testID="home-no-job" style={s.noJobCard}>
-            <Ionicons name="time-outline" size={20} color={Colors.textTertiary} />
-            <Text style={s.noJobText}>Ready when the office issues today&apos;s job.</Text>
+          <View>
+            <View testID="home-no-job" style={s.noJobCard}>
+              <Ionicons name="time-outline" size={20} color={Colors.textTertiary} />
+              <Text style={s.noJobText}>Ready when the office issues today&apos;s job.</Text>
+            </View>
+            <TouchableOpacity
+              testID="home-paste-sms-btn"
+              style={s.pasteSmsBtn}
+              onPress={() => setShowPasteModal(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="clipboard-outline" size={16} color={Colors.info} />
+              <Text style={s.pasteSmsBtnText}>Paste job SMS</Text>
+            </TouchableOpacity>
           </View>
         )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Paste SMS Modal (iOS / manual flow) */}
+      <PasteJobSmsModal
+        visible={showPasteModal}
+        onClose={() => setShowPasteModal(false)}
+        onJobCreated={(job) => {
+          setTodayJob(job);
+          setShowPasteModal(false);
+        }}
+      />
     </View>
   );
 }
@@ -909,6 +977,13 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, padding: 16,
   },
   noJobText: { fontSize: 14, fontWeight: '500', color: Colors.textTertiary },
+  pasteSmsBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: `${Colors.info}40`, borderRadius: 12,
+    paddingVertical: 12, marginTop: 10, backgroundColor: 'rgba(59,130,246,0.06)',
+    minHeight: 44,
+  },
+  pasteSmsBtnText: { fontSize: 13, fontWeight: '700', color: Colors.info },
 
   // Signed on
   backBtn: { padding: 4, marginRight: 8 },
@@ -1003,12 +1078,11 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface, minHeight: 54,
   },
   jdDeclineBtnText: { fontSize: 14, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 0.5 },
+  jdAcceptBtnWrap: { flex: 1.6, borderRadius: 14 },
   jdAcceptBtn: {
-    flex: 1.6, backgroundColor: Colors.success, borderRadius: 14,
+    backgroundColor: Colors.success, borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
     minHeight: 54,
-    shadowColor: Colors.success, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
   jdAcceptBtnText: { fontSize: 14, fontWeight: '800', color: Colors.white, letterSpacing: 0.5 },
   jdStatusPillRow: { alignItems: 'center', marginBottom: 12 },
