@@ -1,6 +1,7 @@
 /**
- * Tab layout — v58.13.132mc
- * 4 tabs: HOME · FORMS · FLEET · SETTINGS
+ * Tab layout — v58.13.132n5m3
+ * 5 tabs: HOME · FORMS · FLEET · MY WORK · SETTINGS
+ * .132n5m3 — Added MY WORK tab (light scaffold).
  * .132mc — Documents tab hidden (doc-library now web-only per admin cutover).
  * Haptic feedback on tab switch.
  * profile.tsx and docs.tsx kept in (tabs) but hidden via href: null.
@@ -78,6 +79,15 @@ export default function TabLayout() {
           title: 'Fleet',
           tabBarIcon: ({ focused, color }) => (
             <TabIcon name={focused ? 'car' : 'car-outline'} color={color} size={22} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="my-work"
+        options={{
+          title: 'My Work',
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name={focused ? 'briefcase' : 'briefcase-outline'} color={color} size={22} />
           ),
         }}
       />
