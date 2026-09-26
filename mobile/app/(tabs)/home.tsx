@@ -422,7 +422,13 @@ export default function HomeScreen() {
           <Text testID="home-compliance-title" style={s.sectionTitle}>{"Today's Compliance"}</Text>
         </View>
         {MOCK_COMPLIANCE_LIST.map((item) => (
-          <TouchableOpacity key={item.id} testID={`compliance-item-${item.id}`} style={s.complianceRow} onPress={() => {}}>
+          <TouchableOpacity key={item.id} testID={`compliance-item-${item.id}`} style={s.complianceRow} onPress={() => {
+            if (item.type === 'swms') {
+              router.push({ pathname: '/forms/category/[key]', params: { key: 'swms', title: 'SWMS' } } as never);
+            } else if (item.type === 'pre_start') {
+              router.push({ pathname: '/forms/picker', params: { category: 'pre_start', title: 'Pre-Start' } } as never);
+            }
+          }}>
             <View style={[s.complianceDot, {
               backgroundColor: item.status === 'overdue' ? Colors.error
                 : item.status === 'due' ? Colors.warning

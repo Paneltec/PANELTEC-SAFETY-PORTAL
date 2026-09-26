@@ -204,7 +204,7 @@ export default function ProfileScreen() {
           iconBg="#DBEAFE"
           title="My SWMS"
           subtitle="Safe Work Method Statements"
-          onPress={() => {}}
+          onPress={() => router.push({ pathname: '/forms/category/[key]', params: { key: 'swms', title: 'SWMS' } } as never)}
         />
         <ProfileRow
           testID="profile-nav-settings"

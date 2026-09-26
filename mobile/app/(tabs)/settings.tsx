@@ -178,6 +178,12 @@ export default function SettingsScreen() {
           onPress={() => router.push('/(screens)/my-work')}
         />
         <SettingsRow
+          testID="settings-nav-swms"
+          icon="shield-checkmark-outline" iconColor="#8B5CF6" iconBg="#F5F3FF"
+          title="My SWMS"
+          onPress={() => router.push({ pathname: '/forms/category/[key]', params: { key: 'swms', title: 'SWMS' } } as never)}
+        />
+        <SettingsRow
           testID="settings-nav-askai"
           icon="sparkles-outline" iconColor="#7C3AED" iconBg="#F5F3FF"
           title="Ask AI"
