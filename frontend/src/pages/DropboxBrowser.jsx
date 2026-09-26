@@ -1,5 +1,13 @@
 // v58.13.132n2 — Dropbox in-app file browser page.
 //
+// `.132n2c` — UX polish pass. Adds:
+//   · Back arrow (up one folder) button beside the breadcrumb.
+//   · Row-level checkboxes + header tri-state "select all".
+//   · Selection toolbar: bulk Download + bulk Delete + Deselect.
+//   · Richer row display (Modified with time, human-readable Size).
+//   · Dropbox brand blue (#0061FF) on primary buttons, checkboxes,
+//     row-hover accent, and active breadcrumb.
+//
 // `.132n2b` — File-row clicks now open <FilePreviewModal> instead
 // of popping the raw Dropbox temp link in a new tab. Downloads
 // still available from inside the modal.
@@ -16,10 +24,11 @@
 //   · upload file (button + drag-drop, chunked >150MB server-side)
 //   · new folder
 //   · delete (with confirm)
+//   · bulk select + bulk download / bulk delete (`.132n2c`)
 //   · client-side filter box
 //
 // Phase C deferred: rename, move, server-side search,
-// tags/comments.
+// tags/comments, folder-zip bulk download.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -33,7 +42,14 @@ import {
   ArrowUpload20Regular, FolderAdd20Regular, ArrowClockwise20Regular,
   ArrowDownload20Regular, Delete20Regular, Search20Regular,
   ChevronRight16Regular, Dismiss20Regular, ArrowUp20Regular, ArrowDown20Regular,
+  ArrowLeft20Regular,
 } from '@fluentui/react-icons';
+
+// Dropbox brand blue for primary accents. Kept as an inline const
+// (not a Tailwind theme colour) so index.css doesn't get widened
+// beyond the browser's own scope — this colour is Dropbox-specific
+// and shouldn't leak into other product surfaces.
+const DBX_BLUE = '#0061FF';
 
 const TEAM_ROOT_LABEL = 'Paneltec-General Administration';
 // v58.13.132n2 — Frontend uses namespace-relative paths throughout
@@ -58,6 +74,12 @@ export default function DropboxBrowser() {
   const [dragOver, setDragOver] = useState(false);
   // `.132n2b` — file entry being previewed in the modal (null when closed).
   const [previewEntry, setPreviewEntry] = useState(null);
+  // `.132n2c` — multi-select. `selectedIds` is a Set of entry
+  // `path` strings (canonical, namespace-relative). Cleared on
+  // folder change so selections don't quietly persist across
+  // navigations.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(null); // null | array
   const fileInputRef = useRef(null);
 
   const refresh = useCallback(async () => {
@@ -188,6 +210,107 @@ export default function DropboxBrowser() {
     }
   };
 
+  // ── `.132n2c` — up-arrow navigation ──────────────────────
+  const parentPath = useMemo(() => {
+    // Namespace-relative paths: `""` = team folder root,
+    // `"/Foo"` = one level below root, `"/Foo/Bar"` = two levels.
+    // Up-from-root returns null (button will be disabled).
+    if (!path || path === ROOT_PATH) return null;
+    const segs = path.split('/').filter(Boolean);
+    segs.pop();
+    return segs.length === 0 ? ROOT_PATH : '/' + segs.join('/');
+  }, [path]);
+
+  const goUp = () => {
+    if (parentPath === null) return;
+    setPath(parentPath);
+  };
+
+  // ── `.132n2c` — multi-select ─────────────────────────────
+  // Clear selection whenever the visible folder changes. Selections
+  // that would silently persist across navigations are a common
+  // "wait, I meant THIS folder!" trap in file managers.
+  useEffect(() => { setSelectedIds(new Set()); }, [path]);
+
+  const toggleSelect = (entry) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(entry.path)) next.delete(entry.path);
+      else next.add(entry.path);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      // If every visible row is already selected, deselect all.
+      // Otherwise select every visible row (including folders — the
+      // toolbar's bulk-download handler skips folders with a toast).
+      const visibleIds = rows.map((r) => r.path);
+      const allSelected = visibleIds.length > 0 &&
+        visibleIds.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(visibleIds);
+    });
+  };
+
+  const doBulkDownload = async () => {
+    const selectedEntries = rows.filter((r) => selectedIds.has(r.path));
+    const files = selectedEntries.filter((r) => r.type === 'file');
+    const folders = selectedEntries.filter((r) => r.type === 'folder');
+    if (folders.length > 0) {
+      toast.info(`Skipping ${folders.length} folder${folders.length === 1 ? '' : 's'}: open them and select files inside for bulk download.`);
+    }
+    if (files.length === 0) return;
+    toast.success(`Starting ${files.length} download${files.length === 1 ? '' : 's'}…`);
+    // Sequential temp-link fetch + window.open. Serial (not
+    // Promise.all) so we don't hammer the Dropbox rate limit and
+    // so popup-blockers get one trigger at a time rather than a
+    // 5-tab burst (which browsers reliably block).
+    let ok = 0, fail = 0;
+    for (const f of files) {
+      try {
+        const { data } = await api.get('/dropbox/browse/download', { params: { path: f.path } });
+        // `noopener` still lets the download start in a new tab.
+        // Some browsers block multiple back-to-back window.open;
+        // this is documented in the ship memo — worst case the
+        // user re-runs on the offending file.
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+        ok++;
+      } catch (err) {
+        console.warn('[dropbox.bulkDownload]', f.name, err); // eslint-disable-line no-console
+        fail++;
+      }
+    }
+    if (fail === 0) {
+      toast.success(`Downloaded ${ok} file${ok === 1 ? '' : 's'}.`);
+    } else {
+      toast.error(`Downloaded ${ok} · ${fail} failed. Popup blocker? Try individual downloads.`);
+    }
+  };
+
+  const doBulkDelete = async () => {
+    const selectedEntries = rows.filter((r) => selectedIds.has(r.path));
+    if (selectedEntries.length === 0) return;
+    const results = await Promise.allSettled(
+      selectedEntries.map((e) =>
+        api.delete('/dropbox/browse', { params: { path: e.path } })
+      )
+    );
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    const fail = results.length - ok;
+    if (fail === 0) {
+      toast.success(`Deleted ${ok} item${ok === 1 ? '' : 's'}.`);
+    } else {
+      toast.error(`Deleted ${ok} · ${fail} failed. Refresh to see the current state.`);
+    }
+    setBulkDeleteConfirm(null);
+    clearSelection();
+    refresh();
+  };
+
   // ── access denied ────────────────────────────────────────
   if (!allowed) {
     return (
@@ -225,26 +348,42 @@ export default function DropboxBrowser() {
       <div className="rounded-2xl border border-slate-200 bg-white p-4 mb-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <nav className="flex items-center flex-wrap gap-1 text-sm" data-testid="dropbox-breadcrumb">
-            {crumbs.map((c, i) => (
-              <React.Fragment key={c.path}>
-                {i > 0 && <ChevronRight16Regular className="text-slate-400" style={{ width: 14, height: 14 }} />}
-                <button
-                  type="button"
-                  onClick={() => setPath(c.path)}
-                  className={`px-2 py-1 rounded-md hover:bg-slate-100 ${i === crumbs.length - 1 ? 'font-semibold text-slate-900' : 'text-slate-600'}`}
-                  data-testid={`dropbox-crumb-${i}`}
-                >
-                  {c.label}
-                </button>
-              </React.Fragment>
-            ))}
+            <button
+              type="button"
+              onClick={goUp}
+              disabled={parentPath === null}
+              title="Up one folder"
+              aria-label="Up one folder"
+              data-testid="dropbox-up-btn"
+              className="mr-1 p-1.5 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ArrowLeft20Regular style={{ width: 16, height: 16 }} />
+            </button>
+            {crumbs.map((c, i) => {
+              const isActive = i === crumbs.length - 1;
+              return (
+                <React.Fragment key={c.path}>
+                  {i > 0 && <ChevronRight16Regular className="text-slate-400" style={{ width: 14, height: 14 }} />}
+                  <button
+                    type="button"
+                    onClick={() => setPath(c.path)}
+                    className={`px-2 py-1 rounded-md hover:bg-slate-100 ${isActive ? 'font-semibold text-slate-900 border-b-2' : 'text-slate-600 border-b-2 border-transparent'}`}
+                    style={isActive ? { borderColor: DBX_BLUE } : undefined}
+                    data-testid={`dropbox-crumb-${i}`}
+                  >
+                    {c.label}
+                  </button>
+                </React.Fragment>
+              );
+            })}
           </nav>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               data-testid="dropbox-upload-btn"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3 py-2"
+              className="inline-flex items-center gap-1.5 rounded-lg text-white text-xs font-semibold px-3 py-2 hover:brightness-110"
+              style={{ backgroundColor: DBX_BLUE }}
             >
               <ArrowUpload20Regular style={{ width: 16, height: 16 }} />
               Upload
@@ -261,7 +400,8 @@ export default function DropboxBrowser() {
               type="button"
               onClick={() => setMkdirModal({ name: '' })}
               data-testid="dropbox-mkdir-btn"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2"
+              className="inline-flex items-center gap-1.5 rounded-lg border text-xs font-semibold px-3 py-2 hover:bg-slate-50"
+              style={{ borderColor: DBX_BLUE, color: DBX_BLUE }}
             >
               <FolderAdd20Regular style={{ width: 16, height: 16 }} />
               New folder
@@ -291,6 +431,48 @@ export default function DropboxBrowser() {
         </div>
       </div>
 
+      {/* `.132n2c` — selection toolbar (only when >=1 row selected) */}
+      {selectedIds.size > 0 && (
+        <div
+          className="rounded-2xl border p-3 mb-4 flex items-center justify-between gap-3 flex-wrap"
+          style={{ borderColor: DBX_BLUE, backgroundColor: '#0061FF0D' }}
+          data-testid="dropbox-selection-toolbar"
+        >
+          <div className="text-sm font-semibold" style={{ color: DBX_BLUE }} data-testid="dropbox-selection-count">
+            {selectedIds.size} selected
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={doBulkDownload}
+              data-testid="dropbox-bulk-download-btn"
+              className="inline-flex items-center gap-1.5 rounded-lg text-white text-xs font-semibold px-3 py-2 hover:brightness-110"
+              style={{ backgroundColor: DBX_BLUE }}
+            >
+              <ArrowDownload20Regular style={{ width: 14, height: 14 }} />
+              Download
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkDeleteConfirm(rows.filter((r) => selectedIds.has(r.path)))}
+              data-testid="dropbox-bulk-delete-btn"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2"
+            >
+              <Delete20Regular style={{ width: 14, height: 14 }} />
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              data-testid="dropbox-bulk-deselect-btn"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2"
+            >
+              Deselect all
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Upload progress panel */}
       {uploads.length > 0 && (
         <UploadPanel uploads={uploads} onClear={() => setUploads([])} />
@@ -298,15 +480,23 @@ export default function DropboxBrowser() {
 
       {/* File list */}
       <div
-        className={`rounded-2xl border ${dragOver ? 'border-blue-400 bg-blue-50/40' : 'border-slate-200 bg-white'} overflow-hidden`}
+        className={`rounded-2xl border ${dragOver ? 'bg-blue-50/40' : 'bg-white'} overflow-hidden`}
+        style={dragOver ? { borderColor: DBX_BLUE } : { borderColor: '#e2e8f0' }}
         data-testid="dropbox-file-list"
       >
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <SortHeader label="Name" col="name" sortBy={sortBy} onClick={toggleSort} className="pl-4 text-left" />
-              <SortHeader label="Modified" col="modified" sortBy={sortBy} onClick={toggleSort} className="text-left w-52" />
-              <SortHeader label="Size" col="size" sortBy={sortBy} onClick={toggleSort} className="text-right w-28" />
+              <th className="pl-4 w-10">
+                <SelectAllCheckbox
+                  visibleIds={rows.map((r) => r.path)}
+                  selectedIds={selectedIds}
+                  onToggle={toggleSelectAllVisible}
+                />
+              </th>
+              <SortHeader label="Name" col="name" sortBy={sortBy} onClick={toggleSort} className="text-left" />
+              <SortHeader label="Modified" col="modified" sortBy={sortBy} onClick={toggleSort} className="text-left w-56" />
+              <SortHeader label="Size" col="size" sortBy={sortBy} onClick={toggleSort} className="text-right w-24" />
               <th className="w-16 pr-4"></th>
             </tr>
           </thead>
@@ -315,7 +505,7 @@ export default function DropboxBrowser() {
               <>
                 {[0, 1, 2, 3].map((i) => (
                   <tr key={i} className="border-b border-slate-100 last:border-0">
-                    <td colSpan={4} className="px-4 py-3">
+                    <td colSpan={5} className="px-4 py-3">
                       <div className="h-4 bg-slate-100 rounded animate-pulse" />
                     </td>
                   </tr>
@@ -324,7 +514,7 @@ export default function DropboxBrowser() {
             )}
             {!state.loading && state.error && (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center">
+                <td colSpan={5} className="px-4 py-12 text-center">
                   <div className="text-sm text-rose-600 font-medium mb-2" data-testid="dropbox-error">{state.error}</div>
                   <button
                     type="button"
@@ -339,7 +529,7 @@ export default function DropboxBrowser() {
             )}
             {!state.loading && !state.error && rows.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-slate-500 text-sm" data-testid="dropbox-empty">
+                <td colSpan={5} className="px-4 py-12 text-center text-slate-500 text-sm" data-testid="dropbox-empty">
                   {filter
                     ? <>No items match <strong>{filter}</strong>.</>
                     : <>This folder is empty. Upload a file or create a folder to get started.</>}
@@ -347,7 +537,14 @@ export default function DropboxBrowser() {
               </tr>
             )}
             {!state.loading && !state.error && rows.map((e) => (
-              <Row key={e.path} entry={e} onOpen={() => openEntry(e)} onDelete={() => setConfirmDelete(e)} />
+              <Row
+                key={e.path}
+                entry={e}
+                selected={selectedIds.has(e.path)}
+                onToggleSelect={() => toggleSelect(e)}
+                onOpen={() => openEntry(e)}
+                onDelete={() => setConfirmDelete(e)}
+              />
             ))}
           </tbody>
         </table>
@@ -412,10 +609,51 @@ export default function DropboxBrowser() {
 
       {dragOver && (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-40">
-          <div className="rounded-2xl bg-blue-600 text-white px-8 py-6 text-sm font-semibold shadow-2xl">
+          <div
+            className="rounded-2xl text-white px-8 py-6 text-sm font-semibold shadow-2xl"
+            style={{ backgroundColor: DBX_BLUE }}
+          >
             Drop files to upload to <span className="font-mono">{path || TEAM_ROOT_LABEL}</span>
           </div>
         </div>
+      )}
+
+      {/* `.132n2c` — bulk delete confirm modal */}
+      {bulkDeleteConfirm && (
+        <Modal onClose={() => setBulkDeleteConfirm(null)}>
+          <div className="text-sm font-semibold text-slate-900 mb-2">
+            Delete {bulkDeleteConfirm.length} item{bulkDeleteConfirm.length === 1 ? '' : 's'}?
+          </div>
+          <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+            The following items will be permanently removed from Dropbox. This action cannot be undone.
+          </p>
+          <ul className="mb-5 max-h-40 overflow-y-auto text-xs text-slate-700 border border-slate-200 rounded-lg p-2 space-y-1"
+              data-testid="dropbox-bulk-delete-list">
+            {bulkDeleteConfirm.map((e) => (
+              <li key={e.path} className="flex items-center gap-2">
+                <span className={`inline-block w-2 h-2 rounded-full ${e.type === 'folder' ? 'bg-slate-400' : 'bg-slate-300'}`} />
+                <span className="font-mono truncate">{e.name}</span>
+                <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">
+                  {e.type}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setBulkDeleteConfirm(null)}
+              className="rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2"
+              data-testid="dropbox-bulk-delete-cancel"
+            >Cancel</button>
+            <button
+              type="button"
+              onClick={doBulkDelete}
+              className="rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2"
+              data-testid="dropbox-bulk-delete-confirm"
+            >Delete {bulkDeleteConfirm.length} permanently</button>
+          </div>
+        </Modal>
       )}
 
       {/* v58.13.132n2b — inline file preview modal. */}
@@ -447,23 +685,71 @@ function SortHeader({ label, col, sortBy, onClick, className }) {
   );
 }
 
-function Row({ entry, onOpen, onDelete }) {
+function SelectAllCheckbox({ visibleIds, selectedIds, onToggle }) {
+  const ref = useRef(null);
+  const total = visibleIds.length;
+  const selectedInView = visibleIds.filter((id) => selectedIds.has(id)).length;
+  const allSelected = total > 0 && selectedInView === total;
+  const someSelected = selectedInView > 0 && selectedInView < total;
+  useEffect(() => {
+    // Native tri-state via the `indeterminate` DOM property — no
+    // equivalent JSX attribute, so we imperatively set it.
+    if (ref.current) ref.current.indeterminate = someSelected;
+  }, [someSelected]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={allSelected}
+      onChange={onToggle}
+      disabled={total === 0}
+      className="h-4 w-4 rounded border-slate-300 cursor-pointer disabled:opacity-30"
+      style={{ accentColor: DBX_BLUE }}
+      aria-label="Select all rows in this folder"
+      data-testid="dropbox-select-all"
+    />
+  );
+}
+
+function Row({ entry, selected, onToggleSelect, onOpen, onDelete }) {
   const Icon = iconFor(entry);
   return (
-    <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50 group" data-testid={`dropbox-row-${entry.name}`}>
-      <td className="pl-4 py-2.5">
+    <tr
+      className={`border-b border-slate-100 last:border-0 group transition-colors ${selected ? '' : 'hover:bg-[color:rgba(0,97,255,0.05)]'}`}
+      style={selected ? { backgroundColor: 'rgba(0, 97, 255, 0.08)' } : undefined}
+      data-testid={`dropbox-row-${entry.name}`}
+    >
+      <td className="pl-4 py-2.5 w-10">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4 rounded border-slate-300 cursor-pointer"
+          style={{ accentColor: DBX_BLUE }}
+          aria-label={`Select ${entry.name}`}
+          data-testid={`dropbox-select-${entry.name}`}
+        />
+      </td>
+      <td className="py-2.5">
         <button
           type="button"
           onClick={onOpen}
-          className="inline-flex items-center gap-2.5 text-left hover:text-blue-700"
+          className="inline-flex items-center gap-2.5 text-left"
           data-testid={`dropbox-open-${entry.name}`}
         >
-          <Icon style={{ width: 20, height: 20 }} className={entry.type === 'folder' ? 'text-blue-500' : 'text-slate-500'} />
-          <span className="text-sm text-slate-800 group-hover:text-blue-700">{entry.name}</span>
+          <Icon
+            style={{ width: 20, height: 20, color: entry.type === 'folder' ? DBX_BLUE : undefined }}
+            className={entry.type === 'folder' ? '' : 'text-slate-500'}
+          />
+          <span className="text-sm text-slate-800 font-medium hover:underline">{entry.name}</span>
         </button>
       </td>
-      <td className="text-slate-500 text-xs">{formatModified(entry.modified)}</td>
-      <td className="text-right text-slate-500 text-xs pr-2">
+      <td className="text-slate-600 text-xs whitespace-nowrap" data-testid={`dropbox-modified-${entry.name}`}>
+        {formatModified(entry.modified)}
+      </td>
+      <td className="text-right text-slate-700 text-xs font-medium tabular-nums pr-2 whitespace-nowrap"
+          data-testid={`dropbox-size-${entry.name}`}>
         {entry.type === 'file' ? formatSize(entry.size) : '—'}
       </td>
       <td className="pr-4 text-right">
@@ -517,9 +803,17 @@ function formatModified(iso) {
   if (!iso) return '—';
   try {
     const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    // `.132n2c` — punchier format: "Sep 25, 2026 · 11:38 AM".
+    // The middle dot separator makes date-vs-time scannable at a
+    // glance. Uses the user's locale + timezone (no override —
+    // Dropbox itself returns UTC ISO, the browser converts).
+    const datePart = d.toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
     });
+    const timePart = d.toLocaleTimeString(undefined, {
+      hour: 'numeric', minute: '2-digit',
+    });
+    return `${datePart} · ${timePart}`;
   } catch { return iso; }
 }
 
@@ -551,8 +845,11 @@ function UploadPanel({ uploads, onClear }) {
             </div>
             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className={`h-full transition-all ${u.status === 'error' ? 'bg-rose-500' : u.status === 'done' ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                style={{ width: `${u.progress}%` }}
+                className={`h-full transition-all ${u.status === 'error' ? 'bg-rose-500' : u.status === 'done' ? 'bg-emerald-500' : ''}`}
+                style={{
+                  width: `${u.progress}%`,
+                  backgroundColor: u.status === 'uploading' ? DBX_BLUE : undefined,
+                }}
               />
             </div>
             {u.error && <div className="text-rose-600 mt-1">{u.error}</div>}
