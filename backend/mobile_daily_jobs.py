@@ -1,26 +1,29 @@
-"""Mobile Daily-Job Assignments — v58.13.132cf.
+"""Mobile Daily-Job Assignments — v58.13.132p0.
 
-Backend for the "SMS you your job for the day; accept in-app" flow, now
-generalised into the **Ad-hoc Job Assignments** admin surface.
+Phase 1 of the 5-phase mobile job flow rebuild. The data model is
+locked to the 7 SMS fields Stephen's whiteboard emits; nothing else
+is invented.
 
 Endpoints (all under `/api/mobile/`):
-  POST /daily-jobs                       admin create (worker+assigner snapshot + preamble + pdf)
-  POST /daily-jobs/parse-pdf             admin PDF upload → AI-parsed form prefill
-  GET  /daily-jobs/today                 worker's assignment for today (Sydney)
-  POST /daily-jobs/{id}/accept           worker accepts (ownership-checked)
-  POST /daily-jobs/{id}/decline          worker declines (ownership-checked)
+  POST /daily-jobs                       admin create (single worker)
+  POST /daily-jobs/parse-pdf             legacy PDF prefill (untouched)
+  GET  /daily-jobs/pdf/{pdf_id}          legacy PDF download (untouched)
+  GET  /daily-jobs/today                 caller's active assignment
+  POST /daily-jobs/{id}/accept           worker accept
+  POST /daily-jobs/{id}/decline          worker decline
+  POST /daily-jobs/{id}/signon           Phase 4 stub (501)
 
-Timezone: Australia/Sydney. `_today_iso()` used to be UTC, which caused
-"disappears at midnight UTC" bugs for the AU admin (`.132cf` fix).
-Every assignment doc now carries both `date_local` (Sydney) and
-`date_utc` (audit) alongside the primary `date` (== date_local).
+Locked schema (see `.132p0` memo):
+  id, job_batch_id, worker_id, worker_email, worker_name,
+  truck, date, site_name, address, customer, staff[], notes,
+  status ∈ {issued, accepted, declined, signed_on, completed},
+  issued_at, accepted_at, declined_at, signed_on_at, signed_on_gps,
+  site_id, site_lat, site_lng,
+  truck_prestart_id, site_prestart_id,
+  created_at, updated_at
 
-Ownership: a worker can only accept/decline their own assignment. Admins
-can create for any user in their org.
-
-Role gate: `.132cf` tightens all endpoints in this module to
-role='admin' only. The previous "admin/manager/hseq_lead/owner"
-permissive gate is retired per Stephen (no managers/HSEQ in this org).
+Purged (task, supervisor_*, truck_name, truck_reg,
+is_past_date_fallback) — see `/app/scripts/migrate_132p0_data_model_reset.py`.
 """
 from __future__ import annotations
 import asyncio
@@ -30,131 +33,250 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
-
-log = logging.getLogger("paneltec.mobile.daily_jobs")
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, ConfigDict, Field
 
 from db import db
 from auth import get_current_user
 from models import now_iso
+from sms_parser import coerce_date, today_iso_sydney
+
+log = logging.getLogger("paneltec.mobile.daily_jobs")
 
 router = APIRouter(tags=["mobile-daily-jobs"])
 
 SYDNEY_TZ = ZoneInfo("Australia/Sydney")
 
 
-# ─────────────── Models ───────────────
+# ─────────────── Constants ───────────────
+
+STATUS_ISSUED = "issued"
+STATUS_ACCEPTED = "accepted"
+STATUS_DECLINED = "declined"
+STATUS_SIGNED_ON = "signed_on"
+STATUS_COMPLETED = "completed"
+VALID_STATUSES = {STATUS_ISSUED, STATUS_ACCEPTED, STATUS_DECLINED,
+                  STATUS_SIGNED_ON, STATUS_COMPLETED}
+TERMINAL_STATUSES = {STATUS_DECLINED, STATUS_COMPLETED}
+
+
+# ─────────────── Locked input model ───────────────
 
 class DailyJobCreateIn(BaseModel):
-    worker_id: str = Field(..., min_length=1)
-    site_id: str = Field(..., min_length=1)
+    """Locked contract — exactly the 7 SMS fields plus a worker
+    identifier. Unknown keys are IGNORED (`extra="ignore"`) so legacy
+    callers that still send `task` / `supervisor_*` / `truck_name` /
+    `truck_reg` don't 422 — but nothing they send survives past the
+    Pydantic boundary.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    # One of these must be supplied.
+    worker_id: Optional[str] = None
+    worker_email: Optional[str] = None
+
+    # The seven SMS fields.
+    truck: Optional[str] = None
     date: Optional[str] = None          # ISO YYYY-MM-DD; defaults to today (Sydney)
+    site_name: Optional[str] = None
+    address: Optional[str] = None
+    customer: Optional[str] = None
+    staff: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
-    site_name: Optional[str] = None     # snapshot for offline UX
-    site_address: Optional[str] = None
-    site_coords: Optional[dict] = None  # {"lat": ..., "lng": ...}
-    # v58.13.132ab — allow admin to replace an existing assignment for the
-    # same worker on the same date. Defaults to false → 409 on duplicate.
+
+    # Admin-only knob to replace an existing (worker, date) row.
     override: bool = False
-    # v58.13.132cf additions
-    preamble: Optional[str] = None      # editable message to worker, ≤500 chars
-    pdf_id: Optional[str] = None        # links to parse-pdf upload
-    pdf_url: Optional[str] = None       # snapshot URL for mobile card
 
 
 # ─────────────── Helpers ───────────────
 
-def _today_iso() -> str:
-    """Return today's date in Australia/Sydney timezone as YYYY-MM-DD.
-
-    v58.13.132cf — switched from UTC. The AU admin's day rolls over at
-    Sydney midnight; using UTC caused "disappears at midnight AEST"
-    bugs where an assignment created 22:00 AEST silently landed on
-    the NEXT day's list."""
-    return datetime.now(SYDNEY_TZ).strftime("%Y-%m-%d")
-
-
-def _now_iso_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def _require_admin(user: dict) -> None:
-    """v58.13.132cf — strict admin-only. The .132n permissive gate
-    (admin/manager/hseq_lead/owner) is retired per Stephen brief."""
     if (user.get("role") or "").lower() != "admin":
         raise HTTPException(403, "Admin role required")
 
 
-async def _dispatch_sms_stub(
-    *, worker_id: str, org_id: str, assignment_id: str,
-    message: str, phone: Optional[str],
-) -> dict:
-    """v58.13.132n — SMS dispatch STUB (Comms Safe Mode)."""
-    row = {
-        "id": str(uuid.uuid4()),
-        "org_id": org_id,
-        "worker_id": worker_id,
-        "assignment_id": assignment_id,
-        "phone": phone,
-        "message": message,
-        "queued_at": now_iso(),
-        "sent_at": None,
-        "provider": None,
-        "provider_message_id": None,
-        "status": "queued_manual",
-    }
-    await db.pending_sms_dispatches.insert_one(row)
-    return {"sms_status": "queued_manual", "queue_id": row["id"]}
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _clean_assignment(doc: dict) -> dict:
+def _clean(doc: dict) -> dict:
+    """Strip Mongo `_id` before returning to callers."""
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
-async def _resolve_assignee(user_or_worker_id: str, org_id: str) -> Optional[dict]:
-    """v58.13.132cf — the FE picker sources from `users` (filtered by
-    role_id), but legacy callers may still pass a `workers.id`. Try
-    users first, then workers, so both id shapes resolve cleanly."""
-    u = await db.users.find_one(
-        {"id": user_or_worker_id, "org_id": org_id},
-        {"_id": 0, "id": 1, "email": 1, "phone": 1, "mobile": 1,
-         "name": 1, "first_name": 1, "last_name": 1, "role_id": 1},
-    )
-    if u:
-        first = (u.get("first_name") or "").strip()
-        last = (u.get("last_name") or "").strip()
-        full = (u.get("name") or f"{first} {last}").strip() or (u.get("email") or "(unnamed)")
-        return {
-            "id": u["id"],
-            "name": full,
-            "phone": u.get("mobile") or u.get("phone"),
-            "role_id": u.get("role_id"),
-            "email": u.get("email"),
-            "kind": "user",
-        }
-    w = await db.workers.find_one(
-        {"id": user_or_worker_id, "org_id": org_id, "deleted_at": None},
-        {"_id": 0, "id": 1, "email": 1, "phone": 1, "mobile": 1,
-         "first_name": 1, "last_name": 1},
-    )
-    if w:
-        first = (w.get("first_name") or "").strip()
-        last = (w.get("last_name") or "").strip()
-        full = f"{first} {last}".strip() or "(unnamed)"
-        return {
-            "id": w["id"],
-            "name": full,
-            "phone": w.get("mobile") or w.get("phone"),
-            "role_id": None,
-            "email": w.get("email"),
-            "kind": "worker",
-        }
+async def _resolve_worker(
+    *, org_id: str, worker_id: Optional[str], worker_email: Optional[str],
+) -> Optional[dict]:
+    """Resolve a worker/user identity for the create-path. Tries
+    `db.users` first (matches the picker feed), then `db.workers`.
+
+    Returns a normalised dict:
+        {id, email, name, phone, kind}
+    """
+    if worker_id:
+        u = await db.users.find_one(
+            {"id": worker_id, "org_id": org_id},
+            {"_id": 0, "id": 1, "email": 1, "name": 1,
+             "first_name": 1, "last_name": 1, "mobile": 1, "phone": 1},
+        )
+        if u:
+            return _worker_row(u, kind="user")
+        w = await db.workers.find_one(
+            {"id": worker_id, "org_id": org_id, "deleted_at": None},
+            {"_id": 0, "id": 1, "email": 1,
+             "first_name": 1, "last_name": 1, "mobile": 1, "phone": 1},
+        )
+        if w:
+            return _worker_row(w, kind="worker")
+    if worker_email:
+        needle = worker_email.strip().lower()
+        u = await db.users.find_one(
+            {"org_id": org_id, "email": {"$regex": f"^{re.escape(needle)}$", "$options": "i"}},
+            {"_id": 0, "id": 1, "email": 1, "name": 1,
+             "first_name": 1, "last_name": 1, "mobile": 1, "phone": 1},
+        )
+        if u:
+            return _worker_row(u, kind="user")
+        w = await db.workers.find_one(
+            {"org_id": org_id, "email": {"$regex": f"^{re.escape(needle)}$", "$options": "i"},
+             "deleted_at": None},
+            {"_id": 0, "id": 1, "email": 1,
+             "first_name": 1, "last_name": 1, "mobile": 1, "phone": 1},
+        )
+        if w:
+            return _worker_row(w, kind="worker")
     return None
+
+
+def _worker_row(r: dict, *, kind: str) -> dict:
+    first = (r.get("first_name") or "").strip()
+    last = (r.get("last_name") or "").strip()
+    full = (r.get("name") or f"{first} {last}").strip() \
+        or (r.get("email") or "(unnamed)")
+    return {
+        "id": r["id"],
+        "email": r.get("email"),
+        "name": full,
+        "phone": r.get("mobile") or r.get("phone"),
+        "kind": kind,
+    }
+
+
+async def _geocode_address(address: str) -> Optional[dict]:
+    """Best-effort geocode via the existing Nominatim proxy. Returns
+    `{lat, lng, display_name}` or None. Never raises — the mobile
+    client tolerates missing coords (falls back to the address string
+    for the Google Maps deep-link)."""
+    if not address or not address.strip():
+        return None
+    # Import lazily so the module still loads if Nominatim is down.
+    try:
+        from mobile_daily_jobs_admin import _GEO_CACHE, _GEO_TTL_S  # noqa: WPS437
+        import httpx
+        import time
+        key = address.strip().lower()
+        now = time.time()
+        hit = _GEO_CACHE.get(key)
+        if hit and (now - hit[0]) < _GEO_TTL_S:
+            return hit[1]
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {"q": address, "format": "json", "limit": 1, "countrycodes": "au"}
+        headers = {"User-Agent": "Paneltec-Civil-Mobile/1.0"}
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            r = await client.get(url, params=params, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+        if not data:
+            return None
+        top = data[0]
+        result = {
+            "lat": float(top["lat"]),
+            "lng": float(top["lon"]),
+            "display_name": top.get("display_name", address),
+        }
+        _GEO_CACHE[key] = (now, result)
+        return result
+    except Exception as exc:  # noqa: BLE001
+        log.info("geocode failed for %r: %s", address, exc)
+        return None
+
+
+async def _match_site(*, org_id: str, site_name: Optional[str],
+                      address: Optional[str]) -> Optional[str]:
+    """Best-effort match against `db.sites`. Returns a `sites.id` or None.
+
+    Match by exact name first (case-insensitive), then by
+    address_full substring. Only surfaces non-deleted rows.
+    """
+    if site_name:
+        s = await db.sites.find_one(
+            {"org_id": org_id, "deleted_at": None,
+             "name": {"$regex": f"^{re.escape(site_name.strip())}$", "$options": "i"}},
+            {"_id": 0, "id": 1},
+        )
+        if s:
+            return s["id"]
+    if address:
+        s = await db.sites.find_one(
+            {"org_id": org_id, "deleted_at": None,
+             "address_full": {"$regex": re.escape(address.strip()), "$options": "i"}},
+            {"_id": 0, "id": 1},
+        )
+        if s:
+            return s["id"]
+    return None
+
+
+def build_assignment_doc(
+    *, org_id: str, worker: dict, payload: DailyJobCreateIn,
+    the_date: str, geocode: Optional[dict], site_id: Optional[str],
+    assigned_by_id: Optional[str] = None, job_batch_id: Optional[str] = None,
+    meta: Optional[dict] = None,
+) -> dict:
+    """Assemble the canonical .132p0 assignment doc. Shared between
+    the single-create and the bulk-create paths so both surfaces
+    produce byte-identical shapes."""
+    issued_at = _now_utc_iso()
+    return {
+        "id": str(uuid.uuid4()),
+        "job_batch_id": job_batch_id or str(uuid.uuid4()),
+        "org_id": org_id,
+        # Worker snapshot — enough to render the tile offline.
+        "worker_id": worker["id"],
+        "worker_email": worker.get("email"),
+        "worker_name": worker["name"],
+        # The seven SMS fields.
+        "truck": (payload.truck or "").strip() or None,
+        "date": the_date,
+        "site_name": (payload.site_name or "").strip() or None,
+        "address": (payload.address or "").strip() or None,
+        "customer": (payload.customer or "").strip() or None,
+        "staff": [s.strip() for s in (payload.staff or []) if s and s.strip()],
+        "notes": (payload.notes or "").strip() or None,
+        # Lifecycle.
+        "status": STATUS_ISSUED,
+        "issued_at": issued_at,
+        "accepted_at": None,
+        "declined_at": None,
+        "signed_on_at": None,
+        "signed_on_gps": None,
+        # Geo enrichment.
+        "site_id": site_id,
+        "site_lat": (geocode or {}).get("lat"),
+        "site_lng": (geocode or {}).get("lng"),
+        # Phase 3+/5 refs (populated later).
+        "truck_prestart_id": None,
+        "site_prestart_id": None,
+        # Audit + convenience.
+        "assigned_by_id": assigned_by_id,
+        "created_at": issued_at,
+        "updated_at": issued_at,
+        "meta": meta or {},
+    }
 
 
 # ─────────────── POST /mobile/daily-jobs ───────────────
@@ -163,15 +285,24 @@ async def _resolve_assignee(user_or_worker_id: str, org_id: str) -> Optional[dic
 async def create_daily_job(body: DailyJobCreateIn,
                            user: dict = Depends(get_current_user)) -> dict:
     _require_admin(user)
-    the_date = body.date or _today_iso()
 
-    assignee = await _resolve_assignee(body.worker_id, user["org_id"])
-    if not assignee:
+    if not body.worker_id and not body.worker_email:
+        raise HTTPException(400, "Provide worker_id or worker_email")
+
+    org_id = user["org_id"]
+    the_date = coerce_date(body.date) or today_iso_sydney()
+
+    worker = await _resolve_worker(
+        org_id=org_id,
+        worker_id=body.worker_id,
+        worker_email=body.worker_email,
+    )
+    if not worker:
         raise HTTPException(404, "Worker not found in your org")
 
-    # v58.13.132ab — duplicate guard.
+    # Duplicate guard on (worker, date).
     existing = await db.daily_job_assignments.find_one(
-        {"org_id": user["org_id"], "worker_id": body.worker_id, "date": the_date},
+        {"org_id": org_id, "worker_id": worker["id"], "date": the_date},
         {"_id": 0, "id": 1},
     )
     if existing and not body.override:
@@ -183,90 +314,36 @@ async def create_daily_job(body: DailyJobCreateIn,
     if existing and body.override:
         await db.daily_job_assignments.delete_one({"id": existing["id"]})
 
-    # v58.13.132cf — assigner (admin) snapshot.
-    assigner_name = (
-        user.get("name")
-        or f"{(user.get('first_name') or '').strip()} {(user.get('last_name') or '').strip()}".strip()
-        or user.get("email")
-        or "(unknown admin)"
+    # Geo enrichment — never blocks the create if Nominatim is down.
+    geocode = await _geocode_address(body.address or body.site_name or "")
+    site_id = await _match_site(
+        org_id=org_id,
+        site_name=body.site_name,
+        address=body.address,
     )
 
-    # Preamble — cap length + default when blank.
-    preamble = (body.preamble or "").strip()
-    if len(preamble) > 500:
-        preamble = preamble[:500]
-    if not preamble:
-        preamble = "You have been assigned the job attached. Please review before starting."
-
-    assignment_id = str(uuid.uuid4())
-    doc = {
-        "id": assignment_id,
-        "org_id": user["org_id"],
-        # v58.13.132cf — snapshot the assignee's identity + role at write
-        # time so subsequent reads never depend on the join staying live.
-        "worker_id": body.worker_id,
-        "worker_name": assignee["name"],
-        "worker_phone": assignee.get("phone"),
-        "worker_role_id": assignee.get("role_id"),
-        "worker_kind": assignee.get("kind"),
-        "site_id": body.site_id,
-        "site_name": body.site_name,
-        "site_address": body.site_address,
-        "site_coords": body.site_coords,
-        # Dual date fields — the .132cf TZ audit trail.
-        "date": the_date,
-        "date_local": the_date,           # Australia/Sydney
-        "date_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "assigned_by": user["id"],
-        "assigned_by_id": user["id"],
-        "assigned_by_name": assigner_name,
-        "assigned_at": _now_iso_utc(),
-        "sms_sent_at": None,
-        "sms_message_id": None,
-        "sms_provider": None,
-        "accepted_at": None,
-        "declined_at": None,
-        "completed_at": None,
-        "status": "pending",
-        "notes": body.notes,
-        # v58.13.132cf — new fields.
-        "preamble": preamble,
-        "pdf_id": body.pdf_id,
-        "pdf_url": body.pdf_url,
-        "meta": {},
-    }
+    doc = build_assignment_doc(
+        org_id=org_id,
+        worker=worker,
+        payload=body,
+        the_date=the_date,
+        geocode=geocode,
+        site_id=site_id,
+        assigned_by_id=user.get("id"),
+        meta={"source": "daily_jobs_single_create"},
+    )
     await db.daily_job_assignments.insert_one(doc)
-
-    # Stub SMS dispatch (Comms Safe Mode).
-    site_ref = body.site_name or body.site_id
-    msg = (
-        f"Paneltec: today's job — {site_ref}. Open the app and tap Accept to "
-        f"confirm. Reply STOP to opt out."
-    )
-    sms = await _dispatch_sms_stub(
-        worker_id=body.worker_id,
-        org_id=user["org_id"],
-        assignment_id=assignment_id,
-        message=msg,
-        phone=assignee.get("phone"),
-    )
-    doc = _clean_assignment(doc)
-    doc.update(sms)
-    return doc
+    return _clean(doc)
 
 
-# ─────────────── POST /mobile/daily-jobs/parse-pdf ───────────────
+# ─────────────── Legacy PDF prefill (unchanged; used by AdminAssignDailyJobs) ─
 
-_PDF_PARSE_CACHE: dict = {}  # {sha256: (ts, parsed_result)}
-_PDF_PARSE_TTL_S = 5 * 60    # 5 minutes
-MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
+_PDF_PARSE_CACHE: dict = {}
+_PDF_PARSE_TTL_S = 5 * 60
+MAX_PDF_BYTES = 10 * 1024 * 1024
 
 
 def _job_pdf_bucket():
-    """v58.13.132cf — GridFS bucket for ad-hoc job briefs. Matches the
-    pattern used by `assets.py::_fs_bucket()` for asset photos — Mongo
-    GridFS keeps files inside the DB (not on the pod), so no
-    `ephemeral-upload-storage` concern."""
     from motor.motor_asyncio import AsyncIOMotorGridFSBucket
     return AsyncIOMotorGridFSBucket(db.client[db.name], bucket_name="job_pdfs")
 
@@ -288,15 +365,12 @@ state. Never invent a worker name."""
 
 
 async def _pdf_to_text(pdf_bytes: bytes) -> str:
-    """Best-effort PDF-bytes → text via PyPDF2 text-layer. Kept simple:
-    if the text-layer is empty (image-only PDFs), returns "" and the
-    caller surfaces a 422 to the FE so Stephen re-attaches a text PDF."""
     try:
         import io
         from PyPDF2 import PdfReader
         reader = PdfReader(io.BytesIO(pdf_bytes))
         chunks = []
-        for p in reader.pages[:20]:  # cap for latency
+        for p in reader.pages[:20]:
             try:
                 chunks.append(p.extract_text() or "")
             except Exception:
@@ -311,21 +385,12 @@ async def parse_pdf(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Upload a job-brief PDF, extract text, and pipe through an LLM to
-    prefill the Ad-hoc Job Assignment form. Result cached 5 min per
-    SHA-256 of the file so repeated uploads of the same PDF (e.g. after
-    edit-then-retry) skip the LLM call.
-
-    v58.13.132cf — the PDF is stored in the Mongo GridFS bucket
-    `job_pdfs` (NOT on the pod filesystem), so the assignment doc's
-    `pdf_id` continues to resolve after a pod restart or scale-out."""
     _require_admin(user)
 
     filename = (file.filename or "").strip() or "job.pdf"
     if not filename.lower().endswith(".pdf") and (file.content_type or "").lower() != "application/pdf":
         raise HTTPException(400, "Only PDF files are supported")
 
-    # Read full body with size cap.
     hasher = hashlib.sha256()
     buf = bytearray()
     while True:
@@ -340,8 +405,6 @@ async def parse_pdf(
         raise HTTPException(400, "Empty PDF")
     digest = hasher.hexdigest()
 
-    # Cache lookup — returns immediately even before we've written the
-    # file to GridFS (cached entry already has a pdf_id).
     import time as _t
     now = _t.time()
     hit = _PDF_PARSE_CACHE.get(digest)
@@ -352,7 +415,6 @@ async def parse_pdf(
     if len(text) < 40:
         raise HTTPException(422, "Could not extract readable text from this PDF (image-only PDFs aren't supported yet)")
 
-    # LLM call — same pattern as swms_phase45.parse_swms_text.
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     key = os.environ.get("EMERGENT_LLM_KEY")
     if not key:
@@ -366,7 +428,7 @@ async def parse_pdf(
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
     try:
         reply = await chat.send_message(UserMessage(
-            text=f"Document begins below.\n=====\n{trimmed}\n====="
+            text=f"Document begins below.\n=====\n{trimmed}\n=====",
         ))
     except Exception as exc:
         raise HTTPException(503, f"LLM call failed: {exc}") from exc
@@ -393,9 +455,6 @@ async def parse_pdf(
         "notes":        parsed.get("notes") or None,
     }
 
-    # Store the PDF bytes in GridFS. Mongo returns an ObjectId — we
-    # stringify it and expose it as `pdf_id`; the mobile card fetches
-    # via the download endpoint below.
     bucket = _job_pdf_bucket()
     grid_id = await bucket.upload_from_stream(
         filename,
@@ -403,7 +462,7 @@ async def parse_pdf(
         metadata={
             "org_id": user["org_id"],
             "uploaded_by": user["id"],
-            "uploaded_at": _now_iso_utc(),
+            "uploaded_at": _now_utc_iso(),
             "sha256": digest,
             "content_type": file.content_type or "application/pdf",
         },
@@ -421,13 +480,8 @@ async def parse_pdf(
     return result
 
 
-# ─────────────── GET /mobile/daily-jobs/pdf/{pdf_id} ───────────────
-
 @router.get("/mobile/daily-jobs/pdf/{pdf_id}")
 async def download_pdf(pdf_id: str, user: dict = Depends(get_current_user)):
-    """Stream a job-brief PDF from GridFS. Any authenticated user in the
-    org can read (workers view PDFs attached to their own assignment;
-    admins view PDFs while reviewing)."""
     from bson import ObjectId
     from fastapi.responses import StreamingResponse
     try:
@@ -458,164 +512,138 @@ async def download_pdf(pdf_id: str, user: dict = Depends(get_current_user)):
 # ─────────────── GET /mobile/daily-jobs/today ───────────────
 
 @router.get("/mobile/daily-jobs/today")
-async def get_today_daily_job(user: dict = Depends(get_current_user)) -> dict:
-    """Return the caller's assignment for today (Sydney), if any.
+async def get_today(user: dict = Depends(get_current_user)) -> dict:
+    """Return the caller's ACTIVE (non-terminal) assignment.
 
-    v58.13.132cf — assignee_id lookup now covers both users and workers
-    (matches the .132cf create-path). Snapshot fields (`worker_name`,
-    `assigned_by_name`, `preamble`, `pdf_url`) come straight from the
-    doc — no additional lookups needed.
+    Locked shape:
+        {"assignment": <doc> | null, "status": <status> | "no_job"}
 
-    v58.13.132im — Whole lookup wrapped in `asyncio.wait_for(6.0)` so
-    a stalled Mongo query can never freeze the mobile Home tab. On
-    timeout we return the same shape as the "no_job" branch with a
-    `degraded` flag + warning log.
+    `.132p0`: NO `is_past_date_fallback` flag. NO past-date-magic
+    fallback that pretends yesterday's job is today. The caller's
+    active job is defined as: the most-recent doc keyed off
+    `(org_id, worker_id)` whose `status` is NOT in TERMINAL_STATUSES.
+    Sort: `date` desc, then `issued_at` desc.
     """
     async def _load() -> dict:
-        the_date = _today_iso()
-        assignee_id = None
+        org_id = user["org_id"]
+        candidate_ids: list = []
         if user.get("id"):
-            # Prefer the user-side match (matches the picker's user source).
-            assignee_id = user["id"]
-        if user.get("email") and not await db.daily_job_assignments.find_one(
-            {"org_id": user["org_id"], "worker_id": assignee_id, "date": the_date},
-        ):
-            # Fallback: look up a linked worker row by email.
+            candidate_ids.append(user["id"])
+        # Email fallback → linked workers row.
+        if user.get("email"):
             w = await db.workers.find_one(
-                {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
+                {"org_id": org_id, "email": user["email"], "deleted_at": None},
                 {"_id": 0, "id": 1},
             )
-            if w:
-                assignee_id = w.get("id")
+            if w and w.get("id") and w["id"] not in candidate_ids:
+                candidate_ids.append(w["id"])
 
-        if not assignee_id:
+        if not candidate_ids:
             return {"assignment": None, "status": "no_job"}
 
         doc = await db.daily_job_assignments.find_one(
-            {"org_id": user["org_id"], "worker_id": assignee_id, "date": the_date},
+            {
+                "org_id": org_id,
+                "worker_id": {"$in": candidate_ids},
+                "status": {"$nin": list(TERMINAL_STATUSES)},
+            },
             {"_id": 0},
+            sort=[("date", -1), ("issued_at", -1)],
         )
-        if doc:
-            status = _derive_status(doc)
-            return {"assignment": _clean_assignment(doc), "status": status}
-
-        # v58.13.132n7a — Fallback: if there's no exact-date match,
-        # surface the most-recent-unaccepted job so the tile still
-        # populates. Keeps the Home screen useful when the officer
-        # issued a past-dated job (e.g. weekend trial) or when a
-        # worker takes a day off and returns to a still-open job.
-        # Terminal states (`accepted`, `declined`, `completed`) are
-        # excluded — those already got the worker's attention.
-        fallback = await db.daily_job_assignments.find_one(
-            {"org_id": user["org_id"], "worker_id": assignee_id,
-             "accepted_at": None, "declined_at": None, "completed_at": None},
-            {"_id": 0},
-            sort=[("date", -1), ("issued_at", -1), ("assigned_at", -1)],
-        )
-        # Also try the worker-row branch even if the user branch
-        # already answered no-today above — the fallback should
-        # consider both identities.
-        if not fallback and user.get("email"):
-            w = await db.workers.find_one(
-                {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
-                {"_id": 0, "id": 1},
-            )
-            if w and w.get("id") and w["id"] != assignee_id:
-                fallback = await db.daily_job_assignments.find_one(
-                    {"org_id": user["org_id"], "worker_id": w["id"],
-                     "accepted_at": None, "declined_at": None, "completed_at": None},
-                    {"_id": 0},
-                    sort=[("date", -1), ("issued_at", -1), ("assigned_at", -1)],
-                )
-        if not fallback:
+        if not doc:
             return {"assignment": None, "status": "no_job"}
-
-        status = _derive_status(fallback)
-        cleaned = _clean_assignment(fallback)
-        # Flag the payload so the mobile UI can render a subtle
-        # "issued <date>" hint if it wants. Non-breaking additive
-        # field — clients that don't read it just ignore it.
-        cleaned["is_past_date_fallback"] = (fallback.get("date") != the_date)
-        return {"assignment": cleaned, "status": status}
+        return {"assignment": _clean(doc), "status": doc.get("status") or STATUS_ISSUED}
 
     try:
         return await asyncio.wait_for(_load(), timeout=6.0)
     except asyncio.TimeoutError:
-        log.warning(
-            "daily-jobs/today hit 6s wait_for — returning no_job/degraded",
-        )
+        log.warning("daily-jobs/today hit 6s wait_for — returning no_job/degraded")
         return {"assignment": None, "status": "no_job", "degraded": True}
 
 
-def _derive_status(doc: dict) -> str:
-    if doc.get("declined_at"):
-        return "declined"
-    if doc.get("completed_at"):
-        return "accepted"  # completed rolls up as accepted for the home state
-    if doc.get("accepted_at"):
-        return "accepted"
-    return "pending_accept"
+# ─────────────── Accept / Decline / Sign-on ───────────────
 
-
-# ─────────────── POST /mobile/daily-jobs/{id}/accept ───────────────
-
-@router.post("/mobile/daily-jobs/{assignment_id}/accept")
-async def accept_daily_job(assignment_id: str,
-                           user: dict = Depends(get_current_user)) -> dict:
-    return await _transition_assignment(
-        assignment_id=assignment_id, user=user,
-        set_field="accepted_at", forbidden_field="declined_at",
-        result_status="accepted",
-    )
-
-
-# ─────────────── POST /mobile/daily-jobs/{id}/decline ───────────────
-
-@router.post("/mobile/daily-jobs/{assignment_id}/decline")
-async def decline_daily_job(assignment_id: str,
-                            user: dict = Depends(get_current_user)) -> dict:
-    return await _transition_assignment(
-        assignment_id=assignment_id, user=user,
-        set_field="declined_at", forbidden_field="accepted_at",
-        result_status="declined",
-    )
-
-
-async def _transition_assignment(
-    *, assignment_id: str, user: dict, set_field: str,
-    forbidden_field: str, result_status: str,
+async def _transition(
+    *, assignment_id: str, user: dict,
+    from_statuses: set, to_status: str, stamp_field: str,
 ) -> dict:
+    """Ownership-checked state transition.
+
+    Caller must own the assignment (matches by user_id OR by the
+    linked workers.id via email). `from_statuses` guards illegal
+    transitions (e.g. can't decline a completed job). Idempotent:
+    if the doc is already in `to_status`, return it unchanged.
+    """
     doc = await db.daily_job_assignments.find_one(
-        {"id": assignment_id, "org_id": user["org_id"]}, {"_id": 0},
+        {"id": assignment_id, "org_id": user["org_id"]},
+        {"_id": 0},
     )
     if not doc:
         raise HTTPException(404, "Assignment not found")
 
-    # Ownership — caller must be the assignee (via user_id) OR via a
-    # workers-row keyed by email.
-    if doc.get("worker_id") != user.get("id"):
-        worker_id = None
-        if user.get("email"):
-            w = await db.workers.find_one(
-                {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
-                {"_id": 0, "id": 1},
-            )
-            worker_id = (w or {}).get("id")
-        if worker_id != doc.get("worker_id"):
-            raise HTTPException(403, "You can only respond to your own assignments")
+    # Ownership.
+    caller_ids = set()
+    if user.get("id"):
+        caller_ids.add(user["id"])
+    if user.get("email"):
+        w = await db.workers.find_one(
+            {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
+            {"_id": 0, "id": 1},
+        )
+        if w and w.get("id"):
+            caller_ids.add(w["id"])
+    if doc.get("worker_id") not in caller_ids:
+        raise HTTPException(403, "You can only respond to your own assignments")
 
-    if doc.get(forbidden_field):
+    current = doc.get("status") or STATUS_ISSUED
+    if current == to_status:
+        return {"assignment": doc, "status": current, "idempotent": True}
+    if current not in from_statuses:
         raise HTTPException(
             409,
-            f"Assignment already {'accepted' if forbidden_field == 'accepted_at' else 'declined'}",
+            f"Cannot transition from {current!r} to {to_status!r}",
         )
-    if doc.get(set_field):
-        return {"assignment": doc, "status": _derive_status(doc), "idempotent": True}
 
     updated = await db.daily_job_assignments.find_one_and_update(
         {"id": assignment_id, "org_id": user["org_id"]},
-        {"$set": {set_field: now_iso(), "status": result_status,
-                  "updated_at": now_iso()}},
+        {"$set": {
+            "status": to_status,
+            stamp_field: _now_utc_iso(),
+            "updated_at": _now_utc_iso(),
+        }},
         return_document=True, projection={"_id": 0},
     )
-    return {"assignment": updated, "status": _derive_status(updated)}
+    return {"assignment": updated, "status": updated.get("status") or to_status}
+
+
+@router.post("/mobile/daily-jobs/{assignment_id}/accept")
+async def accept(assignment_id: str,
+                 user: dict = Depends(get_current_user)) -> dict:
+    return await _transition(
+        assignment_id=assignment_id, user=user,
+        from_statuses={STATUS_ISSUED},
+        to_status=STATUS_ACCEPTED, stamp_field="accepted_at",
+    )
+
+
+@router.post("/mobile/daily-jobs/{assignment_id}/decline")
+async def decline(assignment_id: str,
+                  user: dict = Depends(get_current_user)) -> dict:
+    return await _transition(
+        assignment_id=assignment_id, user=user,
+        from_statuses={STATUS_ISSUED, STATUS_ACCEPTED},
+        to_status=STATUS_DECLINED, stamp_field="declined_at",
+    )
+
+
+class SignOnIn(BaseModel):
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+@router.post("/mobile/daily-jobs/{assignment_id}/signon", status_code=501)
+async def signon_stub(assignment_id: str,
+                      body: SignOnIn = None,
+                      user: dict = Depends(get_current_user)) -> dict:
+    """Phase 4 stub. Wire in Phase 4 (site sign-on + on-site pre-start)."""
+    raise HTTPException(501, "Sign-on lands in Phase 4")

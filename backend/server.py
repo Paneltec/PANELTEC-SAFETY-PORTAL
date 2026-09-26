@@ -58,6 +58,7 @@ from mobile_daily_jobs_admin import (  # noqa: E402
 )
 # v58.13.132n7 — admin batch daily-job assignment ("Issue Job" form).
 from daily_jobs_batch import router as daily_jobs_batch_router  # noqa: E402
+from mobile_sms_parse import router as mobile_sms_parse_router  # noqa: E402  (.132p0)
 # v58.13.132ad — Onboarding cards PDF.
 from mobile_onboarding_cards import router as mobile_onboarding_cards_router  # noqa: E402
 # v58.13.132af — Android APK direct-install downloads.
@@ -493,6 +494,8 @@ api.include_router(mobile_daily_jobs_admin_router)
 
 # v58.13.132n7 — admin batch daily-job assignment ("Issue Job" form).
 api.include_router(daily_jobs_batch_router)
+# v58.13.132p0 — shared SMS parser used by web + mobile.
+api.include_router(mobile_sms_parse_router)
 # v58.13.132ad — printable onboarding cards.
 api.include_router(mobile_onboarding_cards_router)
 # v58.13.132af — Android APK direct-install downloads.

@@ -1,25 +1,21 @@
-// v58.13.132n7 — Issue Job (allocation officer's batch assignment console).
+// v58.13.132p0 — Issue Today's Job (allocation officer's batch console).
 //
-// Route: `/app/mobile/issue-job`  (Compliance section sidebar entry,
-// sits right next to "Ad-hoc Jobs" per the ship brief).
+// Phase 1 of the mobile job flow rebuild. Locked to the SEVEN SMS
+// fields Stephen's whiteboard emits — nothing invented.
 //
-// Purpose: one form, N workers, ONE `Send Job` action → creates one
-// `daily_job_assignments` doc per worker sharing a `job_batch_id`.
-// This is the fast-flow complement to `AdminAssignDailyJobs.jsx`'s
-// per-worker PDF-parse flow — no PDFs, no SMS, just the SMS-style
-// batch payload straight into the mobile "Today's Assignment" tile.
+// Route: `/app/mobile/issue-job`  (Compliance sidebar entry).
 //
 // Backend endpoints (all under `/api/`):
-//   POST /daily-jobs/bulk-create               batch create
-//   GET  /daily-jobs/today?date=YYYY-MM-DD     admin view (left list)
-//   GET  /daily-jobs/admin/trucks?q=           picker
-//   GET  /daily-jobs/admin/sites?q=            picker (db.sites)
-//   GET  /daily-jobs/admin/workers?q=&role_id= picker
+//   POST /daily-jobs/bulk-create          batch create (7 SMS fields)
+//   GET  /daily-jobs/today?date=YYYY-MM-DD admin view (left list)
+//   GET  /daily-jobs/admin/trucks?q=      truck-name suggestion feed
+//   GET  /daily-jobs/admin/sites?q=       site suggestion feed
+//   GET  /daily-jobs/admin/workers?q=     worker picker
+//   POST /mobile/sms/parse                shared SMS parser
 //
 // Layout:
-//   Left  (35 %) — Today's Assignments list, auto-refresh every 15 s,
-//                  per-row status pill (pending / accepted / declined).
-//   Right (65 %) — Form. Sticky bottom-right green "Send Job" CTA.
+//   Left  (35 %) — Today's assignments list, auto-refresh every 15 s.
+//   Right (65 %) — Form + "Paste SMS" pre-fill button.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { apiError } from '@/lib/api';
@@ -27,11 +23,11 @@ import { toast } from 'sonner';
 import {
   Loader2, Search, X as XIcon, Send, CheckCircle2,
   Clock, XCircle, Truck as TruckIcon, MapPin, Users,
-  ClipboardList, StickyNote, Building2,
-  ChevronDown, RefreshCw,
+  StickyNote, Building2, ChevronDown, RefreshCw,
+  ClipboardPaste,
 } from 'lucide-react';
 
-// Sydney-local YYYY-MM-DD helper (matches backend `_today_iso()`).
+// Sydney-local YYYY-MM-DD helper (matches backend `today_iso_sydney()`).
 function sydneyTodayIso() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
 }
@@ -46,32 +42,34 @@ function fmtTime(iso) {
 }
 
 function statusPill(row) {
-  if (row.declined_at) {
+  const s = (row.status || '').toLowerCase();
+  if (s === 'declined' || row.declined_at) {
     return { label: 'Declined', bg: '#FEF2F2', fg: '#B91C1C', Icon: XCircle };
   }
-  if (row.accepted_at) {
+  if (s === 'accepted' || s === 'signed_on' || s === 'completed' || row.accepted_at) {
     return { label: 'Accepted', bg: '#ECFDF5', fg: '#047857', Icon: CheckCircle2 };
   }
-  return { label: 'Pending',  bg: '#FEF3C7', fg: '#B45309', Icon: Clock };
+  return { label: 'Issued', bg: '#FEF3C7', fg: '#B45309', Icon: Clock };
 }
 
 // ─────────────── Page ───────────────
 
 export default function IssueJob() {
   const today = useMemo(() => sydneyTodayIso(), []);
+  // .132p0 form state: seven SMS fields + workers[] + trialRun.
   const [form, setForm] = useState({
     date: today,
-    truck: null,             // {id, name, rego}
-    site: null,              // {id, name, address_full}
-    siteFreeform: '',
+    truck: '',           // single string (SMS shape: "Cappellotto 2 - Volvo - XT48AK")
+    siteName: '',
     address: '',
     customer: '',
-    workers: [],             // array of worker rows
+    staff: '',           // comma-separated tokens; split at submit
     notes: '',
-    task: '',
-    trialRun: false,         // v58.13.132n7a — "also send a copy to my phone"
+    workers: [],         // array of {id, name, ...}
+    trialRun: false,
   });
   const [sending, setSending] = useState(false);
+  const [showPasteSms, setShowPasteSms] = useState(false);
   const [recent, setRecent] = useState({ loading: true, rows: [], error: null });
 
   // ─── auto-refresh left panel every 15 s ───
@@ -93,22 +91,26 @@ export default function IssueJob() {
   }, [loadRecent]);
 
   // ─── submit ───
-  const canSend = form.workers.length > 0 && (form.site || form.siteFreeform.trim());
+  const canSend = form.workers.length > 0 && (form.siteName.trim() || form.address.trim());
 
   const handleSend = async () => {
     if (!canSend || sending) return;
     setSending(true);
     try {
+      // Split staff — either the officer typed a comma-separated
+      // list, or we use the picked workers' names as a fallback.
+      const staffFromForm = form.staff
+        .split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+      const staffFallback = form.workers.map((w) => (w.name || '').toUpperCase());
+      const staff = staffFromForm.length > 0 ? staffFromForm : staffFallback;
+
       const payload = {
         date: form.date,
-        truck_id: form.truck?.id || null,
-        truck_name: form.truck?.name || null,
-        truck_reg: form.truck?.rego || null,
-        site_id: form.site?.id || null,
-        site_freeform: form.site ? null : (form.siteFreeform.trim() || null),
+        truck: form.truck.trim() || null,
+        site_name: form.siteName.trim() || null,
         address: form.address.trim() || null,
         customer: form.customer.trim() || null,
-        task: form.task.trim() || null,
+        staff,
         notes: form.notes.trim() || null,
         worker_ids: form.workers.map((w) => w.id),
         override: false,
@@ -132,12 +134,12 @@ export default function IssueJob() {
       if (notFoundN > 0) {
         toast.error(`${notFoundN} worker id${notFoundN === 1 ? '' : 's'} could not be resolved`);
       }
-      // Reset the form (keep date + truck for the next batch).
-      // Trial-run is deliberately reset — officer must opt in per batch.
+      // Reset. Keep date + truck for the next batch.
       setForm((f) => ({
         ...f,
-        site: null, siteFreeform: '', address: '', customer: '',
-        workers: [], notes: '', task: '',
+        siteName: '', address: '', customer: '',
+        staff: '', notes: '',
+        workers: [],
         trialRun: false,
       }));
       loadRecent();
@@ -148,17 +150,53 @@ export default function IssueJob() {
     }
   };
 
+  // ─── SMS paste pre-fill ───
+  const handleSmsParsed = (parsed) => {
+    setForm((f) => ({
+      ...f,
+      truck:    parsed.truck    || f.truck,
+      date:     parsed.date     || f.date,
+      siteName: parsed.site_name || f.siteName,
+      address:  parsed.address  || f.address,
+      customer: parsed.customer || f.customer,
+      staff:    (parsed.staff && parsed.staff.length > 0)
+                    ? parsed.staff.join(', ')
+                    : f.staff,
+      notes:    parsed.notes    || f.notes,
+    }));
+    setShowPasteSms(false);
+    toast.success('SMS fields pre-filled — pick workers and hit Send.');
+  };
+
   return (
     <div className="p-6" data-testid="issue-job-page">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900" data-testid="issue-job-h1">
-          Issue Today's Job
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Send today's job to one or more workers — appears on their phone
-          immediately, no SMS. Complements Ad-hoc Jobs for the fast batch flow.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900" data-testid="issue-job-h1">
+            Issue Today's Job
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Locked to the 7 SMS fields — truck, date, site, address, customer, staff, notes.
+            Every worker gets their own copy on their phone.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowPasteSms(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50 shrink-0"
+          data-testid="issue-job-paste-sms-btn"
+        >
+          <ClipboardPaste className="w-3.5 h-3.5" />
+          Paste SMS
+        </button>
       </div>
+
+      {showPasteSms && (
+        <PasteSmsModal
+          onClose={() => setShowPasteSms(false)}
+          onParsed={handleSmsParsed}
+        />
+      )}
 
       <div className="grid grid-cols-12 gap-6">
         {/* ─── Left panel: today's assignments ─── */}
@@ -207,11 +245,10 @@ export default function IssueJob() {
                         {r.worker_name}
                       </div>
                       <div className="text-xs text-slate-500 truncate">
-                        {r.site_name || r.site_freeform || '—'}
-                        {r.task ? ` · ${r.task}` : ''}
+                        {r.site_name || r.address || '—'}
                       </div>
                       <div className="text-[11px] text-slate-400 mt-0.5">
-                        Issued {fmtTime(r.issued_at || r.assigned_at)}
+                        Issued {fmtTime(r.issued_at)}
                         {r.customer ? ` · ${r.customer}` : ''}
                       </div>
                     </div>
@@ -235,13 +272,20 @@ export default function IssueJob() {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6"
                data-testid="issue-job-form">
             <div className="grid grid-cols-2 gap-4">
-              {/* Truck */}
+              {/* Truck — single string, matches SMS shape */}
               <div className="col-span-2 md:col-span-1">
                 <Label icon={TruckIcon} text="Truck" />
-                <TruckPicker
+                <input
+                  type="text"
                   value={form.truck}
-                  onChange={(v) => setForm((f) => ({ ...f, truck: v }))}
+                  onChange={(e) => setForm((f) => ({ ...f, truck: e.target.value }))}
+                  placeholder="Cappellotto 2 - Volvo - XT48AK"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                  data-testid="issue-job-truck-input"
                 />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Full SMS shape — vehicle name and rego on one line.
+                </p>
               </div>
               {/* Date */}
               <div className="col-span-2 md:col-span-1">
@@ -254,21 +298,16 @@ export default function IssueJob() {
                   data-testid="issue-job-date-input"
                 />
               </div>
-              {/* Site */}
+              {/* Site name */}
               <div className="col-span-2 md:col-span-1">
                 <Label icon={MapPin} text="Site" />
-                <SitePicker
-                  value={form.site}
-                  freeform={form.siteFreeform}
-                  onChange={(site, freeform) => setForm((f) => ({
-                    ...f,
-                    site,
-                    siteFreeform: freeform,
-                    // Auto-populate address on site pick (editable).
-                    address: site
-                      ? [site.address_full, site.suburb, site.state].filter(Boolean).join(', ')
-                      : f.address,
-                  }))}
+                <input
+                  type="text"
+                  value={form.siteName}
+                  onChange={(e) => setForm((f) => ({ ...f, siteName: e.target.value }))}
+                  placeholder="78 Corin Street West Launceston"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                  data-testid="issue-job-site-input"
                 />
               </div>
               {/* Customer */}
@@ -290,33 +329,36 @@ export default function IssueJob() {
                   type="text"
                   value={form.address}
                   onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                  placeholder="Auto-filled when a site is selected; editable."
+                  placeholder="78 Corin Street West Launceston, TAS 7250"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
                   data-testid="issue-job-address-input"
                 />
               </div>
-              {/* Staff on this job */}
+              {/* Staff on this job — SMS names, comma-separated */}
               <div className="col-span-2">
-                <Label icon={Users} text="Staff on this job" required />
+                <Label icon={Users} text="Staff names (as they appear on the SMS)" />
+                <input
+                  type="text"
+                  value={form.staff}
+                  onChange={(e) => setForm((f) => ({ ...f, staff: e.target.value }))}
+                  placeholder="DANIEL BUTLER, JARROD TARGETT, JASON DONNELLAN"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                  data-testid="issue-job-staff-input"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Optional — falls back to the picked workers' names below if left blank.
+                </p>
+              </div>
+              {/* Workers picker — who actually receives the job on their phone */}
+              <div className="col-span-2">
+                <Label icon={Users} text="Send to (workers)" required />
                 <WorkerMultiPicker
                   value={form.workers}
                   onChange={(v) => setForm((f) => ({ ...f, workers: v }))}
                 />
               </div>
-              {/* Task (col-span-1 — v58.13.132n7a: supervisor slot removed) */}
-              <div className="col-span-2 md:col-span-1">
-                <Label icon={ClipboardList} text="Task" optional />
-                <input
-                  type="text"
-                  value={form.task}
-                  onChange={(e) => setForm((f) => ({ ...f, task: e.target.value }))}
-                  placeholder="e.g. Trench excavation and pipe laying"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
-                  data-testid="issue-job-task-input"
-                />
-              </div>
               {/* Notes */}
-              <div className="col-span-2 md:col-span-1">
+              <div className="col-span-2">
                 <Label icon={StickyNote} text="Notes" />
                 <textarea
                   rows={3}
@@ -331,10 +373,6 @@ export default function IssueJob() {
 
             {/* Send bar */}
             <div className="mt-6 pt-4 border-t border-slate-100">
-              {/* v58.13.132n7a — Trial-run checkbox. Ticking it appends
-                  the calling admin's own user id to `worker_ids` so a
-                  mirror doc lands on their phone. Handy for the officer
-                  to preview exactly what the crew will see. */}
               <label
                 className="flex items-center gap-2 mb-3 text-xs text-slate-700 cursor-pointer select-none"
                 data-testid="issue-job-trial-run-label"
@@ -353,7 +391,7 @@ export default function IssueJob() {
               <div className="flex items-center justify-between">
                 <div className="text-xs text-slate-500">
                   {form.workers.length > 0
-                    ? <><strong>{form.workers.length}</strong> worker{form.workers.length === 1 ? '' : 's'} selected{form.trialRun ? ' + trial mirror' : ''} · {form.site ? form.site.name : (form.siteFreeform || 'no site')}</>
+                    ? <><strong>{form.workers.length}</strong> worker{form.workers.length === 1 ? '' : 's'} selected{form.trialRun ? ' + trial mirror' : ''} · {form.siteName || form.address || 'no site'}</>
                     : 'Pick at least one worker and a site to send.'}
                 </div>
                 <button
@@ -379,6 +417,90 @@ export default function IssueJob() {
   );
 }
 
+// ─────────────── Paste SMS modal ───────────────
+
+function PasteSmsModal({ onClose, onParsed }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post('/mobile/sms/parse', { sms: text });
+      onParsed(data.parsed || {});
+    } catch (err) {
+      toast.error(apiError(err) || 'Parse failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+      data-testid="paste-sms-modal"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">Paste SMS</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-slate-100 text-slate-500"
+            aria-label="Close"
+            data-testid="paste-sms-close-btn"
+          >
+            <XIcon className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-slate-500 mb-3">
+          Paste the entire SMS (truck, date, site, address, customer, staff line, notes).
+          The parser handles both labeled and plain formats.
+        </p>
+        <textarea
+          rows={10}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={`Cappellotto 2 - Volvo - XT48AK
+15-09-26
+78 Corin Street West Launceston
+78 Corin Street West Launceston, TAS 7250
+Shaw
+Staff: DANIEL BUTLER, JARROD TARGETT, JASON DONNELLAN
+Kroll to site to expose main, ring Jason to complete tapping when exposed`}
+          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm font-mono resize-y"
+          data-testid="paste-sms-textarea"
+        />
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
+            data-testid="paste-sms-cancel-btn"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!text.trim() || busy}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-slate-300"
+            data-testid="paste-sms-submit-btn"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Parse & pre-fill
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────── Field label ───────────────
 
 function Label({ icon: Icon, text, required, optional }) {
@@ -390,192 +512,6 @@ function Label({ icon: Icon, text, required, optional }) {
         {required && <span className="text-rose-500 ml-0.5">*</span>}
         {optional && <span className="text-slate-400 ml-1 font-normal">(optional)</span>}
       </span>
-    </div>
-  );
-}
-
-// ─────────────── Truck picker (single, searchable) ───────────────
-
-function TruckPicker({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [rows, setRows] = useState([]);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const { data } = await api.get('/daily-jobs/admin/trucks', {
-          params: { q: q || undefined, limit: 50 },
-        });
-        if (alive) setRows(data.rows || []);
-      } catch (_) { /* silent */ }
-    })();
-    return () => { alive = false; };
-  }, [q]);
-
-  useEffect(() => {
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-left"
-        data-testid="issue-job-truck-picker"
-      >
-        <span className={value ? 'text-slate-900' : 'text-slate-400'}>
-          {value ? value.name : 'Pick a truck or plant…'}
-        </span>
-        <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-      </button>
-      {open && (
-        <div className="absolute z-30 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-72 overflow-hidden">
-          <div className="p-2 border-b border-slate-100 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input
-              autoFocus
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search trucks / plant…"
-              className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
-              data-testid="issue-job-truck-search"
-            />
-          </div>
-          <div className="max-h-56 overflow-auto">
-            {rows.length === 0 && (
-              <div className="px-3 py-4 text-xs text-slate-500 text-center">No matches</div>
-            )}
-            {rows.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => { onChange(r); setOpen(false); setQ(''); }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"
-                data-testid={`issue-job-truck-option-${r.id}`}
-              >
-                <TruckIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="flex-1 truncate">{r.name}</span>
-                <span className="text-[10px] text-slate-400 uppercase">{r.kind}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────── Site picker (single + "Other" free-text) ───────────────
-
-function SitePicker({ value, freeform, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [rows, setRows] = useState([]);
-  const [otherMode, setOtherMode] = useState(!!freeform && !value);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const { data } = await api.get('/daily-jobs/admin/sites', {
-          params: { q: q || undefined, limit: 100 },
-        });
-        if (alive) setRows(data.rows || []);
-      } catch (_) { /* silent */ }
-    })();
-    return () => { alive = false; };
-  }, [q]);
-
-  useEffect(() => {
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, []);
-
-  if (otherMode) {
-    return (
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={freeform}
-          onChange={(e) => onChange(null, e.target.value)}
-          placeholder="Type site name…"
-          className="flex-1 px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-sm"
-          data-testid="issue-job-site-freeform-input"
-        />
-        <button
-          type="button"
-          onClick={() => { setOtherMode(false); onChange(null, ''); }}
-          className="px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-600 hover:bg-slate-50"
-          data-testid="issue-job-site-back-to-list-btn"
-        >
-          List
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white text-left"
-        data-testid="issue-job-site-picker"
-      >
-        <span className={value ? 'text-slate-900' : 'text-slate-400'}>
-          {value ? value.name : 'Pick a site…'}
-        </span>
-        <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-      </button>
-      {open && (
-        <div className="absolute z-30 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-72 overflow-hidden">
-          <div className="p-2 border-b border-slate-100 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input
-              autoFocus
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search sites…"
-              className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
-              data-testid="issue-job-site-search"
-            />
-          </div>
-          <div className="max-h-56 overflow-auto">
-            {rows.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => { onChange(r, ''); setOpen(false); setQ(''); }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                data-testid={`issue-job-site-option-${r.id}`}
-              >
-                <div className="font-medium text-slate-900 truncate">{r.name}</div>
-                <div className="text-[11px] text-slate-500 truncate">
-                  {[r.address_full, r.suburb, r.state].filter(Boolean).join(', ')}
-                </div>
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => { setOtherMode(true); onChange(null, ''); setOpen(false); }}
-              className="w-full text-left px-3 py-2 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 border-t border-slate-100"
-              data-testid="issue-job-site-other-btn"
-            >
-              + Other (type it in)
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -689,4 +625,3 @@ function WorkerMultiPicker({ value, onChange }) {
     </div>
   );
 }
-
