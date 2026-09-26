@@ -12,7 +12,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors } from '../../src/theme/colors';
+import { Colors, C } from '../../src/theme/colors';
 import { authGet } from '../../src/services/apiClient';
 import { clearSession } from '../../src/services/auth';
 import { fetchFormTemplates, type FormTemplate } from '../../src/services/forms';
@@ -425,7 +425,7 @@ interface AssetAction {
 
 const ASSET_ACTIONS: AssetAction[] = [
   { key: 'pre_start',  label: 'Start Pre-Start',       icon: 'clipboard-outline', color: '#3B82F6', category: 'pre_start',  pickerTitle: 'Pre-Start' },
-  { key: 'service',    label: 'Start a Service',        icon: 'construct-outline', color: '#10B981', nameFilter: 'service|maintenance|equipment|pre-operation|pre-use', pickerTitle: 'Service / Equipment Check' },
+  { key: 'service',    label: 'Start a Service',        icon: 'construct-outline', color: C.green.base, nameFilter: 'service|maintenance|equipment|pre-operation|pre-use', pickerTitle: 'Service / Equipment Check' },
   { key: 'inspection', label: 'Conduct Inspection',     icon: 'search-outline',    color: '#06B6D4', category: 'inspection', pickerTitle: 'Inspection' },
   { key: 'incident',   label: 'Report a Hazard',        icon: 'warning-outline',   color: '#EF4444', category: 'incident',   pickerTitle: 'Hazard / Incident' },
   { key: 'site_diary', label: 'Add Site Diary Entry',   icon: 'book-outline',      color: '#F59E0B', category: 'site_diary', pickerTitle: 'Site Diary' },
@@ -642,43 +642,43 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 // ── Styles ──
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navyLight },
-  header: { backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18 },
-  headerTitle: { color: Colors.white, fontSize: 26, fontWeight: '800' },
+  container: { flex: 1, backgroundColor: C.screen.bg },
+  header: { backgroundColor: C.screen.bg, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18 },
+  headerTitle: { color: C.textOnNavy.main, fontSize: 26, fontWeight: '800' },
   headerSub: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500', marginTop: 2 },
 
   tagFilterBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.surface, borderRadius: 12,
+    backgroundColor: C.card.bg, borderRadius: 12,
     marginHorizontal: 16, marginTop: 12,
     paddingHorizontal: 14, paddingVertical: 11,
-    borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1, borderColor: C.card.border,
   },
-  tagFilterText: { flex: 1, fontSize: 14, color: Colors.textSecondary, fontWeight: '500' },
+  tagFilterText: { flex: 1, fontSize: 14, color: C.textOnNavy.secondary, fontWeight: '500' },
 
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.surface, borderRadius: 14,
+    backgroundColor: C.card.bg, borderRadius: 14,
     marginHorizontal: 16, marginTop: 8, marginBottom: 8,
     paddingHorizontal: 14, paddingVertical: 12,
-    borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1, borderColor: C.card.border,
   },
-  searchInput: { flex: 1, fontSize: 16, color: Colors.ink, padding: 0 },
+  searchInput: { flex: 1, fontSize: 16, color: C.card.textMain, padding: 0 },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   loadingText: { fontSize: 15, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
   errorText: { fontSize: 14, color: Colors.error, textAlign: 'center' },
   retryBtn: { backgroundColor: Colors.orange, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
-  retryBtnText: { color: Colors.white, fontSize: 15, fontWeight: '700' },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.white },
+  retryBtnText: { color: C.textOnNavy.main, fontSize: 15, fontWeight: '700' },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: C.textOnNavy.main },
   emptyText: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center' },
 
   listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
   assetRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    backgroundColor: C.card.bg, borderRadius: 14, padding: 14,
     minHeight: 72,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
   assetIconWrap: {
@@ -686,8 +686,8 @@ const s = StyleSheet.create({
     backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center',
   },
   assetInfo: { flex: 1 },
-  assetName: { fontSize: 14, fontWeight: '700', color: Colors.ink, lineHeight: 19 },
-  assetMeta: { fontSize: 12, color: Colors.textTertiary, marginTop: 3 },
+  assetName: { fontSize: 14, fontWeight: '700', color: C.card.textMain, lineHeight: 19 },
+  assetMeta: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 3 },
   statusPill: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   statusText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
 
@@ -697,24 +697,24 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   tagModalCard: {
-    backgroundColor: Colors.surface, borderRadius: 20, padding: 20,
+    backgroundColor: C.card.bg, borderRadius: 20, padding: 20,
     width: '100%', maxWidth: 380,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15, shadowRadius: 24, elevation: 10,
   },
-  tagModalTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink, marginBottom: 12 },
+  tagModalTitle: { fontSize: 18, fontWeight: '800', color: C.card.textMain, marginBottom: 12 },
   tagOption: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 13, paddingHorizontal: 4,
     borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
   },
   tagOptionActive: { backgroundColor: Colors.orangeSoft, borderRadius: 10, paddingHorizontal: 10 },
-  tagOptionText: { fontSize: 15, color: Colors.ink, fontWeight: '500' },
+  tagOptionText: { fontSize: 15, color: C.card.textMain, fontWeight: '500' },
   tagOptionTextActive: { color: Colors.orange, fontWeight: '700' },
 });
 
 const sd = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navyLight },
+  container: { flex: 1, backgroundColor: C.screen.bg },
   handle: {
     width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border,
     alignSelf: 'center', marginBottom: 8,
@@ -724,7 +724,7 @@ const sd = StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 12,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  title: { fontSize: 18, fontWeight: '800', color: Colors.ink },
+  title: { fontSize: 18, fontWeight: '800', color: C.card.textMain },
   closeBtn: { padding: 4, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   backBtn: { padding: 4, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 20 },
@@ -734,30 +734,30 @@ const sd = StyleSheet.create({
     backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center',
     marginBottom: 12,
   },
-  heroName: { fontSize: 22, fontWeight: '800', color: Colors.ink, textAlign: 'center' },
+  heroName: { fontSize: 22, fontWeight: '800', color: C.card.textMain, textAlign: 'center' },
   heroPill: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8 },
   heroPillText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   detailCard: {
-    backgroundColor: Colors.surface, borderRadius: 16, overflow: 'hidden',
-    borderWidth: 1, borderColor: Colors.border, marginBottom: 20,
+    backgroundColor: C.card.bg, borderRadius: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.card.border, marginBottom: 20,
   },
   row: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
   },
-  rowLabel: { fontSize: 14, color: Colors.textTertiary, fontWeight: '500' },
-  rowValue: { fontSize: 15, color: Colors.ink, fontWeight: '600' },
+  rowLabel: { fontSize: 14, color: C.textOnNavy.faint, fontWeight: '500' },
+  rowValue: { fontSize: 15, color: C.card.textMain, fontWeight: '600' },
   // Action tiles
   actionsTitle: {
-    fontSize: 12, fontWeight: '800', color: Colors.textTertiary,
+    fontSize: 12, fontWeight: '800', color: C.textOnNavy.faint,
     letterSpacing: 1, marginBottom: 10,
   },
   actionTile: {
     flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: Colors.surface, borderRadius: 14, marginBottom: 8,
+    backgroundColor: C.card.bg, borderRadius: 14, marginBottom: 8,
     minHeight: 56, overflow: 'hidden',
-    borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1, borderColor: C.card.border,
   },
   actionStripe: { width: 8, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
   actionContent: {
@@ -771,9 +771,9 @@ const sd = StyleSheet.create({
   actionLabel: { flex: 1, fontSize: 15, fontWeight: '700' },
   // .132jv — curated forms styles
   actionLabelWrap: { flex: 1 },
-  actionDesc: { fontSize: 12, color: Colors.textTertiary, marginTop: 1 },
+  actionDesc: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 1 },
   recommendedPill: {
-    backgroundColor: '#FFF7ED', borderRadius: 8,
+    backgroundColor: C.orange.softBg, borderRadius: 8,
     paddingHorizontal: 8, paddingVertical: 3, marginRight: 4,
   },
   recommendedText: { fontSize: 11, fontWeight: '700', color: Colors.orange },
@@ -781,7 +781,7 @@ const sd = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     padding: 20, justifyContent: 'center',
   },
-  curatedLoadingText: { fontSize: 14, color: Colors.textTertiary },
+  curatedLoadingText: { fontSize: 14, color: C.textOnNavy.faint },
   noMappingBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.infoSoft, borderRadius: 12,

@@ -679,3 +679,20 @@
   - Verified via expo prebuild: Manifest has RECEIVE_SMS/READ_SMS + <receiver> block
 - **Files modified**: plugins/expo-sms-receiver/*, src/lib/smsReceiver.ts, src/lib/smsPermissions.ts, src/lib/version.ts, app/(tabs)/home.tsx, memory/mobile/commit_log.md
 - **Prebuild verified**: AndroidManifest.xml, SmsReceiver.kt copied to correct package path
+
+## Iteration .132p2 — Phase 3: Job Screen Redesign (before/after accept)
+- **Commit**: 79b1ffc1
+- **Date**: 2026-09-26
+- **Changes**:
+  - Rebuilt Job Detail with 3 states: BEFORE ACCEPT, AFTER ACCEPT, DECLINED
+  - Design tokens: card bg #F5F5F0, card border #E5E5E0, green #16A34A, screen bg #111827
+  - Map card fallback (no Google Maps key): orange pin + address + nav icon
+  - 6-row field table: TRUCK/DATE/SITE/CUSTOMER/CREW (user filtered)/NOTES (expandable)
+  - Pulsing ACCEPT JOB button, locked NAVIGATE/SIGN ON until accepted
+  - PRE-START MY TRUCK button (after accept), orange NAVIGATE, SIGN ON stub
+  - Added src/lib/maps.ts helper (openMapsToAddress + getStaticMapUrl)
+  - Prebuild verified: no config plugin regressions
+  - EAS build: auth error (needs account reconfiguration)
+  - Version bump .132p2 (v1.0.50, versionCode 172)
+- **Files modified**: mobile/app/(tabs)/home.tsx, mobile/src/lib/maps.ts, mobile/src/lib/version.ts, mobile/app.json
+- **Screenshots**: 132p2_job_before_accept, 132p2_map_card_fallback, 132p2_job_after_accept, 132p2_job_after_accept_buttons, 132p2_job_declined

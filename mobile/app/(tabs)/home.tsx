@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../../src/theme/colors';
+import { Colors, C } from '../../src/theme/colors';
 import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet, authPost } from '../../src/services/apiClient';
 import { MOCK_COMPLIANCE_LIST, MOCK_AD_HOC_JOB } from '../../src/services/mockData';
@@ -376,10 +376,10 @@ export default function HomeScreen() {
 
     // Status chip config
     const chipConfig = isIssued
-      ? { label: `NEW · issued ${formatTime(job.issued_at || job.assigned_at || job.created_at)}`, color: Colors.orange, bg: '#FFF7ED', border: '#FDBA7480' }
+      ? { label: `NEW · issued ${formatTime(job.issued_at || job.assigned_at || job.created_at)}`, color: C.orange.base, bg: C.orange.chipBg, border: C.orange.chipBg }
       : isAccepted
-      ? { label: `ACCEPTED · at ${formatTime(job.accepted_at)}`, color: Colors.success, bg: '#D1FAE5', border: '#10B98140' }
-      : { label: `DECLINED · at ${formatTime(job.declined_at)}`, color: '#9CA3AF', bg: '#F3F4F6', border: '#D1D5DB' };
+      ? { label: `ACCEPTED · at ${formatTime(job.accepted_at)}`, color: C.green.base, bg: C.green.softBg, border: C.green.softBg }
+      : { label: `DECLINED · at ${formatTime(job.declined_at)}`, color: C.grey.declineText, bg: C.card.bg, border: C.card.border };
 
     // Field table data
     const fieldRows: { label: string; value: string }[] = [
@@ -408,7 +408,7 @@ export default function HomeScreen() {
         <ScrollView contentContainerStyle={jd.scroll} showsVerticalScrollIndicator={false}>
           {isMocked && (
             <View style={s.mockBadge}>
-              <Ionicons name="flask-outline" size={12} color="#DC2626" />
+              <Ionicons name="flask-outline" size={12} color={C.misc.errorText} />
               <Text style={s.mockBadgeText}>Demo data — no live job assigned</Text>
             </View>
           )}
@@ -484,7 +484,7 @@ export default function HomeScreen() {
                 <Animated.View style={[
                   jd.acceptBtnWrap,
                   {
-                    shadowColor: '#16A34A',
+                    shadowColor: C.green.base,
                     shadowOffset: { width: 0, height: 0 },
                     shadowRadius: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [4, 16] }),
                     shadowOpacity: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.5] }),
@@ -507,11 +507,11 @@ export default function HomeScreen() {
               {/* Locked action row */}
               <View style={jd.lockedRow}>
                 <View style={jd.lockedBtn}>
-                  <Ionicons name="lock-closed" size={13} color="#9CA3AF" />
+                  <Ionicons name="lock-closed" size={13} color={C.grey.lockedIcon} />
                   <Text style={jd.lockedBtnText}>NAVIGATE</Text>
                 </View>
                 <View style={jd.lockedBtn}>
-                  <Ionicons name="lock-closed" size={13} color="#9CA3AF" />
+                  <Ionicons name="lock-closed" size={13} color={C.grey.lockedIcon} />
                   <Text style={jd.lockedBtnText}>SIGN ON AT SITE</Text>
                 </View>
               </View>
@@ -574,7 +574,7 @@ export default function HomeScreen() {
           {/* ── State 3: DECLINED ── */}
           {isDeclined && (
             <View style={jd.declinedBlock}>
-              <Ionicons name="close-circle-outline" size={36} color="#9CA3AF" />
+              <Ionicons name="close-circle-outline" size={36} color={C.grey.lockedIcon} />
               <Text style={jd.declinedTitle}>You declined this job</Text>
               <Text style={jd.declinedSub}>The office has been notified.</Text>
               <TouchableOpacity
@@ -706,25 +706,25 @@ export default function HomeScreen() {
         {/* Quick Actions — .132kf: added Incident Report, 2×2 grid */}
         <View style={s.quickActions}>
           <TouchableOpacity testID="home-action-scan-qr" style={s.actionTile} onPress={() => router.push('/(screens)/qr-scan')}>
-            <View style={[s.actionIcon, { backgroundColor: '#FFF7ED' }]}>
+            <View style={[s.actionIcon, { backgroundColor: C.orange.softBg }]}>
               <Ionicons name="qr-code-outline" size={24} color={Colors.orange} />
             </View>
             <Text style={s.actionLabel}>Scan Vehicle QR</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="home-action-prestart" style={s.actionTile} onPress={() => router.push({ pathname: '/forms/picker', params: { category: 'pre_start', title: 'Pre-Start' } } as never)}>
-            <View style={[s.actionIcon, { backgroundColor: '#D1FAE5' }]}>
+            <View style={[s.actionIcon, { backgroundColor: C.green.softBg }]}>
               <Ionicons name="checkbox-outline" size={24} color={Colors.success} />
             </View>
             <Text style={s.actionLabel}>New Pre-Start</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="home-action-incident" style={s.actionTile} onPress={() => router.push({ pathname: '/forms/picker', params: { category: 'incident', title: 'Incident Report' } } as never)}>
-            <View style={[s.actionIcon, { backgroundColor: '#FEE2E2' }]}>
+            <View style={[s.actionIcon, { backgroundColor: C.misc.errorBg }]}>
               <Ionicons name="warning-outline" size={24} color={Colors.error} />
             </View>
             <Text style={s.actionLabel}>Incident Report</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="home-action-signon" style={s.actionTile} onPress={() => setViewMode('signed_on')}>
-            <View style={[s.actionIcon, { backgroundColor: '#DBEAFE' }]}>
+            <View style={[s.actionIcon, { backgroundColor: Colors.infoSoft }]}>
               <Ionicons name="log-in-outline" size={24} color={Colors.info} />
             </View>
             <Text style={s.actionLabel}>Sign On</Text>
@@ -804,7 +804,7 @@ export default function HomeScreen() {
                 isNewJob && {
                   borderColor,
                   borderWidth: 2,
-                  shadowColor: '#10B981',
+                  shadowColor: C.green.base,
                   shadowOffset: { width: 0, height: 0 },
                   shadowRadius: 12,
                   shadowOpacity,
@@ -857,11 +857,11 @@ export default function HomeScreen() {
             }}
             activeOpacity={0.7}
           >
-            <Ionicons name="warning" size={16} color="#92400E" />
+            <Ionicons name="warning" size={16} color={Colors.warning} />
             <Text style={s.smsPermBannerText}>
               SMS reading disabled — enable in Settings {'>'} Apps {'>'} Paneltec {'>'} Permissions to auto-receive jobs.
             </Text>
-            <Ionicons name="open-outline" size={14} color="#92400E" />
+            <Ionicons name="open-outline" size={14} color={Colors.warning} />
           </TouchableOpacity>
         )}
 
@@ -876,7 +876,7 @@ export default function HomeScreen() {
             }}
             activeOpacity={0.7}
           >
-            <Ionicons name="bug" size={14} color="#7C3AED" />
+            <Ionicons name="bug" size={14} color={C.card.textSecondary} />
             <Text style={s.debugSmsBtnText}>Debug: Fire test SMS</Text>
           </TouchableOpacity>
         )}
@@ -898,17 +898,17 @@ export default function HomeScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navyLight },
+  container: { flex: 1, backgroundColor: C.screen.bg },
   header: {
-    backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
+    backgroundColor: C.screen.bar, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
   },
   brandName: {
-    color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: '800',
+    color: C.textOnNavy.faint, fontSize: 10, fontWeight: '800',
     letterSpacing: 2, marginBottom: 10,
   },
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  greeting: { color: Colors.white, fontSize: 24, fontWeight: '800' },
-  roleLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500', marginTop: 2, textTransform: 'capitalize' },
+  greeting: { color: C.textOnNavy.main, fontSize: 24, fontWeight: '800' },
+  roleLabel: { color: C.textOnNavy.secondary, fontSize: 14, fontWeight: '500', marginTop: 2, textTransform: 'capitalize' },
   bellBtn: { position: 'relative', padding: 6 },
   bellDot: {
     position: 'absolute', top: 4, right: 4, width: 8, height: 8,
@@ -924,71 +924,71 @@ const s = StyleSheet.create({
   // Notification banner
   notifBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.orangeSoft, borderRadius: 14, padding: 14, marginBottom: 12,
-    borderWidth: 1, borderColor: '#FDBA7440',
+    backgroundColor: C.orange.softBg, borderRadius: 14, padding: 14, marginBottom: 12,
+    borderWidth: 1, borderColor: C.orange.softBg,
   },
   notifIcon: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: '#FFF7ED',
+    width: 36, height: 36, borderRadius: 10, backgroundColor: C.orange.softBg,
     alignItems: 'center', justifyContent: 'center',
   },
-  notifTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
-  notifSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  notifTitle: { fontSize: 14, fontWeight: '700', color: C.card.textMain },
+  notifSub: { fontSize: 12, color: C.textOnNavy.secondary, marginTop: 2 },
 
   // Signed-on banner
   signedOnBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.successSoft, borderRadius: 14, padding: 14, marginBottom: 12,
-    borderWidth: 1, borderColor: '#10B98130',
+    backgroundColor: C.green.softBg, borderRadius: 14, padding: 14, marginBottom: 12,
+    borderWidth: 1, borderColor: C.green.softBg,
   },
-  signedOnBannerDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.success },
-  signedOnBannerTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
-  signedOnBannerSub: { fontSize: 12, color: Colors.success, marginTop: 1 },
+  signedOnBannerDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.green.base },
+  signedOnBannerTitle: { fontSize: 14, fontWeight: '700', color: C.card.textMain },
+  signedOnBannerSub: { fontSize: 12, color: C.green.base, marginTop: 1 },
 
   // Briefing
   briefingCard: {
-    backgroundColor: Colors.surface, borderRadius: 18, padding: 18, marginBottom: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    backgroundColor: C.card.bg, borderRadius: 18, padding: 18, marginBottom: 16,
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   briefingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  briefingTitle: { fontSize: 16, fontWeight: '800', color: Colors.ink, flex: 1 },
-  briefingSummary: { fontSize: 15, color: Colors.textSecondary, lineHeight: 22 },
+  briefingTitle: { fontSize: 16, fontWeight: '800', color: C.card.textMain, flex: 1 },
+  briefingSummary: { fontSize: 15, color: C.card.textSecondary, lineHeight: 22 },
   briefingLoadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  briefingLoadingText: { fontSize: 12, color: Colors.textTertiary, fontStyle: 'italic' },
+  briefingLoadingText: { fontSize: 12, color: C.textOnNavy.faint, fontStyle: 'italic' },
   briefingRetryWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 12, paddingHorizontal: 4,
   },
-  briefingRetryText: { fontSize: 13, color: Colors.textTertiary },
+  briefingRetryText: { fontSize: 13, color: C.textOnNavy.faint },
   severityPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   severityText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 
   // Quick Actions
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   actionTile: {
-    width: '47%', backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    width: '47%', backgroundColor: C.card.bg, borderRadius: 16, padding: 16,
     alignItems: 'center', gap: 10, minHeight: 100,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
   actionIcon: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  actionLabel: { fontSize: 14, fontWeight: '700', color: Colors.ink, textAlign: 'center' },
+  actionLabel: { fontSize: 14, fontWeight: '700', color: C.card.textMain, textAlign: 'center' },
 
   // Section
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 4 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: C.textOnNavy.main },
 
   // Compliance list
   complianceRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 8,
+    backgroundColor: C.card.bg, borderRadius: 14, padding: 16, marginBottom: 8,
     minHeight: 64,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03, shadowRadius: 3, elevation: 1,
   },
   complianceDot: { width: 10, height: 10, borderRadius: 5 },
-  complianceTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },
-  complianceSub: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
+  complianceTitle: { fontSize: 15, fontWeight: '600', color: C.card.textMain },
+  complianceSub: { fontSize: 13, color: C.textOnNavy.faint, marginTop: 2 },
   complianceStatusPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   complianceStatusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 
@@ -996,38 +996,38 @@ const s = StyleSheet.create({
   // New job banner + pulse
   newJobBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#D1FAE5', borderRadius: 10,
+    backgroundColor: C.green.softBg, borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8,
   },
-  newJobBannerText: { fontSize: 14, fontWeight: '700', color: '#059669' },
+  newJobBannerText: { fontSize: 14, fontWeight: '700', color: C.green.base },
   acceptedBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(16,185,129,0.10)', borderRadius: 10,
+    backgroundColor: C.green.softBg, borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 8, marginBottom: 8,
   },
-  acceptedBannerText: { fontSize: 13, fontWeight: '600', color: '#059669' },
+  acceptedBannerText: { fontSize: 13, fontWeight: '600', color: C.green.base },
   todayJobCardWrap: {
     borderRadius: 14, overflow: 'hidden',
   },
   todayJobCardInner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16,
+    backgroundColor: C.card.bg, borderRadius: 14, padding: 16,
     minHeight: 64,
   },
   todayJobCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16,
+    backgroundColor: C.card.bg, borderRadius: 14, padding: 16,
     minHeight: 64,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
-  todayJobTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink },
-  todayJobSub: { fontSize: 13, color: Colors.textTertiary, marginTop: 2, textTransform: 'capitalize' },
+  todayJobTitle: { fontSize: 16, fontWeight: '700', color: C.card.textMain },
+  todayJobSub: { fontSize: 13, color: C.textOnNavy.faint, marginTop: 2, textTransform: 'capitalize' },
   noJobCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, padding: 16,
+    backgroundColor: C.screen.faintPanel, borderRadius: 14, padding: 16,
   },
-  noJobText: { fontSize: 14, fontWeight: '500', color: Colors.textTertiary },
+  noJobText: { fontSize: 14, fontWeight: '500', color: C.textOnNavy.faint },
   pasteSmsBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     borderWidth: 1.5, borderColor: `${Colors.info}40`, borderRadius: 12,
@@ -1039,85 +1039,82 @@ const s = StyleSheet.create({
   // SMS permission denied banner
   smsPermBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginHorizontal: 16, marginBottom: 8,
-    borderWidth: 1, borderColor: '#FDE68A',
+    backgroundColor: Colors.warningSoft, borderRadius: 12, padding: 12, marginHorizontal: 16, marginBottom: 8,
+    borderWidth: 1, borderColor: Colors.warning,
   },
-  smsPermBannerText: { fontSize: 12, color: '#92400E', flex: 1, lineHeight: 16 },
+  smsPermBannerText: { fontSize: 12, color: Colors.warning, flex: 1, lineHeight: 16 },
 
   // Debug SMS button
   debugSmsBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 16,
-    borderRadius: 8, borderWidth: 1, borderColor: '#DDD6FE', backgroundColor: '#F5F3FF',
+    borderRadius: 8, borderWidth: 1, borderColor: C.card.border, backgroundColor: C.card.bg,
     marginTop: 8,
   },
-  debugSmsBtnText: { fontSize: 12, fontWeight: '600', color: '#7C3AED' },
+  debugSmsBtnText: { fontSize: 12, fontWeight: '600', color: C.card.textSecondary },
 
   // Signed on
   backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { color: Colors.white, fontSize: 18, fontWeight: '700' },
+  headerTitle: { color: C.textOnNavy.main, fontSize: 18, fontWeight: '700' },
   signedOnCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.successSoft, borderRadius: 14, padding: 16, marginBottom: 12,
+    backgroundColor: C.green.softBg, borderRadius: 14, padding: 16, marginBottom: 12,
   },
-  signedOnDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: Colors.success },
-  signedOnLabel: { fontSize: 15, fontWeight: '700', color: Colors.success },
+  signedOnDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: C.green.base },
+  signedOnLabel: { fontSize: 15, fontWeight: '700', color: C.green.base },
   siteCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    backgroundColor: C.card.bg, borderRadius: 14, padding: 16, marginBottom: 12,
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
-  siteCardTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
+  siteCardTitle: { fontSize: 15, fontWeight: '700', color: C.card.textMain },
   timeCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    backgroundColor: C.card.bg, borderRadius: 14, padding: 16, marginBottom: 16,
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
   timeRow: { flex: 1, alignItems: 'center' },
-  timeLabel: { fontSize: 11, color: Colors.textTertiary, fontWeight: '600' },
-  timeValue: { fontSize: 18, fontWeight: '800', color: Colors.ink, marginTop: 4 },
-  timeDivider: { width: 1, height: 32, backgroundColor: Colors.border },
+  timeLabel: { fontSize: 11, color: C.textOnNavy.faint, fontWeight: '600' },
+  timeValue: { fontSize: 18, fontWeight: '800', color: C.card.textMain, marginTop: 4 },
+  timeDivider: { width: 1, height: 32, backgroundColor: C.card.border },
   signOffBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1.5, borderColor: Colors.errorSoft, borderRadius: 14,
-    paddingVertical: 14, backgroundColor: Colors.surface, marginTop: 8,
+    borderWidth: 1.5, borderColor: C.misc.errorRed, borderRadius: 14,
+    paddingVertical: 14, backgroundColor: C.card.bg, marginTop: 8,
   },
-  signOffText: { fontSize: 15, fontWeight: '600', color: Colors.error },
+  signOffText: { fontSize: 15, fontWeight: '600', color: C.misc.errorRed },
   signOnPrompt: {
-    color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600', marginBottom: 12,
+    color: C.textOnNavy.secondary, fontSize: 14, fontWeight: '600', marginBottom: 12,
   },
   siteOptionCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    backgroundColor: C.card.bg, borderRadius: 14, padding: 16, marginBottom: 8,
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
-  siteOptionText: { fontSize: 15, fontWeight: '600', color: Colors.ink, flex: 1 },
+  siteOptionText: { fontSize: 15, fontWeight: '600', color: C.card.textMain, flex: 1 },
 
   // Job detail — Phase 3 redesign (.132p2)
   // Styles now in separate `jd` stylesheet below
   jdHeader: {}, // unused — kept to avoid references breaking
   mockBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginVertical: 12,
-    borderWidth: 1, borderColor: '#FECACA',
+    backgroundColor: C.misc.errorBg, borderRadius: 10, padding: 10, marginVertical: 12,
+    borderWidth: 1, borderColor: C.misc.errorBorder,
   },
-  mockBadgeText: { fontSize: 11, fontWeight: '700', color: '#DC2626' },
+  mockBadgeText: { fontSize: 11, fontWeight: '700', color: C.misc.errorText },
 });
 
 // ── Job Detail stylesheet — Phase 3 (.132p2) ──
-const CARD_BG = '#F5F5F0';
-const CARD_BORDER = '#E5E5E0';
-
 const jd = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111827', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14,
+    backgroundColor: C.screen.bar, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14,
   },
   backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: Colors.white, lineHeight: 26 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: C.textOnNavy.main, lineHeight: 26 },
   chip: {
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
     borderWidth: 1.5, marginLeft: 8, flexShrink: 0, maxWidth: 180,
@@ -1126,87 +1123,87 @@ const jd = StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 40 },
   // Map card (fallback)
   mapCard: {
-    backgroundColor: CARD_BG, borderRadius: 16, padding: 18,
-    borderWidth: 1, borderColor: CARD_BORDER, marginBottom: 14,
+    backgroundColor: C.card.bg, borderRadius: 16, padding: 18,
+    borderWidth: 1, borderColor: C.card.border, marginBottom: 14,
   },
   mapIconRow: { flexDirection: 'row', alignItems: 'center' },
   mapPin: {
     width: 44, height: 44, borderRadius: 12,
-    backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.orange.softBg, alignItems: 'center', justifyContent: 'center',
   },
-  mapAddress: { fontSize: 15, fontWeight: '700', color: Colors.ink, lineHeight: 20 },
-  mapDistance: { fontSize: 12, color: Colors.textTertiary, marginTop: 3 },
+  mapAddress: { fontSize: 15, fontWeight: '700', color: C.card.textMain, lineHeight: 20 },
+  mapDistance: { fontSize: 12, color: C.card.textLabel, marginTop: 3 },
   // Field table
   fieldCard: {
-    backgroundColor: CARD_BG, borderRadius: 16, paddingHorizontal: 18,
+    backgroundColor: C.card.bg, borderRadius: 16, paddingHorizontal: 18,
     paddingVertical: 4, marginBottom: 20,
-    borderWidth: 1, borderColor: CARD_BORDER,
+    borderWidth: 1, borderColor: C.card.border,
   },
   fieldRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 14, minHeight: 48,
   },
-  fieldLabel: { fontSize: 11, fontWeight: '700', color: '#6B7280', letterSpacing: 0.5, width: 80 },
-  fieldValue: { fontSize: 14, fontWeight: '600', color: Colors.ink, flex: 1, textAlign: 'right' },
-  fieldDivider: { height: 1, backgroundColor: CARD_BORDER },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: C.card.textLabel, letterSpacing: 0.5, width: 80 },
+  fieldValue: { fontSize: 14, fontWeight: '600', color: C.card.textMain, flex: 1, textAlign: 'right' },
+  fieldDivider: { height: 1, backgroundColor: C.card.divider },
   notesMore: { fontSize: 12, fontWeight: '700', color: Colors.info, marginTop: 4, textAlign: 'right' },
   // Decision row (issued)
   decisionRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   declineBtn: {
-    flex: 1, borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 14,
+    flex: 1, borderWidth: 1.5, borderColor: C.grey.declineBorder, borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.surface, minHeight: 56,
+    backgroundColor: C.grey.declineBg, minHeight: 56,
   },
-  declineBtnText: { fontSize: 15, fontWeight: '800', color: '#6B7280', letterSpacing: 0.5 },
+  declineBtnText: { fontSize: 15, fontWeight: '800', color: C.grey.declineText, letterSpacing: 0.5 },
   acceptBtnWrap: { flex: 1.6, borderRadius: 14 },
   acceptBtn: {
-    backgroundColor: '#16A34A', borderRadius: 14,
+    backgroundColor: C.green.base, borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
     minHeight: 56,
   },
-  acceptBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white, letterSpacing: 0.5 },
+  acceptBtnText: { fontSize: 15, fontWeight: '800', color: C.green.buttonText, letterSpacing: 0.5 },
   // Locked row (issued)
   lockedRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   lockedBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14,
-    paddingVertical: 14, backgroundColor: '#F9FAFB', minHeight: 50, opacity: 0.5,
+    borderWidth: 1.5, borderColor: C.card.border, borderRadius: 14,
+    paddingVertical: 14, backgroundColor: C.card.bg, minHeight: 50, opacity: C.grey.disabledOpacity,
   },
-  lockedBtnText: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.3 },
+  lockedBtnText: { fontSize: 12, fontWeight: '700', color: C.grey.lockedIcon, letterSpacing: 0.3 },
   footerCaption: {
-    fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center',
+    fontSize: 12, color: C.textOnNavy.faint, textAlign: 'center',
     lineHeight: 18, marginTop: 4,
   },
   // Accepted state
   acceptedPill: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#D1FAE5', borderRadius: 14, paddingVertical: 14, marginBottom: 14,
+    backgroundColor: C.green.softBg, borderRadius: 14, paddingVertical: 14, marginBottom: 14,
   },
-  acceptedPillText: { fontSize: 14, fontWeight: '800', color: '#16A34A' },
+  acceptedPillText: { fontSize: 14, fontWeight: '800', color: C.green.base },
   prestartBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#16A34A', borderRadius: 14, paddingVertical: 16, marginBottom: 12,
+    backgroundColor: C.green.base, borderRadius: 14, paddingVertical: 16, marginBottom: 12,
     minHeight: 56,
   },
-  prestartBtnText: { fontSize: 14, fontWeight: '800', color: Colors.white, letterSpacing: 0.3 },
+  prestartBtnText: { fontSize: 14, fontWeight: '800', color: C.green.buttonText, letterSpacing: 0.3 },
   actionRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   navBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 16, minHeight: 56,
+    backgroundColor: C.orange.base, borderRadius: 14, paddingVertical: 16, minHeight: 56,
   },
-  navBtnText: { fontSize: 14, fontWeight: '800', color: Colors.white, letterSpacing: 0.3 },
+  navBtnText: { fontSize: 14, fontWeight: '800', color: C.orange.buttonText, letterSpacing: 0.3 },
   signOnBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 14,
-    paddingVertical: 16, backgroundColor: Colors.surface, minHeight: 56,
+    borderWidth: 1.5, borderColor: C.grey.declineBorder, borderRadius: 14,
+    paddingVertical: 16, backgroundColor: C.card.bg, minHeight: 56,
   },
-  signOnBtnText: { fontSize: 13, fontWeight: '800', color: Colors.ink, letterSpacing: 0.3 },
+  signOnBtnText: { fontSize: 13, fontWeight: '800', color: C.card.textMain, letterSpacing: 0.3 },
   // Declined state
   declinedBlock: {
     alignItems: 'center', paddingVertical: 24, gap: 8,
   },
-  declinedTitle: { fontSize: 16, fontWeight: '700', color: '#9CA3AF' },
-  declinedSub: { fontSize: 13, color: '#9CA3AF', marginBottom: 8 },
+  declinedTitle: { fontSize: 16, fontWeight: '700', color: C.grey.lockedIcon },
+  declinedSub: { fontSize: 13, color: C.grey.lockedIcon, marginBottom: 8 },
   backHomeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     borderWidth: 1.5, borderColor: `${Colors.info}40`, borderRadius: 12,

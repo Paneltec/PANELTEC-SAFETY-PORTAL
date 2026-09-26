@@ -9,7 +9,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../../src/theme/colors';
+import { Colors, C } from '../../src/theme/colors';
 import Wordmark from '../../src/components/Wordmark';
 import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet } from '../../src/services/apiClient';
@@ -355,17 +355,17 @@ function ProfileRow({
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navy },
+  container: { flex: 1, backgroundColor: C.screen.bg },
   header: {
-    backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20,
+    backgroundColor: C.screen.bg, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
   avatarCircle: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: Colors.white, fontSize: 22, fontWeight: '800' },
-  headerName: { color: Colors.white, fontSize: 20, fontWeight: '700' },
+  avatarText: { color: C.textOnNavy.main, fontSize: 22, fontWeight: '800' },
+  headerName: { color: C.textOnNavy.main, fontSize: 20, fontWeight: '700' },
   headerRole: { color: Colors.orange, fontSize: 13, fontWeight: '600', marginTop: 2, textTransform: 'capitalize' },
   headerEmail: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 4 },
   liveBanner: {
@@ -386,61 +386,61 @@ const s = StyleSheet.create({
   navRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: C.card.bg,
     borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
   },
   navIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  navTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  navSub: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
+  navTitle: { fontSize: 15, fontWeight: '700', color: C.card.textMain },
+  navSub: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 2 },
   badgePill: {
     backgroundColor: Colors.warningSoft, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
   },
   badgeText: { fontSize: 10, fontWeight: '700', color: Colors.warning },
 
-  divider: { height: 8, backgroundColor: Colors.navy },
+  divider: { height: 8, backgroundColor: C.screen.bg },
 
   updateRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: C.card.bg, paddingHorizontal: 16, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
   },
   updateRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  updateRowTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink },
-  updateRowSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  updateRowTitle: { fontSize: 14, fontWeight: '600', color: C.card.textMain },
+  updateRowSub: { fontSize: 11, color: C.textOnNavy.faint, marginTop: 2 },
   updateDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2C6BFF' },
 
-  adminSection: { backgroundColor: Colors.surface, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+  adminSection: { backgroundColor: C.card.bg, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
   adminSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   adminSectionTitle: { fontSize: 11, fontWeight: '800', color: Colors.orange, letterSpacing: 1.2 },
   simCard: {
-    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingBottom: 14,
+    backgroundColor: C.card.bg, paddingHorizontal: 16, paddingBottom: 14,
   },
-  simLabel: { fontSize: 15, fontWeight: '700', color: Colors.ink, marginTop: 8 },
-  simHint: { fontSize: 12, color: Colors.textTertiary, marginTop: 2, marginBottom: 12 },
+  simLabel: { fontSize: 15, fontWeight: '700', color: C.card.textMain, marginTop: 8 },
+  simHint: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 2, marginBottom: 12 },
   simPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   simPill: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bg,
+    borderWidth: 1.5, borderColor: C.card.border, backgroundColor: Colors.bg,
   },
   simPillActive: {
     borderColor: '#7C3AED', backgroundColor: '#F5F3FF',
   },
-  simPillText: { fontSize: 12, fontWeight: '600', color: Colors.textTertiary },
-  simPillTextActive: { color: '#7C3AED' },
+  simPillText: { fontSize: 12, fontWeight: '600', color: C.textOnNavy.faint },
+  simPillTextActive: { color: Colors.viatec },
   simActiveBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#F5F3FF', borderRadius: 8, padding: 8, marginTop: 10,
     borderWidth: 1, borderColor: '#7C3AED20',
   },
-  simActiveText: { fontSize: 10, fontWeight: '600', color: '#7C3AED', flex: 1 },
+  simActiveText: { fontSize: 10, fontWeight: '600', color: Colors.viatec, flex: 1 },
 
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     marginHorizontal: 16, marginTop: 16, paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1.5, borderColor: Colors.errorSoft, backgroundColor: Colors.surface,
+    borderWidth: 1.5, borderColor: Colors.errorSoft, backgroundColor: C.card.bg,
   },
   logoutText: { fontSize: 15, fontWeight: '600', color: Colors.error },
 
   footer: { alignItems: 'center', marginTop: 24, gap: 6, opacity: 0.3 },
-  versionText: { fontSize: 10, color: Colors.textTertiary },
+  versionText: { fontSize: 10, color: C.textOnNavy.faint },
 });

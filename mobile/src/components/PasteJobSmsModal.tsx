@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { Colors } from '../theme/colors';
+import { Colors, C } from '../theme/colors';
 import { parseJobSms, type ParsedSms } from '../lib/parseJobSms';
 import { authPost } from '../services/apiClient';
 
@@ -294,14 +294,14 @@ const ms = StyleSheet.create({
   errorMsg: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginBottom: 16 },
   parseErrorBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEE2E2', borderRadius: 12, padding: 12, marginTop: 12,
-    borderWidth: 1, borderColor: '#FECACA',
+    backgroundColor: C.misc.errorBg, borderRadius: 12, padding: 12, marginTop: 12,
+    borderWidth: 1, borderColor: C.misc.errorBorder,
   },
   parseErrorText: { fontSize: 13, fontWeight: '600', color: Colors.error, flex: 1 },
   missingBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: '#FDE68A',
+    backgroundColor: Colors.warningSoft, borderRadius: 12, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.warning,
   },
-  missingBannerText: { fontSize: 13, fontWeight: '600', color: '#92400E', flex: 1 },
+  missingBannerText: { fontSize: 13, fontWeight: '600', color: Colors.warning, flex: 1 },
 });

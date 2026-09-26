@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../../src/theme/colors';
+import { Colors, C } from '../../src/theme/colors';
 import { clearSession } from '../../src/services/auth';
 import { authGet } from '../../src/services/apiClient';
 
@@ -37,7 +37,7 @@ const CATEGORIES: CategoryConfig[] = [
     key: 'pre_start',
     label: 'Daily Pre-Starts',
     icon: 'checkbox-outline',
-    color: '#10B981',
+    color: C.green.base,
     endpoint: '/api/pre-starts',
     newRoute: '/forms/picker',
     newParams: { category: 'pre_start', title: 'Pre-Start' },
@@ -285,20 +285,20 @@ export default function MyWorkTab() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navyLight },
+  container: { flex: 1, backgroundColor: C.screen.bg },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 20, paddingTop: 16, backgroundColor: Colors.navy, paddingBottom: 4,
+    paddingHorizontal: 20, paddingTop: 16, backgroundColor: C.screen.bg, paddingBottom: 4,
   },
-  headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
+  headerTitle: { color: C.textOnNavy.main, fontSize: 22, fontWeight: '800' },
   headerBadge: {
     backgroundColor: Colors.orange, borderRadius: 10,
     paddingHorizontal: 10, paddingVertical: 3,
   },
-  headerBadgeText: { color: Colors.white, fontSize: 12, fontWeight: '800' },
+  headerBadgeText: { color: C.textOnNavy.main, fontSize: 12, fontWeight: '800' },
   headerSub: {
     color: 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: '500',
-    paddingHorizontal: 20, paddingBottom: 10, backgroundColor: Colors.navy,
+    paddingHorizontal: 20, paddingBottom: 10, backgroundColor: C.screen.bg,
   },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
@@ -307,16 +307,16 @@ const s = StyleSheet.create({
   catWrap: { marginBottom: 8 },
   catCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    backgroundColor: C.card.bg, borderRadius: 16, padding: 16,
     minHeight: 72,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
   catIcon: {
     width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
   },
-  catLabel: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  catCount: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
+  catLabel: { fontSize: 15, fontWeight: '700', color: C.card.textMain },
+  catCount: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 2 },
   newBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     borderWidth: 1.5, borderRadius: 10,
@@ -330,11 +330,11 @@ const s = StyleSheet.create({
   },
   itemRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: 12, padding: 14, marginBottom: 4,
+    backgroundColor: C.card.bg, borderRadius: 12, padding: 14, marginBottom: 4,
     minHeight: 52,
   },
-  itemTitle: { fontSize: 13, fontWeight: '600', color: Colors.ink },
-  itemDate: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  itemTitle: { fontSize: 13, fontWeight: '600', color: C.card.textMain },
+  itemDate: { fontSize: 11, color: C.textOnNavy.faint, marginTop: 2 },
   statusPill: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
   moreText: {
@@ -343,9 +343,9 @@ const s = StyleSheet.create({
   },
   emptyRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.surface, borderRadius: 12, padding: 16, marginBottom: 4,
+    backgroundColor: C.card.bg, borderRadius: 12, padding: 16, marginBottom: 4,
   },
-  emptyText: { fontSize: 13, color: Colors.textTertiary, flex: 1 },
+  emptyText: { fontSize: 13, color: C.textOnNavy.faint, flex: 1 },
 
   summaryCard: {
     backgroundColor: 'rgba(249,115,22,0.08)', borderRadius: 16, padding: 20,
@@ -356,6 +356,6 @@ const s = StyleSheet.create({
     fontSize: 11, fontWeight: '700', color: Colors.orange,
     letterSpacing: 0.5, textTransform: 'uppercase',
   },
-  summaryCount: { fontSize: 36, fontWeight: '900', color: Colors.white, marginVertical: 4 },
+  summaryCount: { fontSize: 36, fontWeight: '900', color: C.textOnNavy.main, marginVertical: 4 },
   summarySub: { fontSize: 12, color: 'rgba(255,255,255,0.5)' },
 });

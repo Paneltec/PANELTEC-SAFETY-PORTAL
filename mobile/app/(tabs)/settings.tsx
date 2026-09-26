@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { Colors } from '../../src/theme/colors';
+import { Colors, C } from '../../src/theme/colors';
 import Wordmark from '../../src/components/Wordmark';
 import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
 import { authGet } from '../../src/services/apiClient';
@@ -500,28 +500,28 @@ function SettingsRow({
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.navyLight },
-  header: { backgroundColor: Colors.navy, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18 },
-  headerTitle: { color: Colors.white, fontSize: 26, fontWeight: '800' },
+  container: { flex: 1, backgroundColor: C.screen.bg },
+  header: { backgroundColor: C.screen.bg, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18 },
+  headerTitle: { color: C.textOnNavy.main, fontSize: 26, fontWeight: '800' },
   scrollContent: { paddingBottom: 32 },
 
   // Profile card
   profileCard: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 16, marginTop: 16, marginBottom: 8,
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    backgroundColor: C.card.bg, borderRadius: 16, padding: 16,
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   avatarCircle: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: Colors.white, fontSize: 22, fontWeight: '800' },
+  avatarText: { color: C.textOnNavy.main, fontSize: 22, fontWeight: '800' },
   profileInfo: { flex: 1, marginLeft: 14 },
-  profileName: { fontSize: 18, fontWeight: '800', color: Colors.ink },
+  profileName: { fontSize: 18, fontWeight: '800', color: C.card.textMain },
   profileRole: { fontSize: 14, fontWeight: '600', color: Colors.orange, marginTop: 2, textTransform: 'capitalize' },
-  profileEmail: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
+  profileEmail: { fontSize: 13, color: C.textOnNavy.faint, marginTop: 2 },
   liveDot: { position: 'absolute', top: 12, right: 12 },
 
   // Section labels
@@ -535,40 +535,40 @@ const s = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 16,
-    backgroundColor: Colors.surface, minHeight: 60,
+    backgroundColor: C.card.bg, minHeight: 60,
     borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
   },
   rowIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   rowContent: { flex: 1 },
-  rowTitle: { fontSize: 16, fontWeight: '600', color: Colors.ink },
-  rowSub: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
+  rowTitle: { fontSize: 16, fontWeight: '600', color: C.card.textMain },
+  rowSub: { fontSize: 13, color: C.textOnNavy.faint, marginTop: 2 },
   updateDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2C6BFF' },
 
   // Admin
-  simCard: { backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 14 },
-  simLabel: { fontSize: 16, fontWeight: '700', color: Colors.ink },
-  simHint: { fontSize: 13, color: Colors.textTertiary, marginTop: 2, marginBottom: 12 },
+  simCard: { backgroundColor: C.card.bg, paddingHorizontal: 16, paddingVertical: 14 },
+  simLabel: { fontSize: 16, fontWeight: '700', color: C.card.textMain },
+  simHint: { fontSize: 13, color: C.textOnNavy.faint, marginTop: 2, marginBottom: 12 },
   simPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   simPill: {
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
-    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bg,
+    borderWidth: 1.5, borderColor: C.card.border, backgroundColor: Colors.bg,
     minHeight: 44, justifyContent: 'center',
   },
   simPillActive: { borderColor: '#7C3AED', backgroundColor: '#F5F3FF' },
-  simPillText: { fontSize: 14, fontWeight: '600', color: Colors.textTertiary },
-  simPillTextActive: { color: '#7C3AED' },
+  simPillText: { fontSize: 14, fontWeight: '600', color: C.textOnNavy.faint },
+  simPillTextActive: { color: Colors.viatec },
   simActiveBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#F5F3FF', borderRadius: 10, padding: 10, marginTop: 10,
     borderWidth: 1, borderColor: '#7C3AED20',
   },
-  simActiveText: { fontSize: 12, fontWeight: '600', color: '#7C3AED', flex: 1 },
+  simActiveText: { fontSize: 12, fontWeight: '600', color: Colors.viatec, flex: 1 },
 
   // Sign out
   signoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     marginHorizontal: 16, paddingVertical: 16, borderRadius: 14,
-    borderWidth: 1.5, borderColor: Colors.errorSoft, backgroundColor: Colors.surface,
+    borderWidth: 1.5, borderColor: Colors.errorSoft, backgroundColor: C.card.bg,
     minHeight: 56,
   },
   signoutText: { fontSize: 16, fontWeight: '600', color: Colors.error },
@@ -579,25 +579,25 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
   },
   modalCard: {
-    backgroundColor: Colors.surface, borderRadius: 20, padding: 28,
+    backgroundColor: C.card.bg, borderRadius: 20, padding: 28,
     alignItems: 'center', width: '100%', maxWidth: 340,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15, shadowRadius: 24, elevation: 10,
   },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink, marginBottom: 6 },
-  modalBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: C.card.textMain, marginBottom: 6 },
+  modalBody: { fontSize: 14, color: C.textOnNavy.secondary, textAlign: 'center', lineHeight: 20 },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 20, width: '100%' },
   modalCancelBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 12,
-    borderWidth: 1.5, borderColor: Colors.border,
+    borderWidth: 1.5, borderColor: C.card.border,
     alignItems: 'center', minHeight: 48,
   },
-  modalCancelText: { fontSize: 15, fontWeight: '600', color: Colors.ink },
+  modalCancelText: { fontSize: 15, fontWeight: '600', color: C.card.textMain },
   modalConfirmBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 12,
     backgroundColor: Colors.error, alignItems: 'center', minHeight: 48,
   },
-  modalConfirmText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  modalConfirmText: { fontSize: 15, fontWeight: '700', color: C.textOnNavy.main },
 
   // Footer
   footer: { alignItems: 'center', marginTop: 24, gap: 6, opacity: 0.3 },
@@ -605,20 +605,20 @@ const s = StyleSheet.create({
 
   // About panel (.132mo)
   aboutPanel: {
-    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: C.card.bg, paddingHorizontal: 16, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
   },
   aboutRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
   },
-  aboutLabel: { fontSize: 13, fontWeight: '600', color: Colors.textTertiary },
-  aboutValue: { fontSize: 13, fontWeight: '700', color: Colors.ink, fontFamily: 'monospace' },
+  aboutLabel: { fontSize: 13, fontWeight: '600', color: C.textOnNavy.faint },
+  aboutValue: { fontSize: 13, fontWeight: '700', color: C.card.textMain, fontFamily: 'monospace' },
   aboutCopyBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     marginTop: 12, paddingVertical: 12, borderRadius: 12,
     borderWidth: 1.5, borderColor: '#7C3AED30', backgroundColor: '#F5F3FF',
     minHeight: 48,
   },
-  aboutCopyText: { fontSize: 14, fontWeight: '700', color: '#7C3AED' },
+  aboutCopyText: { fontSize: 14, fontWeight: '700', color: Colors.viatec },
 });

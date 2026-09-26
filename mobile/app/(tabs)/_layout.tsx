@@ -28,14 +28,14 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      sceneContainerStyle={{ backgroundColor: Colors.navyLight }}
+      sceneContainerStyle={{ backgroundColor: Colors.bg }}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.orange,
-        tabBarInactiveTintColor: Colors.slate400,
+        tabBarActiveTintColor: Colors.tabActive,
+        tabBarInactiveTintColor: Colors.tabInactive,
         tabBarStyle: {
-          backgroundColor: Colors.white,
-          borderTopColor: Colors.border,
+          backgroundColor: Colors.tabBar,
+          borderTopColor: Colors.tabBarBorder,
           borderTopWidth: 1,
           paddingBottom: bottomPad,
           paddingTop: 6,
