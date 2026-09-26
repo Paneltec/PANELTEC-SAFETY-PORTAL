@@ -498,6 +498,14 @@ _PREVIEW_OFFICE_EXTS = {
 }
 
 
+# `.132n4c` — preview size guard.  Dropbox's `get_preview` starts
+# timing out around 50 MB and the browser blob-URL PDF viewer
+# gets unreliable much sooner than that.  Skip the preview
+# altogether over this threshold; the FE renders a clean
+# "too large — download instead" panel.
+_PREVIEW_MAX_BYTES = 50 * 1024 * 1024
+
+
 @router.get("/preview")
 async def preview_file(
     path: str = Query(..., description="Full Dropbox path to a file"),
@@ -525,9 +533,15 @@ async def preview_file(
         so post-edit re-previews stay honest.
 
     Errors:
-      · 400 — trying to preview the team-folder root, or the file
-              type isn't previewable per Dropbox.
+      · 400 — trying to preview the team-folder root.
       · 404 — file no longer exists.
+      · 413 — file is >50 MB (skips the preview to avoid Dropbox
+              timing out on the render pipeline; caller should
+              fall back to Download instead).  Added in `.132n4c`.
+      · 415 — Dropbox refused to preview this content
+              (`unsupported_extension` / `unsupported_content`).
+              Caller should fall back to Download.  Added in
+              `.132n4c`.
       · 502 — any other Dropbox API failure.
     """
     resolved = _normalise_path(path)
@@ -542,6 +556,28 @@ async def preview_file(
 
     async with sem:
         dbx = _get_dbx()
+
+        # `.132n4c` — size guard.  Dropbox's `get_preview` and
+        # `files_download` both stream, but the browser-side blob
+        # allocation for a 100+ MB file crashes preview in most
+        # clients, and Dropbox's `get_preview` itself times out on
+        # anything over ~50 MB anyway.  Fail fast with 413 so the
+        # FE can surface a "Download instead" fallback without a
+        # dead spinner.
+        try:
+            meta = await asyncio.to_thread(dbx.files_get_metadata, _team_root_arg(resolved))
+        except Exception as exc:  # noqa: BLE001
+            log.info("[browse.preview] metadata pre-check failed for %s: %s",
+                     resolved, exc)
+            meta = None
+        size_bytes = getattr(meta, "size", None) if meta is not None else None
+        if size_bytes is not None and size_bytes > _PREVIEW_MAX_BYTES:
+            raise HTTPException(
+                413,
+                f"file too large to preview ({size_bytes // (1024*1024)} MB > "
+                f"{_PREVIEW_MAX_BYTES // (1024*1024)} MB limit) — please Download instead",
+            )
+
         try:
             if use_get_preview:
                 # (FileMetadata, requests.Response). `.iter_content(…)`
@@ -558,6 +594,21 @@ async def preview_file(
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
+            # `.132n4c` — surface Dropbox's "can't preview this" as
+            # a 415 so the FE can render a clean fallback rather
+            # than the browser's broken-document icon inside a
+            # useless iframe. `get_preview` sends
+            # `unsupported_extension` for types it doesn't render
+            # (e.g. `.zip`, `.psd`) and `unsupported_content` for
+            # DRM'd or malformed files.
+            err_str = str(exc).lower()
+            if ("unsupported_extension" in err_str
+                    or "unsupported_content" in err_str
+                    or "in_progress" in err_str):
+                raise HTTPException(
+                    415,
+                    "Dropbox can't preview this file type. Download it to view it locally.",
+                )
             log.warning("[browse.preview] %s: %s", resolved, exc)
             raise _wrap_dropbox_error(exc, "get_preview")
 

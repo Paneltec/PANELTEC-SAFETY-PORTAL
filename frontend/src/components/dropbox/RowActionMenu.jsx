@@ -100,7 +100,15 @@ export default function RowActionMenu({
         title="More actions"
         aria-label="More actions"
         data-testid={`dropbox-row-menu-btn-${entry.name}`}
-        className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+        /* `.132n4c` — visible-at-rest, Dropbox-blue on row hover
+           (via `group-hover:`), deeper `#0047B3` + soft blue-15
+           circle on direct button hover.  Class names must be
+           STATIC literals (not JS template values) for Tailwind
+           JIT to compile them. */
+        className="p-1.5 rounded-full text-slate-500 transition-colors
+                   group-hover:text-[#0061FF]
+                   hover:!text-[#0047B3] hover:bg-[rgba(0,97,255,0.15)]
+                   focus-visible:ring-2 focus-visible:ring-[#0061FF]/40"
       >
         <MoreHorizontal20Regular style={{ width: 16, height: 16 }} />
       </button>

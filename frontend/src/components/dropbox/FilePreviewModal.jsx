@@ -1,21 +1,28 @@
-// v58.13.132n2b — Dropbox file preview modal.
+// v58.13.132n4c — Dropbox file preview modal (reliability fix).
 //
-// Renders an inline preview of a Dropbox file inside the app,
-// instead of the pre-`.132n2b` behaviour of popping the raw
-// temporary link in a new tab (which every browser correctly
-// treats as a download for anything that isn't a PDF or image —
-// AND, we discovered, Dropbox temp links ship
-// `Content-Disposition: attachment` + `Content-Security-Policy:
-// sandbox` which force browsers to save-dialog even for PDFs and
-// images, so temp links are USELESS for inline preview).
+// Changes vs `.132n2b`:
+//   1. **Size guard** — `PREVIEW_MAX_BYTES = 50 MB`. Files above
+//      this skip the preview fetch entirely and render a clean
+//      "Download instead" panel. Backend enforces the same cap
+//      via a 413 response for defence-in-depth.
+//   2. **PDF viewer switched from `<iframe>` to `<object>`** —
+//      `<object type="application/pdf" data={blobUrl}>`. `<object>`
+//      lets browsers hand-off to their native PDF plugin AND
+//      renders a proper "Download to view" text fallback when the
+//      plugin can't paint. Fixes the "blank iframe + broken-doc
+//      icon" symptom that plain `<iframe src=blob>` produces on
+//      Firefox / some Chrome PDF-viewer configurations.
+//   3. **Retry-once on fetch failure** — 1 s backoff.
+//   4. **Specific error surfaces** — 413 (too large), 415
+//      (unsupported by Dropbox), other 4xx/5xx → distinct
+//      messages with a Download CTA.
+//   5. **Object load error handler** — if the browser can't paint
+//      the PDF (`onError` fires on `<object>` before the fallback
+//      child renders), we swap to the "Preview failed" panel with
+//      the Download CTA rather than leaving a blank pane.
 //
-// Solution: every previewable type is fetched through the
-// backend `/api/dropbox/browse/preview` proxy which re-writes
-// the disposition to `inline`. The browser then renders the
-// blob URL in-place via <iframe>/<img>/<video>/<audio>/<pre>.
-//
-// Type dispatch by extension:
-//   · PDF                                     → proxy → <iframe> blob
+// Type dispatch by extension (unchanged from `.132n2b`):
+//   · PDF                                     → proxy → <object>
 //   · Image (png/jpg/gif/webp/svg/bmp/heic)   → proxy → <img> blob
 //   · Video (mp4/webm/mov)                    → proxy → <video> blob
 //   · Audio (mp3/wav/ogg/m4a)                 → proxy → <audio> blob
@@ -23,16 +30,14 @@
 //   · Office (docx/xlsx/pptx/doc/xls/ppt/rtf) → proxy (get_preview)
 //                                                 → PDF/HTML → <iframe>
 //   · anything else                           → "no preview" panel
-//
-// `.132n2a` team-namespace fix means every path the browser
-// hands us is namespace-relative (`/Foo/Bar.docx`). We forward
-// verbatim to the backend which re-normalises the path anyway.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
 import { Dismiss20Regular, ArrowDownload20Regular } from '@fluentui/react-icons';
 
 const EXT = (name) => (name || '').toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+
+const PREVIEW_MAX_BYTES = 50 * 1024 * 1024;   // matches backend guard
 
 const KIND_MAP = {
   pdf:   ['.pdf'],
@@ -42,8 +47,6 @@ const KIND_MAP = {
   text:  ['.txt', '.csv', '.md', '.json', '.xml', '.yaml', '.yml', '.log',
           '.html', '.htm', '.js', '.jsx', '.ts', '.tsx', '.py', '.java',
           '.rb', '.go', '.rs', '.css', '.scss', '.sql', '.sh', '.ini', '.conf'],
-  // Office types are converted to PDF/HTML server-side via
-  // Dropbox's /2/files/get_preview call.
   office: ['.doc', '.docx', '.rtf', '.ppt', '.pptx', '.xls', '.xlsm', '.xlsx',
            '.ods', '.odt', '.odp'],
 };
@@ -56,20 +59,38 @@ function fileKind(name) {
   return 'unsupported';
 }
 
+// `.132n4c` — Distinguish HTTP failure modes so the FE can
+// surface the right guidance:
+//   413 → too big (from backend guard)
+//   415 → Dropbox can't preview this
+//   404 → file gone
+//   other → generic
+function classifyError(err) {
+  const status = err?.response?.status;
+  if (status === 413) return { kind: 'too_big', message: 'This file is too large to preview (>50 MB).' };
+  if (status === 415) return { kind: 'unsupported', message: 'Dropbox can\'t preview this file type.' };
+  if (status === 404) return { kind: 'not_found', message: 'This file no longer exists in Dropbox.' };
+  return { kind: 'generic', message: apiError(err) };
+}
+
 export default function FilePreviewModal({ entry, onClose }) {
-  // `entry` shape: { name, path, type: 'file', size, modified, mime_type }
   const kind = useMemo(() => (entry ? fileKind(entry.name) : 'unsupported'), [entry]);
 
-  const [state, setState] = useState({ loading: true, error: null, url: null, text: null });
-  // Every objectURL we mint gets tracked so the cleanup pass on
-  // unmount (or on entry change) revokes them and doesn't leak
-  // blob memory for the life of the tab.
+  // `errorInfo` is `{kind, message}` or null; `state.error` holds
+  // the underlying axios error only for logging. The FE reads
+  // `errorInfo.kind` to decide which panel to render.
+  const [state, setState] = useState({
+    loading: true,
+    errorInfo: null,
+    url: null,
+    text: null,
+  });
   const objectUrlsRef = useRef([]);
 
   useEffect(() => {
     if (!entry) return undefined;
     let cancelled = false;
-    setState({ loading: true, error: null, url: null, text: null });
+    setState({ loading: true, errorInfo: null, url: null, text: null });
 
     const revokePrevious = () => {
       for (const u of objectUrlsRef.current) {
@@ -79,32 +100,84 @@ export default function FilePreviewModal({ entry, onClose }) {
     };
     revokePrevious();
 
-    const run = async () => {
+    // `.132n4c` — early size guard, matches backend 413 threshold.
+    // Skip the fetch entirely when we already know the file is too
+    // big — spares the user a 50 MB blob allocation and a wasted
+    // Dropbox `get_preview` request.
+    if (typeof entry.size === 'number' && entry.size > PREVIEW_MAX_BYTES) {
+      setState({
+        loading: false,
+        errorInfo: { kind: 'too_big', message:
+          `This file is ${(entry.size / (1024*1024)).toFixed(1)} MB — larger than the 50 MB preview limit.` },
+        url: null, text: null,
+      });
+      return undefined;
+    }
+
+    const run = async (attempt = 0) => {
       try {
         if (kind === 'unsupported') {
-          if (!cancelled) setState({ loading: false, error: null, url: null, text: null });
+          if (!cancelled) setState({ loading: false, errorInfo: null, url: null, text: null });
           return;
         }
 
-        // Every previewable kind goes through the backend proxy so
-        // we get inline Content-Disposition (Dropbox temp links
-        // force download otherwise).
         const resp = await api.get('/dropbox/browse/preview', {
           params: { path: entry.path },
           responseType: 'blob',
         });
 
+        // `.132n4c` — axios treats non-2xx blob responses by
+        // returning a Blob of the JSON error body. Detect that
+        // and coerce into a normal error path.
+        if (resp.data.type === 'application/json') {
+          const txt = await resp.data.text();
+          try {
+            const parsed = JSON.parse(txt);
+            const synthetic = new Error(parsed.detail || 'preview failed');
+            synthetic.response = { status: resp.status, data: parsed };
+            throw synthetic;
+          } catch (parseErr) {
+            throw new Error(txt);
+          }
+        }
+
         if (kind === 'text') {
           const txt = await resp.data.text();
-          if (!cancelled) setState({ loading: false, error: null, url: null, text: txt });
+          if (!cancelled) setState({ loading: false, errorInfo: null, url: null, text: txt });
           return;
         }
 
-        const url = URL.createObjectURL(resp.data);
+        // `.132n4c` — ensure the blob carries the right MIME so
+        // `URL.createObjectURL` produces a URL the browser's PDF
+        // viewer will accept. Axios sometimes gives us
+        // `application/octet-stream` blobs even when the response
+        // header was `application/pdf` (CORS pre-flight quirk on
+        // some browsers).
+        let effectiveBlob = resp.data;
+        if (kind === 'pdf' && effectiveBlob.type !== 'application/pdf') {
+          effectiveBlob = new Blob([effectiveBlob], { type: 'application/pdf' });
+        }
+        const url = URL.createObjectURL(effectiveBlob);
         objectUrlsRef.current.push(url);
-        if (!cancelled) setState({ loading: false, error: null, url, text: null });
+        if (!cancelled) setState({ loading: false, errorInfo: null, url, text: null });
       } catch (err) {
-        if (!cancelled) setState({ loading: false, error: apiError(err), url: null, text: null });
+        if (cancelled) return;
+        // `.132n4c` — retry once on network / 5xx after a 1 s
+        // backoff. Don't retry on hard failures (413/415/404) that
+        // won't get better with a repeat.
+        const status = err?.response?.status;
+        const isRetryable = !status || status >= 500;
+        if (isRetryable && attempt < 1) {
+          await new Promise((r) => setTimeout(r, 1000));
+          if (!cancelled) run(attempt + 1);
+          return;
+        }
+        setState({
+          loading: false,
+          errorInfo: classifyError(err),
+          url: null,
+          text: null,
+        });
       }
     };
     run();
@@ -127,9 +200,6 @@ export default function FilePreviewModal({ entry, onClose }) {
   }, [entry, onClose]);
 
   const doDownload = async () => {
-    // Download uses the /download temp-link endpoint — that's the
-    // one flow where the Dropbox `attachment` Content-Disposition
-    // is what we WANT (native "Save as" dialog).
     try {
       const { data } = await api.get('/dropbox/browse/download', {
         params: { path: entry.path },
@@ -138,6 +208,16 @@ export default function FilePreviewModal({ entry, onClose }) {
     } catch (err) {
       toast.error(`Download failed: ${apiError(err)}`);
     }
+  };
+
+  // `.132n4c` — Called from the `<object>` onError handler when
+  // the browser fails to paint the PDF (plugin disabled, etc.).
+  const markPluginFailed = () => {
+    setState((s) => ({
+      ...s,
+      errorInfo: { kind: 'plugin', message:
+        'Your browser couldn\'t render this PDF inline. Try Download instead.' },
+    }));
   };
 
   if (!entry) return null;
@@ -150,7 +230,6 @@ export default function FilePreviewModal({ entry, onClose }) {
     >
       <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
            style={{ height: '92vh' }}>
-        {/* Header */}
         <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 shrink-0">
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-slate-800 truncate"
@@ -185,17 +264,22 @@ export default function FilePreviewModal({ entry, onClose }) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 min-h-0 bg-slate-100 overflow-hidden"
              data-testid="dropbox-preview-body">
-          <PreviewBody kind={kind} state={state} entry={entry} onDownload={doDownload} />
+          <PreviewBody
+            kind={kind}
+            state={state}
+            entry={entry}
+            onDownload={doDownload}
+            onPluginFailed={markPluginFailed}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function PreviewBody({ kind, state, entry, onDownload }) {
+function PreviewBody({ kind, state, entry, onDownload, onPluginFailed }) {
   if (state.loading) {
     return (
       <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs"
@@ -207,17 +291,28 @@ function PreviewBody({ kind, state, entry, onDownload }) {
       </div>
     );
   }
-  if (state.error) {
+  if (state.errorInfo) {
+    const { kind: errKind, message } = state.errorInfo;
+    const headings = {
+      too_big:      'Too large to preview',
+      unsupported:  'Preview not supported',
+      not_found:    'File not found',
+      plugin:       'Your browser can\'t render this',
+      generic:      'Preview failed',
+    };
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-sm text-slate-600 px-6 text-center"
-           data-testid="dropbox-preview-error">
-        <div className="font-semibold text-rose-600">Preview failed</div>
-        <div className="text-xs text-slate-500 max-w-md">{state.error}</div>
+           data-testid={`dropbox-preview-error-${errKind}`}>
+        <div className="font-semibold text-rose-600">
+          {headings[errKind] || headings.generic}
+        </div>
+        <div className="text-xs text-slate-500 max-w-md">{message}</div>
         <button
           type="button"
           onClick={onDownload}
           className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
                      text-xs font-medium text-white bg-slate-800 hover:bg-slate-900"
+          data-testid="dropbox-preview-error-download-btn"
         >
           <ArrowDownload20Regular className="w-4 h-4" />
           Download instead
@@ -249,7 +344,46 @@ function PreviewBody({ kind, state, entry, onDownload }) {
     );
   }
 
-  if (kind === 'pdf' || kind === 'office') {
+  if (kind === 'pdf') {
+    // `.132n4c` — `<object>` hands off to the browser's native PDF
+    // viewer AND renders the child content as fallback when the
+    // viewer can't paint. Both `onError` and the child fallback
+    // route to the same "Download instead" CTA.
+    return (
+      <object
+        type="application/pdf"
+        data={state.url}
+        className="w-full h-full bg-white"
+        aria-label={entry.name}
+        data-testid="dropbox-preview-pdf-object"
+        onError={onPluginFailed}
+      >
+        <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-sm text-slate-600 px-6 text-center"
+             data-testid="dropbox-preview-pdf-fallback">
+          <div className="font-semibold text-slate-800">
+            PDF preview isn't supported by this browser
+          </div>
+          <div className="text-xs text-slate-500 max-w-md">
+            Use Download to open the PDF in your default reader.
+          </div>
+          <button
+            type="button"
+            onClick={onDownload}
+            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+                       text-xs font-medium text-white bg-slate-800 hover:bg-slate-900"
+          >
+            <ArrowDownload20Regular className="w-4 h-4" />
+            Download PDF
+          </button>
+        </div>
+      </object>
+    );
+  }
+
+  if (kind === 'office') {
+    // Office gets a plain <iframe> because Dropbox's get_preview
+    // returns either a rendered PDF (docs) or an HTML page
+    // (spreadsheets) — the latter needs iframe not object.
     return (
       <iframe
         src={state.url}
@@ -311,6 +445,5 @@ function PreviewBody({ kind, state, entry, onDownload }) {
     );
   }
 
-  // Defensive fallback — should never hit given the kind switch above.
   return null;
 }

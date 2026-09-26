@@ -990,7 +990,9 @@ function Row({
         {entry.type === 'file' ? formatSize(entry.size) : '—'}
       </td>
       <td className="pr-4 text-right">
-        <div className="inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 md:group-hover:opacity-100 transition-opacity">
+        {/* `.132n4c` — visible at rest (opacity 50 %), full on
+            row hover.  Blue tint applied on the button itself. */}
+        <div className="inline-flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
           <RowActionMenu
             entry={entry}
             onOpen={entry.type === 'file' ? onPreview : onOpen}

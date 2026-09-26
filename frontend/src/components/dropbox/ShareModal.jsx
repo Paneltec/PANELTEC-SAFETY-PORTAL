@@ -1,5 +1,18 @@
 // v58.13.132n4b — Dropbox Share modal.
 //
+// `.132n4c` polish — signature-green tinting:
+//   · Header band: subtle mint (`bg-brand-green-mint/40`) with an
+//     emerald bottom border for a warm success-tone feel.
+//   · Primary CTAs (Send invite, Create link, Copy) all switch
+//     from Dropbox-blue to `emerald-600 → 700` — matches the same
+//     signature green used in Dashboard attention-score card,
+//     EmailSendModal m365 status, Inspections pass badge, and
+//     PublicRenewal completion state.
+//   · Destructive controls (Revoke link, Remove member) stay
+//     rose — semantic reservations respected.
+//   · Team-only visibility pill stays Dropbox-blue on purpose
+//     (the pill communicates "Dropbox team scope", not "success").
+//
 // Full sharing UX built on the new /api/dropbox/browse/share/*
 // endpoints. Mirrors Dropbox's own web-app share dialog:
 //
@@ -229,9 +242,9 @@ export default function ShareModal({ entry, onClose }) {
     >
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
            style={{ maxHeight: '86vh' }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-emerald-200 bg-brand-green-mint/40">
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+            <div className="text-[11px] uppercase tracking-wider text-emerald-700 font-semibold">
               Share
             </div>
             <div className="text-sm font-semibold text-slate-900 truncate" title={entry.name}>
@@ -239,7 +252,7 @@ export default function ShareModal({ entry, onClose }) {
             </div>
           </div>
           <button type="button" onClick={onClose}
-            className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 shrink-0"
+            className="p-1.5 rounded-md text-slate-500 hover:bg-white/60 shrink-0"
             data-testid="dropbox-share-close" aria-label="Close">
             <Dismiss20Regular style={{ width: 18, height: 18 }} />
           </button>
@@ -287,8 +300,7 @@ export default function ShareModal({ entry, onClose }) {
                     type="button"
                     onClick={doInvite}
                     disabled={submittingInvite || parseEmails(inviteEmails).length === 0}
-                    className="rounded-lg text-white text-xs font-semibold px-4 py-2 disabled:opacity-40 hover:brightness-110"
-                    style={{ backgroundColor: DBX_BLUE }}
+                    className="rounded-lg text-white text-xs font-semibold px-4 py-2 disabled:opacity-40 bg-emerald-600 hover:bg-emerald-700"
                     data-testid="dropbox-share-invite-send"
                   >
                     {submittingInvite ? 'Sending…' : 'Send'}
@@ -367,8 +379,7 @@ export default function ShareModal({ entry, onClose }) {
                     type="button"
                     onClick={() => doCreateLink('team_only')}
                     disabled={pendingLink}
-                    className="rounded-lg text-white text-xs font-semibold px-3 py-2 disabled:opacity-40 hover:brightness-110"
-                    style={{ backgroundColor: DBX_BLUE }}
+                    className="rounded-lg text-white text-xs font-semibold px-3 py-2 disabled:opacity-40 bg-emerald-600 hover:bg-emerald-700"
                     data-testid="dropbox-share-create-link"
                   >
                     {pendingLink ? 'Creating…' : 'Create link'}
@@ -390,7 +401,7 @@ export default function ShareModal({ entry, onClose }) {
                     <button
                       type="button"
                       onClick={doCopy}
-                      className="rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 inline-flex items-center gap-1.5"
+                      className="rounded-lg text-white text-xs font-semibold px-3 py-2 inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700"
                       data-testid="dropbox-share-link-copy"
                     >
                       <Copy16Regular style={{ width: 12, height: 12 }} />
