@@ -1409,3 +1409,128 @@ async def remove_member(
 
     await _audit(user, "share_remove", resolved, {"email": email})
     return {"removed": True, "email": email}
+
+
+# ── v58.13.132n6 — Dropbox AI Search (Tier 1: native search_v2) ──
+# Thin proxy over `/2/files/search_v2` with `include_highlights=True`.
+# The team-scoped `_get_dbx()` client scopes the search to the
+# team-folder namespace, so paths in the response are the same
+# team-relative shape (`/Foo/Bar.pdf`) the browser already uses.
+#
+# Tier 2 (LLM re-rank of top 20 with 1-line "why matched" reasons)
+# is deferred to `.132n6b`. This endpoint accepts the `rerank`
+# param today so the FE can pre-wire the option without a second
+# API cut.
+#
+# No caching for now — Dropbox's own search is already sub-second
+# for the shapes we care about (query <=64 chars, max_results 100).
+# A future ship can layer a short-TTL LRU on top if the pattern
+# turns out to be "same query, many pages".
+@router.get("/search")
+async def search_dropbox(
+    q: str = Query(..., description="Search query (min 3 chars)"),
+    path: str = Query("", description="Optional folder scope; empty = whole team folder"),
+    max_results: int = Query(100, ge=1, le=200),
+    file_extensions: Optional[str] = Query(
+        None,
+        description="Comma-separated extensions to filter (e.g. 'pdf,docx'). "
+                    "Leading dots are stripped.",
+    ),
+    filename_only: bool = Query(
+        False,
+        description="If true, only match filenames (skip file content).",
+    ),
+    rerank: bool = Query(  # noqa: ARG001 — reserved for `.132n6b`
+        False,
+        description="Reserved for Tier 2 LLM re-rank. Ignored today.",
+    ),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Server-side Dropbox search with highlight spans.
+
+    Response shape:
+        {
+          "query": "hydraulic",
+          "path": "",                       # scope used
+          "match_count": 42,
+          "has_more": true,
+          "matches": [
+            {
+              "path": "/Customers/…/hydraulic.pdf",
+              "name": "hydraulic.pdf",
+              "type": "file",
+              "size": 12345,
+              "modified": "2026-…",
+              "mime_type": "application/pdf",
+              "match_type": "filename" | "file_content" | "both",
+              "highlights": [
+                {"text": "J212020CL-", "highlighted": false},
+                {"text": "hydraulic", "highlighted": true},
+                {"text": "-A.pdf",    "highlighted": false}
+              ]
+            },
+            …
+          ]
+        }
+    """
+    query = (q or "").strip()
+    if len(query) < 3:
+        raise HTTPException(400, "query must be at least 3 characters")
+    if len(query) > 1000:
+        raise HTTPException(400, "query too long (>1000 chars)")
+
+    scope = _normalise_path(path)
+    # Dropbox's `SearchOptions.path` uses "" for the current path-root
+    # namespace root, matching `_team_root_arg`'s contract.
+    scope_arg = _team_root_arg(scope)
+
+    exts: Optional[List[str]] = None
+    if file_extensions:
+        exts = [
+            e.strip().lstrip(".").lower()
+            for e in file_extensions.split(",")
+            if e.strip()
+        ] or None
+
+    from dropbox.files import SearchOptions, FileMetadata, FolderMetadata
+    opts = SearchOptions(
+        path=scope_arg or None,   # Dropbox rejects "" here — must be None for root
+        max_results=max_results,
+        filename_only=filename_only,
+        file_extensions=exts,
+    )
+
+    dbx = _get_dbx()
+    try:
+        res = await asyncio.to_thread(
+            dbx.files_search_v2, query, opts, None, True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[browse.search] q=%r scope=%r: %s", query, scope, exc)
+        raise _wrap_dropbox_error(exc, "search")
+
+    matches: List[Dict[str, Any]] = []
+    for m in res.matches:
+        md = m.metadata.get_metadata()
+        base = _serialise_entry(md)
+        # `SearchMatchTypeV2` — a Dropbox stone-enum; `_tag` is the
+        # canonical string ('filename' | 'file_content' | 'both').
+        base["match_type"] = getattr(m.match_type, "_tag", None)
+        highlights: List[Dict[str, Any]] = []
+        for hs in (getattr(m, "highlight_spans", None) or []):
+            highlights.append({
+                "text": hs.highlight_str,
+                "highlighted": bool(hs.is_highlighted),
+            })
+        base["highlights"] = highlights
+        matches.append(base)
+
+    return {
+        "query": query,
+        "path": scope,
+        "match_count": len(matches),
+        "has_more": bool(res.has_more),
+        "matches": matches,
+    }
+

@@ -1,5 +1,86 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132n6 — Dropbox in-app global search (Tier 1: native
+// search_v2 + highlight spans).
+//
+// Replaces the "filter this folder" client-side narrowing with a
+// server-side search over the entire team folder namespace. Tier 2
+// (LLM re-rank of top 20 with 1-line "why matched" reasons behind
+// `?rerank=true`) is deferred to `.132n6b`; backend already accepts
+// the param today so the FE can wire it later without another API
+// cut.
+//
+// Backend (`backend/dropbox_browse.py`):
+//   · New `GET /api/dropbox/browse/search` endpoint. Query params:
+//     `q` (min 3 chars, backend-enforced), `path` (optional folder
+//     scope), `max_results` (1-200, default 100), `file_extensions`
+//     (comma-separated), `filename_only` (bool), `rerank` (bool,
+//     reserved for `.132n6b`).
+//   · Uses team-scoped `_get_dbx()` client so `SearchOptions.path`
+//     is namespace-relative. Empty path scope → whole team folder.
+//   · Response shape:
+//       { query, path, match_count, has_more,
+//         matches: [{name, path, type, size, modified, mime_type,
+//                    match_type, highlights: [{text, highlighted}]}] }
+//   · `include_highlights=true` for Dropbox's own bolding data;
+//     the FE renders `text` verbatim with `highlighted` spans in
+//     the Dropbox brand blue.
+//   · Auth: `require_permission("integrations", "view")` — same
+//     gate as every other browse endpoint. Empty/short queries 400;
+//     unauthorised 401; Dropbox errors wrapped by
+//     `_wrap_dropbox_error`.
+//
+// Frontend (`frontend/src/pages/DropboxBrowser.jsx`):
+//   · State refactor: `filter` (client-side folder narrowing) →
+//     `search` object `{query, loading, results, error, hasMore}`
+//     backed by an `AbortController` ref so a fast typist doesn't
+//     paint out-of-order responses.
+//   · `useEffect([search.query])` — 300 ms debounce → GET when
+//     `q.trim().length >= 3` → abort any in-flight controller.
+//   · Input rewired: placeholder "Search Dropbox (min 3 chars)…",
+//     data-testid="dropbox-search-input", inline Dismiss clear
+//     button, Esc-to-clear key handler.
+//   · New inline `<DropboxSearchOverlay>` component (bottom of
+//     file). Panel renders BELOW the toolbar, ABOVE the folder
+//     listing. States:
+//       - loading   → spinner + "Querying Dropbox…"
+//       - error     → rose-600 text
+//       - 0 results → "No files, folders or content matched…"
+//       - has hits  → scrollable list of match rows, max height
+//                     96 (24rem) so folder view still shows below.
+//   · Match row: `<SearchResultRow>` — icon + `<HighlightedText>`
+//     (bolded blue matched spans) + team-relative path + size +
+//     modified. Click → folders navigate to parent, files open in
+//     the existing PDF.js preview modal (no folder change — user's
+//     intent is "look at this file").
+//   · Empty state in the folder listing simplified (removed the
+//     "no items match <filter>" branch — search doesn't touch
+//     folder rows).
+//
+// Screenshots (test_reports/):
+//   · 132n6_search_hydraulic_results.png — 100+ matches, highlights
+//     bolded, "Type more to narrow" hint visible.
+//   · 132n6_search_ssra_results.png     — filename + folder mix.
+//   · 132n6_search_empty.png            — no-match empty state.
+//   · 132n6_search_click_preview.png    — click → preview modal.
+//
+// Files touched:
+//   · backend/dropbox_browse.py                              (+/search endpoint)
+//   · frontend/src/pages/DropboxBrowser.jsx                  (state + effect + overlay + row)
+//   · frontend/src/lib/version.js                            (RUNNING_VERSION + EXPECTED_CACHE_VERSION bump + this block)
+//   · frontend/public/service-worker.js                      (CACHE_VERSION bump)
+//   · memory/v58_13_132n6_dropbox_search.md                  (new)
+//
+// Not in this ship:
+//   · Tier 2 LLM re-rank — deferred to `.132n6b`.
+//   · Content-search UX (Dropbox's `match_type=file_content` still
+//     surfaces as filename-style highlights today; a future ship
+//     can render a distinct "content excerpt" chip if useful).
+//   · Housekeeping run — still blocked on user App Console tick +
+//     reconnect (see `.132n5_hk1` memo).
+
+
+
 // v58.13.132n5_hk1 — Dropbox trash housekeeping prep + SW cache bust
 // for the `.132n4d` PDF renderer.
 //
@@ -16033,7 +16114,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n5_hk1';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n6';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -16054,7 +16135,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n5_hk1';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n5_hk1';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n6';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

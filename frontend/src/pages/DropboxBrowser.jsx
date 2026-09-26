@@ -85,7 +85,22 @@ export default function DropboxBrowser() {
   const path = searchParams.get('path') || ROOT_PATH;
 
   const [state, setState] = useState({ loading: true, error: null, entries: [] });
-  const [filter, setFilter] = useState('');
+  // v58.13.132n6 — Dropbox global search state.  Was previously a
+  // pure client-side "filter this folder" input; now backed by the
+  // server-side `/api/dropbox/browse/search` endpoint (Dropbox
+  // `search_v2` + highlight spans).  Behaviour:
+  //   · <3 chars  → no request; results panel hidden; folder view
+  //                 renders unfiltered.
+  //   · >=3 chars → 300 ms debounce → GET /search → overlay panel
+  //                 renders match rows with highlight bolding.
+  // Tier 2 (LLM re-rank of top 20 with "why matched" reasons) is
+  // deferred to `.132n6b` — the backend endpoint already accepts
+  // `?rerank=true` so the FE can wire it later without another API
+  // cut.
+  const [search, setSearch] = useState({
+    query: '', loading: false, results: [], error: null, hasMore: false,
+  });
+  const searchAbortRef = useRef(null);
   const [sortBy, setSortBy] = useState({ col: 'name', dir: 'asc' });
   const [uploads, setUploads] = useState([]); // {name, size, progress, status, error}
   const [confirmDelete, setConfirmDelete] = useState(null); // entry to delete
@@ -146,6 +161,57 @@ export default function DropboxBrowser() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // v58.13.132n6 — Debounced Dropbox global search.  Runs whenever
+  // `search.query` changes AND is >= 3 chars after trim.  Cancels
+  // any in-flight request via AbortController so a fast typist
+  // doesn't get an out-of-order response painted over a newer one.
+  useEffect(() => {
+    const q = (search.query || '').trim();
+    if (q.length < 3) {
+      setSearch((s) => ({ ...s, loading: false, results: [], error: null, hasMore: false }));
+      return undefined;
+    }
+    const controller = new AbortController();
+    // Cancel prior request (if any) so results always match the
+    // last query the user typed.
+    if (searchAbortRef.current) {
+      try { searchAbortRef.current.abort(); } catch (_) { /* noop */ }
+    }
+    searchAbortRef.current = controller;
+
+    setSearch((s) => ({ ...s, loading: true, error: null }));
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/dropbox/browse/search', {
+          params: { q, max_results: 100 },
+          signal: controller.signal,
+        });
+        // Guard: if a newer request has landed already (controller
+        // replaced), don't overwrite its state with our older one.
+        if (searchAbortRef.current !== controller) return;
+        setSearch({
+          query: q,
+          loading: false,
+          error: null,
+          results: data.matches || [],
+          hasMore: !!data.has_more,
+        });
+      } catch (err) {
+        if (controller.signal.aborted) return;   // superseded — silent
+        if (searchAbortRef.current !== controller) return;
+        setSearch((s) => ({
+          ...s, loading: false,
+          error: apiError(err) || 'Search failed',
+          results: [], hasMore: false,
+        }));
+      }
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      try { controller.abort(); } catch (_) { /* noop */ }
+    };
+  }, [search.query]);
+
   const setPath = (p) => {
     // Empty string == root — omit the query param entirely so the
     // URL reads `/app/dropbox` instead of `/app/dropbox?path=`.
@@ -168,12 +234,12 @@ export default function DropboxBrowser() {
   }, [path]);
 
   const rows = useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    let out = state.entries.filter((e) =>
-      !f || e.name.toLowerCase().includes(f)
-    );
-    // Folders first, then by chosen column.
-    out = [...out].sort((a, b) => {
+    // `.132n6` — client-side "filter this folder" narrowing was
+    // retired when we moved to server-side search.  `rows` now
+    // just sorts the folder's own entries; matching happens in
+    // the overlay panel against `search.results`.
+    let out = [...state.entries];
+    out.sort((a, b) => {
       if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
       const dir = sortBy.dir === 'asc' ? 1 : -1;
       if (sortBy.col === 'name') return dir * a.name.localeCompare(b.name);
@@ -184,7 +250,7 @@ export default function DropboxBrowser() {
       return 0;
     });
     return out;
-  }, [state.entries, filter, sortBy]);
+  }, [state.entries, sortBy]);
 
   const toggleSort = (col) => setSortBy((s) => ({
     col,
@@ -786,19 +852,61 @@ export default function DropboxBrowser() {
           </div>
         </div>
         <div className="mt-3 relative">
-          <Search20Regular className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" style={{ width: 14, height: 14 }} />
+          <Search20Regular
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            style={{ width: 14, height: 14 }}
+          />
           <input
             type="text"
-            placeholder="Filter this folder…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            data-testid="dropbox-filter-input"
-            className="w-full max-w-md pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-slate-400 focus:outline-none text-sm"
+            placeholder="Search Dropbox (min 3 chars)…"
+            value={search.query}
+            onChange={(e) => setSearch((s) => ({ ...s, query: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setSearch({ query: '', loading: false, results: [], error: null, hasMore: false });
+              }
+            }}
+            data-testid="dropbox-search-input"
+            className="w-full max-w-md pl-9 pr-9 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-slate-400 focus:outline-none text-sm"
           />
+          {search.query && (
+            <button
+              type="button"
+              onClick={() => setSearch({ query: '', loading: false, results: [], error: null, hasMore: false })}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+              aria-label="Clear search"
+              data-testid="dropbox-search-clear-btn"
+            >
+              <Dismiss20Regular style={{ width: 14, height: 14 }} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* `.132n2c` — selection toolbar (only when >=1 row selected) */}
+      {/* v58.13.132n6 — Global search results overlay. Renders only
+          when the debounced search state is meaningful (query >= 3
+          chars OR an in-flight/errored request from a prior query).
+          Positioned inline BELOW the toolbar and ABOVE the folder
+          listing so the user still sees their folder context while
+          scanning search hits. */}
+      {(search.query.trim().length >= 3 || search.loading) && (
+        <DropboxSearchOverlay
+          state={search}
+          onClose={() => setSearch({ query: '', loading: false, results: [], error: null, hasMore: false })}
+          onOpenFolder={(p) => {
+            const parent = p.replace(/\/[^/]+$/, '') || ROOT_PATH;
+            setPath(parent);
+          }}
+          onOpenFile={(entry) => {
+            // Preview the file inline.  Navigation to its parent
+            // folder is deliberately NOT triggered here — the user's
+            // intent is "look at this file", not "leave my current
+            // folder".
+            setPreviewEntry(entry);
+          }}
+        />
+      )}
+
       {selectedIds.size > 0 && (
         <div
           className="rounded-2xl border p-3 mb-4 flex items-center justify-between gap-3 flex-wrap"
@@ -897,9 +1005,7 @@ export default function DropboxBrowser() {
             {!state.loading && !state.error && rows.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-12 text-center text-slate-500 text-sm" data-testid="dropbox-empty">
-                  {filter
-                    ? <>No items match <strong>{filter}</strong>.</>
-                    : <>This folder is empty. Upload a file or create a folder to get started.</>}
+                  {<>This folder is empty. Upload a file or create a folder to get started.</>}
                 </td>
               </tr>
             )}
@@ -1396,3 +1502,140 @@ function Modal({ children, onClose }) {
     </div>
   );
 }
+
+// v58.13.132n6 — Dropbox global search results overlay.
+//
+// Rendered as an inline panel (not a modal) between the header
+// toolbar and the folder listing.  Keeps folder context visible
+// so the user knows where they are while scanning hits.  Match
+// rows show:
+//   · icon (extension-derived)
+//   · filename with Dropbox's highlight spans bolded in DBX_BLUE
+//   · full team-relative path (mono, muted)
+//   · size + modified
+//   · click → open preview (file) or navigate to parent (folder)
+function DropboxSearchOverlay({ state, onClose, onOpenFolder, onOpenFile }) {
+  const { query, loading, results, error, hasMore } = state;
+  const q = (query || '').trim();
+
+  return (
+    <div
+      className="rounded-2xl border bg-white overflow-hidden mb-4"
+      style={{ borderColor: DBX_BLUE + '33' }}
+      data-testid="dropbox-search-overlay"
+    >
+      <div
+        className="flex items-center gap-3 px-4 py-2.5 border-b"
+        style={{ borderColor: DBX_BLUE + '22', backgroundColor: DBX_BLUE + '08' }}
+      >
+        <Search20Regular style={{ width: 14, height: 14, color: DBX_BLUE }} />
+        <div className="text-xs font-semibold" style={{ color: DBX_BLUE }}
+             data-testid="dropbox-search-overlay-heading">
+          {loading
+            ? <>Searching Dropbox for <span className="font-mono">{q}</span>…</>
+            : error
+              ? <>Search failed</>
+              : results.length === 0
+                ? <>No matches for <span className="font-mono">{q}</span></>
+                : <>{results.length}{hasMore ? '+' : ''} matches for <span className="font-mono">{q}</span></>
+          }
+        </div>
+        {hasMore && !loading && !error && (
+          <div className="text-[11px] text-slate-500"
+               data-testid="dropbox-search-overlay-hasmore">
+            Type more to narrow — Dropbox truncated at 100.
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800"
+          aria-label="Close search"
+          data-testid="dropbox-search-overlay-close-btn"
+        >
+          <Dismiss20Regular style={{ width: 14, height: 14 }} />
+        </button>
+      </div>
+
+      <div className="max-h-96 overflow-auto">
+        {loading && (
+          <div className="px-4 py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-3"
+               data-testid="dropbox-search-loading">
+            <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+            <span>Querying Dropbox…</span>
+          </div>
+        )}
+        {!loading && error && (
+          <div className="px-4 py-4 text-xs text-rose-600" data-testid="dropbox-search-error">
+            {error}
+          </div>
+        )}
+        {!loading && !error && results.length === 0 && q.length >= 3 && (
+          <div className="px-4 py-8 text-center text-xs text-slate-500"
+               data-testid="dropbox-search-empty">
+            No files, folders or content matched <span className="font-mono">{q}</span>.
+            Try a broader term.
+          </div>
+        )}
+        {!loading && !error && results.map((m, i) => (
+          <SearchResultRow
+            key={m.path + ':' + i}
+            match={m}
+            onFolder={() => onOpenFolder(m.path)}
+            onFile={() => onOpenFile(m)}
+            testid={`dropbox-search-result-row-${i}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SearchResultRow({ match, onFolder, onFile, testid }) {
+  const Icon = iconFor(match);
+  const isFolder = match.type === 'folder';
+  return (
+    <button
+      type="button"
+      onClick={isFolder ? onFolder : onFile}
+      className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 last:border-0 hover:bg-slate-50 text-left"
+      data-testid={testid}
+    >
+      <Icon
+        style={{ width: 20, height: 20, color: isFolder ? DBX_BLUE : '#64748b' }}
+        className="shrink-0"
+      />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-slate-900 font-medium truncate"
+             data-testid={`${testid}-name`}>
+          <HighlightedText spans={match.highlights} fallback={match.name} />
+        </div>
+        <div className="text-[11px] text-slate-500 font-mono truncate">
+          {match.path}
+        </div>
+      </div>
+      <div className="text-[11px] text-slate-500 shrink-0 text-right w-32">
+        <div>{isFolder ? 'Folder' : formatSize(match.size)}</div>
+        <div className="text-slate-400">{formatModified(match.modified)}</div>
+      </div>
+    </button>
+  );
+}
+
+// Render Dropbox's `highlight_spans` with matched spans bolded in
+// the brand blue.  `spans` is `[{text, highlighted}]`; empty or
+// missing spans fall back to the plain filename.
+function HighlightedText({ spans, fallback }) {
+  if (!Array.isArray(spans) || spans.length === 0) {
+    return <>{fallback}</>;
+  }
+  return (
+    <>
+      {spans.map((s, i) => s.highlighted
+        ? <span key={i} className="font-semibold" style={{ color: DBX_BLUE }}>{s.text}</span>
+        : <span key={i}>{s.text}</span>
+      )}
+    </>
+  );
+}
+
