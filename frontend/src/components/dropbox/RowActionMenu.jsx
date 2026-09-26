@@ -43,7 +43,7 @@ export default function RowActionMenu({
   onRename,
   onCopyPath,
   onMove,
-  onShare,      // eslint-disable-line no-unused-vars — kept for `.132n4b`
+  onShare,      // `.132n4b` — enabled now that sharing scopes are live.
   onVersions,
   onDelete,
 }) {
@@ -145,16 +145,14 @@ export default function RowActionMenu({
             label="Move to…"
             onClick={run(onMove)}
           />
-          {/* .132n4a — Share is disabled until the App Console
-              gets `sharing.write` ticked and the admin re-auths.
-              Rendered so the slot exists; `.132n4b` will remove
-              the disabled attribute + wire up onShare. */}
+          {/* .132n4b — Share is now enabled. Requires
+              sharing.read/write on the Dropbox token (verified
+              on ship). Handler wired from DropboxBrowser.jsx. */}
           <MenuItem
             testid="menu-share"
             icon={<Share16Regular />}
             label="Share"
-            disabled
-            title="Sharing requires additional Dropbox permissions. Ask an admin to enable in Settings → Integrations."
+            onClick={run(onShare)}
           />
           {isFile && (
             <MenuItem

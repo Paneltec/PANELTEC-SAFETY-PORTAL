@@ -889,3 +889,459 @@ async def restore_revision(
     return {"path": resolved, "restored": True,
             "entry": _serialise_entry(res)}
 
+
+# ── `.132n4b` — sharing / permissions ─────────────────────────
+#
+# Enables end-user sharing through the browse UI now that the
+# Dropbox App Console has `sharing.read` + `sharing.write` scopes
+# ticked (verified 2026-02-26 via live SDK probe against the
+# team-scoped client).
+#
+# Model:
+#   · Shared LINKS (URL-based, team-only or public) work on both
+#     files AND folders through the same SDK endpoints.
+#   · Shared MEMBERS are split by target kind:
+#       - files:   sharing_add/list/remove_file_member*
+#       - folders: sharing_share_folder → sharing_add/remove_folder_member
+#     Folder membership listing pulls from
+#     `sharing_list_folder_members` when the folder already has a
+#     `shared_folder_id`; otherwise we surface an empty list (the
+#     folder inherits its parent's membership).
+#
+# Every endpoint routes through the same team-namespace-scoped
+# `_get_dbx()` client, wraps errors via `_wrap_dropbox_error`
+# (extended below to catch sharing-specific errors), and audits
+# mutations to `dropbox_browse_audit`.
+
+
+class ShareLinkIn(BaseModel):
+    path: str
+    # 'team_only' (default — restricts to Paneltec team members),
+    # 'public' (anyone-with-link), 'password' (public + password).
+    visibility: str = Field("team_only")
+    password: Optional[str] = None
+
+
+class RevokeLinkIn(BaseModel):
+    url: str
+
+
+class InviteIn(BaseModel):
+    path: str
+    email: str
+    access_level: str = Field("viewer")  # 'viewer' | 'editor'
+    message: Optional[str] = None
+
+
+class RemoveMemberIn(BaseModel):
+    path: str
+    email: str
+
+
+def _tag_str(obj: Any) -> Optional[str]:
+    """Extract the `_tag` from a Dropbox union type (e.g.
+    `AccessLevel('viewer', None)` → 'viewer'). Returns None if
+    the object doesn't have a tag."""
+    if obj is None:
+        return None
+    return getattr(obj, "_tag", None) or None
+
+
+def _serialise_link(link: Any) -> Dict[str, Any]:
+    """Coerce a `SharedLinkMetadata` (`File-` or `FolderLinkMetadata`)
+    into the JSON shape the frontend expects."""
+    perms = getattr(link, "link_permissions", None)
+    resolved = _tag_str(getattr(perms, "resolved_visibility", None)) if perms else None
+    return {
+        "url":         link.url,
+        "path":        getattr(link, "path_lower", None),
+        "name":        link.name,
+        "visibility":  resolved,  # 'public' | 'team_only' | 'password' | 'no_one'
+        "expires":     link.expires.isoformat() if link.expires else None,
+        "can_revoke":  bool(getattr(perms, "can_revoke", True)) if perms else True,
+    }
+
+
+def _serialise_member(m: Any) -> Dict[str, Any]:
+    """Coerce a `UserFileMembershipInfo` /
+    `UserMembershipInfo` (folder) into the shared JSON shape."""
+    user = getattr(m, "user", None)
+    return {
+        "email":         getattr(user, "email", None),
+        "display_name":  getattr(user, "display_name", None),
+        "same_team":     bool(getattr(user, "same_team", False)) if user else False,
+        "account_id":    getattr(user, "account_id", None),
+        "access_level":  _tag_str(getattr(m, "access_type", None)),
+        "is_inherited":  bool(getattr(m, "is_inherited", False)),
+        "is_owner":      _tag_str(getattr(m, "access_type", None)) == "owner",
+    }
+
+
+def _serialise_invitee(inv: Any) -> Dict[str, Any]:
+    """Coerce a pending InviteeMembershipInfo (email-only, not yet
+    accepted) into the same shape as an accepted member so the FE
+    can render both in one list."""
+    invitee = getattr(inv, "invitee", None)
+    email = getattr(invitee, "get_email", lambda: None)() if invitee else None
+    return {
+        "email":         email,
+        "display_name":  email,
+        "same_team":     False,
+        "account_id":    None,
+        "access_level":  _tag_str(getattr(inv, "access_type", None)),
+        "is_inherited":  False,
+        "is_owner":      False,
+        "is_invitee":    True,   # not yet accepted
+    }
+
+
+def _visibility_settings(visibility: str, password: Optional[str]):
+    """Build a `SharedLinkSettings` matching the requested
+    visibility. Falls back to `team_only` for unknown inputs so
+    the safer default wins."""
+    from dropbox.sharing import SharedLinkSettings, RequestedVisibility
+    v = (visibility or "team_only").lower().strip()
+    if v == "public":
+        return SharedLinkSettings(requested_visibility=RequestedVisibility.public)
+    if v == "password":
+        return SharedLinkSettings(
+            requested_visibility=RequestedVisibility.password,
+            link_password=password or "",
+        )
+    return SharedLinkSettings(requested_visibility=RequestedVisibility.team_only)
+
+
+def _wrap_sharing_error(exc: Exception, verb: str) -> HTTPException:
+    """Sharing-specific error translation. Chains to the general
+    `_wrap_dropbox_error` for shared error paths."""
+    msg = str(exc)
+    lower = msg.lower()
+    if "required scope" in lower and ("sharing.read" in lower or "sharing.write" in lower):
+        return HTTPException(
+            403,
+            "Dropbox token is missing the 'sharing' scope. An admin must "
+            "re-authorise Dropbox from Settings → Integrations.",
+        )
+    if "shared_link_already_exists" in lower:
+        return HTTPException(409, "a shared link already exists for this path")
+    if "email_unverified" in lower:
+        return HTTPException(400, "the invited email is not a verified Dropbox account")
+    if "team_folder" in lower and "inside" in lower:
+        # Some sharing operations refuse to run on paths inside a
+        # nested team folder. Surface with a clean message so admins
+        # aren't left guessing.
+        return HTTPException(400, "this path is inside a nested team folder and can't be shared directly")
+    return _wrap_dropbox_error(exc, verb)
+
+
+def _is_folder_path(dbx, path: str) -> bool:
+    """Look up whether a path resolves to a folder. Falls back to
+    False on lookup failure — safer to treat as file (fewer async
+    branches)."""
+    from dropbox.files import FolderMetadata
+    try:
+        md = dbx.files_get_metadata(_team_root_arg(path))
+        return isinstance(md, FolderMetadata)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _get_shared_folder_id(dbx, path: str) -> Optional[str]:
+    """Return an already-set `shared_folder_id` for a folder, or
+    None. Not the same as SHARING one — a folder can be a formal
+    Dropbox shared folder without our app knowing about it, or
+    it can just be a plain folder inside a team space."""
+    try:
+        md = dbx.files_get_metadata(_team_root_arg(path))
+        return getattr(md, "shared_folder_id", None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ensure_shared_folder_id(dbx, path: str, log_verb: str) -> str:
+    """Guarantee that a folder has a `shared_folder_id`. Converts
+    a plain folder into a shared folder via
+    `sharing_share_folder`, polling the returned async job until
+    complete (up to 10 s). Raises HTTPException on timeout."""
+    existing = _get_shared_folder_id(dbx, path)
+    if existing:
+        return existing
+    from dropbox.sharing import (
+        MemberPolicy, AclUpdatePolicy, SharedLinkPolicy,
+    )
+    launch = dbx.sharing_share_folder(
+        _team_root_arg(path),
+        member_policy=MemberPolicy.team,
+        acl_update_policy=AclUpdatePolicy.editors,
+        shared_link_policy=SharedLinkPolicy.team,
+        force_async=False,
+    )
+    # `launch` is a union — Complete (synchronous share succeeded)
+    # or AsyncJobId (Dropbox needs to spin up the shared folder).
+    if launch.is_complete():
+        return launch.get_complete().shared_folder_id
+    job_id = launch.get_async_job_id()
+    import time as _time
+    for _ in range(20):
+        _time.sleep(0.5)
+        status = dbx.sharing_check_share_job_status(job_id)
+        if status.is_complete():
+            return status.get_complete().shared_folder_id
+        # `.is_failed` on failure — surface the reason.
+        if status.is_failed():
+            raise HTTPException(502, f"Dropbox share_folder job failed during {log_verb}")
+    raise HTTPException(504, f"Dropbox share_folder job did not complete in 10 s during {log_verb}")
+
+
+# ── endpoints ──────────────────────────────────────────────────
+@router.get("/share")
+async def get_share_state(
+    path: str = Query(..., description="Full Dropbox path to a file or folder"),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Return the sharing state (links + members) for a path.
+    Response:
+      {
+        "path": "/Foo/bar.pdf",
+        "is_folder": false,
+        "links":   [{"url", "visibility", "expires", "can_revoke"}, …],
+        "members": [{"email", "display_name", "access_level",
+                     "is_inherited", "is_owner", "is_invitee"?}, …],
+        "invitees": […],  # pending invites
+        "member_source": "file" | "folder" | "empty",
+      }
+    """
+    resolved = _normalise_path(path)
+    if resolved == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot share the team folder root")
+
+    dbx = _get_dbx()
+    is_folder = _is_folder_path(dbx, resolved)
+
+    # Links: same endpoint for files + folders.
+    try:
+        link_res = await asyncio.to_thread(
+            dbx.sharing_list_shared_links, path=_team_root_arg(resolved), direct_only=True,
+        )
+        links = [_serialise_link(l) for l in link_res.links]
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[share.list_links] %s: %s", resolved, exc)
+        raise _wrap_sharing_error(exc, "list_shared_links")
+
+    # Members: file → sharing_list_file_members;
+    #           folder → sharing_list_folder_members IF shared,
+    #                    otherwise empty (folder inherits membership).
+    members: List[Dict[str, Any]] = []
+    invitees: List[Dict[str, Any]] = []
+    member_source = "empty"
+    try:
+        if is_folder:
+            sfid = _get_shared_folder_id(dbx, resolved)
+            if sfid:
+                fm = await asyncio.to_thread(dbx.sharing_list_folder_members, sfid)
+                members = [_serialise_member(u) for u in (fm.users or [])]
+                invitees = [_serialise_invitee(i) for i in (fm.invitees or [])]
+                member_source = "folder"
+        else:
+            fm = await asyncio.to_thread(dbx.sharing_list_file_members, _team_root_arg(resolved))
+            members = [_serialise_member(u) for u in (fm.users or [])]
+            invitees = [_serialise_invitee(i) for i in (fm.invitees or [])]
+            member_source = "file"
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        # Members list can fail with `access_error/file_not_found`
+        # or `access_error/no_permission` on files that inherit
+        # from a parent the app can't introspect. Downgrade to a
+        # soft empty response — the FE renders "No direct members".
+        log.info("[share.list_members] soft-fail %s: %s", resolved, exc)
+
+    return {
+        "path":           resolved,
+        "is_folder":      is_folder,
+        "links":          links,
+        "members":        members,
+        "invitees":       invitees,
+        "member_source":  member_source,
+    }
+
+
+@router.post("/share/link")
+async def create_shared_link(
+    body: ShareLinkIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Create a shared link on `path`. If a link already exists
+    with matching visibility, return the existing one instead of
+    409-ing — Dropbox web UX behaviour."""
+    resolved = _normalise_path(body.path)
+    if resolved == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot create a link for the team folder root")
+
+    dbx = _get_dbx()
+    settings = _visibility_settings(body.visibility, body.password)
+    try:
+        link = await asyncio.to_thread(
+            dbx.sharing_create_shared_link_with_settings,
+            _team_root_arg(resolved), settings,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        # Already-exists → fetch and return it (idempotent behaviour).
+        if "shared_link_already_exists" in str(exc).lower():
+            r = await asyncio.to_thread(
+                dbx.sharing_list_shared_links, path=_team_root_arg(resolved), direct_only=True,
+            )
+            if r.links:
+                await _audit(user, "share_link_existing", resolved, {"visibility": body.visibility})
+                return _serialise_link(r.links[0])
+        log.warning("[share.create_link] %s: %s", resolved, exc)
+        raise _wrap_sharing_error(exc, "create_shared_link")
+
+    await _audit(user, "share_link_create", resolved, {"visibility": body.visibility})
+    return _serialise_link(link)
+
+
+@router.post("/share/link/revoke")
+async def revoke_shared_link(
+    body: RevokeLinkIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Revoke a shared link by URL. Idempotent on 404 (link not
+    found) — surfaces as a 200 so the FE can re-fetch the state
+    without a special-case."""
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(400, "url is required")
+
+    dbx = _get_dbx()
+    try:
+        await asyncio.to_thread(dbx.sharing_revoke_shared_link, url)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        lower = str(exc).lower()
+        if "shared_link_not_found" in lower or "not_found" in lower:
+            await _audit(user, "share_link_revoke_already_gone", url, {})
+            return {"revoked": True, "already_gone": True}
+        log.warning("[share.revoke_link] %s: %s", url[:80], exc)
+        raise _wrap_sharing_error(exc, "revoke_shared_link")
+
+    await _audit(user, "share_link_revoke", url, {})
+    return {"revoked": True}
+
+
+@router.post("/share/invite")
+async def invite_member(
+    body: InviteIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Invite a person to a path. Routes to
+    `sharing_add_file_member` for files or
+    `sharing_add_folder_member` for folders. Folders are
+    auto-converted to shared folders (via `_ensure_shared_folder_id`)
+    if they aren't already."""
+    resolved = _normalise_path(body.path)
+    if resolved == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot invite to the team folder root")
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(400, "invalid email")
+
+    from dropbox.sharing import (
+        AccessLevel, MemberSelector, AddMember, AddFileMemberError,
+    )
+    from dropbox import sharing as dbx_sharing
+
+    level = AccessLevel.editor if (body.access_level or "").lower() == "editor" else AccessLevel.viewer
+
+    dbx = _get_dbx()
+    is_folder = _is_folder_path(dbx, resolved)
+
+    try:
+        if is_folder:
+            sfid = _ensure_shared_folder_id(dbx, resolved, "invite")
+            members = [AddMember(member=MemberSelector.email(email), access_level=level)]
+            await asyncio.to_thread(
+                dbx.sharing_add_folder_member, sfid, members,
+                quiet=False, custom_message=body.message or None,
+            )
+        else:
+            members = [MemberSelector.email(email)]
+            add_res = await asyncio.to_thread(
+                dbx.sharing_add_file_member,
+                _team_root_arg(resolved), members,
+                custom_message=body.message or None,
+                quiet=False,
+                access_level=level,
+            )
+            # `sharing_add_file_member` returns a list of per-member
+            # results. Surface a per-email 400 if the SDK reported
+            # an error tag rather than success.
+            for r in (add_res or []):
+                res = getattr(r, "result", None)
+                if res is not None and hasattr(res, "get_member_error"):
+                    err = res.get_member_error()
+                    raise HTTPException(400, f"invite failed: {getattr(err, '_tag', str(err))}")
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[share.invite] %s ← %s: %s", resolved, email, exc)
+        raise _wrap_sharing_error(exc, "invite_member")
+
+    await _audit(user, "share_invite", resolved, {"email": email, "access_level": body.access_level})
+    return {"invited": True, "email": email, "access_level": body.access_level}
+
+
+@router.post("/share/remove-member")
+async def remove_member(
+    body: RemoveMemberIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Remove a person from a shared file or folder. Inherited
+    members can't be removed at this scope — they inherit from a
+    parent folder and Dropbox will 400. The FE hides Remove on
+    `is_inherited` rows to avoid the round-trip."""
+    resolved = _normalise_path(body.path)
+    if resolved == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot remove from the team folder root")
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(400, "invalid email")
+
+    from dropbox.sharing import MemberSelector
+
+    dbx = _get_dbx()
+    is_folder = _is_folder_path(dbx, resolved)
+
+    try:
+        if is_folder:
+            sfid = _get_shared_folder_id(dbx, resolved)
+            if not sfid:
+                # Nothing to remove — folder isn't a shared folder.
+                raise HTTPException(404, "folder is not shared; nothing to remove")
+            await asyncio.to_thread(
+                dbx.sharing_remove_folder_member, sfid,
+                MemberSelector.email(email), leave_a_copy=False,
+            )
+        else:
+            await asyncio.to_thread(
+                dbx.sharing_remove_file_member_2,
+                _team_root_arg(resolved), MemberSelector.email(email),
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[share.remove] %s ← %s: %s", resolved, email, exc)
+        raise _wrap_sharing_error(exc, "remove_member")
+
+    await _audit(user, "share_remove", resolved, {"email": email})
+    return {"removed": True, "email": email}

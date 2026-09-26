@@ -1,5 +1,12 @@
 // v58.13.132n2 — Dropbox in-app file browser page.
 //
+// `.132n4b` — Dropbox Share modal. Removes the "coming soon"
+// disable on the Share slot from `.132n4a` now that
+// `sharing.read` and `sharing.write` are active on the token.
+// Wires the row menu + details panel Share action to a new
+// full-featured modal (`ShareModal.jsx`) with create-link,
+// visibility toggle, invite by email, and remove member.
+//
 // `.132n4a` — Dropbox-native UX polish. Adds:
 //   · Lazy `/count` fetch per visible folder row + subtle badge.
 //   · Row-level ⋯ menu (Preview/Download/Rename/Copy path/Move/
@@ -38,6 +45,7 @@ import RowActionMenu from '@/components/dropbox/RowActionMenu';
 import MovePickerModal from '@/components/dropbox/MovePickerModal';
 import VersionHistoryDrawer from '@/components/dropbox/VersionHistoryDrawer';
 import DetailsPanel from '@/components/dropbox/DetailsPanel';
+import ShareModal from '@/components/dropbox/ShareModal';
 import {
   Folder24Regular, Document24Regular, DocumentPdf24Regular,
   Image24Regular, Video24Regular, DocumentTable24Regular,
@@ -87,6 +95,8 @@ export default function DropboxBrowser() {
   const [movePickerFor, setMovePickerFor] = useState(null);       // Move to… modal
   const [versionsFor, setVersionsFor] = useState(null);           // Version history drawer
   const [renameFor, setRenameFor] = useState(null);               // {entry, name}
+  // `.132n4b` — Share modal target entry (null when closed).
+  const [shareFor, setShareFor] = useState(null);
   // Map<folderPath, {item_count, is_partial}> — filled lazily
   // by the folder-count effect. Cleared on `path` change so
   // stale counts don't flash for the wrong parent.
@@ -671,6 +681,7 @@ export default function DropboxBrowser() {
                 onRename={() => setRenameFor({ entry: e, name: e.name })}
                 onCopyPath={() => copyPath(e)}
                 onMove={() => setMovePickerFor(e)}
+                onShare={() => setShareFor(e)}
                 onVersions={() => setVersionsFor(e)}
                 folderCount={folderCounts[e.path]}
               />
@@ -794,7 +805,7 @@ export default function DropboxBrowser() {
       )}
 
       {/* `.132n4a` — right details panel (single-click on file). */}
-      {detailsEntry && !previewEntry && !movePickerFor && !versionsFor && !renameFor && (
+      {detailsEntry && !previewEntry && !movePickerFor && !versionsFor && !renameFor && !shareFor && (
         <DetailsPanel
           entry={detailsEntry}
           onClose={() => setDetailsEntry(null)}
@@ -803,8 +814,17 @@ export default function DropboxBrowser() {
           onRename={(e) => setRenameFor({ entry: e, name: e.name })}
           onCopyPath={copyPath}
           onMove={(e) => setMovePickerFor(e)}
+          onShare={(e) => setShareFor(e)}
           onVersions={(e) => setVersionsFor(e)}
           onDelete={(e) => setConfirmDelete(e)}
+        />
+      )}
+
+      {/* `.132n4b` — Share modal. */}
+      {shareFor && (
+        <ShareModal
+          entry={shareFor}
+          onClose={() => setShareFor(null)}
         />
       )}
 
@@ -914,7 +934,7 @@ function SelectAllCheckbox({ visibleIds, selectedIds, onToggle }) {
 
 function Row({
   entry, selected, onToggleSelect, onOpen, onPreview, onDelete,
-  onDownload, onRename, onCopyPath, onMove, onVersions, folderCount,
+  onDownload, onRename, onCopyPath, onMove, onShare, onVersions, folderCount,
 }) {
   const Icon = iconFor(entry);
   return (
@@ -978,6 +998,7 @@ function Row({
             onRename={onRename}
             onCopyPath={onCopyPath}
             onMove={onMove}
+            onShare={onShare}
             onVersions={onVersions}
             onDelete={onDelete}
           />

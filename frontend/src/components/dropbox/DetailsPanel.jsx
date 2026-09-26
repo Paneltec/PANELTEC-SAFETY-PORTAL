@@ -7,11 +7,9 @@
 // Layout mirrors Dropbox's own file-info sidebar: thumbnail-icon,
 // filename, size, modified, path, plus quick action buttons.
 //
-// `.132n4a` scope:
-//   · Preview / Download / Rename / Copy path / Move / Delete
-//   · Version count from `/dropbox/browse/revisions?limit=10`
-//     (async — shows "loading…" then the number)
-//   · Share row is DISABLED with a tooltip. `.132n4b` unhooks it.
+// `.132n4b` — Sharing is now live. The Share row is enabled and
+// the Sharing meta row shows the direct-link status pulled from
+// `/dropbox/browse/share`.
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
@@ -55,10 +53,14 @@ function fmtDate(iso) {
 
 export default function DetailsPanel({
   entry, onClose, onPreview, onDownload, onRename, onCopyPath,
-  onMove, onVersions, onDelete,
+  onMove, onShare, onVersions, onDelete,
 }) {
   // `versionCount` is loaded lazily on mount for FILE entries only.
   const [versionCount, setVersionCount] = useState({ loading: true, value: null });
+  // `.132n4b` — sharing summary (link count + member count) fetched
+  // lazily. Null while loading, `{link_count, member_count}` when
+  // ready, undefined on error (renders as "—").
+  const [shareSummary, setShareSummary] = useState(null);
 
   useEffect(() => {
     if (!entry || entry.type !== 'file') {
@@ -78,6 +80,32 @@ export default function DetailsPanel({
         }
       } catch {
         if (!cancelled) setVersionCount({ loading: false, value: null });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [entry]);
+
+  // `.132n4b` — fetch sharing summary in parallel with versions.
+  // Failure is silent (renders "—"). Doesn't block the panel from
+  // showing quick-action buttons.
+  useEffect(() => {
+    if (!entry) return undefined;
+    let cancelled = false;
+    setShareSummary(null);
+    (async () => {
+      try {
+        const { data } = await api.get('/dropbox/browse/share', {
+          params: { path: entry.path },
+        });
+        if (!cancelled) {
+          const directCount = (data.members || []).filter((m) => !m.is_inherited).length;
+          setShareSummary({
+            link_count:    (data.links || []).length,
+            member_count:  directCount + (data.invitees || []).length,
+          });
+        }
+      } catch {
+        if (!cancelled) setShareSummary(undefined);
       }
     })();
     return () => { cancelled = true; };
@@ -152,13 +180,27 @@ export default function DetailsPanel({
                       : `${versionCount.value} versions${versionCount.value === 10 ? '+' : ''}`)}
             </MetaRow>
           )}
-          {/* `.132n4a` — Share status placeholder. `.132n4b` will
-              replace this stub with the real count from
-              /api/dropbox/browse/share. */}
+          {/* `.132n4b` — Share status pulled from
+              /api/dropbox/browse/share. Shows link count + direct
+              member count once loaded. */}
           <MetaRow label="Sharing">
-            <span className="text-slate-400 italic">
-              Enabled in .132n4b
-            </span>
+            {shareSummary === null
+              ? <span className="text-slate-400">Loading…</span>
+              : shareSummary === undefined
+                ? '—'
+                : (shareSummary.link_count === 0 && shareSummary.member_count === 0)
+                  ? <span className="text-slate-500">Not shared</span>
+                  : (
+                    <span>
+                      {shareSummary.link_count > 0 && (
+                        <>{shareSummary.link_count} link{shareSummary.link_count === 1 ? '' : 's'}</>
+                      )}
+                      {shareSummary.link_count > 0 && shareSummary.member_count > 0 && ' · '}
+                      {shareSummary.member_count > 0 && (
+                        <>{shareSummary.member_count} {shareSummary.member_count === 1 ? 'person' : 'people'}</>
+                      )}
+                    </span>
+                  )}
           </MetaRow>
         </div>
 
@@ -202,8 +244,7 @@ export default function DetailsPanel({
             testid="details-share"
             icon={<Share16Regular />}
             label="Share"
-            disabled
-            title="Sharing requires additional Dropbox permissions. Ask an admin to enable in Settings → Integrations."
+            onClick={() => onShare(entry)}
           />
           {isFile && (
             <ActionRow
