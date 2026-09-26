@@ -19,6 +19,7 @@ import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 import SwmsDiffModal from '../components/swms/SwmsDiffModal';
+import SwmsLegacyScopeAuditCard from '../components/swms/SwmsLegacyScopeAuditCard';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -207,6 +208,14 @@ export default function SwmsAssignmentsAdmin() {
           </div>
         </div>
       </div>
+
+      {/* v58.13.132n3 — legacy-scope audit card. Shows count of
+          SWMS in this org with null/missing/empty applies_to
+          (from `.132kn` follow-up #2). Admin can click "Review"
+          to jump straight to the first sample. Read-only. */}
+      <SwmsLegacyScopeAuditCard
+        onReviewClick={(id) => setSelectedId(id)}
+      />
 
       {loading ? (
         <div className="text-sm text-slate-500"><Loader2 size={14} className="inline animate-spin mr-1" /> Loading…</div>

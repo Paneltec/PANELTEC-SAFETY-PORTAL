@@ -233,6 +233,11 @@ def require_scoped_access(user: dict, resource: str, record: Optional[dict]) -> 
 #     3. `applies_to.worker_ids` contains the worker's user id
 #     4. `applies_to.asset_types` intersects the worker's assigned asset-type slugs
 #     5. `applies_to.company_ids` contains the worker's simpro_company_id (contractors)
+#     6. `applies_to.asset_kinds` intersects the `kind` of any asset the worker is
+#        assigned to.  Added in `.132n3` — live data has
+#        `applies_to.asset_kinds: ['plant']` (Concrete/Asphalt Cutting SWMS) with no
+#        matcher branch before this ship, so plant operators were silently missing
+#        that SWMS even though the admin correctly tagged it.
 #
 # Sites are NOT currently a first-class facet of the SWMS
 # assignment matrix (`_clean_applies_to` in `swms_extras.py` omits
@@ -277,6 +282,7 @@ async def swms_visibility_filter(user: dict) -> Dict[str, Any]:
     # invited users), we still let them through on branches 1 + 2 —
     # the applies_to legacy-null + role match are the majority.
     asset_type_slugs: list[str] = []
+    asset_kind_slugs: list[str] = []
     company_id: Optional[str] = None
     try:
         # Local import to avoid a circular at module load (db imports
@@ -295,6 +301,23 @@ async def swms_visibility_filter(user: dict) -> Dict[str, Any]:
                 if x
             ]
             company_id = w.get("simpro_company_id") or w.get("company_id")
+            # `.132n3` — derive asset KINDS from the specific assets
+            # the worker is assigned to. `assets.kind` is a small
+            # enum (`plant / trailer / vehicle` per live data). We
+            # look them up in one indexed query; if the worker has
+            # no assigned assets, branch 6 contributes nothing.
+            asset_ids = [x for x in (w.get("assigned_asset_ids") or []) if x]
+            if asset_ids:
+                kinds_cursor = db.assets.find(
+                    {"id": {"$in": asset_ids}, "kind": {"$exists": True, "$ne": None}},
+                    {"_id": 0, "kind": 1},
+                )
+                seen: set[str] = set()
+                async for a in kinds_cursor:
+                    k = _lower_norm(a.get("kind"))
+                    if k:
+                        seen.add(k)
+                asset_kind_slugs = sorted(seen)
     except Exception:  # noqa: BLE001 - defensive; visibility must not crash the list
         pass
 
@@ -323,5 +346,11 @@ async def swms_visibility_filter(user: dict) -> Dict[str, Any]:
     # Branch 5 — contractor company match.
     if company_id:
         branches.append({"applies_to.company_ids": company_id})
+
+    # Branch 6 — asset-kind intersection (`.132n3`). Live data
+    # uses lowercase kind slugs (`plant/trailer/vehicle`), and our
+    # normalisation lowercases both sides, so the `$in` is safe.
+    if asset_kind_slugs:
+        branches.append({"applies_to.asset_kinds": {"$in": asset_kind_slugs}})
 
     return {"$or": branches}

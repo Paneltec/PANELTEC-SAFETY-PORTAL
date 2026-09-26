@@ -362,6 +362,98 @@ async def backfill_version_chain(user: dict = Depends(get_current_user)):
     return {"linked": linked, "skipped": skipped}
 
 
+# ────────────────── .132n3 — legacy-scope audit ──────────────
+# Follow-up from `.132kn` (memo section "Follow-up candidates" #2).
+# Surfaces "N SWMS in this org have no `applies_to` matrix" so the
+# admin can review + tag them. Read-only — DOES NOT auto-tag.
+#
+# Definition of "legacy-scope" (matches the visibility filter's
+# branch 1 set): `applies_to` missing, null, or `{}`. A SWMS with
+# an `applies_to` object where every array is empty
+# (`{roles:[], worker_ids:[], ...}`) is treated as EFFECTIVELY
+# legacy — the matcher branches 2-6 all short-circuit on empty
+# candidate sets, so the SWMS is still visible to every org member.
+# Surfacing them as "needs tagging" is the correct UX.
+@admin_router.get("/legacy-scope-count")
+@safe_admin_endpoint
+async def legacy_scope_count(user: dict = Depends(get_current_user)):
+    """Count of SWMS in the caller's org that carry no meaningful
+    `applies_to` matrix. Admin-gated. Response shape kept flat and
+    stable — the frontend widget hits this on load and re-renders.
+
+    Response:
+      {
+        "org_id":              "<uuid>",
+        "count":               int,   # missing/null/empty applies_to
+        "count_effectively_null": int, # applies_to present but all arrays empty
+        "total_active":        int,   # denominator for the widget
+        "ttl_seconds":         60,    # hint to the FE; the Mongo counts
+                                       # are cheap so we don't cache
+                                       # server-side, but the FE can
+                                       # throttle refetches this often.
+        "sample_ids":          [str], # up to 5 SWMS ids that fall in
+                                       # either bucket, for the "review"
+                                       # navigation.
+      }
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+
+    org_q = {"org_id": user["org_id"], "deleted_at": None}
+    total_active = await db.swms.count_documents(org_q)
+
+    # Bucket A — legacy null / missing / literal-empty applies_to.
+    null_q = {
+        **org_q,
+        "$or": [
+            {"applies_to": None},
+            {"applies_to": {"$exists": False}},
+            {"applies_to": {}},
+        ],
+    }
+    count_null = await db.swms.count_documents(null_q)
+
+    # Bucket B — applies_to present as an object, but every array
+    # inside is missing or empty. Mongo can't easily "all fields
+    # empty" in one query, so we approximate: `applies_to` exists
+    # AND is not literal `{}` AND none of the five arrays have any
+    # element. `$size:0` matches only when the field IS an array
+    # and empty; combine with `$exists:false` for missing arrays.
+    empty_array_or_missing = lambda fld: {  # noqa: E731
+        "$or": [{fld: {"$exists": False}}, {fld: {"$size": 0}}]
+    }
+    eff_null_q = {
+        **org_q,
+        # Can't duplicate `$ne` keys in one operator; use `$nin`.
+        "applies_to": {"$exists": True, "$nin": [None, {}]},
+        "$and": [
+            empty_array_or_missing("applies_to.roles"),
+            empty_array_or_missing("applies_to.worker_ids"),
+            empty_array_or_missing("applies_to.company_ids"),
+            empty_array_or_missing("applies_to.asset_types"),
+            empty_array_or_missing("applies_to.asset_kinds"),
+        ],
+    }
+    count_eff_null = await db.swms.count_documents(eff_null_q)
+
+    # Sample ids from either bucket for the review CTA.
+    sample_ids: list[str] = []
+    async for r in db.swms.find(
+        {"$or": [null_q, eff_null_q]},
+        {"_id": 0, "id": 1},
+    ).limit(5):
+        sample_ids.append(r["id"])
+
+    return {
+        "org_id":                user["org_id"],
+        "count":                 count_null,
+        "count_effectively_null": count_eff_null,
+        "total_active":          total_active,
+        "ttl_seconds":           60,
+        "sample_ids":            sample_ids,
+    }
+
+
 # ────────────────── Phase 4.1 — SWMS Assignments ──────────────────
 
 class AssignmentsIn(BaseModel):
@@ -380,6 +472,14 @@ def _clean_applies_to(raw: dict) -> dict:
         "worker_ids":   [str(x) for x in (raw.get("worker_ids") or [])],
         "company_ids":  [str(x) for x in (raw.get("company_ids") or [])],
         "asset_types":  [str(x) for x in (raw.get("asset_types") or [])],
+        # `.132n3` — preserve `asset_kinds` on writes. Live data
+        # (SWMS "Concrete or Asphalt Cutting") already carries
+        # `asset_kinds: ['plant']` from a seed / bulk-import path,
+        # and pre-`.132n3` this cleaner silently dropped it on any
+        # PUT /assignments/* round-trip — losing the tag the admin
+        # or bulk-importer had set. The corresponding visibility
+        # branch shipped in `.132n3` reads this field.
+        "asset_kinds":  [str(x) for x in (raw.get("asset_kinds") or [])],
     }
 
 
