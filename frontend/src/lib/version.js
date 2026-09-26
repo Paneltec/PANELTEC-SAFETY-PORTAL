@@ -1,5 +1,59 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132n5_hk1 — Dropbox trash housekeeping prep + SW cache bust
+// for the `.132n4d` PDF renderer.
+//
+// Ship carries two things bundled per user brief:
+//
+// A — files.permanent_delete scope + hard-delete script scaffold.
+//   New scope appended to `_DROPBOX_SCOPES` in
+//   `backend/integrations_dropbox.py`. Same pre-add pattern as
+//   `.132n4a` used for `sharing.write` — the scope string is only
+//   half the fix; the App Console (App ID 8619475) still needs the
+//   scope ticked under Permissions, and then an admin must
+//   re-authorise via `/api/dropbox/oauth/start` to mint a fresh
+//   refresh token that carries it. Existing tokens will keep
+//   400ing on `/2/files/permanently_delete` with `missing_scope`
+//   until reconnect.
+//   New one-shot runner `scripts/dropbox_housekeeping_132n5_trash.py`
+//   idempotently permanently-deletes:
+//     · /.132n2a_write_test          (folder)
+//     · /.132n2a_upload_test.txt     (file)
+//     · /Software/.132n4a_test_rename_new  (file)
+//   Hard-refuses to touch `/Paneltec-General Administration` in
+//   trash (user directive) via a `PROTECTED` assertion.
+//
+// B — SW cache-bust unblocking `.132n4d` PDF preview for warm SW
+//     clients.
+//   `.132n4d` (SHA ce85b4ae) correctly rewrote
+//   `frontend/src/components/dropbox/FilePreviewModal.jsx` to use
+//   `react-pdf`/PDF.js canvas rendering + bumped RUNNING_VERSION,
+//   but it did NOT bump `frontend/public/service-worker.js`
+//   `CACHE_VERSION`. That value stayed pinned at `.132n4a` for two
+//   full ships. Every browser with a warm service worker kept
+//   serving the `.132n4a` bundle — users never actually fetched
+//   the new FilePreviewModal, so PDF preview reports kept coming
+//   in as "still broken" (e.g. `J212020CL-HYDRAULIC-A.pdf`).
+//   Fix: bump CACHE_VERSION here + EXPECTED_CACHE_VERSION below.
+//   Next full navigation on any warm SW client invalidates the
+//   static cache, re-fetches the bundle, and the `.132n4d` PDF.js
+//   renderer is what actually runs.
+//
+// Files touched:
+//   · backend/integrations_dropbox.py                                (+scope + comment)
+//   · scripts/dropbox_housekeeping_132n5_trash.py                    (new)
+//   · frontend/src/lib/version.js                                    (RUNNING_VERSION + EXPECTED_CACHE_VERSION bump + this block)
+//   · frontend/public/service-worker.js                              (CACHE_VERSION bump)
+//   · memory/v58_13_132n5_hk1_dropbox_trash_scope.md                 (new)
+//
+// Not in this ship:
+//   · `.132n6` (Dropbox AI Search) — next ship.
+//   · Actual permanent-delete run — blocked on user App Console
+//     scope tick + reconnect.
+//   · Any backend / migration / watchdog / mobile touch.
+
+
+
 // v58.13.132my — Migration shutdown hardening: graceful drain +
 // non-striking restart reasons + false-cap cleanup.
 //
@@ -15979,7 +16033,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n4d';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n5_hk1';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -16000,7 +16054,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n4d';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n4a';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n5_hk1';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

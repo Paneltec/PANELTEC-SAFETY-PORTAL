@@ -82,7 +82,17 @@ _DROPBOX_SCOPES = (
     # next OAuth mint automatically requests it — no code touch
     # needed to unhook the deferred sharing UI. `sharing.read` is
     # already granted; `sharing.write` is what's new.
-    "sharing.write"
+    "sharing.write "
+    # v58.13.132n5_hk1 — files.permanent_delete pre-added ahead of
+    # the trash-housekeeping run (scripts/dropbox_housekeeping_132n5_trash.py).
+    # Same pattern as `sharing.write` above: adding to the scope
+    # string is only half the fix — the App Console (App ID 8619475)
+    # still needs `files.permanent_delete` ticked under Permissions,
+    # and then an admin must re-authorise via /api/dropbox/oauth/start
+    # to mint a fresh refresh token that carries the new scope. The
+    # existing token (minted pre-n5_hk1) will still 400 on
+    # /2/files/permanently_delete with 'missing_scope' until re-auth.
+    "files.permanent_delete"
 )
 
 
