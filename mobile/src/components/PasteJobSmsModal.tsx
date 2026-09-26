@@ -16,6 +16,11 @@ import { Colors } from '../theme/colors';
 import { parseJobSms, type ParsedSms } from '../lib/parseJobSms';
 import { authPost } from '../services/apiClient';
 
+/** Minimum fields needed for a valid parse — truck + at least site or address. */
+function isUsableParse(p: ParsedSms): boolean {
+  return !!(p.truck || p.site_name || p.address);
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -31,11 +36,14 @@ export default function PasteJobSmsModal({ visible, onClose, onJobCreated }: Pro
   const [error, setError] = useState('');
   const [createdJob, setCreatedJob] = useState<any>(null);
 
+  const [parseError, setParseError] = useState('');
+
   const reset = useCallback(() => {
     setStep('input');
     setRawText('');
     setParsed(null);
     setError('');
+    setParseError('');
     setCreatedJob(null);
   }, []);
 
@@ -50,7 +58,12 @@ export default function PasteJobSmsModal({ visible, onClose, onJobCreated }: Pro
 
   const handleParse = () => {
     if (!rawText.trim()) return;
+    setParseError('');
     const result = parseJobSms(rawText);
+    if (!isUsableParse(result)) {
+      setParseError("Couldn't read this SMS — check the format");
+      return;
+    }
     setParsed(result);
     setStep('preview');
   };
@@ -141,12 +154,26 @@ export default function PasteJobSmsModal({ visible, onClose, onJobCreated }: Pro
                 <Ionicons name="scan-outline" size={18} color={Colors.white} />
                 <Text style={ms.primaryBtnText}>Parse SMS</Text>
               </TouchableOpacity>
+              {!!parseError && (
+                <View testID="paste-parse-error" style={ms.parseErrorBanner}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.error} />
+                  <Text style={ms.parseErrorText}>{parseError}</Text>
+                </View>
+              )}
             </>
           )}
 
           {/* Step: Preview */}
           {step === 'preview' && parsed && (
             <>
+              {parsed.missing.length > 0 && (
+                <View testID="paste-missing-banner" style={ms.missingBanner}>
+                  <Ionicons name="warning" size={16} color="#92400E" />
+                  <Text style={ms.missingBannerText}>
+                    {parsed.missing.length} field{parsed.missing.length > 1 ? 's' : ''} missing — you can still save
+                  </Text>
+                </View>
+              )}
               <View style={ms.previewCard}>
                 {renderField('TRUCK', parsed.truck)}
                 {renderField('DATE', parsed.date)}
@@ -265,4 +292,16 @@ const ms = StyleSheet.create({
   doneSubtitle: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
   errorTitle: { fontSize: 22, fontWeight: '800', color: Colors.error },
   errorMsg: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginBottom: 16 },
+  parseErrorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEE2E2', borderRadius: 12, padding: 12, marginTop: 12,
+    borderWidth: 1, borderColor: '#FECACA',
+  },
+  parseErrorText: { fontSize: 13, fontWeight: '600', color: Colors.error, flex: 1 },
+  missingBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: '#FDE68A',
+  },
+  missingBannerText: { fontSize: 13, fontWeight: '600', color: '#92400E', flex: 1 },
 });

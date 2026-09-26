@@ -1,13 +1,14 @@
 /**
- * parseJobSms.ts — v58.13.132p1
+ * parseJobSms.ts — v58.13.132p1a
  *
  * Client-side SMS parser matching backend sms_parser.py VERBATIM.
  * Seven-field contract: truck, date, site_name, address, customer, staff[], notes.
+ * Plus `missing[]` — list of field names that are null/empty after parse.
  *
  * Used by:
- *  · Android SMS BroadcastReceiver (offline-first)
- *  · iPhone paste-SMS modal
- *  · Deep-link import handler
+ *  · iPhone paste-SMS modal (PasteJobSmsModal)
+ *  · Deep-link import handler (paneltec://job/import?text=...)
+ *  · Future Android SMS BroadcastReceiver (Phase 2B)
  */
 
 export interface ParsedSms {
@@ -18,6 +19,7 @@ export interface ParsedSms {
   customer: string | null;
   staff: string[];
   notes: string | null;
+  missing: string[];
 }
 
 // ── Date parsing ──
@@ -26,7 +28,7 @@ const DATE_FORMATS: { rx: RegExp; parse: (m: RegExpMatchArray) => Date | null }[
   // ISO YYYY-MM-DD
   { rx: /^(\d{4})-(\d{2})-(\d{2})$/, parse: m => new Date(+m[1], +m[2] - 1, +m[3]) },
   { rx: /^(\d{4})\/(\d{2})\/(\d{2})$/, parse: m => new Date(+m[1], +m[2] - 1, +m[3]) },
-  // DD-MM-YY / DD-MM-YYYY
+  // DD-MM-YY / DD-MM-YYYY (Stephen's SMS uses DD-MM-YY)
   { rx: /^(\d{1,2})-(\d{1,2})-(\d{2})$/, parse: m => new Date(2000 + +m[3], +m[2] - 1, +m[1]) },
   { rx: /^(\d{1,2})-(\d{1,2})-(\d{4})$/, parse: m => new Date(+m[3], +m[2] - 1, +m[1]) },
   { rx: /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/, parse: m => new Date(2000 + +m[3], +m[2] - 1, +m[1]) },
@@ -100,10 +102,29 @@ function splitStaff(raw: string): string[] {
   return (raw || '').split(/[,;]|\s{2,}|\n/).map(s => s.trim()).filter(Boolean);
 }
 
+// ── Compute missing fields ──
+
+function computeMissing(p: Omit<ParsedSms, 'missing'>): string[] {
+  const missing: string[] = [];
+  if (!p.truck) missing.push('truck');
+  if (!p.date) missing.push('date');
+  if (!p.site_name) missing.push('site_name');
+  if (!p.address) missing.push('address');
+  if (!p.customer) missing.push('customer');
+  if (!p.staff || p.staff.length === 0) missing.push('staff');
+  if (!p.notes) missing.push('notes');
+  return missing;
+}
+
 // ── Main parser ──
 
 export function parseJobSms(text: string): ParsedSms {
-  const empty: ParsedSms = { truck: null, date: null, site_name: null, address: null, customer: null, staff: [], notes: null };
+  const empty: ParsedSms = {
+    truck: null, date: null, site_name: null, address: null,
+    customer: null, staff: [], notes: null, missing: [
+      'truck', 'date', 'site_name', 'address', 'customer', 'staff', 'notes',
+    ],
+  };
   if (!text || !text.trim()) return empty;
 
   // Normalise
@@ -116,10 +137,13 @@ export function parseJobSms(text: string): ParsedSms {
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   if (!lines.length) return empty;
 
-  const out: ParsedSms = { ...empty };
+  const out: Omit<ParsedSms, 'missing'> = {
+    truck: null, date: null, site_name: null, address: null,
+    customer: null, staff: [], notes: null,
+  };
   const consumed = new Set<number>();
 
-  // Pass 1 — labeled lines
+  // Pass 1 — labeled lines (highest priority)
   for (let i = 0; i < lines.length; i++) {
     const stripped = lines[i].trim();
     if (!stripped) continue;
@@ -205,7 +229,7 @@ export function parseJobSms(text: string): ParsedSms {
     }
   }
 
-  // Notes — everything left
+  // Notes — everything left over
   if (remaining.length && !out.notes) {
     out.notes = remaining.map(x => x[1]).join('\n');
   } else if (remaining.length && out.notes) {
@@ -213,7 +237,7 @@ export function parseJobSms(text: string): ParsedSms {
     out.notes = `${out.notes}\n${extra}`;
   }
 
-  return out;
+  return { ...out, missing: computeMissing(out) };
 }
 
 /** Quick check if raw text looks like a Paneltec job SMS. */

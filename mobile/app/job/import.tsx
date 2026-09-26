@@ -35,6 +35,11 @@ export default function JobImportScreen() {
       return;
     }
     const result = parseJobSms(raw);
+    if (!result.truck && !result.site_name && !result.address) {
+      setError("Couldn't read this SMS — check the format");
+      setStep('error');
+      return;
+    }
     setParsed(result);
     setStep('preview');
   }, [params.text]);

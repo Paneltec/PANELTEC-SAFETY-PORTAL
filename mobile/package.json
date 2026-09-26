@@ -65,9 +65,12 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.2.4",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~57.0.2",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.14",
     "typescript": "~6.0.3"
   },
   "private": true,
