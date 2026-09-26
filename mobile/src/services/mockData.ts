@@ -119,9 +119,5 @@ export const MOCK_AD_HOC_JOB = {
   task: 'Excavate & shore 12m storm-water trench — depth 2.4m',
   notes: 'Kroll to site to expose main, ring Jason to complete tapping when exposed Tap 50mm connection to Main, all fittings to be supplied, after site visit',
   staff_names: ['DANIEL BUTLER', 'JARROD TARGETT', 'JASON DONNELLAN'],
-  supervisor_name: null as string | null,
-  supervisor_phone: null as string | null,
-  contact_name: null as string | null,
-  contact_phone: null as string | null,
   _mocked: true,
 };

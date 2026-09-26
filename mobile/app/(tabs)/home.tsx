@@ -2,10 +2,10 @@
  * Home screen — v58.13.132dc
  * Intelligence Briefing (real /api/mobile/ai/briefing) + Compliance list + Notification + Signed On.
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Linking, Platform, Alert,
+  RefreshControl, ActivityIndicator, Linking, Platform, Alert, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -42,6 +42,25 @@ export default function HomeScreen() {
   const [hasNotification, setHasNotification] = useState(false);
   const [jobActioning, setJobActioning] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
+
+  // Pulse animation for new-job tile
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const isPending = todayJob && (todayJob.status === 'pending_accept' || todayJob.status === 'pending' || todayJob.status === 'new' || todayJob.status === 'issued');
+    if (isPending) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: false }),
+          Animated.timing(pulseAnim, { toValue: 0, duration: 1000, useNativeDriver: false }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      pulseAnim.setValue(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayJob?.status, pulseAnim]);
 
   // AI Briefing state
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
@@ -280,16 +299,19 @@ export default function HomeScreen() {
   if (viewMode === 'job_detail') {
     const job = todayJob || MOCK_AD_HOC_JOB;
     const isMocked = !todayJob || job._mocked;
-    const isPending = job.status === 'pending_accept' || job.status === 'new';
+    const isPending = job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new';
     const isAccepted = job.status === 'accepted';
     const isDeclined = job.status === 'declined';
     const address = job.address || job.site_address || '';
-    const supervisorName = job.supervisor_name || '';
-    const supervisorPhone = job.supervisor_phone || '';
-    const hasSupervisor = !!(supervisorName || supervisorPhone);
     const truckLabel = [job.truck_name, job.truck_reg].filter(Boolean).join(' · ');
-    const staffLabel = Array.isArray(job.staff_names) && job.staff_names.length > 0
-      ? job.staff_names.join(', ') : '';
+
+    // Filter current user out of work mates
+    const currentName = (user?.name || user?.display_name || user?.full_name || '').trim().toUpperCase();
+    const filteredStaff = Array.isArray(job.staff_names)
+      ? job.staff_names.filter((n: string) => n.trim().toUpperCase() !== currentName)
+      : [];
+    const staffLabel = filteredStaff.length > 0 ? filteredStaff.join(', ') : '';
+
     const jobNotes = job.notes || '';
 
     return (
@@ -406,23 +428,6 @@ export default function HomeScreen() {
               <View style={s.jdDetailRow}>
                 <Text style={s.jdDetailLabel}>TASK</Text>
                 <Text style={s.jdDetailValue} numberOfLines={2}>{job.task}</Text>
-              </View>
-            </>)}
-            {/* SUPERVISOR (only if present) */}
-            {hasSupervisor && (<>
-              <View style={s.jdDivider} />
-              <View style={s.jdDetailRow}>
-                <Text style={s.jdDetailLabel}>SUPERVISOR</Text>
-                <TouchableOpacity
-                  testID="job-detail-call-supervisor"
-                  onPress={() => supervisorPhone && Linking.openURL(`tel:${supervisorPhone.replace(/\s/g, '')}`)}
-                  disabled={!supervisorPhone}
-                  activeOpacity={0.6}
-                >
-                  <Text style={[s.jdDetailValue, !!supervisorPhone && { color: Colors.info, textDecorationLine: 'underline' }]}>
-                    {supervisorName}{supervisorPhone ? ` · ${supervisorPhone}` : ''}
-                  </Text>
-                </TouchableOpacity>
               </View>
             </>)}
           </View>
@@ -705,21 +710,62 @@ export default function HomeScreen() {
         </View>
         {jobLoading ? (
           <ActivityIndicator color={Colors.orange} style={{ marginVertical: 20 }} />
-        ) : todayJob ? (
-          <TouchableOpacity testID="home-today-job" style={s.todayJobCard} onPress={() => setViewMode('job_detail')}>
-            <Ionicons name="location" size={20} color={Colors.orange} />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={s.todayJobTitle} numberOfLines={1}>{todayJob.address || todayJob.site_address || todayJob.site_name || 'Assigned Site'}</Text>
-              <Text style={s.todayJobSub} numberOfLines={1}>
-                {[
-                  todayJob.truck_name ? `${todayJob.truck_name}${todayJob.truck_reg ? ` · ${todayJob.truck_reg}` : ''}` : null,
-                  todayJob.status === 'accepted' ? 'Accepted' : todayJob.status?.replace('_', ' '),
-                ].filter(Boolean).join(' · ')}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
-          </TouchableOpacity>
-        ) : (
+        ) : todayJob ? (() => {
+          const isNewJob = todayJob.status === 'pending_accept' || todayJob.status === 'pending' || todayJob.status === 'new' || todayJob.status === 'issued';
+          const isJobAccepted = todayJob.status === 'accepted';
+          const borderColor = pulseAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['rgba(16,185,129,0.0)', 'rgba(16,185,129,0.5)'],
+          });
+          const shadowOpacity = pulseAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 0.35],
+          });
+          return (
+            <>
+              {isNewJob && (
+                <View testID="home-new-job-banner" style={s.newJobBanner}>
+                  <Ionicons name="notifications" size={16} color={Colors.success} />
+                  <Text style={s.newJobBannerText}>You have a new job</Text>
+                </View>
+              )}
+              {isJobAccepted && todayJob.accepted_at && (
+                <View testID="home-accepted-banner" style={s.acceptedBanner}>
+                  <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+                  <Text style={s.acceptedBannerText}>
+                    Accepted at {new Date(todayJob.accepted_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}
+                  </Text>
+                </View>
+              )}
+              <Animated.View style={[
+                s.todayJobCardWrap,
+                isNewJob && {
+                  borderColor,
+                  borderWidth: 2,
+                  shadowColor: '#10B981',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowRadius: 12,
+                  shadowOpacity,
+                  elevation: 4,
+                },
+              ]}>
+                <TouchableOpacity testID="home-today-job" style={s.todayJobCardInner} onPress={() => setViewMode('job_detail')}>
+                  <Ionicons name="location" size={20} color={Colors.orange} />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={s.todayJobTitle} numberOfLines={1}>{todayJob.address || todayJob.site_address || todayJob.site_name || 'Assigned Site'}</Text>
+                    <Text style={s.todayJobSub} numberOfLines={1}>
+                      {[
+                        todayJob.truck_name ? `${todayJob.truck_name}${todayJob.truck_reg ? ` · ${todayJob.truck_reg}` : ''}` : null,
+                        todayJob.status === 'accepted' ? 'Accepted' : todayJob.status?.replace('_', ' '),
+                      ].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                </TouchableOpacity>
+              </Animated.View>
+            </>
+          );
+        })() : (
           <View testID="home-no-job" style={s.noJobCard}>
             <Ionicons name="time-outline" size={20} color={Colors.textTertiary} />
             <Text style={s.noJobText}>Ready when the office issues today&apos;s job.</Text>
@@ -828,6 +874,27 @@ const s = StyleSheet.create({
   complianceStatusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 
   // Today job
+  // New job banner + pulse
+  newJobBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#D1FAE5', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8,
+  },
+  newJobBannerText: { fontSize: 14, fontWeight: '700', color: '#059669' },
+  acceptedBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(16,185,129,0.10)', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 8, marginBottom: 8,
+  },
+  acceptedBannerText: { fontSize: 13, fontWeight: '600', color: '#059669' },
+  todayJobCardWrap: {
+    borderRadius: 14, overflow: 'hidden',
+  },
+  todayJobCardInner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 16,
+    minHeight: 64,
+  },
   todayJobCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.surface, borderRadius: 14, padding: 16,
