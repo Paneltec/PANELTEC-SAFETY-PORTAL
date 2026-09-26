@@ -1,5 +1,72 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132n8 — Hard NAS-write lockdown (belt-and-braces on `.132n0`).
+//
+// `.132n0` did the runtime shutdown:
+//   · cancelled 139 in-flight `dropbox_migration_run` docs,
+//   · flipped `migration_watchdog_settings.enabled=False`,
+//   · unregistered the APScheduler `dropbox_migration_watchdog` job.
+//
+// `.132n8` (this) adds the code-level refusal so NO write path can
+// fire — even if someone flips the DB flag back to True via Mongo
+// directly OR hits the admin write routes with a valid token.
+//
+// Two independent `MIGRATION_DISABLED = True` module constants:
+//   · `backend/dropbox_bytes_copy.py`   (worker layer)
+//   · `backend/integrations_dropbox.py` (route layer)
+// Independent by design — re-enabling requires an intentional edit
+// at BOTH sites, no single-file slip.
+//
+// Guards (all 6 confirmed refusing via live probe):
+//   · `run_copy_job()`               → persists a `state=disabled_lockdown`
+//                                       status doc, returns without touching
+//                                       enum rows or NAS ops.
+//   · `watchdog_tick()`              → returns `{skipped: "MIGRATION_DISABLED"}`,
+//                                       no state mutation, no resume launch.
+//   · `_launch_resume_task()`        → returns None, no task launched.
+//   · POST /api/dropbox/migration/start                → 503 with recovery hint.
+//   · POST /api/dropbox/migration/{run_id}/resume      → 503 with recovery hint.
+//   · POST /api/dropbox/migration/watchdog/resume      → 503 (refuses the DB
+//                                                       flip so the safety
+//                                                       flag can't drift back
+//                                                       to True via the API).
+//
+// Read endpoints (unaffected):
+//   · GET  /api/dropbox/migration/status → 200 (admins can still see history).
+//   · GET  /api/dropbox/enum/status      → 200 (walk-only, no writes).
+//
+// Live probe (post-restart) — all 6 refusals confirmed:
+//   integrations_dropbox.MIGRATION_DISABLED = True
+//   dropbox_bytes_copy.MIGRATION_DISABLED   = True
+//   watchdog_tick()                → {'skipped': 'MIGRATION_DISABLED'}
+//   _launch_resume_task()          → None
+//   run_copy_job()                 → state=disabled_lockdown
+//   POST /migration/start          → HTTP 503
+//   POST /migration/watchdog/resume→ HTTP 503
+//   POST /migration/copy-x/resume  → HTTP 503
+//   GET  /migration/status         → HTTP 200 (unaffected)
+//
+// To re-enable Dropbox → NAS writes an ops engineer MUST:
+//   1. Set MIGRATION_DISABLED = False in `backend/dropbox_bytes_copy.py`.
+//   2. Set MIGRATION_DISABLED = False in `backend/integrations_dropbox.py`.
+//   3. Redeploy.
+//   4. POST /api/dropbox/migration/watchdog/resume (flips the DB flag).
+//   5. Restart backend so the APScheduler job re-registers.
+// All five steps are intentional friction. User explicitly asked for
+// NO more writes to the UGREEN NAS.
+//
+// Files touched:
+//   · backend/dropbox_bytes_copy.py                    (+MIGRATION_DISABLED + run_copy_job guard)
+//   · backend/integrations_dropbox.py                  (+MIGRATION_DISABLED + 5 guards)
+//   · frontend/src/lib/version.js                      (RUNNING + EXPECTED bump + this block)
+//   · frontend/public/service-worker.js                (CACHE_VERSION bump)
+//   · memory/v58_13_132n8_nas_lockdown.md              (new)
+//
+// Not in this ship: any FE surface changes (lockdown is server-side),
+// any mobile touch, any Dropbox-browser changes.
+
+
+
 // v58.13.132n7a — Issue Today's Job iteration (supervisor removed,
 // real SMS-shape trial seed, mobile /today fallback for past-dated
 // unaccepted jobs).
@@ -16349,7 +16416,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n7a';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n8';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -16370,7 +16437,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n7a';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n7a';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n8';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

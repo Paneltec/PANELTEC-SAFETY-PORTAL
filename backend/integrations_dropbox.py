@@ -44,6 +44,14 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from auth import get_current_user
 
 log = logging.getLogger("paneltec.dropbox")
+
+# ── v58.13.132n8 — Hard NAS-write lockdown at the route layer ─
+# Belt-and-braces companion to the same-named constant in
+# `dropbox_bytes_copy.py`. Two independent constants (each file
+# owns its own) so removing the lockdown requires an intentional
+# edit at BOTH sites — no single-file re-enable slip. See the
+# copy-side constant for the full re-enable procedure.
+MIGRATION_DISABLED: bool = True
 router = APIRouter(prefix="/dropbox", tags=["dropbox"])
 
 # v58.13.132mb — Strong references to background tasks so Python's
@@ -689,6 +697,20 @@ async def dropbox_migration_start(
     `dry_run=true` walks `dropbox_files_enum` and counts what
     would be copied (no NAS ops, no Dropbox API calls beyond the
     walk). `dry_run=false` fires the real fetch_and_put chain."""
+    # v58.13.132n8 — Hard lockdown. Even admin tokens can't start
+    # a new migration. See MIGRATION_DISABLED at top of file.
+    if MIGRATION_DISABLED:
+        log.warning(
+            "[migration] REFUSED /migration/start by %s — MIGRATION_DISABLED",
+            user.get("email") or user.get("id"),
+        )
+        raise HTTPException(
+            503,
+            "Migration lockdown active — Dropbox → NAS writes are permanently "
+            "disabled. Contact ops to re-enable "
+            "(edit MIGRATION_DISABLED in both dropbox_bytes_copy.py and "
+            "integrations_dropbox.py, then redeploy).",
+        )
     import dropbox_bytes_copy as bcopy
     body = body or {}
     dry_run = bool(body.get("dry_run", False))
@@ -780,6 +802,15 @@ async def _launch_resume_task(run_doc: dict, *, source: str) -> Optional[str]:
     """Fire a resume for `run_doc`. Enforces the 5-strike cap and
     updates auto_resume counters on the ORIGINAL run doc before
     starting the new task. Returns new_run_id, or None if skipped."""
+    # v58.13.132n8 — Hard lockdown. Even if `watchdog_tick` gets
+    # called somehow (imported + invoked directly), no resume
+    # task is ever launched.
+    if MIGRATION_DISABLED:
+        log.warning(
+            "[watchdog] REFUSED _launch_resume_task for %s — MIGRATION_DISABLED",
+            run_doc.get("run_id"),
+        )
+        return None
     from datetime import datetime, timezone
     from db import db as _db
     import dropbox_bytes_copy as bcopy
@@ -937,6 +968,14 @@ async def watchdog_tick() -> Dict[str, Any]:
       · state=interrupted + non-terminal reason → auto-resume
         (respects the 5-strike cap).
     Skipped when the watchdog is globally paused."""
+    # v58.13.132n8 — Hard lockdown. `.132n0` unregistered the
+    # APScheduler job so `watchdog_tick` isn't scheduled at all,
+    # but the function is still importable + callable. Refuse
+    # under the lockdown so a rogue direct call can't restart
+    # writes.
+    if MIGRATION_DISABLED:
+        log.info("[watchdog] tick refused — MIGRATION_DISABLED")
+        return {"skipped": "MIGRATION_DISABLED"}
     from datetime import datetime, timezone, timedelta
     from db import db as _db
 
@@ -1018,6 +1057,20 @@ async def dropbox_watchdog_resume(
     user: dict = Depends(_require_admin),
 ) -> Dict[str, Any]:
     """v58.13.132mm — Re-enable the auto-resume watchdog."""
+    # v58.13.132n8 — Hard lockdown. Refuse the DB flip so the
+    # `.132n0` `enabled=False` safety can't drift back to True
+    # via the API alone.
+    if MIGRATION_DISABLED:
+        log.warning(
+            "[watchdog] REFUSED /migration/watchdog/resume by %s — MIGRATION_DISABLED",
+            user.get("email") or user.get("id"),
+        )
+        raise HTTPException(
+            503,
+            "Migration lockdown active — the watchdog cannot be re-enabled "
+            "via the API. Contact ops (edit MIGRATION_DISABLED in both "
+            "dropbox_bytes_copy.py and integrations_dropbox.py, then redeploy).",
+        )
     from datetime import datetime, timezone
     from db import db as _db
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -1044,6 +1097,19 @@ async def dropbox_migration_resume(
     interrupted run doc. Skips enum rows with
     `copy_state=copied` so already-transferred files aren't
     re-copied. Idempotent — resuming a completed run is a no-op."""
+    # v58.13.132n8 — Hard lockdown.
+    if MIGRATION_DISABLED:
+        log.warning(
+            "[migration] REFUSED /migration/%s/resume by %s — MIGRATION_DISABLED",
+            run_id, user.get("email") or user.get("id"),
+        )
+        raise HTTPException(
+            503,
+            "Migration lockdown active — Dropbox → NAS writes are permanently "
+            "disabled. Contact ops to re-enable "
+            "(edit MIGRATION_DISABLED in both dropbox_bytes_copy.py and "
+            "integrations_dropbox.py, then redeploy).",
+        )
     import dropbox_bytes_copy as bcopy
     run = await bcopy.get_run(run_id)
     if not run:

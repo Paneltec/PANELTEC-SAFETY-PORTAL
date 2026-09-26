@@ -36,6 +36,27 @@ from db import db
 
 log = logging.getLogger("paneltec.dropbox.copy")
 
+# ── v58.13.132n8 — Hard NAS-write lockdown ────────────────────
+# Belt-and-braces on top of `.132n0`:
+#   · `.132n0` cancelled all running migration_run docs,
+#     flipped `migration_watchdog_settings.enabled=False`, and
+#     removed the APScheduler watchdog job.
+#   · `.132n8` (this) makes the CODE refuse to write even if
+#     someone flips the DB flag back to True via Mongo directly,
+#     or hits `POST /api/dropbox/migration/{start,resume,watchdog/resume}`
+#     with a valid admin token.
+#
+# To re-enable Dropbox → NAS writes an ops engineer must:
+#   1. Set this constant to `False`
+#   2. Delete this guard
+#   3. Redeploy
+#   4. Flip `migration_watchdog_settings.enabled=True` via
+#      `POST /api/dropbox/migration/watchdog/resume` (which is
+#      ALSO 503-guarded below in integrations_dropbox.py).
+# All three steps are intentional friction — the user explicitly
+# asked for NO more writes to the UGREEN NAS.
+MIGRATION_DISABLED: bool = True
+
 
 # ── Exclusion prefixes (ALL confirmed by Stephen) ─────────────
 # Every entry is an EXACT prefix match against `dropbox_path`
@@ -457,6 +478,32 @@ async def _run_copy(run_id: str, agent_id: str) -> None:
 # ── Public entrypoint ─────────────────────────────────────────
 async def run_copy_job(run_id: str, agent_id: str,
                           dry_run: bool = False) -> None:
+    # v58.13.132n8 — Hard lockdown. Refuses to run under any
+    # circumstance (dry_run or real). Writes a `disabled_lockdown`
+    # status doc so admins can see the refusal via GET
+    # /api/dropbox/migration/status. Does NOT touch enum rows or
+    # NAS ops. See MIGRATION_DISABLED constant at top of file for
+    # the re-enable procedure.
+    if MIGRATION_DISABLED:
+        log.warning(
+            "[copy] run_id=%s REFUSED — MIGRATION_DISABLED (agent=%s, dry_run=%s)",
+            run_id, agent_id, dry_run,
+        )
+        try:
+            await _status_upsert(run_id, {
+                "state": "disabled_lockdown",
+                "agent_id": agent_id,
+                "dry_run": dry_run,
+                "started_at": _now_iso(),
+                "completed_at": _now_iso(),
+                "errors": [{"phase": "run_copy_job",
+                              "error": "MIGRATION_DISABLED — see dropbox_bytes_copy.py "
+                                       "MIGRATION_DISABLED constant"}],
+            })
+        except Exception:
+            log.exception("[copy] failed to persist lockdown refusal doc")
+        return
+
     # v58.13.132mb — outer safety net. Any exception that escapes
     # `_run_dry` / `_run_copy` used to vanish silently (the caller
     # in integrations_dropbox.py fire-and-forgets us). Now we
