@@ -246,6 +246,14 @@ const NAV = [
     { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', requiresCan: ['sites', 'edit'], pastel: 'lavender' },
     // v58.13.132ab — admin-only screen to assign a mobile daily job.
     { to: '/app/mobile/assign-daily-jobs', label: 'Ad-hoc Jobs', icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-assign-daily-jobs', requiresCan: ['users', 'edit'], pastel: 'coral' },
+    // v58.13.132n7 — Issue Job (allocation officer's batch console).
+    // Sits next to Ad-hoc Jobs: same collection (daily_job_assignments),
+    // fast-flow multi-worker form (no PDF, no SMS), fills the SMS-style
+    // fields the mobile Today's Assignment tile already renders.
+    // v58.13.132n7a — Renamed "Issue Job" → "Issue Today's Job" per
+    // user brief (natural admin tone; makes the daily/one-off intent
+    // unmistakable next to the sibling "Ad-hoc Jobs" entry).
+    { to: '/app/mobile/issue-job', label: "Issue Today's Job", icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-issue-job', requiresCan: ['users', 'edit'], pastel: 'coral' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },

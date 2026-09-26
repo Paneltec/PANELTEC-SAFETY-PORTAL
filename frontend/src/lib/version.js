@@ -1,5 +1,240 @@
 // Paneltec Civil · v160 — single-source-of-truth version constant.
 
+// v58.13.132n7a — Issue Today's Job iteration (supervisor removed,
+// real SMS-shape trial seed, mobile /today fallback for past-dated
+// unaccepted jobs).
+//
+// Bundles the whole `.132n7` initial ship (was never committed) with
+// the following iteration changes per user brief:
+//
+// 1) Supervisor field REMOVED ENTIRELY.
+//    Paneltec has no supervisors — not just optional, gone.
+//    · backend/daily_jobs_batch.py: `supervisor_id`,
+//      `supervisor_name`, `supervisor_phone` dropped from
+//      BulkCreateIn. Legacy fields on inbound payloads silently
+//      dropped by Pydantic (default `extra="ignore"`). No
+//      supervisor snapshot, no supervisor keys on the doc.
+//    · frontend/src/pages/IssueJob.jsx: Supervisor <Label> +
+//      <WorkerSinglePicker> block deleted. `supervisor` state
+//      removed from form. `UserIcon` import removed. The
+//      `WorkerSinglePicker` inline component removed (was only
+//      used by supervisor). Task field moved into the col-span-1
+//      slot supervisor vacated; Notes now sits beside Task at
+//      col-span-1 instead of col-span-2. Recent-list row's
+//      "Sup: X" hint replaced with customer name.
+//    · tests/test_v58_13_132n7_daily_jobs_batch.py: assertions
+//      updated — no supervisor keys on the doc, legacy-supervisor
+//      payload silently ignored (backwards-compat check).
+//
+// 2) H1 + sidebar entry renamed "Issue Job" → "Issue Today's Job".
+//    Natural admin tone; makes the daily-batch intent explicit
+//    next to the sibling "Ad-hoc Jobs" entry.
+//
+// 3) Mobile /today endpoint gets a fallback path.
+//    `backend/mobile_daily_jobs.py`: if there's no exact-date match
+//    for `today (Sydney)`, fall through to the most-recent
+//    non-terminal (accepted/declined/completed = null) job for the
+//    same worker. Sort key: date desc, then issued_at desc, then
+//    assigned_at desc. Also honours BOTH identities (user AND
+//    workers-by-email) for the fallback. Adds a
+//    `is_past_date_fallback: bool` flag to the response so the
+//    mobile UI can render a subtle "issued <date>" hint if useful.
+//    Non-breaking additive field.
+//
+// 4) Real trial seed for `worker_stephen@paneltec.com.au`.
+//    `scripts/seed_132n7a_trial_job.py` rewritten. Verbatim SMS
+//    shape:
+//      · date        : 2026-09-15
+//      · issued_at   : 2026-09-15T07:07:00+10:00 (Sydney)
+//      · truck_name  : "Cappellotto 2 - Volvo"
+//      · truck_reg   : "XT48AK"
+//      · site_name   : "78 Corin Street West Launceston"
+//      · site_address: "78 Corin Street West Launceston, TAS 7250"
+//      · customer    : "Shaw"
+//      · staff_names : ["DANIEL BUTLER","JARROD TARGETT","JASON DONNELLAN"]
+//      · notes       : "Kroll to site to expose main, ring Jason to complete tapping…"
+//      · task        : null
+//      · status      : "issued"
+//      · NO supervisor_* keys.
+//    Idempotent: purges any prior `132n7a_trial_seed`-tagged rows
+//    for the target identities before inserting. Live doc inserted
+//    for user id `21dddcc2-…-9b128925b8df`. Since date=2026-09-15
+//    is in the past, the mobile /today endpoint's `.132n7a`
+//    fallback path surfaces it.
+//
+// Verification (before commit):
+//   · `python3 -m pytest tests/test_v58_13_132n7_daily_jobs_batch.py`
+//     → 1 passed (30ms).
+//   · Direct DB inspection of the seeded doc:
+//       date=2026-09-15  status=issued  truck_reg=XT48AK
+//       staff_names=['DANIEL BUTLER','JARROD TARGETT','JASON DONNELLAN']
+//       supervisor_id (must be absent): False
+//   · Simulated /today endpoint call as worker_stephen@paneltec.com.au:
+//       today (Sydney): 2026-09-26  seeded: 2026-09-15
+//       fallback found: cleaned.site_name = 78 Corin Street West Launceston
+//       is_past_date_fallback: True
+//       cleaned has supervisor: False
+//   · Screenshot 132n7a_form_no_supervisor.jpeg — clean form:
+//     Truck/Date top row, Site/Customer, Address full-width, Staff
+//     required, Task (optional) + Notes side-by-side, Trial-run
+//     checkbox, Send Job button. No supervisor field anywhere.
+//
+// Housekeeping status: STILL BLOCKED. Housekeeping retry returned
+// the same token-level `AuthError('missing_scope',
+// TokenScopeError(required_scope='files.permanent_delete'))` as the
+// previous two runs. The user's App Console tick landed, but the
+// OAuth reconnect still hasn't been completed. Nothing this ship
+// can do — awaiting the reconnect.
+//
+// NAS lockdown: shipping as separate `.132n8` commit right after
+// this — same session, distinct semantic domain.
+//
+// Files touched:
+//   · backend/daily_jobs_batch.py                              (supervisor removed from model + snapshot + doc)
+//   · backend/mobile_daily_jobs.py                             (/today fallback for past-dated unaccepted)
+//   · backend/tests/test_v58_13_132n7_daily_jobs_batch.py      (test updated)
+//   · frontend/src/pages/IssueJob.jsx                          (supervisor UI removed, task/notes side-by-side)
+//   · frontend/src/App.js                                      (route — from `.132n7`)
+//   · frontend/src/components/layout/AppShell.jsx              (sidebar entry — from `.132n7`)
+//   · frontend/src/lib/version.js                              (RUNNING + EXPECTED bump + this block)
+//   · frontend/public/service-worker.js                        (CACHE_VERSION bump)
+//   · backend/server.py                                        (router mount — from `.132n7`)
+//   · scripts/seed_132n7a_trial_job.py                         (new — rev 2 per user brief)
+//   · memory/v58_13_132n7a_issue_job_iteration.md              (new)
+//   · test_reports/132n7a_form_no_supervisor.jpeg              (new)
+
+
+
+// v58.13.132n7 — Admin "Issue Job" form (allocation officer's fast
+// batch-assignment console).
+//
+// Complements `AdminAssignDailyJobs.jsx`'s per-worker PDF flow. Same
+// target collection (`daily_job_assignments`), same doc shape as
+// `.132cf` plus new fields (task, supervisor_id/name/phone, truck_id/
+// name, customer, site_freeform, issued_at, job_batch_id).
+//
+// Backend — NEW file `backend/daily_jobs_batch.py` (all under `/api/`):
+//   · POST /daily-jobs/bulk-create        creates N docs sharing job_batch_id
+//   · GET  /daily-jobs/today              admin view of ALL rows for date
+//   · GET  /daily-jobs/admin/trucks       assets kind ∈ {vehicle,plant}
+//   · GET  /daily-jobs/admin/sites        from db.sites (address_full+coords)
+//   · GET  /daily-jobs/admin/workers      alias — matches sibling module
+//   · Strict admin role gate on every endpoint.
+//   · Response buckets: created / replaced / conflicts / not_found so
+//     a single bad worker id can't blow up the whole batch.
+//   · Existing (worker, date) rows without `override=true` → conflicts
+//     bucket (no doc created). With `override=true` → previous row is
+//     deleted, new one created (matches `.132ab` single-create pattern).
+//
+// Frontend — NEW page `frontend/src/pages/IssueJob.jsx`:
+//   · Route: `/app/mobile/issue-job` (parallels the sibling Ad-hoc Jobs
+//     `/app/mobile/assign-daily-jobs`; both live under `mobile/` in the
+//     URL tree). Chose over `/app/settings/issue-job` per brief's
+//     "or similar — check the existing settings route pattern" hint —
+//     matches the existing worker-assignment domain.
+//   · Sidebar entry "Issue Job" under Compliance section, right after
+//     "Ad-hoc Jobs" — coral pastel + ClipboardCheckmark glyph to
+//     mirror the sibling. `requiresCan: ['users','edit']` — same
+//     permission gate as Ad-hoc Jobs.
+//   · Layout:
+//       LEFT  (col-span-4) — Today's Assignments list (auto-refresh
+//                            every 15 s), per-row status pill
+//                            (Pending amber / Accepted green /
+//                            Declined red).
+//       RIGHT (col-span-8) — Form fields: Truck, Date, Site,
+//                            Customer, Address (auto-populated on
+//                            site pick; editable), Staff on this job
+//                            (multi-select chips), Supervisor (single
+//                            + phone display), Task, Notes.
+//     Sticky bottom bar: worker count summary + green "Send Job"
+//     CTA (Send glyph). Disabled until ≥1 worker AND (site_id OR
+//     site_freeform).
+//   · Site picker has an "Other (type it in)" fallback path that
+//     switches to a free-text input (amber tint) — matches brief's
+//     "free-text 'Other' option that becomes a job.site_freeform".
+//   · Success toast on submit: `Job issued to N workers`. Partial
+//     conflicts / not-founds get their own warn / error toasts.
+//   · Form resets on send (keeps date + truck for the next batch —
+//     the common "same truck, next site" flow).
+//
+// Doc fields written by this ship (extends `.132cf` baseline):
+//   job_batch_id, truck_id, truck_name, task, supervisor_id,
+//   supervisor_name, supervisor_phone, customer, site_freeform,
+//   issued_at.
+// Mobile Ship 1 (`.132n5m2`) already renders task / supervisor /
+// issued_at / truck_name from the assignment doc IF present, so no
+// mobile edit needed. DB proof (query on the seeded batch):
+//   task=Trench excavation and pipe laying
+//   supervisor_name=Casey Worker
+//   truck_name=Craig Large -Ford Ranger Wildtrak - M78TV.
+//   job_batch_id=87c238b7 (shared across all 2 sibling docs)
+//   issued_at=2026-09-26T06:57:17.724349+00:00
+//
+// Test IDs (for future test-agent runs):
+//   issue-job-page
+//   issue-job-recent-panel
+//   issue-job-recent-refresh-btn
+//   issue-job-recent-empty
+//   issue-job-recent-row-{n}
+//   issue-job-recent-row-{n}-status
+//   issue-job-form
+//   issue-job-truck-picker / -truck-search / -truck-option-{id}
+//   issue-job-date-input
+//   issue-job-site-picker / -site-search / -site-option-{id}
+//     / -site-other-btn / -site-freeform-input / -site-back-to-list-btn
+//   issue-job-customer-input / -address-input / -task-input / -notes-input
+//   issue-job-workers-picker / -workers-search / -worker-option-{id}
+//     / -worker-chip-{id} / -worker-chip-{id}-remove
+//   issue-job-supervisor-picker / -supervisor-search
+//     / -supervisor-option-{id} / -supervisor-clear-btn
+//     / -supervisor-phone
+//   issue-job-send-btn
+//
+// Files touched:
+//   · backend/daily_jobs_batch.py                              (new — 4 endpoints)
+//   · backend/server.py                                        (mount router)
+//   · frontend/src/pages/IssueJob.jsx                          (new)
+//   · frontend/src/App.js                                      (route)
+//   · frontend/src/components/layout/AppShell.jsx              (sidebar entry)
+//   · frontend/src/lib/version.js                              (RUNNING + EXPECTED bump + this block)
+//   · frontend/public/service-worker.js                        (CACHE_VERSION bump)
+//   · backend/tests/test_v58_13_132n7_daily_jobs_batch.py      (new — pytest passed)
+//   · memory/v58_13_132n7_admin_issue_job.md                   (new)
+//
+// Test screenshots (test_reports/):
+//   · 132n7_issue_job_form.jpeg         — form filled with all
+//                                          fields visible; auto-
+//                                          populated address from
+//                                          site pick shown; 2 worker
+//                                          chips selected; green
+//                                          Send Job button active.
+//   · 132n7_recent_assignments_list.jpeg — post-send state: "Job
+//                                          issued to 2 workers" toast,
+//                                          left panel shows Avery
+//                                          Auditor + Casey Worker
+//                                          rows with Pending pills.
+//   · 132n7_mobile_receives_job.jpeg    — Phone Preview page with
+//                                          AARON FOSTER selected as
+//                                          the specific worker; the
+//                                          mobile bezel loads that
+//                                          worker's session context
+//                                          (title "Hi, AARON", AF
+//                                          avatar). Mobile Ship 1
+//                                          already renders the doc
+//                                          fields — no web changes
+//                                          needed for that side.
+//
+// Not in this ship:
+//   · No SMS (brief: "No SMS anywhere — the phone reads the
+//     assignment from our backend").
+//   · No mobile-side edits (mobile Ship 1 already reads the new
+//     fields if present).
+//   · No override-toggle UI on the form yet — override defaults to
+//     false; a future ship can add a "Replace existing" checkbox
+//     for the allocation officer's convenience.
+
+
+
 // v58.13.132n6 — Dropbox in-app global search (Tier 1: native
 // search_v2 + highlight spans).
 //
@@ -16114,7 +16349,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n6';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n7a';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -16135,7 +16370,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n6';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n6';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n7a';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

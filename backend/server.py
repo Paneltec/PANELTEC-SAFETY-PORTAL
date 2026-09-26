@@ -56,6 +56,8 @@ from mobile_daily_jobs_admin import (  # noqa: E402
     router as mobile_daily_jobs_admin_router,
     ensure_indexes as _mobile_daily_jobs_ensure_indexes,
 )
+# v58.13.132n7 — admin batch daily-job assignment ("Issue Job" form).
+from daily_jobs_batch import router as daily_jobs_batch_router  # noqa: E402
 # v58.13.132ad — Onboarding cards PDF.
 from mobile_onboarding_cards import router as mobile_onboarding_cards_router  # noqa: E402
 # v58.13.132af — Android APK direct-install downloads.
@@ -488,6 +490,9 @@ api.include_router(mobile_home_router)
 api.include_router(mobile_daily_jobs_router)
 # v58.13.132ab — admin daily-jobs surface + weather/geocode proxies.
 api.include_router(mobile_daily_jobs_admin_router)
+
+# v58.13.132n7 — admin batch daily-job assignment ("Issue Job" form).
+api.include_router(daily_jobs_batch_router)
 # v58.13.132ad — printable onboarding cards.
 api.include_router(mobile_onboarding_cards_router)
 # v58.13.132af — Android APK direct-install downloads.

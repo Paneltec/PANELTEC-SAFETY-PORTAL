@@ -70,6 +70,8 @@ import FleetRegister from '@/pages/FleetRegister';
 import FuelCardsAdmin from '@/pages/FuelCardsAdmin';
 // v58.13.132ab — admin daily-job assignment for mobile home screen.
 import AdminAssignDailyJobs from '@/pages/AdminAssignDailyJobs';
+// v58.13.132n7 — admin batch "Issue Job" form (fast-flow multi-worker).
+import IssueJob from '@/pages/IssueJob';
 // v58.13.132gh — Post-incident admin surface for byte-less file
 // records. Landing page + dashboard banner both link here.
 import AdminMissingFiles from '@/pages/AdminMissingFiles';
@@ -359,6 +361,8 @@ function App() {
               <Route path="fleet/fuel/cards" element={<FuelCardsAdmin />} />
               {/* v58.13.132ab — Admin: assign daily jobs to mobile workers. */}
               <Route path="mobile/assign-daily-jobs" element={<AdminAssignDailyJobs />} />
+              {/* v58.13.132n7 — Issue Job (fast-flow batch assignment). */}
+              <Route path="mobile/issue-job" element={<IssueJob />} />
               {/* v58.13.131d — SmartFill Fuel Reporting page. */}
               <Route path="fleet/fuel" element={<FuelReporting />} />
               {/* v58.13.120e — Bulk XLSX importer moved from the

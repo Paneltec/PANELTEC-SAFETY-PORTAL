@@ -495,11 +495,48 @@ async def get_today_daily_job(user: dict = Depends(get_current_user)) -> dict:
             {"org_id": user["org_id"], "worker_id": assignee_id, "date": the_date},
             {"_id": 0},
         )
-        if not doc:
+        if doc:
+            status = _derive_status(doc)
+            return {"assignment": _clean_assignment(doc), "status": status}
+
+        # v58.13.132n7a — Fallback: if there's no exact-date match,
+        # surface the most-recent-unaccepted job so the tile still
+        # populates. Keeps the Home screen useful when the officer
+        # issued a past-dated job (e.g. weekend trial) or when a
+        # worker takes a day off and returns to a still-open job.
+        # Terminal states (`accepted`, `declined`, `completed`) are
+        # excluded — those already got the worker's attention.
+        fallback = await db.daily_job_assignments.find_one(
+            {"org_id": user["org_id"], "worker_id": assignee_id,
+             "accepted_at": None, "declined_at": None, "completed_at": None},
+            {"_id": 0},
+            sort=[("date", -1), ("issued_at", -1), ("assigned_at", -1)],
+        )
+        # Also try the worker-row branch even if the user branch
+        # already answered no-today above — the fallback should
+        # consider both identities.
+        if not fallback and user.get("email"):
+            w = await db.workers.find_one(
+                {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
+                {"_id": 0, "id": 1},
+            )
+            if w and w.get("id") and w["id"] != assignee_id:
+                fallback = await db.daily_job_assignments.find_one(
+                    {"org_id": user["org_id"], "worker_id": w["id"],
+                     "accepted_at": None, "declined_at": None, "completed_at": None},
+                    {"_id": 0},
+                    sort=[("date", -1), ("issued_at", -1), ("assigned_at", -1)],
+                )
+        if not fallback:
             return {"assignment": None, "status": "no_job"}
 
-        status = _derive_status(doc)
-        return {"assignment": _clean_assignment(doc), "status": status}
+        status = _derive_status(fallback)
+        cleaned = _clean_assignment(fallback)
+        # Flag the payload so the mobile UI can render a subtle
+        # "issued <date>" hint if it wants. Non-breaking additive
+        # field — clients that don't read it just ignore it.
+        cleaned["is_past_date_fallback"] = (fallback.get("date") != the_date)
+        return {"assignment": cleaned, "status": status}
 
     try:
         return await asyncio.wait_for(_load(), timeout=6.0)
