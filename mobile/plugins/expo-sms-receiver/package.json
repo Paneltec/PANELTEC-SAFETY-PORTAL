@@ -1,0 +1,6 @@
+{
+  "name": "expo-sms-receiver",
+  "version": "1.0.0",
+  "description": "Expo config plugin: Android SMS BroadcastReceiver for Paneltec job allocations",
+  "main": "app.plugin.js"
+}

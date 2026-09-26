@@ -653,3 +653,16 @@
   - Version 1.0.40, versionCode 162, bundle .132kk
   - EAS build: a86fc0fa-3120-4e90-8ab5-da3d005382bf
 - **Files modified**: scan/site/[token]/{index,visitor}.tsx (new), _layout.tsx, app.json, version.ts
+
+## Iteration .132p1a — Phase 2A: Mobile SMS Parser + iPhone Paste Modal + Deep Link
+- **Commit**: 1959d5b1
+- **Date**: 2026-09-26
+- **Changes**:
+  - Ported sms_parser.py to src/lib/parseJobSms.ts with `missing[]` field
+  - 31 Jest tests passing (jest.config.js + ts-jest added)
+  - PasteJobSmsModal: added parse error banner (red), missing-field warning (amber), isUsableParse guard
+  - app/job/import.tsx: added parse validation for deep-link handler
+  - Version bump to .132p1a (v1.0.49, versionCode 171)
+- **Files modified**: mobile/src/lib/parseJobSms.ts, mobile/src/lib/__tests__/parseJobSms.test.ts, mobile/src/components/PasteJobSmsModal.tsx, mobile/app/job/import.tsx, mobile/app.json, mobile/src/lib/version.ts, mobile/jest.config.js, mobile/package.json, mobile/yarn.lock
+- **Web files referenced**: backend/sms_parser.py (parser logic source)
+- **Dependencies added**: jest, ts-jest, @types/jest (all devDependencies)

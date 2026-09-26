@@ -18,7 +18,8 @@ import { acceptDailyJob, declineDailyJob } from '../../src/services/dailyJobs';
 import { useUpdateCheck } from '../../src/features/updates/useUpdateCheck';
 import UpdateBanner from '../../src/features/updates/UpdateBanner';
 import PasteJobSmsModal from '../../src/components/PasteJobSmsModal';
-import { startSmsListener, stopSmsListener, setOnJobCreated } from '../../src/lib/smsReceiver';
+import { startSmsListener, stopSmsListener, setOnJobCreated, debugFireTestSms } from '../../src/lib/smsReceiver';
+import { requestSmsPermission, hasRequestedSmsPermission, type SmsPermResult } from '../../src/lib/smsPermissions';
 
 type ViewMode = 'home' | 'signed_on' | 'job_detail';
 
@@ -45,6 +46,7 @@ export default function HomeScreen() {
   const [jobActioning, setJobActioning] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [showPasteModal, setShowPasteModal] = useState(false);
+  const [smsPermDenied, setSmsPermDenied] = useState(false);
 
   // Accept button pulse animation
   const acceptPulseAnim = useRef(new Animated.Value(0)).current;
@@ -93,13 +95,25 @@ export default function HomeScreen() {
   // Update check
   const update = useUpdateCheck();
 
-  // Start Android SMS listener
+  // Start Android SMS listener + request permission
   useEffect(() => {
     startSmsListener();
     setOnJobCreated((job: any) => {
       setTodayJob(job);
       setJobLoading(false);
     });
+    // Request SMS permission on Android (once per install)
+    if (Platform.OS === 'android') {
+      hasRequestedSmsPermission().then((requested) => {
+        if (!requested) {
+          requestSmsPermission().then((result: SmsPermResult) => {
+            if (result === 'denied' || result === 'never_ask_again') {
+              setSmsPermDenied(true);
+            }
+          });
+        }
+      });
+    }
     return () => {
       stopSmsListener();
       setOnJobCreated(null);
@@ -830,6 +844,42 @@ export default function HomeScreen() {
           </View>
         )}
 
+        <View style={{ height: 12 }} />
+
+        {/* SMS permission denied banner (Android only) */}
+        {smsPermDenied && Platform.OS === 'android' && (
+          <TouchableOpacity
+            testID="home-sms-perm-banner"
+            style={s.smsPermBanner}
+            onPress={() => {
+              import('../../src/lib/smsPermissions').then(m => m.openAppSettings());
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="warning" size={16} color="#92400E" />
+            <Text style={s.smsPermBannerText}>
+              SMS reading disabled — enable in Settings {'>'} Apps {'>'} Paneltec {'>'} Permissions to auto-receive jobs.
+            </Text>
+            <Ionicons name="open-outline" size={14} color="#92400E" />
+          </TouchableOpacity>
+        )}
+
+        {/* DEV: Simulate SMS receipt (debug only) */}
+        {__DEV__ && (
+          <TouchableOpacity
+            testID="home-debug-sms-btn"
+            style={s.debugSmsBtn}
+            onPress={() => {
+              debugFireTestSms();
+              Alert.alert('Debug', 'Fired test SMS event — check for notification + job tile update.');
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="bug" size={14} color="#7C3AED" />
+            <Text style={s.debugSmsBtnText}>Debug: Fire test SMS</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -984,6 +1034,23 @@ const s = StyleSheet.create({
     minHeight: 44,
   },
   pasteSmsBtnText: { fontSize: 13, fontWeight: '700', color: Colors.info },
+
+  // SMS permission denied banner
+  smsPermBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginHorizontal: 16, marginBottom: 8,
+    borderWidth: 1, borderColor: '#FDE68A',
+  },
+  smsPermBannerText: { fontSize: 12, color: '#92400E', flex: 1, lineHeight: 16 },
+
+  // Debug SMS button
+  debugSmsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 16,
+    borderRadius: 8, borderWidth: 1, borderColor: '#DDD6FE', backgroundColor: '#F5F3FF',
+    marginTop: 8,
+  },
+  debugSmsBtnText: { fontSize: 12, fontWeight: '600', color: '#7C3AED' },
 
   // Signed on
   backBtn: { padding: 4, marginRight: 8 },
