@@ -1,39 +1,46 @@
-// v58.13.132n4c — Dropbox file preview modal (reliability fix).
+// v58.13.132n4d — Dropbox file preview modal (PDF.js canvas).
 //
-// Changes vs `.132n2b`:
-//   1. **Size guard** — `PREVIEW_MAX_BYTES = 50 MB`. Files above
-//      this skip the preview fetch entirely and render a clean
-//      "Download instead" panel. Backend enforces the same cap
-//      via a 413 response for defence-in-depth.
-//   2. **PDF viewer switched from `<iframe>` to `<object>`** —
-//      `<object type="application/pdf" data={blobUrl}>`. `<object>`
-//      lets browsers hand-off to their native PDF plugin AND
-//      renders a proper "Download to view" text fallback when the
-//      plugin can't paint. Fixes the "blank iframe + broken-doc
-//      icon" symptom that plain `<iframe src=blob>` produces on
-//      Firefox / some Chrome PDF-viewer configurations.
-//   3. **Retry-once on fetch failure** — 1 s backoff.
-//   4. **Specific error surfaces** — 413 (too large), 415
-//      (unsupported by Dropbox), other 4xx/5xx → distinct
-//      messages with a Download CTA.
-//   5. **Object load error handler** — if the browser can't paint
-//      the PDF (`onError` fires on `<object>` before the fallback
-//      child renders), we swap to the "Preview failed" panel with
-//      the Download CTA rather than leaving a blank pane.
+// PDF rendering switched from `<object type="application/pdf">`
+// (which `.132n4c` used) to `react-pdf` / PDF.js canvas.
+// Motivation:
+//   Both `<iframe src=blob:…>` and `<object>` delegate PDF
+//   rendering to the browser's built-in plugin.  That plugin
+//   REFUSES to activate in nested-iframe contexts (e.g. the
+//   Emergent preview iframe) or when the parent context has
+//   certain CSP restrictions — the user sees either a broken-
+//   document icon (`.132n2b`) or the `<object>` child fallback
+//   (`.132n4c`), even for well-formed PDFs.
 //
-// Type dispatch by extension (unchanged from `.132n2b`):
-//   · PDF                                     → proxy → <object>
-//   · Image (png/jpg/gif/webp/svg/bmp/heic)   → proxy → <img> blob
-//   · Video (mp4/webm/mov)                    → proxy → <video> blob
-//   · Audio (mp3/wav/ogg/m4a)                 → proxy → <audio> blob
-//   · Text / code (txt/csv/md/json/xml/yml/…) → proxy → <pre> text
-//   · Office (docx/xlsx/pptx/doc/xls/ppt/rtf) → proxy (get_preview)
-//                                                 → PDF/HTML → <iframe>
-//   · anything else                           → "no preview" panel
+//   PDF.js is a pure JS implementation of the PDF spec by
+//   Mozilla, running entirely in the client's JS engine + a
+//   Web Worker.  No plugin involved, so it works in every
+//   context that runs JS.
+//
+// Everything else is unchanged from `.132n4c`:
+//   · 50 MB size guard (backend 413 + FE skip)
+//   · retry-once on 5xx/network
+//   · per-kind error panels with Download CTA
+//   · office types still ride through Dropbox `get_preview`
+//     which returns a PDF — now also rendered by PDF.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { Document, Page, pdfjs } from 'react-pdf';
 import api, { apiError } from '@/lib/api';
-import { Dismiss20Regular, ArrowDownload20Regular } from '@fluentui/react-icons';
+import {
+  Dismiss20Regular, ArrowDownload20Regular,
+  ChevronLeft16Regular, ChevronRight16Regular,
+} from '@fluentui/react-icons';
+
+// PDF.js Web Worker.  We pin to `pdfjs.version` (bundled by
+// `react-pdf`) so the worker + main-thread PDF.js APIs never
+// drift, and pull the compiled worker from unpkg's CDN so we
+// don't have to configure CRA to emit it as an asset.
+//
+// react-pdf 7.x / pdfjs-dist 3.x ship a plain `.js` worker
+// (v6+ moved to `.mjs` which CRA's webpack can't resolve out
+// of the box — hence the pin).
+pdfjs.GlobalWorkerOptions.workerSrc =
+  `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
 const EXT = (name) => (name || '').toLowerCase().match(/\.[^.]+$/)?.[0] || '';
 
@@ -47,6 +54,9 @@ const KIND_MAP = {
   text:  ['.txt', '.csv', '.md', '.json', '.xml', '.yaml', '.yml', '.log',
           '.html', '.htm', '.js', '.jsx', '.ts', '.tsx', '.py', '.java',
           '.rb', '.go', '.rs', '.css', '.scss', '.sql', '.sh', '.ini', '.conf'],
+  // Office file types.  Backend converts these to PDF via Dropbox's
+  // `get_preview` — from the FE's perspective the response body IS
+  // a PDF, so we render it exactly the same way as a native PDF.
   office: ['.doc', '.docx', '.rtf', '.ppt', '.pptx', '.xls', '.xlsm', '.xlsx',
            '.ods', '.odt', '.odp'],
 };
@@ -59,12 +69,6 @@ function fileKind(name) {
   return 'unsupported';
 }
 
-// `.132n4c` — Distinguish HTTP failure modes so the FE can
-// surface the right guidance:
-//   413 → too big (from backend guard)
-//   415 → Dropbox can't preview this
-//   404 → file gone
-//   other → generic
 function classifyError(err) {
   const status = err?.response?.status;
   if (status === 413) return { kind: 'too_big', message: 'This file is too large to preview (>50 MB).' };
@@ -76,12 +80,14 @@ function classifyError(err) {
 export default function FilePreviewModal({ entry, onClose }) {
   const kind = useMemo(() => (entry ? fileKind(entry.name) : 'unsupported'), [entry]);
 
-  // `errorInfo` is `{kind, message}` or null; `state.error` holds
-  // the underlying axios error only for logging. The FE reads
-  // `errorInfo.kind` to decide which panel to render.
   const [state, setState] = useState({
     loading: true,
     errorInfo: null,
+    // For PDF (native + office-converted) we hold the raw Blob and
+    // hand it to `<Document file={blob}>` — react-pdf accepts a Blob
+    // directly, so we skip the URL.createObjectURL dance for PDFs.
+    pdfBlob: null,
+    // Non-PDF kinds still use the blob URL path.
     url: null,
     text: null,
   });
@@ -90,7 +96,7 @@ export default function FilePreviewModal({ entry, onClose }) {
   useEffect(() => {
     if (!entry) return undefined;
     let cancelled = false;
-    setState({ loading: true, errorInfo: null, url: null, text: null });
+    setState({ loading: true, errorInfo: null, pdfBlob: null, url: null, text: null });
 
     const revokePrevious = () => {
       for (const u of objectUrlsRef.current) {
@@ -100,16 +106,12 @@ export default function FilePreviewModal({ entry, onClose }) {
     };
     revokePrevious();
 
-    // `.132n4c` — early size guard, matches backend 413 threshold.
-    // Skip the fetch entirely when we already know the file is too
-    // big — spares the user a 50 MB blob allocation and a wasted
-    // Dropbox `get_preview` request.
     if (typeof entry.size === 'number' && entry.size > PREVIEW_MAX_BYTES) {
       setState({
         loading: false,
         errorInfo: { kind: 'too_big', message:
           `This file is ${(entry.size / (1024*1024)).toFixed(1)} MB — larger than the 50 MB preview limit.` },
-        url: null, text: null,
+        pdfBlob: null, url: null, text: null,
       });
       return undefined;
     }
@@ -117,7 +119,7 @@ export default function FilePreviewModal({ entry, onClose }) {
     const run = async (attempt = 0) => {
       try {
         if (kind === 'unsupported') {
-          if (!cancelled) setState({ loading: false, errorInfo: null, url: null, text: null });
+          if (!cancelled) setState({ loading: false, errorInfo: null, pdfBlob: null, url: null, text: null });
           return;
         }
 
@@ -126,9 +128,6 @@ export default function FilePreviewModal({ entry, onClose }) {
           responseType: 'blob',
         });
 
-        // `.132n4c` — axios treats non-2xx blob responses by
-        // returning a Blob of the JSON error body. Detect that
-        // and coerce into a normal error path.
         if (resp.data.type === 'application/json') {
           const txt = await resp.data.text();
           try {
@@ -143,28 +142,28 @@ export default function FilePreviewModal({ entry, onClose }) {
 
         if (kind === 'text') {
           const txt = await resp.data.text();
-          if (!cancelled) setState({ loading: false, errorInfo: null, url: null, text: txt });
+          if (!cancelled) setState({ loading: false, errorInfo: null, pdfBlob: null, url: null, text: txt });
           return;
         }
 
-        // `.132n4c` — ensure the blob carries the right MIME so
-        // `URL.createObjectURL` produces a URL the browser's PDF
-        // viewer will accept. Axios sometimes gives us
-        // `application/octet-stream` blobs even when the response
-        // header was `application/pdf` (CORS pre-flight quirk on
-        // some browsers).
-        let effectiveBlob = resp.data;
-        if (kind === 'pdf' && effectiveBlob.type !== 'application/pdf') {
-          effectiveBlob = new Blob([effectiveBlob], { type: 'application/pdf' });
+        // `.132n4d` — PDFs (native + office-converted) go through
+        // react-pdf.  We normalise the Blob type so PDF.js's
+        // internal fetch (which trusts the Blob's `type`) doesn't
+        // trip on `application/octet-stream` responses from axios.
+        if (kind === 'pdf' || kind === 'office') {
+          let blob = resp.data;
+          if (blob.type !== 'application/pdf') {
+            blob = new Blob([blob], { type: 'application/pdf' });
+          }
+          if (!cancelled) setState({ loading: false, errorInfo: null, pdfBlob: blob, url: null, text: null });
+          return;
         }
-        const url = URL.createObjectURL(effectiveBlob);
+
+        const url = URL.createObjectURL(resp.data);
         objectUrlsRef.current.push(url);
-        if (!cancelled) setState({ loading: false, errorInfo: null, url, text: null });
+        if (!cancelled) setState({ loading: false, errorInfo: null, pdfBlob: null, url, text: null });
       } catch (err) {
         if (cancelled) return;
-        // `.132n4c` — retry once on network / 5xx after a 1 s
-        // backoff. Don't retry on hard failures (413/415/404) that
-        // won't get better with a repeat.
         const status = err?.response?.status;
         const isRetryable = !status || status >= 500;
         if (isRetryable && attempt < 1) {
@@ -175,8 +174,7 @@ export default function FilePreviewModal({ entry, onClose }) {
         setState({
           loading: false,
           errorInfo: classifyError(err),
-          url: null,
-          text: null,
+          pdfBlob: null, url: null, text: null,
         });
       }
     };
@@ -191,7 +189,6 @@ export default function FilePreviewModal({ entry, onClose }) {
     };
   }, [entry, kind]);
 
-  // Backdrop / esc close
   useEffect(() => {
     if (!entry) return undefined;
     const onKey = (ev) => { if (ev.key === 'Escape') onClose(); };
@@ -210,13 +207,15 @@ export default function FilePreviewModal({ entry, onClose }) {
     }
   };
 
-  // `.132n4c` — Called from the `<object>` onError handler when
-  // the browser fails to paint the PDF (plugin disabled, etc.).
-  const markPluginFailed = () => {
+  // Escalates PDF.js parse failure into the standard errorInfo
+  // surface so the FE renders the same "Preview failed — Download"
+  // panel as any other kind.
+  const markPdfFailed = (err) => {
     setState((s) => ({
       ...s,
-      errorInfo: { kind: 'plugin', message:
-        'Your browser couldn\'t render this PDF inline. Try Download instead.' },
+      errorInfo: { kind: 'generic', message:
+        `PDF renderer error: ${err?.message || 'unknown'}` },
+      pdfBlob: null,
     }));
   };
 
@@ -271,7 +270,7 @@ export default function FilePreviewModal({ entry, onClose }) {
             state={state}
             entry={entry}
             onDownload={doDownload}
-            onPluginFailed={markPluginFailed}
+            onPdfFailed={markPdfFailed}
           />
         </div>
       </div>
@@ -279,7 +278,7 @@ export default function FilePreviewModal({ entry, onClose }) {
   );
 }
 
-function PreviewBody({ kind, state, entry, onDownload, onPluginFailed }) {
+function PreviewBody({ kind, state, entry, onDownload, onPdfFailed }) {
   if (state.loading) {
     return (
       <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs"
@@ -297,7 +296,6 @@ function PreviewBody({ kind, state, entry, onDownload, onPluginFailed }) {
       too_big:      'Too large to preview',
       unsupported:  'Preview not supported',
       not_found:    'File not found',
-      plugin:       'Your browser can\'t render this',
       generic:      'Preview failed',
     };
     return (
@@ -344,52 +342,14 @@ function PreviewBody({ kind, state, entry, onDownload, onPluginFailed }) {
     );
   }
 
-  if (kind === 'pdf') {
-    // `.132n4c` — `<object>` hands off to the browser's native PDF
-    // viewer AND renders the child content as fallback when the
-    // viewer can't paint. Both `onError` and the child fallback
-    // route to the same "Download instead" CTA.
+  if (kind === 'pdf' || kind === 'office') {
+    // Both go through `react-pdf`.  Native PDFs use their own
+    // bytes; office types use the PDF Dropbox rendered for them.
     return (
-      <object
-        type="application/pdf"
-        data={state.url}
-        className="w-full h-full bg-white"
-        aria-label={entry.name}
-        data-testid="dropbox-preview-pdf-object"
-        onError={onPluginFailed}
-      >
-        <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-sm text-slate-600 px-6 text-center"
-             data-testid="dropbox-preview-pdf-fallback">
-          <div className="font-semibold text-slate-800">
-            PDF preview isn't supported by this browser
-          </div>
-          <div className="text-xs text-slate-500 max-w-md">
-            Use Download to open the PDF in your default reader.
-          </div>
-          <button
-            type="button"
-            onClick={onDownload}
-            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
-                       text-xs font-medium text-white bg-slate-800 hover:bg-slate-900"
-          >
-            <ArrowDownload20Regular className="w-4 h-4" />
-            Download PDF
-          </button>
-        </div>
-      </object>
-    );
-  }
-
-  if (kind === 'office') {
-    // Office gets a plain <iframe> because Dropbox's get_preview
-    // returns either a rendered PDF (docs) or an HTML page
-    // (spreadsheets) — the latter needs iframe not object.
-    return (
-      <iframe
-        src={state.url}
-        title={entry.name}
-        className="w-full h-full border-0 bg-white"
-        data-testid="dropbox-preview-iframe"
+      <PdfCanvasView
+        blob={state.pdfBlob}
+        entryName={entry.name}
+        onFailed={onPdfFailed}
       />
     );
   }
@@ -446,4 +406,168 @@ function PreviewBody({ kind, state, entry, onDownload, onPluginFailed }) {
   }
 
   return null;
+}
+
+// PDF.js canvas renderer.  Uses react-pdf's `<Document>` +
+// `<Page>` under the hood — pure JS, no plugin, works in every
+// browser context (including nested iframes like the Emergent
+// preview shell).
+//
+//   · Continuous-scroll: renders every page in a scrollable
+//     column.  Feels more familiar than paged nav to non-technical
+//     users, and there's no "surprise" of stopping at page 1 when
+//     the doc has 12 pages.
+//   · Sticky footer shows "Page N of M" — updated via an
+//     `IntersectionObserver` so the currently-most-visible page
+//     surfaces the number.
+//   · Prev / Next buttons scroll the sticky "current page" up or
+//     down for keyboard-averse users.
+function PdfCanvasView({ blob, entryName, onFailed }) {
+  const [numPages, setNumPages] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [width, setWidth] = useState(0);
+  const containerRef = useRef(null);
+  const pageRefs = useRef({});   // {pageNumber: DOM node}
+
+  // `<Document file>` accepts either a Blob directly or an
+  // `{data}` object.  We pass Blob directly — react-pdf 11 handles
+  // the conversion.
+  const fileProp = useMemo(() => (blob ? blob : null), [blob]);
+
+  // Responsive width — measure the container so page bitmaps
+  // match the modal's actual width at any zoom.
+  useEffect(() => {
+    if (!containerRef.current) return undefined;
+    const el = containerRef.current;
+    const measure = () => {
+      // Leave a 32 px gutter so the scrollbar + shadow don't
+      // clip pages.  Fall back to 900 px if the container hasn't
+      // laid out yet.
+      const w = el.clientWidth - 32;
+      setWidth(w > 300 ? w : 900);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Track which page is currently most-visible so the footer
+  // "Page N of M" indicator stays in sync with scroll position.
+  useEffect(() => {
+    if (!containerRef.current || !numPages) return undefined;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        // Pick the entry with the largest intersection ratio.
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        if (visible.length > 0) {
+          const n = Number(visible[0].target.getAttribute('data-page'));
+          if (n) setCurrentPage(n);
+        }
+      },
+      { root: containerRef.current, threshold: [0, 0.25, 0.5, 0.75, 1] },
+    );
+    for (const node of Object.values(pageRefs.current)) {
+      if (node) obs.observe(node);
+    }
+    return () => obs.disconnect();
+  }, [numPages]);
+
+  const scrollToPage = (n) => {
+    const node = pageRefs.current[n];
+    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleLoadSuccess = ({ numPages: n }) => {
+    setNumPages(n);
+    setCurrentPage(1);
+  };
+  const handleLoadError = (err) => {
+    // Any parse failure lands the user in the shared errorInfo
+    // pane with a Download CTA rather than a blank canvas.
+    onFailed(err);
+  };
+
+  return (
+    <div className="w-full h-full flex flex-col bg-slate-100"
+         data-testid="dropbox-preview-pdfjs">
+      <div ref={containerRef}
+           className="flex-1 min-h-0 overflow-auto px-4 py-4">
+        {fileProp && width > 0 && (
+          <Document
+            file={fileProp}
+            onLoadSuccess={handleLoadSuccess}
+            onLoadError={handleLoadError}
+            loading={
+              <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                  <span>Parsing PDF…</span>
+                </div>
+              </div>
+            }
+            error={
+              <div className="w-full h-full flex items-center justify-center text-rose-600 text-xs">
+                Failed to render PDF.
+              </div>
+            }
+            noData={<span className="text-slate-500 text-xs">No PDF data.</span>}
+          >
+            {numPages && Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
+              <div
+                key={n}
+                data-page={n}
+                ref={(el) => { if (el) pageRefs.current[n] = el; }}
+                className="mb-4 flex justify-center"
+              >
+                <div className="shadow-lg bg-white">
+                  <Page
+                    pageNumber={n}
+                    width={width}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                  />
+                </div>
+              </div>
+            ))}
+          </Document>
+        )}
+      </div>
+      {numPages && numPages > 0 && (
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-2 flex items-center gap-3"
+             data-testid="dropbox-preview-pdf-footer">
+          <button
+            type="button"
+            onClick={() => scrollToPage(Math.max(1, currentPage - 1))}
+            disabled={currentPage <= 1}
+            className="p-1.5 rounded-md text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Previous page"
+            data-testid="dropbox-preview-pdf-prev"
+          >
+            <ChevronLeft16Regular style={{ width: 14, height: 14 }} />
+          </button>
+          <div className="text-xs text-slate-600 font-medium"
+               data-testid="dropbox-preview-pdf-page-label">
+            Page {currentPage} of {numPages}
+          </div>
+          <button
+            type="button"
+            onClick={() => scrollToPage(Math.min(numPages, currentPage + 1))}
+            disabled={currentPage >= numPages}
+            className="p-1.5 rounded-md text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Next page"
+            data-testid="dropbox-preview-pdf-next"
+          >
+            <ChevronRight16Regular style={{ width: 14, height: 14 }} />
+          </button>
+          <div className="ml-auto text-[11px] text-slate-400 font-mono truncate max-w-xs"
+               title={entryName}>
+            {entryName}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
