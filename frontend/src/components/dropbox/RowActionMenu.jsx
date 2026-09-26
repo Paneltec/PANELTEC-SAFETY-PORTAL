@@ -100,15 +100,15 @@ export default function RowActionMenu({
         title="More actions"
         aria-label="More actions"
         data-testid={`dropbox-row-menu-btn-${entry.name}`}
-        /* `.132n4c` — visible-at-rest, Dropbox-blue on row hover
-           (via `group-hover:`), deeper `#0047B3` + soft blue-15
-           circle on direct button hover.  Class names must be
-           STATIC literals (not JS template values) for Tailwind
-           JIT to compile them. */
-        className="p-1.5 rounded-full text-slate-500 transition-colors
-                   group-hover:text-[#0061FF]
-                   hover:!text-[#0047B3] hover:bg-[rgba(0,97,255,0.15)]
-                   focus-visible:ring-2 focus-visible:ring-[#0061FF]/40"
+        /* `.132n5` polish — the circle background is now driven
+           by the PARENT ROW hover (via `group-hover:`) instead of
+           the button's own `:hover`, so anywhere on the row lights
+           up the ⋯.  Direct button hover stacks a stronger green.
+           Signature emerald matches the Share modal primary CTAs. */
+        className="p-1.5 rounded-full text-slate-400 transition-colors
+                   group-hover:text-emerald-600 group-hover:bg-emerald-100/50
+                   hover:!text-emerald-700 hover:!bg-emerald-100
+                   focus-visible:ring-2 focus-visible:ring-emerald-400/40"
       >
         <MoreHorizontal20Regular style={{ width: 16, height: 16 }} />
       </button>

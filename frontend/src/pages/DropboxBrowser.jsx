@@ -1,11 +1,20 @@
 // v58.13.132n2 — Dropbox in-app file browser page.
 //
-// `.132n4b` — Dropbox Share modal. Removes the "coming soon"
-// disable on the Share slot from `.132n4a` now that
-// `sharing.read` and `sharing.write` are active on the token.
-// Wires the row menu + details panel Share action to a new
-// full-featured modal (`ShareModal.jsx`) with create-link,
-// visibility toggle, invite by email, and remove member.
+// `.132n5` — Drag-and-drop MOVE.  In-app row drags move files
+// and folders into any folder-row / breadcrumb-ancestor /
+// back-arrow drop target via the existing `/api/dropbox/browse/
+// move` endpoint.  Multi-select drag = batch move.  OS-file
+// drag-drop upload continues to work (discriminated via
+// `DataTransfer.types` — presence of `Files` = upload,
+// `application/x-paneltec-dropbox-move` = in-app move).
+//
+// `.132n4c` — Preview reliability.  PDFs now render through
+// `<object>` with a native "Download instead" fallback rather
+// than a bare `<iframe>` that painted a broken-doc icon on some
+// browsers.  Adds a 50 MB size guard (backend 413 + FE skip),
+// retry-once on 5xx/network, and per-kind error panels.
+//
+// `.132n4b` — Dropbox Share modal.
 //
 // `.132n4a` — Dropbox-native UX polish. Adds:
 //   · Lazy `/count` fetch per visible folder row + subtle badge.
@@ -97,6 +106,27 @@ export default function DropboxBrowser() {
   const [renameFor, setRenameFor] = useState(null);               // {entry, name}
   // `.132n4b` — Share modal target entry (null when closed).
   const [shareFor, setShareFor] = useState(null);
+  // `.132n5` — Drag-and-drop MOVE state.  Distinct from
+  // `.132n2c` OS-file drag-drop UPLOAD state (still handled via
+  // `dragOver` + the page-level `onDrop`).  Discriminator:
+  // `DataTransfer.types` — presence of `Files` = OS upload,
+  // presence of our custom MIME `application/x-paneltec-move` =
+  // in-app move.
+  //
+  //   · `draggingPaths` — paths currently being dragged (source
+  //     rows render at half-opacity).  Populated on `dragstart`
+  //     from either the single row or the multi-selection, and
+  //     cleared on `dragend`/`drop`.
+  //   · `dragTarget` — `{path, name, valid, reason}` for the
+  //     folder-row/breadcrumb/back-arrow the pointer is currently
+  //     over.  Drives ring styling + the floating tooltip.
+  const [draggingPaths, setDraggingPaths] = useState([]);
+  const [dragTarget, setDragTarget] = useState(null);
+  // Live mouse position, tracked during dragover for the
+  // floating "Move to <name>" tooltip.  Ref, not state, so the
+  // 60 Hz updates don't force re-renders — only tooltip render
+  // reads it.
+  const dragMousePos = useRef({ x: 0, y: 0 });
   // Map<folderPath, {item_count, is_partial}> — filled lazily
   // by the folder-count effect. Cleared on `path` change so
   // stale counts don't flash for the wrong parent.
@@ -197,6 +227,179 @@ export default function DropboxBrowser() {
       toast.success('Path copied.');
     } catch (err) {
       toast.error(`Copy failed: ${apiError(err)}`);
+    }
+  };
+
+  // ── `.132n5` — drag-drop MOVE plumbing ────────────────────────
+  //
+  // MIME discriminator; also used as the payload key so drop
+  // targets can pull the source paths back out.
+  const DND_MIME = 'application/x-paneltec-dropbox-move';
+
+  // Validate a proposed move.  Returns `{valid: bool, reason?: str}`.
+  // Rules:
+  //   · sources[i] must not equal target                     (can't move into itself)
+  //   · target must not start with any source path + '/'     (no descendant-cycle)
+  //   · parent(sources[i]) must not equal target             (already there — no-op)
+  const validateDropTarget = (sources, targetPath) => {
+    if (!sources || sources.length === 0) {
+      return { valid: false, reason: 'nothing to move' };
+    }
+    const tgt = targetPath || '';
+    for (const src of sources) {
+      if (src === tgt) {
+        return { valid: false, reason: 'Cannot move a folder into itself.' };
+      }
+      if (tgt.startsWith(src + '/')) {
+        return { valid: false, reason: 'Cannot move a folder into its own subfolder.' };
+      }
+      // parent(src)
+      const parentIdx = src.lastIndexOf('/');
+      const parent = parentIdx <= 0 ? '' : src.substring(0, parentIdx);
+      if (parent === tgt) {
+        return { valid: false, reason: 'Already in this folder.' };
+      }
+    }
+    return { valid: true };
+  };
+
+  const onRowDragStart = (entry, ev) => {
+    // If the user starts dragging one of the currently-selected
+    // rows, drag ALL of them (batch move).  Otherwise drag only
+    // the single row and leave the current selection untouched.
+    let paths;
+    if (selectedIds.has(entry.path)) {
+      paths = Array.from(selectedIds);
+    } else {
+      paths = [entry.path];
+    }
+    setDraggingPaths(paths);
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData(DND_MIME, JSON.stringify({ paths }));
+
+    // Custom drag image — a compact chip that shows the file
+    // name (or count) so multi-select drags feel intentional.
+    const ghost = document.createElement('div');
+    ghost.className = 'pointer-events-none px-3 py-1.5 rounded-lg bg-white shadow-xl border border-slate-200 text-xs font-semibold text-slate-800 flex items-center gap-1.5';
+    ghost.style.position = 'absolute';
+    ghost.style.top = '-1000px';
+    ghost.style.left = '-1000px';
+    ghost.innerText = paths.length === 1
+      ? entry.name
+      : `${paths.length} items`;
+    document.body.appendChild(ghost);
+    ev.dataTransfer.setDragImage(ghost, 12, 12);
+    // Ghost is only needed for the initial screenshot the browser
+    // takes; drop the node right after.
+    setTimeout(() => ghost.remove(), 0);
+  };
+
+  const onRowDragEnd = () => {
+    setDraggingPaths([]);
+    setDragTarget(null);
+  };
+
+  // Reads the DnD payload for the current drop attempt.  Falls
+  // back to state.draggingPaths when the browser hasn't yet
+  // exposed the payload (some browsers gate `getData` until
+  // `drop` fires — for `dragover`/`dragenter` we can only see
+  // `types`, not payloads).
+  const readDragPayload = (ev) => {
+    try {
+      const raw = ev.dataTransfer.getData(DND_MIME);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.paths)) return parsed.paths;
+      }
+    } catch (_) { /* noop */ }
+    return draggingPaths;
+  };
+
+  const hasMovePayload = (ev) =>
+    Array.from(ev.dataTransfer?.types || []).includes(DND_MIME);
+
+  // Folder-row / breadcrumb / back-arrow drop-target factory.
+  // Wires up the four DnD handlers a component needs to accept
+  // move drops.  Callers pass in the *target folder path* + a
+  // display name (only used for the tooltip).
+  const makeDropTargetHandlers = (targetPath, displayName) => ({
+    onDragEnter: (ev) => {
+      if (!hasMovePayload(ev)) return;
+      ev.preventDefault();
+      const validation = validateDropTarget(draggingPaths, targetPath);
+      setDragTarget({ path: targetPath, name: displayName, ...validation });
+    },
+    onDragOver: (ev) => {
+      if (!hasMovePayload(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      // Track mouse for the floating tooltip.  Ref-only so we
+      // don't force re-renders 60×/sec — the tooltip reads from
+      // it during its own render (driven by dragTarget changes).
+      dragMousePos.current = { x: ev.clientX, y: ev.clientY };
+      const validation = validateDropTarget(draggingPaths, targetPath);
+      ev.dataTransfer.dropEffect = validation.valid ? 'move' : 'none';
+      // Keep dragTarget in sync — cursor may have entered from a
+      // sibling target without triggering our onDragEnter cleanly.
+      if (!dragTarget || dragTarget.path !== targetPath) {
+        setDragTarget({ path: targetPath, name: displayName, ...validation });
+      }
+    },
+    onDragLeave: (ev) => {
+      // Only clear when the pointer actually leaves this target —
+      // moving between child elements still fires dragleave.
+      if (ev.currentTarget.contains(ev.relatedTarget)) return;
+      setDragTarget((cur) => (cur && cur.path === targetPath ? null : cur));
+    },
+    onDrop: async (ev) => {
+      if (!hasMovePayload(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const paths = readDragPayload(ev);
+      const validation = validateDropTarget(paths, targetPath);
+      setDraggingPaths([]);
+      setDragTarget(null);
+      if (!validation.valid) {
+        toast.error(validation.reason);
+        return;
+      }
+      await doBatchMove(paths, targetPath, displayName);
+    },
+  });
+
+  const doBatchMove = async (paths, toFolder, toFolderName) => {
+    let okCount = 0;
+    const failed = [];
+    for (const src of paths) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await api.post('/dropbox/browse/move', {
+          from_path: src, to_folder: toFolder || '',
+        });
+        okCount += 1;
+      } catch (err) {
+        const base = src.substring(src.lastIndexOf('/') + 1);
+        failed.push(`${base}: ${apiError(err)}`);
+      }
+    }
+    // Drop selections that were consumed by a successful move —
+    // the paths those IDs point at no longer exist at the source.
+    if (okCount > 0) {
+      setSelectedIds((s) => {
+        const next = new Set(s);
+        for (const p of paths) next.delete(p);
+        return next;
+      });
+    }
+    await refresh();
+    const dstLabel = toFolderName || (toFolder ? toFolder : '/');
+    if (okCount > 0) {
+      toast.success(
+        `Moved ${okCount} item${okCount === 1 ? '' : 's'} to ${dstLabel}.`,
+      );
+    }
+    if (failed.length > 0) {
+      toast.error(failed.join('\n'));
     }
   };
 
@@ -462,9 +665,22 @@ export default function DropboxBrowser() {
     <div
       className="max-w-[1400px] mx-auto"
       data-testid="dropbox-browser-page"
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      /* `.132n5` — page-level drag handlers gate on the `Files`
+         DataTransfer type so OS-file drops keep triggering the
+         upload flow, but in-app row drags (which advertise the
+         custom `application/x-paneltec-dropbox-move` type)
+         bubble through untouched to their folder-row / breadcrumb
+         drop targets. */
+      onDragOver={(e) => {
+        const types = Array.from(e.dataTransfer?.types || []);
+        if (!types.includes('Files')) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={(e) => {
+        const types = Array.from(e.dataTransfer?.types || []);
+        if (!types.includes('Files')) return;
         e.preventDefault();
         setDragOver(false);
         if (e.dataTransfer?.files?.length) doUpload(e.dataTransfer.files);
@@ -487,21 +703,40 @@ export default function DropboxBrowser() {
               title="Up one folder"
               aria-label="Up one folder"
               data-testid="dropbox-up-btn"
-              className="mr-1 p-1.5 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed"
+              className={`mr-1 p-1.5 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${
+                parentPath !== null && dragTarget?.path === parentPath
+                  ? (dragTarget.valid
+                      ? 'ring-2 ring-[#0061FF] bg-[rgba(0,97,255,0.10)]'
+                      : 'ring-2 ring-rose-500 bg-rose-50')
+                  : ''
+              }`}
+              {...(parentPath !== null
+                ? makeDropTargetHandlers(parentPath, parentPath === '' ? 'Paneltec team folder' : (parentPath.split('/').pop() || 'parent'))
+                : {})}
             >
               <ArrowLeft20Regular style={{ width: 16, height: 16 }} />
             </button>
             {crumbs.map((c, i) => {
               const isActive = i === crumbs.length - 1;
+              const isTarget = dragTarget?.path === c.path;
               return (
                 <React.Fragment key={c.path}>
                   {i > 0 && <ChevronRight16Regular className="text-slate-400" style={{ width: 14, height: 14 }} />}
                   <button
                     type="button"
                     onClick={() => setPath(c.path)}
-                    className={`px-2 py-1 rounded-md hover:bg-slate-100 ${isActive ? 'font-semibold text-slate-900 border-b-2' : 'text-slate-600 border-b-2 border-transparent'}`}
+                    className={`px-2 py-1 rounded-md hover:bg-slate-100 transition-colors ${
+                      isActive ? 'font-semibold text-slate-900 border-b-2' : 'text-slate-600 border-b-2 border-transparent'
+                    } ${
+                      isTarget
+                        ? (dragTarget.valid
+                            ? 'ring-2 ring-[#0061FF] bg-[rgba(0,97,255,0.10)]'
+                            : 'ring-2 ring-rose-500 bg-rose-50')
+                        : ''
+                    }`}
                     style={isActive ? { borderColor: DBX_BLUE } : undefined}
                     data-testid={`dropbox-crumb-${i}`}
+                    {...(!isActive ? makeDropTargetHandlers(c.path, c.label) : {})}
                   >
                     {c.label}
                   </button>
@@ -684,6 +919,12 @@ export default function DropboxBrowser() {
                 onShare={() => setShareFor(e)}
                 onVersions={() => setVersionsFor(e)}
                 folderCount={folderCounts[e.path]}
+                /* `.132n5` — drag-drop MOVE wiring. */
+                isDragging={draggingPaths.includes(e.path)}
+                dragTarget={dragTarget}
+                onRowDragStart={onRowDragStart}
+                onRowDragEnd={onRowDragEnd}
+                makeDropTargetHandlers={makeDropTargetHandlers}
               />
             ))}
           </tbody>
@@ -828,6 +1069,31 @@ export default function DropboxBrowser() {
         />
       )}
 
+      {/* `.132n5` — Floating "Move to <name>" tooltip that
+          tracks the cursor while a drag is in flight over a
+          valid or invalid target.  Positioned via mouseX/Y ref
+          (updated in `onDragOver`); re-renders whenever
+          `dragTarget` changes.  `position: fixed` + high z-index
+          so it floats over every other surface. */}
+      {dragTarget && draggingPaths.length > 0 && (
+        <div
+          className={`fixed z-[9999] pointer-events-none px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-lg ${
+            dragTarget.valid
+              ? 'bg-[#0061FF] text-white'
+              : 'bg-rose-500 text-white'
+          }`}
+          style={{
+            top: dragMousePos.current.y + 18,
+            left: dragMousePos.current.x + 14,
+          }}
+          data-testid="dropbox-drag-tooltip"
+        >
+          {dragTarget.valid
+            ? `Move to ${dragTarget.name || 'folder'}`
+            : (dragTarget.reason || 'Cannot move here')}
+        </div>
+      )}
+
       {/* `.132n4a` — Move-picker modal. */}
       {movePickerFor && (
         <MovePickerModal
@@ -935,12 +1201,32 @@ function SelectAllCheckbox({ visibleIds, selectedIds, onToggle }) {
 function Row({
   entry, selected, onToggleSelect, onOpen, onPreview, onDelete,
   onDownload, onRename, onCopyPath, onMove, onShare, onVersions, folderCount,
+  /* `.132n5` — drag-drop MOVE props. */
+  isDragging, dragTarget, onRowDragStart, onRowDragEnd, makeDropTargetHandlers,
 }) {
   const Icon = iconFor(entry);
+  // Folder rows accept drops from other in-app rows.  File rows
+  // are only drag sources — files can't contain other files.
+  const dropHandlers = entry.type === 'folder'
+    ? makeDropTargetHandlers(entry.path, entry.name)
+    : {};
+  const isDropTarget = dragTarget?.path === entry.path;
   return (
     <tr
-      className={`border-b border-slate-100 last:border-0 group transition-colors ${selected ? '' : 'hover:bg-[color:rgba(0,97,255,0.05)]'}`}
-      style={selected ? { backgroundColor: 'rgba(0, 97, 255, 0.08)' } : undefined}
+      draggable
+      onDragStart={(ev) => onRowDragStart(entry, ev)}
+      onDragEnd={onRowDragEnd}
+      {...dropHandlers}
+      className={`border-b border-slate-100 last:border-0 group transition-colors ${
+        selected ? '' : 'hover:bg-[color:rgba(0,97,255,0.05)]'
+      } ${isDragging ? 'opacity-40' : ''} ${
+        isDropTarget
+          ? (dragTarget.valid
+              ? 'ring-2 ring-inset ring-[#0061FF] bg-[rgba(0,97,255,0.08)]'
+              : 'ring-2 ring-inset ring-rose-500 bg-rose-50')
+          : ''
+      }`}
+      style={selected && !isDropTarget ? { backgroundColor: 'rgba(0, 97, 255, 0.08)' } : undefined}
       data-testid={`dropbox-row-${entry.name}`}
     >
       <td className="pl-4 py-2.5 w-10">

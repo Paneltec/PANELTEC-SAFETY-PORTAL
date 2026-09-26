@@ -826,13 +826,26 @@ async def move_entry(
     """Move a file or folder into a different destination folder.
     Destination path is the resolved destination folder + the
     source's basename. `to_folder` may be `""` (team folder root)
-    or any namespace-relative folder path."""
+    or any namespace-relative folder path.
+
+    `.132n5` fix — when `_normalise_path` collapses the empty /
+    root inputs to the `_TEAM_FOLDER_ROOT` sentinel, we must NOT
+    prefix that back onto the destination path: Dropbox already
+    routes writes through the team-namespace path-root and would
+    interpret `"/Paneltec-General Administration/…"` as a REAL
+    subfolder inside the namespace, silently creating a phantom
+    doubled tree.  Instead, treat `_TEAM_FOLDER_ROOT` as the
+    empty-relative root and prepend just `"/"`.
+    """
     src = _normalise_path(body.from_path)
     if src == _TEAM_FOLDER_ROOT:
         raise HTTPException(400, "cannot move the team folder root")
     dst_folder = _normalise_path(body.to_folder or "")
     src_base = os.path.basename(src)
-    dst = (dst_folder + "/" + src_base) if dst_folder else "/" + src_base
+    if dst_folder == _TEAM_FOLDER_ROOT:
+        dst = "/" + src_base
+    else:
+        dst = dst_folder + "/" + src_base
 
     if dst == src:
         return {"path": src, "moved": False, "reason": "same_location"}
