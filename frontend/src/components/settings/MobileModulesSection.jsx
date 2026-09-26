@@ -25,7 +25,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { getToken, getUser } from '@/lib/auth';
 import {
   ClipboardTaskListLtr20Regular as PreStartIcon,
   Book20Regular as DiaryIcon,
@@ -269,7 +269,26 @@ export function PhonePreview({ canEdit, canOpenPreview = true }) {
   }, [role]);
   const [src, setSrc] = useState('');
   // v58.13.132o — Preview-as-worker binding state.
-  const [previewWorkerId, setPreviewWorkerId] = useState('');
+  // v58.13.132n7c — Persist the last picked worker so the admin
+  // doesn't have to re-select on every reload; also enables the
+  // "auto-select current admin's own workers row on first mount" UX
+  // guard below.
+  const LS_PREVIEW_WORKER_ID = 'perms.previewDropdown.workerId';
+  const [previewWorkerId, setPreviewWorkerId] = useState(() => {
+    try {
+      const v = localStorage.getItem(LS_PREVIEW_WORKER_ID);
+      return v === null ? '' : v;
+    } catch { return ''; }
+  });
+  // Distinguishes "user has never touched the picker" (auto-select
+  // eligible) from "user explicitly chose the generic option"
+  // (respect their choice, don't clobber).
+  const previewWorkerPickerTouched = useRef(
+    (() => {
+      try { return localStorage.getItem(LS_PREVIEW_WORKER_ID) !== null; }
+      catch { return false; }
+    })(),
+  );
   const [workers, setWorkers] = useState([]);
   // v58.13.132mp — iframe fallback state. Show the placeholder inside
   // the bezel when the iframe fails to load (Expo dev server offline,
@@ -295,8 +314,28 @@ export function PhonePreview({ canEdit, canOpenPreview = true }) {
       setAllRoles(rs);
     }).catch(() => setAllRoles([]));
     // v58.13.132o — populate the worker picker.
+    // v58.13.132n7c — Auto-select the current admin's own workers row
+    // on first mount so the "Today's Assignment" tile populates
+    // without the operator having to hunt for the dropdown. Only
+    // fires when the picker has never been touched (localStorage
+    // sentinel via `previewWorkerPickerTouched`). Once the admin
+    // explicitly picks (or explicitly clears) the picker, we honour
+    // that choice permanently.
     api.get('/mobile/preview-user/workers').then(({ data }) => {
-      setWorkers(data?.workers || []);
+      const list = data?.workers || [];
+      setWorkers(list);
+      if (previewWorkerPickerTouched.current) return;
+      const me = getUser();
+      const myEmail = (me?.email || '').toLowerCase();
+      if (!myEmail) return;
+      const match = list.find(
+        (w) => (w.email || '').toLowerCase() === myEmail,
+      );
+      if (match) {
+        setPreviewWorkerId(match.id);
+        // Rebuild the iframe URL immediately so the tile hydrates.
+        setSrc(computeExpoUrl(role, getToken(), match.id));
+      }
     }).catch(() => setWorkers([]));
   }, []);
   const iframeRef = useRef(null);
@@ -367,9 +406,16 @@ export function PhonePreview({ canEdit, canOpenPreview = true }) {
   // v58.13.132o — worker picker: rebuild the iframe URL with `worker_id`
   // so /api/mobile/preview-user mints a session bound to the picked
   // worker's real profile + data. Read-only stays server-enforced.
+  // v58.13.132n7c — Persist the operator's choice (even the empty
+  // "Generic preview user" selection) so the picker survives reloads
+  // and the auto-select on first mount doesn't clobber their intent.
   const onWorkerChange = (e) => {
     const wid = e.target.value;
     setPreviewWorkerId(wid);
+    previewWorkerPickerTouched.current = true;
+    try {
+      localStorage.setItem(LS_PREVIEW_WORKER_ID, wid);
+    } catch { /* private mode — auto-select will re-fire next mount */ }
     rebuild(role, wid);
   };
   const onReload = () => rebuild(role, previewWorkerId);
@@ -526,8 +572,11 @@ export function PhonePreview({ canEdit, canOpenPreview = true }) {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-[10px] leading-tight" style={{ color: '#6B6B6B' }}>
-            Preview session stays read-only. Writes are blocked server-side.
+          <p className="mt-1 text-[10px] leading-tight" style={{ color: '#6B6B6B' }}
+             data-testid="mobile-preview-worker-hint">
+            {previewWorkerId
+              ? 'Preview session stays read-only. Writes are blocked server-side.'
+              : "Pick a worker to see their real Today's Assignment on the phone tile. Preview stays read-only."}
           </p>
         </label>
 
