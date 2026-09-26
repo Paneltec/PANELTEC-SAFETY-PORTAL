@@ -15979,7 +15979,7 @@
 //     its own; we can extend the fix later if needed.
 //   · Backend / mongodb supervisor entries — untouched. They shut
 //     down cleanly on SIGTERM and don't need the wrapper.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n3';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n4a';
 
 // v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
 //   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
@@ -16000,7 +16000,7 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132n3';
 //   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
 //   too — in the same commit — and the toast fires exactly once for
 //   users on the previous batch.
-export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n3';
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132n4a';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

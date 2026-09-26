@@ -75,7 +75,14 @@ _DROPBOX_SCOPES = (
     # (`backend/dropbox_browse.py`). Existing refresh tokens minted
     # before this change are read-only; admins must re-authorise via
     # `/api/dropbox/oauth/start` to mint a token with write scopes.
-    "files.content.write"
+    "files.content.write "
+    # v58.13.132n4a — sharing.write pre-added ahead of the `.132n4b`
+    # Share/Permissions ship. Added here NOW (even though the App
+    # Console still needs the ticked scope + a re-authorise) so the
+    # next OAuth mint automatically requests it — no code touch
+    # needed to unhook the deferred sharing UI. `sharing.read` is
+    # already granted; `sharing.write` is what's new.
+    "sharing.write"
 )
 
 

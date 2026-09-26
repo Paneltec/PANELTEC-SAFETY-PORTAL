@@ -1,5 +1,16 @@
 // v58.13.132n2 — Dropbox in-app file browser page.
 //
+// `.132n4a` — Dropbox-native UX polish. Adds:
+//   · Lazy `/count` fetch per visible folder row + subtle badge.
+//   · Row-level ⋯ menu (Preview/Download/Rename/Copy path/Move/
+//     Version history/Delete). Share slot rendered but disabled;
+//     `.132n4b` unhooks it once the App Console grants
+//     `sharing.write`.
+//   · Rename dialog + Move-picker modal + Version history drawer.
+//   · Right details panel on single-click of a FILE row.
+//     Double-click still opens the preview modal. Folder rows
+//     keep their single-click-navigates behaviour.
+//
 // `.132n2c` — UX polish pass. Adds:
 //   · Back arrow (up one folder) button beside the breadcrumb.
 //   · Row-level checkboxes + header tri-state "select all".
@@ -16,19 +27,6 @@
 // `/app/dropbox` (gated on `integrations.view` via the sidebar
 // entry + a route-level guard here for deep-links). Talks to
 // `/api/dropbox/browse` — see `backend/dropbox_browse.py`.
-//
-// Phase A + B scope (this ship):
-//   · list folder (breadcrumb, sortable columns)
-//   · download file (opens temporary link in new tab)
-//   · inline preview (`.132n2b`, per-type dispatch)
-//   · upload file (button + drag-drop, chunked >150MB server-side)
-//   · new folder
-//   · delete (with confirm)
-//   · bulk select + bulk download / bulk delete (`.132n2c`)
-//   · client-side filter box
-//
-// Phase C deferred: rename, move, server-side search,
-// tags/comments, folder-zip bulk download.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -36,6 +34,10 @@ import api, { apiError } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import { PageHeader } from '@/components/capture/Ui';
 import FilePreviewModal from '@/components/dropbox/FilePreviewModal';
+import RowActionMenu from '@/components/dropbox/RowActionMenu';
+import MovePickerModal from '@/components/dropbox/MovePickerModal';
+import VersionHistoryDrawer from '@/components/dropbox/VersionHistoryDrawer';
+import DetailsPanel from '@/components/dropbox/DetailsPanel';
 import {
   Folder24Regular, Document24Regular, DocumentPdf24Regular,
   Image24Regular, Video24Regular, DocumentTable24Regular,
@@ -80,6 +82,15 @@ export default function DropboxBrowser() {
   // navigations.
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(null); // null | array
+  // `.132n4a` state.
+  const [detailsEntry, setDetailsEntry] = useState(null);        // right details panel
+  const [movePickerFor, setMovePickerFor] = useState(null);       // Move to… modal
+  const [versionsFor, setVersionsFor] = useState(null);           // Version history drawer
+  const [renameFor, setRenameFor] = useState(null);               // {entry, name}
+  // Map<folderPath, {item_count, is_partial}> — filled lazily
+  // by the folder-count effect. Cleared on `path` change so
+  // stale counts don't flash for the wrong parent.
+  const [folderCounts, setFolderCounts] = useState({});
   const fileInputRef = useRef(null);
 
   const refresh = useCallback(async () => {
@@ -145,11 +156,38 @@ export default function DropboxBrowser() {
       setPath(e.path);
       return;
     }
-    // `.132n2b` — file click opens the inline preview modal.
-    // The modal itself handles per-type rendering + a Download
-    // button (which routes back to the same /download temp-link
-    // endpoint the pre-`.132n2b` flow used).
+    // `.132n4a` — Single click on a file row opens the DETAILS
+    // panel (right slide-in), not the preview modal. Double click
+    // (or the "Preview" quick action inside the panel / row-menu)
+    // still opens the preview modal. Matches the Dropbox web UX
+    // convention: click to inspect metadata, double-click to view.
+    setDetailsEntry(e);
+  };
+
+  const openPreview = (e) => {
+    // Called from double-click, row-menu "Preview", details-panel
+    // Preview button. Closes the details panel first so we don't
+    // stack two right-side surfaces.
+    setDetailsEntry(null);
     setPreviewEntry(e);
+  };
+
+  const downloadEntry = async (e) => {
+    try {
+      const { data } = await api.get('/dropbox/browse/download', { params: { path: e.path } });
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      toast.error(`Download failed: ${apiError(err)}`);
+    }
+  };
+
+  const copyPath = async (e) => {
+    try {
+      await navigator.clipboard.writeText(e.path);
+      toast.success('Path copied.');
+    } catch (err) {
+      toast.error(`Copy failed: ${apiError(err)}`);
+    }
   };
 
   const doUpload = async (files) => {
@@ -231,6 +269,90 @@ export default function DropboxBrowser() {
   // that would silently persist across navigations are a common
   // "wait, I meant THIS folder!" trap in file managers.
   useEffect(() => { setSelectedIds(new Set()); }, [path]);
+
+  // `.132n4a` — Lazy folder-count fetch. Fires AFTER the parent
+  // list renders (state.loading transitions to false) and only
+  // for FOLDER rows that don't already have a count in the map.
+  // Concurrency capped at 5 parallel requests to match the
+  // backend semaphore + spare cycles for the migration engine.
+  useEffect(() => {
+    if (state.loading || state.error) return undefined;
+    const folders = state.entries.filter((e) => e.type === 'folder');
+    if (folders.length === 0) return undefined;
+
+    let cancelled = false;
+    const pending = folders
+      .map((f) => f.path)
+      .filter((p) => folderCounts[p] === undefined);
+    if (pending.length === 0) return undefined;
+
+    const MAX_CONCURRENT = 5;
+    let inFlight = 0;
+    let idx = 0;
+
+    const runNext = async () => {
+      if (cancelled) return;
+      if (idx >= pending.length) return;
+      const target = pending[idx++];
+      inFlight++;
+      try {
+        const { data } = await api.get('/dropbox/browse/count', {
+          params: { path: target },
+        });
+        if (!cancelled) {
+          setFolderCounts((prev) => ({
+            ...prev,
+            [target]: { item_count: data.item_count, is_partial: data.is_partial },
+          }));
+        }
+      } catch {
+        // Silent fail — badge is decorative. Cache the null so we
+        // don't retry the same folder in a tight loop.
+        if (!cancelled) {
+          setFolderCounts((prev) => ({
+            ...prev,
+            [target]: { item_count: null, is_partial: false },
+          }));
+        }
+      } finally {
+        inFlight--;
+        runNext();
+      }
+    };
+
+    for (let i = 0; i < Math.min(MAX_CONCURRENT, pending.length); i++) {
+      runNext();
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- folderCounts
+    // is intentionally omitted; including it would re-fire the effect
+    // after every count arrives.
+  }, [state.entries, state.loading, state.error]);
+
+  // Clear the count map on folder change so stale counts don't
+  // flash on the wrong parent.
+  useEffect(() => { setFolderCounts({}); }, [path]);
+
+  const doRename = async () => {
+    if (!renameFor) return;
+    const { entry, name } = renameFor;
+    const nextName = (name || '').trim();
+    if (!nextName || nextName === entry.name) {
+      setRenameFor(null);
+      return;
+    }
+    try {
+      await api.post('/dropbox/browse/rename', {
+        from_path: entry.path,
+        new_name:  nextName,
+      });
+      toast.success(`Renamed to ${nextName}`);
+      setRenameFor(null);
+      refresh();
+    } catch (err) {
+      toast.error(`Rename failed: ${apiError(err)}`);
+    }
+  };
 
   const toggleSelect = (entry) => {
     setSelectedIds((prev) => {
@@ -543,7 +665,14 @@ export default function DropboxBrowser() {
                 selected={selectedIds.has(e.path)}
                 onToggleSelect={() => toggleSelect(e)}
                 onOpen={() => openEntry(e)}
+                onPreview={() => openPreview(e)}
                 onDelete={() => setConfirmDelete(e)}
+                onDownload={() => downloadEntry(e)}
+                onRename={() => setRenameFor({ entry: e, name: e.name })}
+                onCopyPath={() => copyPath(e)}
+                onMove={() => setMovePickerFor(e)}
+                onVersions={() => setVersionsFor(e)}
+                folderCount={folderCounts[e.path]}
               />
             ))}
           </tbody>
@@ -663,6 +792,78 @@ export default function DropboxBrowser() {
           onClose={() => setPreviewEntry(null)}
         />
       )}
+
+      {/* `.132n4a` — right details panel (single-click on file). */}
+      {detailsEntry && !previewEntry && !movePickerFor && !versionsFor && !renameFor && (
+        <DetailsPanel
+          entry={detailsEntry}
+          onClose={() => setDetailsEntry(null)}
+          onPreview={openPreview}
+          onDownload={downloadEntry}
+          onRename={(e) => setRenameFor({ entry: e, name: e.name })}
+          onCopyPath={copyPath}
+          onMove={(e) => setMovePickerFor(e)}
+          onVersions={(e) => setVersionsFor(e)}
+          onDelete={(e) => setConfirmDelete(e)}
+        />
+      )}
+
+      {/* `.132n4a` — Move-picker modal. */}
+      {movePickerFor && (
+        <MovePickerModal
+          entry={movePickerFor}
+          onClose={() => setMovePickerFor(null)}
+          onConfirm={() => {
+            setMovePickerFor(null);
+            setDetailsEntry(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {/* `.132n4a` — Version history drawer. */}
+      {versionsFor && (
+        <VersionHistoryDrawer
+          entry={versionsFor}
+          onClose={() => setVersionsFor(null)}
+          onRestored={refresh}
+        />
+      )}
+
+      {/* `.132n4a` — Rename dialog (compact inline modal). */}
+      {renameFor && (
+        <Modal onClose={() => setRenameFor(null)}>
+          <div className="text-sm font-semibold text-slate-900 mb-3">
+            Rename &ldquo;{renameFor.entry.name}&rdquo;
+          </div>
+          <input
+            type="text"
+            value={renameFor.name}
+            onChange={(ev) => setRenameFor((s) => ({ ...s, name: ev.target.value }))}
+            onKeyDown={(ev) => { if (ev.key === 'Enter') doRename(); }}
+            className="w-full rounded-lg border border-slate-300 focus:border-slate-500 focus:outline-none px-3 py-2 text-sm mb-5"
+            placeholder="New name"
+            autoFocus
+            data-testid="dropbox-rename-input"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" onClick={() => setRenameFor(null)}
+              className="rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2"
+              data-testid="dropbox-rename-cancel">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={doRename}
+              className="rounded-lg text-white text-xs font-semibold px-3 py-2 hover:brightness-110"
+              style={{ backgroundColor: DBX_BLUE }}
+              data-testid="dropbox-rename-confirm"
+            >
+              Rename
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -711,7 +912,10 @@ function SelectAllCheckbox({ visibleIds, selectedIds, onToggle }) {
   );
 }
 
-function Row({ entry, selected, onToggleSelect, onOpen, onDelete }) {
+function Row({
+  entry, selected, onToggleSelect, onOpen, onPreview, onDelete,
+  onDownload, onRename, onCopyPath, onMove, onVersions, folderCount,
+}) {
   const Icon = iconFor(entry);
   return (
     <tr
@@ -735,6 +939,7 @@ function Row({ entry, selected, onToggleSelect, onOpen, onDelete }) {
         <button
           type="button"
           onClick={onOpen}
+          onDoubleClick={entry.type === 'file' ? onPreview : undefined}
           className="inline-flex items-center gap-2.5 text-left"
           data-testid={`dropbox-open-${entry.name}`}
         >
@@ -743,6 +948,18 @@ function Row({ entry, selected, onToggleSelect, onOpen, onDelete }) {
             className={entry.type === 'folder' ? '' : 'text-slate-500'}
           />
           <span className="text-sm text-slate-800 font-medium hover:underline">{entry.name}</span>
+          {/* `.132n4a` — folder file-count badge. Renders once the
+              lazy `/count` fetch resolves. Nothing shown while
+              loading (avoids a flash of "—" then a number). */}
+          {entry.type === 'folder' && folderCount && folderCount.item_count != null && (
+            <span
+              className="ml-2 text-[10px] font-medium text-slate-500 bg-slate-100 rounded-full px-2 py-0.5"
+              data-testid={`dropbox-folder-count-${entry.name}`}
+            >
+              {folderCount.item_count}
+              {folderCount.is_partial ? '+' : ''} items
+            </span>
+          )}
         </button>
       </td>
       <td className="text-slate-600 text-xs whitespace-nowrap" data-testid={`dropbox-modified-${entry.name}`}>
@@ -753,27 +970,17 @@ function Row({ entry, selected, onToggleSelect, onOpen, onDelete }) {
         {entry.type === 'file' ? formatSize(entry.size) : '—'}
       </td>
       <td className="pr-4 text-right">
-        <div className="inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {entry.type === 'file' && (
-            <button
-              type="button"
-              onClick={onOpen}
-              title="Download"
-              data-testid={`dropbox-download-${entry.name}`}
-              className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-            >
-              <ArrowDownload20Regular style={{ width: 16, height: 16 }} />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onDelete}
-            title="Delete"
-            data-testid={`dropbox-delete-${entry.name}`}
-            className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-          >
-            <Delete20Regular style={{ width: 16, height: 16 }} />
-          </button>
+        <div className="inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 md:group-hover:opacity-100 transition-opacity">
+          <RowActionMenu
+            entry={entry}
+            onOpen={entry.type === 'file' ? onPreview : onOpen}
+            onDownload={onDownload}
+            onRename={onRename}
+            onCopyPath={onCopyPath}
+            onMove={onMove}
+            onVersions={onVersions}
+            onDelete={onDelete}
+          />
         </div>
       </td>
     </tr>

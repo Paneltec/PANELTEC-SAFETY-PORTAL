@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -588,3 +589,303 @@ async def preview_file(
             "Cache-Control": "private, max-age=60",
         },
     )
+
+
+# ── `.132n4a` — folder file-count (lazy, in-process cache) ────
+#
+# The list endpoint returns entries but not per-folder child
+# counts. Dropbox's API doesn't expose "how many items are inside
+# folder X" as a metadata property; the only way is
+# `files_list_folder` on that folder. That's expensive per row,
+# so we:
+#   · Expose a dedicated endpoint the frontend hits lazily
+#     (parallel, capped at 5 concurrent per user).
+#   · Cache results in-process for 5 min so re-rendering the
+#     same folder view doesn't re-hit Dropbox.
+#   · Only count the first page of `files_list_folder` (2000
+#     entries by default) — folders larger than that are marked
+#     `is_partial=true` so the FE can render "2000+ items".
+_COUNT_CACHE: Dict[str, tuple[float, dict]] = {}
+_COUNT_TTL_SECONDS = 300
+
+
+def _count_cache_get(path: str) -> Optional[dict]:
+    entry = _COUNT_CACHE.get(path)
+    if not entry:
+        return None
+    ts, payload = entry
+    if (time.time() - ts) > _COUNT_TTL_SECONDS:
+        _COUNT_CACHE.pop(path, None)
+        return None
+    return payload
+
+
+def _count_cache_put(path: str, payload: dict) -> None:
+    _COUNT_CACHE[path] = (time.time(), payload)
+
+
+@router.get("/count")
+async def count_folder(
+    path: str = Query(..., description="Full Dropbox path to a folder"),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Return `{path, item_count, is_partial, ttl_seconds}` for a
+    folder. First-page-only count (up to 2000 entries) — folders
+    with more items report `is_partial: true`. Cached in-process
+    for 5 min.
+
+    The frontend uses this to render a subtle "N items" badge on
+    each folder row after the parent list has painted, with client-
+    side concurrency capped at 5 to match the server semaphore.
+    """
+    resolved = _normalise_path(path)
+
+    cached = _count_cache_get(resolved)
+    if cached is not None:
+        return cached
+
+    user_key = str(user.get("id") or user.get("user_email") or "anon")
+    sem = _PREVIEW_SEMS.setdefault(user_key, asyncio.Semaphore(5))
+
+    async with sem:
+        dbx = _get_dbx()
+        try:
+            res = await asyncio.to_thread(
+                dbx.files_list_folder,
+                _team_root_arg(resolved),
+                recursive=False,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[browse.count] %s: %s", resolved, exc)
+            # Return a "no count available" sentinel rather than
+            # exposing a 5xx that would trigger frontend error state
+            # for a purely decorative badge.
+            payload = {
+                "path": resolved,
+                "item_count": None,
+                "is_partial": False,
+                "ttl_seconds": _COUNT_TTL_SECONDS,
+            }
+            return payload
+
+    item_count = len(res.entries or [])
+    payload = {
+        "path": resolved,
+        "item_count": item_count,
+        "is_partial": bool(getattr(res, "has_more", False)),
+        "ttl_seconds": _COUNT_TTL_SECONDS,
+    }
+    _count_cache_put(resolved, payload)
+    return payload
+
+
+# ── `.132n4a` — rename / move / revisions / restore ───────────
+#
+# All four flow through `files_move_v2` (rename == move within
+# the same parent) or `files_list_revisions` + `files_restore`.
+# Every path goes through `_normalise_path` and every write is
+# wrapped in `_wrap_dropbox_error` so scope/conflict/not-found
+# errors surface with a clean HTTP shape.
+class RenameIn(BaseModel):
+    from_path: str = Field(..., description="Current namespace-relative path")
+    new_name: str = Field(..., description="New basename (no path segments)")
+
+
+class MoveIn(BaseModel):
+    from_path: str
+    to_folder: str = Field(..., description="Destination folder — namespace-relative")
+
+
+class RestoreIn(BaseModel):
+    path: str
+    rev: str
+
+
+def _validate_basename(name: str) -> str:
+    """Rename target must be a plain basename — no path separators,
+    no absolute paths, no empty. Preserves Dropbox's own rules while
+    catching obvious mistakes at the API boundary."""
+    n = (name or "").strip()
+    if not n or "/" in n or "\\" in n or n in {".", ".."}:
+        raise HTTPException(400, "invalid new_name")
+    return n
+
+
+@router.post("/rename")
+async def rename_entry(
+    body: RenameIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Rename a file or folder in-place. Implementation: Dropbox
+    doesn't have a dedicated rename endpoint — a rename is a `move`
+    within the same parent, so we compose the destination path
+    from the resolved source's parent + validated new basename."""
+    src = _normalise_path(body.from_path)
+    if src == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot rename the team folder root")
+    new_name = _validate_basename(body.new_name)
+
+    # `posixpath.dirname` returns `"/"` for top-level entries (parent
+    # of `/foo` is `/`), but our namespace-relative paths use `""`
+    # for the team-folder root. Collapse both `""` and `"/"` to `""`
+    # so we don't emit a `//` double-slash into the destination.
+    parent = os.path.dirname(src) or ""
+    if parent == "/":
+        parent = ""
+    dst = (parent + "/" + new_name) if parent else "/" + new_name
+
+    if dst == src:
+        # No-op — Dropbox would return an ApiError anyway. Save a
+        # round-trip.
+        return {"path": src, "renamed": False, "reason": "same_name"}
+
+    dbx = _get_dbx()
+    try:
+        res = await asyncio.to_thread(
+            dbx.files_move_v2,
+            _team_root_arg(src),
+            _team_root_arg(dst),
+            autorename=False,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[browse.rename] %s -> %s: %s", src, dst, exc)
+        raise _wrap_dropbox_error(exc, "rename")
+
+    # Invalidate parent count cache — child count didn't change but
+    # the child name did, and the response the FE gets from this
+    # endpoint includes the new path so no stale row-count issue.
+    _COUNT_CACHE.pop(parent, None)
+    await _audit(user, "rename", src, {"dst": dst})
+    return {"path": dst, "renamed": True, "previous_path": src,
+            "entry": _serialise_entry(res.metadata)}
+
+
+@router.post("/move")
+async def move_entry(
+    body: MoveIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Move a file or folder into a different destination folder.
+    Destination path is the resolved destination folder + the
+    source's basename. `to_folder` may be `""` (team folder root)
+    or any namespace-relative folder path."""
+    src = _normalise_path(body.from_path)
+    if src == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot move the team folder root")
+    dst_folder = _normalise_path(body.to_folder or "")
+    src_base = os.path.basename(src)
+    dst = (dst_folder + "/" + src_base) if dst_folder else "/" + src_base
+
+    if dst == src:
+        return {"path": src, "moved": False, "reason": "same_location"}
+
+    dbx = _get_dbx()
+    try:
+        res = await asyncio.to_thread(
+            dbx.files_move_v2,
+            _team_root_arg(src),
+            _team_root_arg(dst),
+            autorename=True,   # Dropbox appends " (1)" on conflict
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[browse.move] %s -> %s: %s", src, dst, exc)
+        raise _wrap_dropbox_error(exc, "move")
+
+    # Invalidate both source and destination folder count caches —
+    # the child count of both has changed.
+    src_parent = os.path.dirname(src) or ""
+    if src_parent == "/":
+        src_parent = ""
+    _COUNT_CACHE.pop(src_parent, None)
+    _COUNT_CACHE.pop(dst_folder, None)
+    await _audit(user, "move", src, {"dst": dst})
+    return {"path": dst, "moved": True, "previous_path": src,
+            "entry": _serialise_entry(res.metadata)}
+
+
+@router.get("/revisions")
+async def list_revisions(
+    path: str = Query(...),
+    limit: int = Query(10, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Return up to `limit` prior revisions of a file. Response
+    entries carry `rev` (opaque server ID), `server_modified`,
+    `size`, and a `restorable` flag. Only files have revisions —
+    a folder path returns 400."""
+    resolved = _normalise_path(path)
+    if resolved == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot list revisions of the team folder root")
+
+    dbx = _get_dbx()
+    try:
+        res = await asyncio.to_thread(
+            dbx.files_list_revisions,
+            _team_root_arg(resolved),
+            limit=limit,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[browse.revisions] %s: %s", resolved, exc)
+        raise _wrap_dropbox_error(exc, "list_revisions")
+
+    entries = []
+    for e in res.entries:
+        entries.append({
+            "rev":              e.rev,
+            "size":             getattr(e, "size", None),
+            "server_modified":  getattr(e, "server_modified", None)
+                                   and e.server_modified.isoformat(),
+            "client_modified":  getattr(e, "client_modified", None)
+                                   and e.client_modified.isoformat(),
+            "name":             getattr(e, "name", None),
+        })
+    return {
+        "path":       resolved,
+        "is_deleted": bool(getattr(res, "is_deleted", False)),
+        "entries":    entries,
+    }
+
+
+@router.post("/restore")
+async def restore_revision(
+    body: RestoreIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    """Restore a file to a prior revision. Creates a new revision
+    on top rather than replacing the current one — Dropbox's own
+    behaviour. Requires `files.content.write`."""
+    resolved = _normalise_path(body.path)
+    if resolved == _TEAM_FOLDER_ROOT:
+        raise HTTPException(400, "cannot restore the team folder root")
+    rev = (body.rev or "").strip()
+    if not rev:
+        raise HTTPException(400, "rev is required")
+
+    dbx = _get_dbx()
+    try:
+        res = await asyncio.to_thread(
+            dbx.files_restore, _team_root_arg(resolved), rev,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[browse.restore] %s @ %s: %s", resolved, rev, exc)
+        raise _wrap_dropbox_error(exc, "restore")
+
+    await _audit(user, "restore", resolved, {"rev": rev})
+    return {"path": resolved, "restored": True,
+            "entry": _serialise_entry(res)}
+
