@@ -41,6 +41,7 @@ export default function HomeScreen() {
   const [jobLoading, setJobLoading] = useState(true);
   const [hasNotification, setHasNotification] = useState(false);
   const [jobActioning, setJobActioning] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
 
   // AI Briefing state
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
@@ -282,9 +283,14 @@ export default function HomeScreen() {
     const isPending = job.status === 'pending_accept' || job.status === 'new';
     const isAccepted = job.status === 'accepted';
     const isDeclined = job.status === 'declined';
-    const address = job.site_address || '';
-    const supervisorName = job.supervisor_name || job.contact_name || '';
-    const supervisorPhone = job.supervisor_phone || job.contact_phone || '';
+    const address = job.address || job.site_address || '';
+    const supervisorName = job.supervisor_name || '';
+    const supervisorPhone = job.supervisor_phone || '';
+    const hasSupervisor = !!(supervisorName || supervisorPhone);
+    const truckLabel = [job.truck_name, job.truck_reg].filter(Boolean).join(' · ');
+    const staffLabel = Array.isArray(job.staff_names) && job.staff_names.length > 0
+      ? job.staff_names.join(', ') : '';
+    const jobNotes = job.notes || '';
 
     return (
       <View testID="home-job-detail" style={[s.container, { paddingTop: insets.top }]}>
@@ -351,35 +357,95 @@ export default function HomeScreen() {
 
           {/* Detail card */}
           <View style={s.jdDetailCard}>
+            {/* SITE */}
             <View style={s.jdDetailRow}>
               <Text style={s.jdDetailLabel}>SITE</Text>
               <Text style={s.jdDetailValue} numberOfLines={1}>{job.site_name || '—'}</Text>
             </View>
+            {/* ADDRESS */}
+            {!!address && (<>
+              <View style={s.jdDivider} />
+              <View style={s.jdDetailRow}>
+                <Text style={s.jdDetailLabel}>ADDRESS</Text>
+                <Text style={s.jdDetailValue} numberOfLines={2}>{address}</Text>
+              </View>
+            </>)}
+            {/* CUSTOMER */}
+            {!!job.customer && (<>
+              <View style={s.jdDivider} />
+              <View style={s.jdDetailRow}>
+                <Text style={s.jdDetailLabel}>CUSTOMER</Text>
+                <Text style={s.jdDetailValue}>{job.customer}</Text>
+              </View>
+            </>)}
+            {/* TRUCK */}
+            {!!truckLabel && (<>
+              <View style={s.jdDivider} />
+              <View style={s.jdDetailRow}>
+                <Text style={s.jdDetailLabel}>TRUCK</Text>
+                <Text style={s.jdDetailValue}>{truckLabel}</Text>
+              </View>
+            </>)}
+            {/* WHEN */}
             <View style={s.jdDivider} />
             <View style={s.jdDetailRow}>
               <Text style={s.jdDetailLabel}>WHEN</Text>
               <Text style={s.jdDetailValue}>{formatIssuedDate(job.issued_at || job.assigned_at) || job.start_time || '—'}</Text>
             </View>
-            <View style={s.jdDivider} />
-            <View style={s.jdDetailRow}>
-              <Text style={s.jdDetailLabel}>TASK</Text>
-              <Text style={s.jdDetailValue} numberOfLines={2}>{job.task || job.notes?.split('\n')[0] || '—'}</Text>
-            </View>
-            <View style={s.jdDivider} />
-            <View style={s.jdDetailRow}>
-              <Text style={s.jdDetailLabel}>SUPERVISOR</Text>
-              <TouchableOpacity
-                testID="job-detail-call-supervisor"
-                onPress={() => supervisorPhone && Linking.openURL(`tel:${supervisorPhone.replace(/\s/g, '')}`)}
-                disabled={!supervisorPhone}
-                activeOpacity={0.6}
-              >
-                <Text style={[s.jdDetailValue, !!supervisorPhone && { color: Colors.info, textDecorationLine: 'underline' }]}>
-                  {supervisorName}{supervisorPhone ? ` · ${supervisorPhone}` : ''}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* YOUR WORK MATES */}
+            {!!staffLabel && (<>
+              <View style={s.jdDivider} />
+              <View style={[s.jdDetailRow, { alignItems: 'flex-start' }]}>
+                <Text style={[s.jdDetailLabel, { marginTop: 2 }]}>YOUR WORK{'\n'}MATES</Text>
+                <Text style={s.jdDetailValue}>{staffLabel}</Text>
+              </View>
+            </>)}
+            {/* TASK (only if present) */}
+            {!!job.task && (<>
+              <View style={s.jdDivider} />
+              <View style={s.jdDetailRow}>
+                <Text style={s.jdDetailLabel}>TASK</Text>
+                <Text style={s.jdDetailValue} numberOfLines={2}>{job.task}</Text>
+              </View>
+            </>)}
+            {/* SUPERVISOR (only if present) */}
+            {hasSupervisor && (<>
+              <View style={s.jdDivider} />
+              <View style={s.jdDetailRow}>
+                <Text style={s.jdDetailLabel}>SUPERVISOR</Text>
+                <TouchableOpacity
+                  testID="job-detail-call-supervisor"
+                  onPress={() => supervisorPhone && Linking.openURL(`tel:${supervisorPhone.replace(/\s/g, '')}`)}
+                  disabled={!supervisorPhone}
+                  activeOpacity={0.6}
+                >
+                  <Text style={[s.jdDetailValue, !!supervisorPhone && { color: Colors.info, textDecorationLine: 'underline' }]}>
+                    {supervisorName}{supervisorPhone ? ` · ${supervisorPhone}` : ''}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>)}
           </View>
+
+          {/* Notes card (visually distinct, expandable) */}
+          {!!jobNotes && (
+            <TouchableOpacity
+              testID="job-detail-notes-toggle"
+              style={s.jdNotesCard}
+              onPress={() => setNotesExpanded(!notesExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={s.jdNotesHeader}>
+                <Ionicons name="document-text-outline" size={16} color={Colors.orange} />
+                <Text style={s.jdNotesLabel}>NOTES</Text>
+                <Ionicons name={notesExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textTertiary} />
+              </View>
+              <Text style={s.jdNotesText} numberOfLines={notesExpanded ? undefined : 4}>{jobNotes}</Text>
+              {!notesExpanded && jobNotes.length > 150 && (
+                <Text style={s.jdNotesShowMore}>Show more</Text>
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Action row 1 — Decide */}
           {isPending ? (
@@ -643,20 +709,21 @@ export default function HomeScreen() {
           <TouchableOpacity testID="home-today-job" style={s.todayJobCard} onPress={() => setViewMode('job_detail')}>
             <Ionicons name="location" size={20} color={Colors.orange} />
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={s.todayJobTitle}>{todayJob.site_name || 'Assigned Site'}</Text>
-              <Text style={s.todayJobSub}>{todayJob.status === 'accepted' ? 'Accepted' : todayJob.status}</Text>
+              <Text style={s.todayJobTitle} numberOfLines={1}>{todayJob.address || todayJob.site_address || todayJob.site_name || 'Assigned Site'}</Text>
+              <Text style={s.todayJobSub} numberOfLines={1}>
+                {[
+                  todayJob.truck_name ? `${todayJob.truck_name}${todayJob.truck_reg ? ` · ${todayJob.truck_reg}` : ''}` : null,
+                  todayJob.status === 'accepted' ? 'Accepted' : todayJob.status?.replace('_', ' '),
+                ].filter(Boolean).join(' · ')}
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity testID="home-no-job" style={s.noJobCard} onPress={() => setViewMode('job_detail')} activeOpacity={0.7}>
-            <Ionicons name="checkmark-circle-outline" size={20} color={Colors.success} />
-            <View style={{ flex: 1 }}>
-              <Text style={s.noJobText}>No assignments today</Text>
-              <Text style={{ fontSize: 11, color: Colors.textTertiary, marginTop: 2 }}>Tap to preview demo job</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-          </TouchableOpacity>
+          <View testID="home-no-job" style={s.noJobCard}>
+            <Ionicons name="time-outline" size={20} color={Colors.textTertiary} />
+            <Text style={s.noJobText}>Ready when the office issues today&apos;s job.</Text>
+          </View>
         )}
 
         <View style={{ height: 40 }} />
@@ -772,9 +839,9 @@ const s = StyleSheet.create({
   todayJobSub: { fontSize: 13, color: Colors.textTertiary, marginTop: 2, textTransform: 'capitalize' },
   noJobCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.successSoft, borderRadius: 14, padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, padding: 16,
   },
-  noJobText: { fontSize: 14, fontWeight: '600', color: Colors.success },
+  noJobText: { fontSize: 14, fontWeight: '500', color: Colors.textTertiary },
 
   // Signed on
   backBtn: { padding: 4, marginRight: 8 },
@@ -899,6 +966,21 @@ const s = StyleSheet.create({
   jdFooter: {
     fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center',
     lineHeight: 18, marginTop: 8,
+  },
+  jdNotesCard: {
+    backgroundColor: '#F8FAFC', borderRadius: 14, padding: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  jdNotesHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8,
+  },
+  jdNotesLabel: {
+    fontSize: 11, fontWeight: '700', color: Colors.orange,
+    letterSpacing: 0.5, flex: 1,
+  },
+  jdNotesText: { fontSize: 14, color: Colors.textSecondary, lineHeight: 21 },
+  jdNotesShowMore: {
+    fontSize: 12, fontWeight: '700', color: Colors.info, marginTop: 6,
   },
 
   // Legacy job card (kept for compatibility)
