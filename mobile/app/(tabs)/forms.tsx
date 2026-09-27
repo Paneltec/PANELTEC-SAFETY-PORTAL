@@ -210,7 +210,7 @@ function CategoryCard({ meta, formCount, onPress }: {
 
         {/* Text block */}
         <View style={s.catTextWrap}>
-          <Text style={[s.catName, { color: palette.chipText }]} numberOfLines={1}>{meta.label}</Text>
+          <Text style={s.catName} numberOfLines={1}>{meta.label}</Text>
           <Text style={s.catCount}>{formCount} form{formCount !== 1 ? 's' : ''}</Text>
         </View>
 
@@ -292,7 +292,7 @@ const s = StyleSheet.create({
     minHeight: 68, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  catStripe: { width: 5, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  catStripe: { width: 4, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
   catContent: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14,
     paddingVertical: 12, paddingHorizontal: 14,
@@ -302,7 +302,7 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   catTextWrap: { flex: 1 },
-  catName: { fontSize: 16, fontWeight: '700' },
+  catName: { fontSize: 16, fontWeight: '700', color: '#1A1A1A' },
   catCount: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500', marginTop: 2 },
 
   // ── Search results ──
