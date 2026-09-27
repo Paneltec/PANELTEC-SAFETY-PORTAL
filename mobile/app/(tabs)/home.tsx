@@ -102,6 +102,8 @@ export default function HomeScreen() {
 
       <SectionLabel style={{ marginTop: 18 }}>CAPTURE</SectionLabel>
       <View style={s.list}>
+        <Tile testID="tile-scan" icon="qr-code" title="Scan QR Code" desc="Sign on to a site, check a vehicle or a worker card"
+          onPress={() => router.push('/(tabs)/scan' as never)} />
         {CAPTURE.map(c => (
           <Tile
             key={c.key}

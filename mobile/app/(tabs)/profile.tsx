@@ -1,4 +1,5 @@
 /**
+ * Settings tab (route: profile) — the worker's details, documents and app settings.
  * Profile hub — navigation to 8 sections.
  * v58.13.132i — Restructured as nav hub with Personal Info, Certs, Inductions, ID Card.
  */
@@ -154,7 +155,7 @@ export default function ProfileScreen() {
           iconBg={Colors.orangeSoft}
           title="My Fleet"
           subtitle="Assigned vehicles & equipment"
-          onPress={() => router.push({ pathname: '/profile/fleet/[id]', params: { id: 'list' } } as never)}
+          onPress={() => router.push('/(tabs)/fleet' as never)}
         />
         <NavRow
           testID="profile-nav-swms"
@@ -167,6 +168,24 @@ export default function ProfileScreen() {
         />
         
 
+        <NavRow
+          testID="profile-nav-leave"
+          icon="calendar-outline"
+          iconColor={Colors.orange}
+          iconBg={Colors.orangeSoft}
+          title="My Leave"
+          subtitle="Request time off and see your balance"
+          onPress={() => router.push('/leave' as never)}
+        />
+        <NavRow
+          testID="profile-nav-scan"
+          icon="qr-code-outline"
+          iconColor="#0F172A"
+          iconBg="#E2E8F0"
+          title="Scan a QR code"
+          subtitle="Site sign-on, vehicles and worker cards"
+          onPress={() => router.push('/(tabs)/scan' as never)}
+        />
         <View style={s.divider} />
 
         {/* Sign Out */}
