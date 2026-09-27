@@ -1,6 +1,6 @@
 /**
  * Category detail — shows forms filtered to a single category.
- * v58.13.132j
+ * v58.13.132p2f — Option B header with SVG icon + colour tint.
  */
 import React from 'react';
 import {
@@ -16,12 +16,15 @@ import {
   getCategoryMeta,
   type FormTemplate,
 } from '../../../src/services/forms';
+import { categoryPalette } from '../../../src/lib/categoryColors';
+import { CategoryIcon } from '../../../src/components/CategoryIcon';
 
 export default function CategoryDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { key } = useLocalSearchParams<{ key: string }>();
   const meta = getCategoryMeta(key || 'general');
+  const palette = categoryPalette(key || 'general');
 
   const { data: allTemplates, isLoading } = useQuery<FormTemplate[]>({
     queryKey: ['form-templates'],
@@ -35,23 +38,34 @@ export default function CategoryDetailScreen() {
 
   return (
     <View testID="category-detail-screen" style={[s.container, { paddingTop: insets.top }]}>
+      {/* Header with category colour accent */}
       <View style={s.header}>
         <TouchableOpacity testID="cat-back-btn" style={s.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={Colors.white} />
         </TouchableOpacity>
         <View style={s.headerCenter}>
-          <Text testID="cat-detail-title" style={s.headerTitle}>{meta.label}</Text>
+          <View style={s.headerRow}>
+            {/* Tinted icon badge */}
+            <View style={[s.headerIconWrap, { backgroundColor: palette.iconBg }]}>
+              <CategoryIcon category={key || 'general'} size={18} color={palette.chipText} />
+            </View>
+            <Text testID="cat-detail-title" style={s.headerTitle}>{meta.label}</Text>
+          </View>
         </View>
-        <View style={[s.countChip, { backgroundColor: meta.bgColor }]}>
-          <Text style={[s.countChipText, { color: meta.color }]}>{forms.length}</Text>
+        <View style={[s.countChip, { backgroundColor: palette.iconBg }]}>
+          <Text style={[s.countChipText, { color: palette.chipText }]}>{forms.length}</Text>
         </View>
       </View>
+      {/* Thin accent bar under header */}
+      <View style={[s.accentBar, { backgroundColor: palette.stripe }]} />
 
       {isLoading ? (
         <View style={s.center}><ActivityIndicator size="large" color={Colors.orange} /></View>
       ) : forms.length === 0 ? (
         <View style={s.center}>
-          <Ionicons name={meta.icon as keyof typeof Ionicons.glyphMap} size={40} color={Colors.textTertiary} />
+          <View style={[s.emptyIconWrap, { backgroundColor: palette.iconBg }]}>
+            <CategoryIcon category={key || 'general'} size={32} color={palette.chipText} />
+          </View>
           <Text style={s.emptyText}>No forms in this category yet.</Text>
         </View>
       ) : (
@@ -63,16 +77,14 @@ export default function CategoryDetailScreen() {
               style={s.formCard}
               onPress={() => {
                 if (t.is_swms) {
-                  // SWMS docs live in their own collection — use dedicated viewer
                   router.push({ pathname: '/swms/[id]', params: { id: t.id } } as never);
                 } else {
-                  // Standard form templates → form runner
                   router.push({ pathname: '/forms/[id]', params: { id: t.id } } as never);
                 }
               }}
               activeOpacity={0.7}
             >
-              <View style={[s.accent, { backgroundColor: meta.color }]} />
+              <View style={[s.accent, { backgroundColor: palette.stripe }]} />
               <View style={s.formBody}>
                 <Text style={s.formName} numberOfLines={1}>{t.name}</Text>
                 {t.description ? (
@@ -85,13 +97,11 @@ export default function CategoryDetailScreen() {
                         <Text style={s.fieldCount}>v{t.swms_version}</Text>
                       ) : null}
                       {t.swms_status ? (
-                        <Text style={s.subCount}>{t.swms_status}</Text>
+                        <Text style={[s.subCount, { color: palette.stripe }]}>{t.swms_status}</Text>
                       ) : null}
                     </>
                   ) : (
-                    <>
-                      <Text style={s.fieldCount}>{t.fields?.length || 0} fields</Text>
-                    </>
+                    <Text style={s.fieldCount}>{t.fields?.length || 0} fields</Text>
                   )}
                 </View>
               </View>
@@ -109,6 +119,7 @@ const s = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   scroll: { paddingBottom: 40 },
   emptyText: { fontSize: 15, color: Colors.textTertiary },
+  emptyIconWrap: { width: 64, height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
@@ -116,9 +127,16 @@ const s = StyleSheet.create({
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerIconWrap: {
+    width: 32, height: 32, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
   headerTitle: { fontSize: 17, fontWeight: '700', color: Colors.white },
-  countChip: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, marginRight: 8 },
-  countChipText: { fontSize: 12, fontWeight: '700' },
+  countChip: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, marginRight: 8 },
+  countChipText: { fontSize: 13, fontWeight: '700' },
+
+  accentBar: { height: 3 },
 
   formCard: {
     flexDirection: 'row', alignItems: 'center',
@@ -132,5 +150,5 @@ const s = StyleSheet.create({
   formDesc: { fontSize: 12, color: Colors.textTertiary, marginTop: 3, lineHeight: 17 },
   formMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 },
   fieldCount: { fontSize: 11, color: Colors.textTertiary, fontWeight: '500' },
-  subCount: { fontSize: 11, color: Colors.orange, fontWeight: '600' },
+  subCount: { fontSize: 11, fontWeight: '600' },
 });

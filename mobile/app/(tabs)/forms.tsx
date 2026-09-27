@@ -1,11 +1,11 @@
 /**
- * Forms tab — Category-first navigation.
- * v58.13.132js — error-state UI + focus refetch + session expiry redirect.
+ * Forms tab — Category-first navigation with Option B colour-coded tiles.
+ * v58.13.132p2f — SVG icons, coloured left stripes, tinted icon containers.
  */
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, TextInput, Image,
+  RefreshControl, ActivityIndicator, TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -21,6 +21,7 @@ import {
 } from '../../src/services/forms';
 import { getStoredUser, clearSession } from '../../src/services/auth';
 import { categoryPalette } from '../../src/lib/categoryColors';
+import { CategoryIcon } from '../../src/components/CategoryIcon';
 
 export default function FormsScreen() {
   const insets = useSafeAreaInsets();
@@ -41,20 +42,17 @@ export default function FormsScreen() {
     queryFn: fetchFormTemplates,
     staleTime: 60_000,
     retry: (failureCount, err) => {
-      // Don't retry on session expiry
       if (err instanceof SessionExpiredError) return false;
       return failureCount < 2;
     },
   });
 
-  // Refetch when tab gains focus (tabs don't unmount)
   useFocusEffect(
     useCallback(() => {
       refetch();
     }, [refetch]),
   );
 
-  // Session expiry redirect
   React.useEffect(() => {
     if (isError && error instanceof SessionExpiredError) {
       clearSession().then(() => router.replace('/(auth)/pin-entry'));
@@ -86,7 +84,7 @@ export default function FormsScreen() {
 
   return (
     <View testID="forms-screen" style={[s.container, { paddingTop: insets.top }]}>
-      {/* Navy header */}
+      {/* Header */}
       <View style={s.header}>
         <Text testID="forms-title" style={s.headerTitle}>Forms</Text>
         <Text style={s.headerSub}>{totalCount} templates across {grouped.length} categories</Text>
@@ -138,7 +136,7 @@ export default function FormsScreen() {
               <View testID="forms-search-empty" style={s.emptyCard}>
                 <Ionicons name="search" size={32} color={Colors.textTertiary} />
                 <Text style={s.emptyTitle}>No results</Text>
-                <Text style={s.emptyText}>{"No forms match \u201c"}{search}{"\u201d"}</Text>
+                <Text style={s.emptyText}>{`No forms match \u201c${search}\u201d`}</Text>
               </View>
             ) : (
               <View style={s.searchResults}>
@@ -186,7 +184,7 @@ export default function FormsScreen() {
   );
 }
 
-// ── Category Card with LH stripe + coloured icon ──
+// ── Option B Category Card: LH stripe + tinted icon container + SVG icon ──
 
 function CategoryCard({ meta, formCount, onPress }: {
   meta: CategoryMeta; formCount: number; onPress: () => void;
@@ -200,16 +198,23 @@ function CategoryCard({ meta, formCount, onPress }: {
       onPress={onPress}
       activeOpacity={0.7}
     >
-      {/* LH colour stripe */}
+      {/* Coloured left stripe */}
       <View style={[s.catStripe, { backgroundColor: palette.stripe }]} />
 
       {/* Content area */}
       <View style={s.catContent}>
-        <Image source={palette.icon} style={s.catIcon} />
+        {/* Tinted icon container */}
+        <View style={[s.catIconWrap, { backgroundColor: palette.iconBg }]}>
+          <CategoryIcon category={meta.key} size={22} color={palette.chipText} />
+        </View>
+
+        {/* Text block */}
         <View style={s.catTextWrap}>
-          <Text style={[s.catName, { color: palette.chipText }]}>{meta.label}</Text>
+          <Text style={[s.catName, { color: palette.chipText }]} numberOfLines={1}>{meta.label}</Text>
           <Text style={s.catCount}>{formCount} form{formCount !== 1 ? 's' : ''}</Text>
         </View>
+
+        {/* Chevron */}
         <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
       </View>
     </TouchableOpacity>
@@ -228,12 +233,16 @@ function SearchResultCard({ template, onPress }: {
       {/* LH stripe */}
       <View style={[s.resultStripe, { backgroundColor: palette.stripe }]} />
       <View style={s.resultContent}>
+        {/* Tinted mini icon */}
+        <View style={[s.resultIconWrap, { backgroundColor: palette.iconBg }]}>
+          <CategoryIcon category={template.category} size={16} color={palette.chipText} />
+        </View>
         <View style={s.resultInfo}>
           <Text style={s.resultName} numberOfLines={1}>{template.name}</Text>
           {template.description ? (
             <Text style={s.resultDesc} numberOfLines={1}>{template.description}</Text>
           ) : null}
-          <Text style={[s.resultCat, { color: palette.chipText }]}>{template.category.replace('_', ' ')}</Text>
+          <Text style={[s.resultCat, { color: palette.chipText }]}>{template.category.replace(/_/g, ' ')}</Text>
         </View>
         <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
       </View>
@@ -275,25 +284,28 @@ const s = StyleSheet.create({
   },
   retryBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 
-  // Category grid
+  // ── Option B Category tiles ──
   catGrid: { paddingHorizontal: 16, paddingTop: 8 },
   catCard: {
     flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: Colors.surface, borderRadius: 16, marginBottom: 10,
-    minHeight: 72, overflow: 'hidden',
+    backgroundColor: Colors.surface, borderRadius: 14, marginBottom: 10,
+    minHeight: 68, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  catStripe: { width: 8, borderTopLeftRadius: 16, borderBottomLeftRadius: 16 },
+  catStripe: { width: 5, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
   catContent: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 14, paddingHorizontal: 16,
+    paddingVertical: 12, paddingHorizontal: 14,
   },
-  catIcon: { width: 48, height: 48, borderRadius: 12 },
+  catIconWrap: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
   catTextWrap: { flex: 1 },
-  catName: { fontSize: 17, fontWeight: '800' },
+  catName: { fontSize: 16, fontWeight: '700' },
   catCount: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500', marginTop: 2 },
 
-  // Search results
+  // ── Search results ──
   searchResults: { paddingHorizontal: 16, paddingTop: 4 },
   searchLabel: { fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '600', marginBottom: 8, letterSpacing: 0.5 },
   resultCard: {
@@ -302,10 +314,14 @@ const s = StyleSheet.create({
     minHeight: 64, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
-  resultStripe: { width: 6, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  resultStripe: { width: 4, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
   resultContent: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingVertical: 12, paddingHorizontal: 14,
+  },
+  resultIconWrap: {
+    width: 32, height: 32, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
   },
   resultInfo: { flex: 1 },
   resultName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
