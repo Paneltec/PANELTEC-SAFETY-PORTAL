@@ -12,7 +12,7 @@ import PhotoCapture from '../../src/components/PhotoCapture';
 import {
   fetchMyLeave, cancelLeave, uploadCertificate, apiMessage, niceDate, CATEGORIES, type MyLeave,
 } from '../../src/services/leave';
-import { STATUS_TONE } from '../../src/components/LeaveCard';
+import { STATUS_TONE, STATUS_SHORT } from '../../src/components/LeaveCard';
 
 type StepState = 'done' | 'now' | 'todo' | 'bad';
 
@@ -79,7 +79,7 @@ export default function LeaveDetailScreen() {
 
   return (
     <Screen testID="leave-detail-screen">
-      <BackHeader title="Leave Request" right={<Chip text={r.status_label.toUpperCase()} tone={STATUS_TONE[r.status]} />} />
+      <BackHeader title="Leave Request" right={<Chip text={STATUS_SHORT[r.status]} tone={STATUS_TONE[r.status]} />} />
 
       {justSent === '1' && r.status === 'pending' && (
         <View style={s.sent}>

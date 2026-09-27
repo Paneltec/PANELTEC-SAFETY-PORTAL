@@ -10,6 +10,10 @@ export const STATUS_TONE: Record<LeaveStatus, 'orange' | 'green' | 'grey' | 'red
   pending: 'orange', info_requested: 'orange', approved: 'green', rejected: 'red', cancelled: 'grey',
 };
 
+export const STATUS_SHORT: Record<LeaveStatus, string> = {
+  pending: 'WAITING', info_requested: 'NEEDS INFO', approved: 'APPROVED', rejected: 'NOT APPROVED', cancelled: 'CANCELLED',
+};
+
 export function LeaveCard({ r, onPress }: { r: MyLeave; onPress: () => void }) {
   const cat = CATEGORIES.find((c) => c.key === r.category) ?? CATEGORIES[4];
   const oneDay = r.start_date === r.end_date;
@@ -22,7 +26,7 @@ export function LeaveCard({ r, onPress }: { r: MyLeave; onPress: () => void }) {
         </Text>
         <Text style={s.cardSub} numberOfLines={1}>{cat.label} · {r.hours} h</Text>
       </View>
-      <Chip text={r.status_label.toUpperCase()} tone={STATUS_TONE[r.status]} />
+      <Chip text={STATUS_SHORT[r.status]} tone={STATUS_TONE[r.status]} />
     </TouchableOpacity>
   );
 }
