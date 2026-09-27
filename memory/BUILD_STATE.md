@@ -1,9 +1,11 @@
-# BUILD_STATE.md — v58.13.132p2c
+# BUILD_STATE.md — v58.13.132p2j
 
-Snapshot generated at close of `.132p2b` session, before the docs-only
-`.132p2c` ship. This file is regenerated at every major ship — treat
-it as a point-in-time view of the running build, not a historical log
-(that lives in `PROJECT_STATE.md`).
+Last updated: 2026-09-27
+
+Snapshot generated at close of `.132p2j` session (asset detail polish
++ tile merge + Forms tab PIN loop fix). This file is regenerated at
+every major ship — treat it as a point-in-time view of the running
+build, not a historical log (that lives in `PROJECT_STATE.md`).
 
 ---
 
@@ -11,25 +13,26 @@ it as a point-in-time view of the running build, not a historical log
 
 | Surface                        | Version                                | Notes                                                    |
 |--------------------------------|----------------------------------------|----------------------------------------------------------|
-| Web `RUNNING_VERSION`          | `paneltec-v160.3.9.58.13.132p2a`       | Bumps to `.132p2c` in this docs ship.                    |
-| Web `EXPECTED_CACHE_VERSION`   | `paneltec-v160.3.9.58.13.132p2a`       | Same.                                                    |
-| Service worker `CACHE_VERSION` | `paneltec-v160.3.9.58.13.132p2a`       | Bumps to `.132p2c` in this ship.                         |
-| Mobile `app.json`              | `1.0.50` (`versionCode: 172`)          | Reflects `.132p2` mobile ship (Job screen redesign).     |
-| **Published APK on disk**      | **`1.0.50` build `172`**               | Fresh — auto-ingested by watchdog at 11:17:01Z.          |
-| Backend HEAD SHA               | `29d268c6`                             | `.132p2b`: colour palette lock in mobile theme.          |
+| Web `RUNNING_VERSION`          | `paneltec-v160.3.9.58.13.132p2j`       | Bumped in `.132p2j`.                                     |
+| Web `EXPECTED_CACHE_VERSION`   | `paneltec-v160.3.9.58.13.132p2j`       | Same.                                                    |
+| Service worker `CACHE_VERSION` | `paneltec-v160.3.9.58.13.132p2j`       | Same.                                                    |
+| Mobile `app.json`              | `1.0.54` (`versionCode: 176`)          | Reflects `.132p2j` asset detail polish.                  |
+| **Published APK on disk**      | **`1.0.54` build `176`**               | Auto-ingested by watchdog at 2026-09-27T05:07:11Z.      |
+| Backend HEAD SHA               | `2f60a5f8`                             | `.132p2j`: asset detail + tile merge.                    |
 
 APK manifest details (from `backend/static/downloads/android_manifest.json`):
 
 ```
-filename:     paneltec-field-app-eas-9f9abe41-6b29-4082-b190-0b2a9088a6bb.apk
-version:      1.0.50
-version_code: 172
-size_bytes:   148,566,712  (~141.7 MB)
-sha256:       ec3ed3d89ae89d6944d9ec84eddddd003f84d8e46b36ba1210e432850645cb01
-built_at:     2026-09-26T11:14:12.371Z
-eas_build_id: 9f9abe41-6b29-4082-b190-0b2a9088a6bb
-synced_at:    2026-09-26T11:17:01Z
-synced_by:    scheduler tick (source=watchdog)
+filename:     paneltec-field-app-eas-daa9caf5-65e6-4f40-acee-3de17bf8d67b.apk
+version:      1.0.54
+version_code: 176
+size_bytes:   148,254,106  (~141.4 MB)
+sha256:       200a2a6a3c882a2453fd25b584af977ed0c5d4d041e68f641aad02ab0f832b50
+built_at:     2026-09-27T05:04:42.566Z
+eas_build_id: daa9caf5-65e6-4f40-acee-3de17bf8d67b
+git_commit:   2f60a5f8046fdd584301e5aa5a9f3a1b4cae6c48
+synced_at:    2026-09-27T05:07:11.345737Z
+synced_by:    watchdog
 ```
 
 ---
@@ -40,22 +43,22 @@ synced_by:    scheduler tick (source=watchdog)
 significant recent ships in this working set (newest first):
 
 ```
-29d268c6  132p2b: lock full color palette in colors.ts + normalize hex literals across mobile
-08ce98ed  132p2a: persistent EAS APK auto-ingest scheduler + immediate v1.0.50 ingest
-79b1ffc1  132p2:  Job screen redesign (before/after accept) with truck-prestart button, navigate, sign-on stub
-b740dc62  132p1b: Android SMS BroadcastReceiver via Expo config plugin + local notification + retry queue
-1959d5b1  132p1a: mobile parser + iPhone paste modal + paneltec:// deep-link
-7f4244bd  132p1:  Phase 2 SMS intake (Android BroadcastReceiver + iOS paste flow + deep-link import)
-f496ed01  132p0:  lock daily_job_assignments to 7 SMS fields, add shared SMS parser, purge task/supervisor/truck-split
-9cd87ee5  132n7d: EAS build watcher + auto-ingest of fresh APK (v1.0.48 build 170 live)
-8bbeaebb  132n7c: phone-preview worker auto-select + EAS APK rebuild triggered
-227addbe  132n7b: wide-net trial-seed for phone-preview tile + EAS rebuild status memo
-2bf61da2  132n8:  hard NAS-write lockdown — refuse all Dropbox → NAS writes at the code layer
-7f655efc  132n7a: issue today's job form (supervisor removed) + trial-to-my-phone + real SMS-shape trial seed + /today fallback
-1956e2f4  132n5m5: mobile — remove supervisor UI, filter self from work mates, new-job pulse + banner
+2f60a5f8  132p2j:  asset detail white header/title, expanded vehicle info, assigned forms category filter with persisted last-selected
+e72da6c4  132p2i:  merge Today's Assignment tiles into single solid-green "You have a new job" tile
+b36492c4  132p2g:  remove aggressive focus-refetch on Forms tab to prevent repeat PIN prompts + expired session subtitle
+c490bf46  132p2f1: forms library correction — title #1A1A1A + stripe 4px per spec
+4dc73784  132p2f:  Forms Library Option B — colour-coded tiles with SVG category icons
+cfbbd929  132p2e:  bump mobile v1.0.51/173 + web lockstep for EAS APK rebuild
+(earlier)  132p2d:  MY WORK tab polish (shrink tiles, single-line, solid green buttons)
+(earlier)  132p2b:  lock full color palette in colors.ts + normalize hex literals across mobile
+(earlier)  132p2a:  persistent EAS APK auto-ingest scheduler + immediate v1.0.50 ingest
+(earlier)  132p2:   Job screen redesign (before/after accept) with truck-prestart, navigate, sign-on stub
+(earlier)  132p1b:  Android SMS BroadcastReceiver via Expo config plugin + notification + retry queue
+(earlier)  132p1a:  mobile parser + iPhone paste modal + paneltec:// deep-link
+(earlier)  132p0:   lock daily_job_assignments to 7 SMS fields, shared SMS parser, purge task/supervisor/truck-split
 ```
 
-Total commits ever on branch: `1010` (project inception cumulative).
+Total commits ever on branch: ~1020+ (project inception cumulative).
 No `git push` protocol until user explicitly requests it — see
 `backlog.md` P2 "Push 20+ unpushed commits when user is ready".
 
@@ -80,7 +83,7 @@ enabled. Restarts required only for `.env` and requirements changes.
 
 ### Frontend / service worker
 ```
-CACHE_VERSION  →  paneltec-v160.3.9.58.13.132p2a   (→ .132p2c on this ship)
+CACHE_VERSION  →  paneltec-v160.3.9.58.13.132p2j
 ```
 Managed by supervisor on `:3000`. Hot-reload live.
 
@@ -88,23 +91,24 @@ Managed by supervisor on `:3000`. Hot-reload live.
 ```
 /api/mobile/downloads/android/latest.apk  →  200
 Content-Type: application/vnd.android.package-archive
-Content-Length: 148566712
+Content-Length: 148254106
 ```
-Serving v1.0.50 build 172, sha256 `ec3ed3d8…`. Refresh dropdown to
-pick up the freshly-published binary.
+Serving v1.0.54 build 176, sha256 `200a2a6a…`.
 
 ### EAS build status
 ```
-Latest FINISHED build: 9f9abe41-6b29-4082-b190-0b2a9088a6bb
+Latest FINISHED build: daa9caf5-65e6-4f40-acee-3de17bf8d67b
   Platform:     ANDROID
   Profile:      preview-apk
-  Version:      1.0.50  (build 172)
-  Started:      2026-09-26T10:48:55.755Z
-  Finished:     2026-09-26T11:14:12.371Z    (~25 min end-to-end)
+  Version:      1.0.54  (build 176)
+  Started:      2026-09-27T04:42:46Z
+  Finished:     2026-09-27T05:04:42Z    (~22 min end-to-end)
   Distribution: internal
+  Status:       FINISHED — auto-ingested by watchdog
 ```
-No active builds in flight. Next build will be triggered by Phase 4+
-mobile ships.
+No active builds in flight. The `production` profile (AAB) is
+currently broken with `EAS_BUILD_UNKNOWN_GRADLE_ERROR`. All recent
+successful builds use `preview-apk` (APK).
 
 ### APScheduler jobs registered (from `server.py`)
 
@@ -117,7 +121,7 @@ mobile ships.
 | `dropbox_migration_watchdog`    | 5 min             | **⚠ DISABLED** | `migration_watchdog_settings.enabled=False` — set by user_v132n0 at 2026-09-25T22:22Z. Paired with `MIGRATION_DISABLED=True` code lockdown. |
 | `meter_history_daily_snapshot`  | Cron 03:45 daily  | ✓        |                                                             |
 | `bulk_import_watchdog`          | 10 min            | ✓        |                                                             |
-| `eas_apk_ingest_watchdog`       | **5 min**         | ✓        | NEW in `.132p2a`. Successfully auto-ingested v1.0.50 at 11:17:01Z. Last tick: 11:26:55Z, action=same-build, build_id=9f9abe41-…. |
+| `eas_apk_ingest_watchdog`       | **5 min**         | ✓        | Auto-ingested v1.0.54 at 05:07:11Z. |
 | `backup_snapshot_watchdog`      | 1 h               | ✓        |                                                             |
 | `pod_retention_sweep`           | Interval          | ✓        |                                                             |
 
@@ -136,31 +140,12 @@ mobile ships.
     **not yet in the refresh token** — user still needs to hit
     `/api/dropbox/oauth/start` and re-authorise before the trash
     purge can run (blocks the housekeeping script).
-- **Team folder namespace**: `DROPBOX_TEAM_FOLDER_ID` not in `.env`
-  in this pod. Runtime resolves via
-  `dbx.with_path_root(PathRoot.namespace_id(team_folder_id))` when
-  the team-folder id is discovered at OAuth completion — not required
-  at boot.
 
 ### NAS lockdown state
 ```
 MIGRATION_DISABLED = True    (both dropbox_bytes_copy.py + integrations_dropbox.py)
 ```
-Guard-count audit:
-
-| File                              | `MIGRATION_DISABLED` occurrences |
-|-----------------------------------|----------------------------------|
-| `backend/dropbox_bytes_copy.py`   | 6                                |
-| `backend/integrations_dropbox.py` | 16                               |
-| **Total**                         | **22**                           |
-
-Endpoints intentionally return HTTP 503 while the lockdown is active:
-- `POST /api/dropbox/migration/start`
-- `POST /api/dropbox/migration/{run_id}/resume`
-
-Runtime write refusal: any call into the byte-copy path logs
-`[copy] run_id=... REFUSED — MIGRATION_DISABLED` and returns
-without touching the NAS.
+22 code guards across 2 files. Endpoints return HTTP 503.
 
 ---
 
@@ -171,7 +156,7 @@ without touching the NAS.
 | `MONGO_URL`              | ✓        | 27     | Local Mongo.                                              |
 | `DB_NAME`                | ✓        | 15     | Unchanged since env init.                                 |
 | `EMERGENT_LLM_KEY`       | ✓        | 32     | Used for GPT / Claude / Nano-Banana / Whisper / OpenAI embeddings. |
-| `EXPO_TOKEN`             | ✓        | 40     | Authenticates as `stephenguy`. Prefix `nopw…`, suffix `…hQY3`. Confirmed working via `.132p2a` scheduler ingest. |
+| `EXPO_TOKEN`             | ✓        | 40     | Authenticates as `stephenguy`. Confirmed working for v1.0.54 build. |
 | `DROPBOX_APP_KEY`        | ✓        | 15     |                                                           |
 | `DROPBOX_APP_SECRET`     | ✓        | 15     |                                                           |
 | `DROPBOX_TEAM_FOLDER_ID` | ✗        | —      | Resolved at OAuth completion; not required in `.env`.     |
@@ -182,16 +167,12 @@ without touching the NAS.
 
 ## Tooling on the pod
 
-- `eas-cli@24.8.0` installed globally via `yarn global add` — binary
-  at `/usr/local/bin/eas`. **BUT**: this binary is wiped on every
-  container restart. Rebuild recipe: `yarn global add eas-cli`
-  (see `/app/memory/v58_13_132p2a_eas_auto_ingest.md`). The
-  `eas_apk_ingest_watchdog` scheduler does NOT depend on the CLI
-  binary — it uses `httpx` + EAS GraphQL directly.
-
-- No `expo-cli` locally.
-
-- Supervisor commands (no user restarts of processes):
+- `eas-cli` — needs `npm install -g eas-cli@latest` after each
+  container restart (not persisted). The `eas_apk_ingest_watchdog`
+  scheduler does NOT depend on the CLI binary — it uses `httpx` +
+  EAS GraphQL directly.
+- Supervisor commands:
   - `sudo supervisorctl status`
   - `sudo supervisorctl restart backend`
   - `sudo supervisorctl restart frontend`
+  - `sudo supervisorctl restart mobile`

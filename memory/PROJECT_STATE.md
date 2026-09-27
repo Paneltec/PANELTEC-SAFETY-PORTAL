@@ -1,6 +1,8 @@
 # PROJECT_STATE.md — Paneltec Safety Portal
 
-Snapshot at close of session `.132p2b`. High-level product state,
+Last updated: 2026-09-27
+
+Snapshot at close of session `.132p2j`. High-level product state,
 personas, working flows, known limitations, and a dated log of ships
 in this session's arc.
 
@@ -51,12 +53,10 @@ locked at the schema layer in `.132p0`).
   - Browse team-folder tree (path_root'd to the Paneltec Group
     namespace).
   - Preview any file inline: PDF via react-pdf/PDF.js
-    canvas render (`.132n4d` — works in all browser + iframe
-    contexts), DOCX, XLSX, images, code, video, audio.
+    canvas render (`.132n4d`), DOCX, XLSX, images, code, video, audio.
   - Global search (Tier 1) via Dropbox's native `search_v2` with
     highlights (`.132n6`).
-  - Share / permissions modal (Share links, member add/remove, etc.
-    — `.132n4b`).
+  - Share / permissions modal (`.132n4b`).
   - Drag-drop upload with progress + resumable session upload for
     large files.
   - Move / rename / delete / hard-delete-folder / restore-from-
@@ -70,74 +70,79 @@ locked at the schema layer in `.132p0`).
   - Left panel: today's assignments (auto-refresh every 15 s).
 - **Phone Preview** (`/app/phone-preview`, `.132n7c`):
   - Admin-only iframe running the Expo app under a preview JWT.
-  - Auto-selects the current admin's own workers row on first
-    mount so the "Today's Assignment" tile hydrates without hunting
-    for the picker.
+  - Auto-selects the current admin's own workers row on first mount.
   - LocalStorage-persisted choice.
 - **Permissions Matrix** — role × capability × workspace grid.
-- **WHS Legislation Phase 1** — Cloudflare-scraped
-  Australian federal + state safe-work Acts + Regulations + Codes
-  of Practice, ingested into `db.whs_legislation` with full text
-  and search-by-title.
+- **WHS Legislation Phase 1** — Cloudflare-scraped Australian
+  federal + state safe-work Acts + Regulations + Codes of Practice,
+  ingested into `db.whs_legislation` with full text and
+  search-by-title.
 - **Document Library** (`DocumentLibrary.jsx`) — legacy grid, all
-  categories (SWMS, Pre-Starts, Inspections, Incidents, Hazards,
-  Toolbox Talks, SDSs, Contractor Docs, Registers, Templates,
-  Training Records, Site Records).
+  categories.
 - **Backup pipeline** — nightly + on-demand snapshot to on-prem
-  agent (currently 401'ing on `10.232.132.186` due to expired agent
-  token — see backlog P4).
+  agent (currently 401'ing — see backlog P4).
 - **Schema Inspector** — dev-only view of all Mongo collections
   + field cardinality.
-- **All recent additions** shipped this session are listed in the
-  "Session-summary" section below.
 
 ### Mobile worker app (Android + iOS, Expo SDK 57)
 
-**As of v1.0.50 build 172, freshly published 2026-09-26T11:14 UTC:**
+**As of v1.0.54 build 176, published 2026-09-27T05:07 UTC:**
 
 - **Home tab**
-  - "Today's Assignment" tile — pulsing pill "You have a new job"
-    when a fresh row is issued (`.132n5m5`).
-  - Tap → Job Detail screen.
-  - Empty state: friendly "Ready when the office issues today's
-    job."
+  - "Today's Assignment" section:
+    - **New job** (pending/issued): single solid theme-green tile
+      with black bell icon + "You have a new job" — taps to Job
+      Detail. (`.132p2i` — merged from two stacked tiles.)
+    - **Accepted**: green "Accepted at HH:MM" banner + white address
+      card with orange pin, truck info, chevron → Job Detail.
+    - **Empty state**: "Ready when the office issues today's job" +
+      Paste SMS button.
 - **Job Detail screen** (`.132p2`, redesigned):
-  - **Before accept**: shows the 7 SMS fields, big
-    Accept/Decline buttons, address card (Google Static Maps
-    placeholder — see limitations).
-  - **After accept**: swaps the pill to "Accepted", surfaces:
-    - Truck Pre-Start CTA (stub → Phase 3+)
-    - Navigate button (deep-links Google/Apple Maps to the site
-      address).
-    - Sign-On button (stub → Phase 4).
-  - Decline reverses the state and clears the tile.
-- **MY WORK tab** (`.132n5m3`) — 5 categories:
-  SWMS · Pre-Starts · Inspections · Incidents · Hazards.
-  Each opens a stub list (Phase 3+ fills in per-category content).
-- **Forms** — SWMS review category surfacing (`.132n5m1`),
-  Profile My SWMS routing (`.132n5m1`).
+  - **Before accept**: 7 SMS fields, big Accept/Decline buttons,
+    address card (Google Static Maps placeholder).
+  - **After accept**: "Accepted" pill, Truck Pre-Start CTA (stub),
+    Navigate (deep-links Maps), Sign-On (stub → Phase 4).
+  - Decline reverses state and clears tile.
+- **Fleet / Assets tab**
+  - Asset list with search, status badges.
+  - **Asset Detail sheet** (`.132p2j`):
+    - White header text + icons on navy (was invisible black).
+    - White asset title.
+    - Expanded vehicle info: 9 conditional API fields (Rego, Tag,
+      Category, Make, Model, Year, Site, Last Pre-Start, Next
+      Service).
+    - **Assigned Forms** section with category filter dropdown —
+      native modal picker with coloured dots, counts, checkmarks.
+      Selection persisted to `AsyncStorage
+      @paneltec:assetDetail:lastCategory`.
+- **Forms tab** (`.132p2f`/`.132p2f1`):
+  - Option B colour-coded tiles: 4px LH stripe + tinted SVG icon
+    container + near-black (#1A1A1A) title + form count.
+  - Category detail screen: icon badge header + accent bar.
+  - 5-minute refetch cooldown guard (`.132p2g`) — prevents aggressive
+    PIN loop on tab switch.
+  - Search across all templates.
+- **MY WORK tab** (`.132p2d`) — 5 categories: SWMS, Pre-Starts,
+  Inspections, Incidents, Hazards. Shrunk tiles, single-line titles,
+  solid green action buttons.
 - **QR Scan** — worker sign-on via web-issued QR (existing legacy
   flow, unchanged).
 - **Paste SMS modal** (`.132p1a`) — iOS + Android manual paste;
-  parses via `POST /api/mobile/sms/parse` and creates the job
-  locally.
+  parses via `POST /api/mobile/sms/parse`.
 - **Android SMS receiver** (`.132p1b`):
   - Expo config plugin injects a `BroadcastReceiver` for
     `SMS_RECEIVED` action.
   - Local notification when a whiteboard SMS lands.
   - Retry queue for offline SMS captures.
-  - **Needs the fresh v1.0.50 APK on-device** (users still on
-    v1.0.48 won't have this).
-- **Deep link** `paneltec://` — for iPhone Shortcut integration
-  (`.132p1a`).
+- **Deep link** `paneltec://` — for iPhone Shortcut integration.
+- **Session-expired subtitle** (`.132p2g`) — amber banner on PIN
+  screen when redirected from expired session: "Your session
+  expired — please sign in again."
 
 ### Backend (FastAPI on `:8001`)
 - **Locked `daily_job_assignments` schema** — 7 SMS fields +
-  status + timestamps + geo (`.132p0`). No task, no supervisor, no
-  truck-split.
-- **Shared SMS parser** at `backend/sms_parser.py` (`.132p0`) —
-  handles positional + labeled + mixed shapes; used by both web
-  form and mobile receiver.
+  status + timestamps + geo (`.132p0`).
+- **Shared SMS parser** at `backend/sms_parser.py` (`.132p0`).
 - **Endpoint contracts**:
   - `POST /api/mobile/daily-jobs` — single create
   - `POST /api/daily-jobs/bulk-create` — batch create (web form)
@@ -147,17 +152,13 @@ locked at the schema layer in `.132p0`).
   - `POST /api/mobile/daily-jobs/{id}/signon` (501 stub → Phase 4)
   - `POST /api/mobile/sms/parse`
 - **Geocoding** — Nominatim proxy (`/api/mobile/geocode`) with
-  in-process cache; called at create-time to populate
-  `site_lat/site_lng`.
+  in-process cache.
 - **Dropbox OAuth** — team-namespace `path_root` handled at every
-  SDK boundary. See `_DROPBOX_SCOPES` in `integrations_dropbox.py`.
+  SDK boundary.
 - **EAS auto-ingest scheduler** (`.132p2a`) — every 5 min pulls the
-  newest FINISHED internal Android build and publishes it to
-  `/api/mobile/downloads/android/latest.apk`. Idempotent
-  same-build short-circuit; downgrade guard; kill switch in
-  `eas_watchdog_settings`.
-- **Backup snapshot pipeline** — hourly snapshot watchdog,
-  cron-scheduled daily snapshots at 03:30–03:45.
+  newest FINISHED internal Android build and publishes to
+  `/api/mobile/downloads/android/latest.apk`. Idempotent, downgrade
+  guard, kill switch in `eas_watchdog_settings`.
 
 ---
 
@@ -171,27 +172,25 @@ locked at the schema layer in `.132p0`).
 - **Google Static Maps API key** — not yet configured. Mobile
   Job Detail shows an address-card fallback instead of a rendered
   map thumbnail. Deep-link to Google/Apple Maps still works.
+- **Embedded MapView** (`.132n5m6` deferred) — current implementation
+  is a placeholder Map Card that deep-links to Google Maps. Needs
+  `react-native-maps` / `expo-maps` swap.
 - **iOS SMS reading** — impossible by design (Apple sandbox).
-  Ship workaround: Paste-SMS modal (`.132p1a`) + `paneltec://`
-  deep link so users can wire an iOS Shortcut → forward SMS → open
-  the app pre-populated.
-- **Google Play Console 2FA** — blocked on user completing
-  enrolment. Play store submission deferred (internal APK
-  distribution already works via the DOWNLOAD APP dropdown).
-- **Dropbox trash purge** — housekeeping script scaffolded
-  (`.132n5_hk1`) but refresh token still lacks `files.permanent_delete`
-  scope. Blocked on user re-authorising via
-  `/api/dropbox/oauth/start`.
-- **Backup agent 401** — `10.232.132.186` returns 401 on the
-  agent token. Snapshot upload leg is failing silently since the
-  session before this one.
-- **SDS "expiring soon" dashboard widget** — designed, not built.
-- **Password-protected + link-expiry** for Dropbox browser shares —
-  designed, not built.
+  Workaround: Paste-SMS modal + `paneltec://` deep link.
+- **Google Play Console 2FA** — blocked on user completing enrolment.
+- **Dropbox trash purge** — blocked on user re-authorising with
+  `files.permanent_delete` scope.
+- **Backup agent 401** — `10.232.132.186` agent token expired.
+- **EAS `production` profile** — AAB build fails with
+  `EAS_BUILD_UNKNOWN_GRADLE_ERROR`. All builds use `preview-apk`
+  (APK) as workaround.
+- **Asset API missing fields** — VIN, Owner/Assigned to,
+  Odometer/Hours, Last Service not returned by backend. Flagged
+  for potential backend follow-up.
 
 ---
 
-## Session-summary of today's work
+## Session-summary of all ships
 
 Dated log — one line per ship in the order shipped. Full memos live
 in `/app/memory/v58_13_*.md`.
@@ -228,21 +227,19 @@ in `/app/memory/v58_13_*.md`.
 | `.132p2`     | **Phase 3** — Job screen redesign (before/after accept) with truck-prestart button, navigate, sign-on stub. |
 | `.132p2a`    | Persistent EAS APK auto-ingest scheduler + immediate v1.0.50 ingest.                                 |
 | `.132p2b`    | Lock full colour palette in `colors.ts` + normalise hex literals across mobile.                      |
-| `.132p2c`    | *(this ship)* — state files: BUILD_STATE, PROJECT_STATE, backlog updated to session close.           |
+| `.132p2c`    | State files: BUILD_STATE, PROJECT_STATE, backlog updated to session close.                           |
+| `.132p2d`    | MY WORK tab polish (shrink tiles, single-line titles, solid green buttons).                          |
+| `.132p2e`    | Bump mobile v1.0.51/173 + web lockstep for EAS APK rebuild.                                         |
+| `.132p2f`    | Forms Library Option B — colour-coded tiles with SVG category icons.                                 |
+| `.132p2f1`   | Forms library correction — title #1A1A1A + stripe 4px per spec.                                      |
+| `.132p2g`    | Remove aggressive focus-refetch on Forms tab (prevents PIN loop) + expired session subtitle on PIN.  |
+| `.132p2i`    | Merge Today's Assignment tiles into single solid-green "You have a new job" tile.                    |
+| `.132p2j`    | Asset Detail: white header/title, expanded vehicle info, assigned forms category filter with persisted last-selected. |
 
 ---
 
 ## Credentials for testing
 
 See `/app/memory/test_credentials.md` (kept out of Git). The current
-admin credential (`stephen@paneltec.com.au` / …) still works and was
-used successfully by:
-- `.132n7c` EAS trigger flow
-- `.132p0` pytest suite
-- `.132p2a` scheduler ingest audit-log
-
-The wide-net trial seed (`.132p0_trial_seed`) is live for 3
-identities: `worker_stephen@paneltec.com.au` (users), the admin's own
-users row (`808cb7de-…`), and the linked Stephen Guy workers row
-(`dbddf739-…`). Any of those identities pulls the trial job on
-`GET /api/mobile/daily-jobs/today`.
+admin credential (`stephen@paneltec.com.au` / …) still works.
+Mobile PIN: `3310`.
