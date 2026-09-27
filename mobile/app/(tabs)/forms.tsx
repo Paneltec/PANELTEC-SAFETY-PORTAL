@@ -2,7 +2,7 @@
  * Forms tab — Category-first navigation with Option B colour-coded tiles.
  * v58.13.132p2f — SVG icons, coloured left stripes, tinted icon containers.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator, TextInput,
@@ -47,15 +47,26 @@ export default function FormsScreen() {
     },
   });
 
+  // Guard: only refetch on focus if last successful fetch was >5 min ago.
+  // Prevents aggressive re-auth checks that kick users to PIN on every tab switch.
+  const lastFetchOk = useRef<number>(0);
+  React.useEffect(() => {
+    if (templates && templates.length >= 0) lastFetchOk.current = Date.now();
+  }, [templates]);
+
   useFocusEffect(
     useCallback(() => {
-      refetch();
+      const elapsed = Date.now() - lastFetchOk.current;
+      if (elapsed > 5 * 60 * 1000) refetch();
     }, [refetch]),
   );
 
+  // Session expiry redirect
   React.useEffect(() => {
     if (isError && error instanceof SessionExpiredError) {
-      clearSession().then(() => router.replace('/(auth)/pin-entry'));
+      clearSession().then(() =>
+        router.replace({ pathname: '/(auth)/pin-entry', params: { reason: 'session_expired' } } as never),
+      );
     }
   }, [isError, error, router]);
 

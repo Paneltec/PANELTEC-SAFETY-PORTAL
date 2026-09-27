@@ -16,7 +16,7 @@ import {
   TouchableOpacity, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
 import PinPad from '../../src/components/PinPad';
@@ -40,7 +40,9 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 export default function PinEntryScreen() {
   const router = useRouter();
+  const { reason } = useLocalSearchParams<{ reason?: string }>();
   const insets = useSafeAreaInsets();
+  const isSessionExpired = reason === 'session_expired';
 
   const [pin, setPin] = useState('');
   const [state, setState] = useState<State>('ready');
@@ -200,6 +202,14 @@ export default function PinEntryScreen() {
         <Wordmark size="sm" />
       </View>
 
+      {/* Session expired banner */}
+      {isSessionExpired && (
+        <View testID="session-expired-banner" style={s.expiredBanner}>
+          <Ionicons name="time-outline" size={15} color="#F59E0B" />
+          <Text style={s.expiredText}>Your session expired — please sign in again</Text>
+        </View>
+      )}
+
       {/* Greeting header — bound vs unbound */}
       <View style={s.header}>
         {hintLoading ? (
@@ -329,6 +339,15 @@ const s = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600',
     textDecorationLine: 'underline',
   },
+
+  // Session expired banner
+  expiredBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(245,158,11,0.12)', borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 10,
+    marginBottom: 12, maxWidth: 320,
+  },
+  expiredText: { color: '#F59E0B', fontSize: 13, fontWeight: '600', flex: 1 },
 
   // Rate limited
   lockCircle: {

@@ -77,7 +77,7 @@ export default function AskAIScreen() {
       setQuery('');
     } else if ('expired' in res && res.expired) {
       await clearSession();
-      router.replace('/(auth)/pin-entry');
+      router.replace({ pathname: '/(auth)/pin-entry', params: { reason: 'session_expired' } } as never);
     } else if ('rateLimited' in res && res.rateLimited) {
       startCountdown(res.retryAfter || 30);
       setError(`Rate limited. Try again in ${res.retryAfter || 30}s.`);

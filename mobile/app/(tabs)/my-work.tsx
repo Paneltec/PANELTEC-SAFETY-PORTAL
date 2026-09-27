@@ -137,7 +137,7 @@ export default function MyWorkTab() {
           results[cat.key] = res.data.map(cat.mapItem);
         } else if ('expired' in res && res.expired) {
           await clearSession();
-          router.replace('/(auth)/pin-entry');
+          router.replace({ pathname: '/(auth)/pin-entry', params: { reason: 'session_expired' } } as never);
           return;
         } else {
           results[cat.key] = [];

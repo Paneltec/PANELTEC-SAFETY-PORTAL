@@ -66,7 +66,7 @@ export default function ProfileScreen() {
       }
     } else if ('expired' in res && res.expired) {
       await clearSession();
-      router.replace('/(auth)/pin-entry');
+      router.replace({ pathname: '/(auth)/pin-entry', params: { reason: 'session_expired' } } as never);
       return;
     } else {
       // Fall back to stored session data

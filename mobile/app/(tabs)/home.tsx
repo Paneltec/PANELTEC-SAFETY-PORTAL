@@ -127,7 +127,7 @@ export default function HomeScreen() {
 
   const handleExpired = useCallback(async () => {
     await clearSession();
-    router.replace('/(auth)/pin-entry');
+    router.replace({ pathname: '/(auth)/pin-entry', params: { reason: 'session_expired' } } as never);
   }, [router]);
 
   const loadData = useCallback(async () => {

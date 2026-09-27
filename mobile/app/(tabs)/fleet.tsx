@@ -188,7 +188,7 @@ export default function FleetScreen() {
 
   const handleExpired = useCallback(async () => {
     await clearSession();
-    router.replace('/(auth)/pin-entry');
+    router.replace({ pathname: '/(auth)/pin-entry', params: { reason: 'session_expired' } } as never);
   }, [router]);
 
   if (error?.message === 'SESSION_EXPIRED') {
