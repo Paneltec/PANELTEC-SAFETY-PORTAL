@@ -443,6 +443,23 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
   const sc = STATUS_COLORS[statusKey] || STATUS_COLORS.active;
   const scanToken = (asset as any).scan_token as string | undefined;
 
+  // Category filter state + persistence
+  const CATEGORY_STORAGE_KEY = '@paneltec:assetDetail:lastCategory';
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(CATEGORY_STORAGE_KEY).then((v) => {
+      if (v) setSelectedCategory(v === '__all__' ? null : v);
+    });
+  }, []);
+
+  const persistCategory = useCallback((cat: string | null) => {
+    setSelectedCategory(cat);
+    AsyncStorage.setItem(CATEGORY_STORAGE_KEY, cat || '__all__');
+    setShowCategoryPicker(false);
+  }, []);
+
   // .132jv — Fetch curated forms via scan token when available
   const { data: curatedRes, isLoading: curatedLoading } = useQuery<ScanFormsResponse>({
     queryKey: ['scan-forms', scanToken],
@@ -463,8 +480,33 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
     staleTime: 60_000,
   });
 
-  const curatedForms = curatedRes?.forms || [];
+  const curatedForms = useMemo(() => curatedRes?.forms || [], [curatedRes]);
   const hasCuratedForms = curatedForms.length > 0;
+
+  // Category counts from curated forms
+  const categoryOptions = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const f of curatedForms) {
+      const cat = f.category || 'general';
+      counts[cat] = (counts[cat] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, count]) => ({ key, count }));
+  }, [curatedForms]);
+
+  // Validate persisted category against current asset's forms
+  const effectiveCategory = useMemo(() => {
+    if (!selectedCategory) return null;
+    if (categoryOptions.some((c) => c.key === selectedCategory)) return selectedCategory;
+    return null; // persisted cat doesn't exist for this asset — fall back to All
+  }, [selectedCategory, categoryOptions]);
+
+  // Filtered forms
+  const displayForms = useMemo(() => {
+    if (!effectiveCategory) return curatedForms;
+    return curatedForms.filter((f) => (f.category || 'general') === effectiveCategory);
+  }, [curatedForms, effectiveCategory]);
 
   // Category → colour mapping for curated tiles
   const CATEGORY_COLOR: Record<string, string> = {
@@ -526,11 +568,11 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
       <View style={sd.handle} />
       <View style={sd.topBar}>
         <TouchableOpacity testID="fleet-detail-back" onPress={onClose} style={sd.backBtn}>
-          <Ionicons name="chevron-back" size={26} color={Colors.textTertiary} />
+          <Ionicons name="chevron-back" size={26} color={C.textOnNavy.main} />
         </TouchableOpacity>
         <Text style={sd.title}>Asset Detail</Text>
         <TouchableOpacity testID="fleet-detail-close" onPress={onClose} style={sd.closeBtn}>
-          <Ionicons name="close" size={24} color={Colors.textTertiary} />
+          <Ionicons name="close" size={24} color={C.textOnNavy.main} />
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={sd.content}>
@@ -559,6 +601,24 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
         {/* Action tiles — curated from scan endpoint or fallback */}
         <Text style={sd.actionsTitle}>{hasCuratedForms ? 'ASSIGNED FORMS' : 'ACTIONS'}</Text>
 
+        {/* Category filter dropdown (only when curated forms exist with 2+ categories) */}
+        {hasCuratedForms && categoryOptions.length >= 2 && (
+          <TouchableOpacity
+            testID="asset-category-filter"
+            style={sd.catFilterBtn}
+            onPress={() => setShowCategoryPicker(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="filter-outline" size={16} color={effectiveCategory ? Colors.orange : C.textOnNavy.faint} />
+            <Text style={[sd.catFilterText, effectiveCategory && { color: Colors.orange, fontWeight: '700' }]} numberOfLines={1}>
+              {effectiveCategory
+                ? `${effectiveCategory.replace(/_/g, ' ')} (${displayForms.length})`
+                : `All categories (${curatedForms.length})`}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={C.textOnNavy.faint} />
+          </TouchableOpacity>
+        )}
+
         {curatedLoading && scanToken ? (
           <View style={sd.curatedLoading}>
             <ActivityIndicator size="small" color={Colors.orange} />
@@ -566,7 +626,7 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
           </View>
         ) : hasCuratedForms ? (
           <>
-            {curatedForms.map((form) => {
+            {displayForms.map((form) => {
               const tileColor = CATEGORY_COLOR[form.category] || '#6B7280';
               const tileIcon = CATEGORY_ICON[form.category] || 'document-outline';
               return (
@@ -626,6 +686,57 @@ function AssetDetailSheet({ asset, onClose, router: nav }: {
           </>
         )}
       </ScrollView>
+
+      {/* Category Picker Modal */}
+      <Modal visible={showCategoryPicker} animationType="fade" transparent onRequestClose={() => setShowCategoryPicker(false)}>
+        <TouchableOpacity
+          style={sd.catModalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowCategoryPicker(false)}
+        >
+          <View style={sd.catModalCard}>
+            <Text style={sd.catModalTitle}>Filter by category</Text>
+            <ScrollView style={{ maxHeight: 360 }}>
+              <TouchableOpacity
+                testID="cat-filter-all"
+                style={[sd.catOption, !effectiveCategory && sd.catOptionActive]}
+                onPress={() => persistCategory(null)}
+              >
+                <Text style={[sd.catOptionText, !effectiveCategory && sd.catOptionTextActive]}>
+                  All categories
+                </Text>
+                <View style={sd.catOptionRight}>
+                  <Text style={sd.catBadge}>{curatedForms.length}</Text>
+                  {!effectiveCategory && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
+                </View>
+              </TouchableOpacity>
+              {categoryOptions.map((opt) => {
+                const active = effectiveCategory === opt.key;
+                const catColor = CATEGORY_COLOR[opt.key] || '#6B7280';
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    testID={`cat-filter-${opt.key}`}
+                    style={[sd.catOption, active && sd.catOptionActive]}
+                    onPress={() => persistCategory(opt.key)}
+                  >
+                    <View style={sd.catOptionLeft}>
+                      <View style={[sd.catDot, { backgroundColor: catColor }]} />
+                      <Text style={[sd.catOptionText, active && sd.catOptionTextActive]}>
+                        {opt.key.replace(/_/g, ' ')}
+                      </Text>
+                    </View>
+                    <View style={sd.catOptionRight}>
+                      <Text style={sd.catBadge}>{opt.count}</Text>
+                      {active && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -724,7 +835,7 @@ const sd = StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 12,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  title: { fontSize: 18, fontWeight: '800', color: C.card.textMain },
+  title: { fontSize: 18, fontWeight: '800', color: C.textOnNavy.main },
   closeBtn: { padding: 4, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   backBtn: { padding: 4, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 20 },
@@ -734,7 +845,7 @@ const sd = StyleSheet.create({
     backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center',
     marginBottom: 12,
   },
-  heroName: { fontSize: 22, fontWeight: '800', color: C.card.textMain, textAlign: 'center' },
+  heroName: { fontSize: 22, fontWeight: '800', color: C.textOnNavy.main, textAlign: 'center' },
   heroPill: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8 },
   heroPillText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   detailCard: {
@@ -788,4 +899,38 @@ const sd = StyleSheet.create({
     padding: 12, marginBottom: 12,
   },
   noMappingText: { flex: 1, fontSize: 13, color: Colors.info, lineHeight: 18 },
+
+  // Category filter dropdown
+  catFilterBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.card.bg, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 11, marginBottom: 12,
+    borderWidth: 1, borderColor: C.card.border,
+  },
+  catFilterText: { flex: 1, fontSize: 14, color: C.textOnNavy.faint, fontWeight: '500', textTransform: 'capitalize' },
+
+  // Category picker modal
+  catModalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  catModalCard: {
+    backgroundColor: C.card.bg, borderRadius: 20, padding: 20,
+    width: '100%', maxWidth: 380,
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15, shadowRadius: 24, elevation: 10,
+  },
+  catModalTitle: { fontSize: 18, fontWeight: '800', color: C.card.textMain, marginBottom: 12 },
+  catOption: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 13, paddingHorizontal: 4,
+    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+  },
+  catOptionActive: { backgroundColor: Colors.orangeSoft, borderRadius: 10, paddingHorizontal: 10 },
+  catOptionText: { fontSize: 15, color: C.card.textMain, fontWeight: '500', textTransform: 'capitalize' },
+  catOptionTextActive: { color: Colors.orange, fontWeight: '700' },
+  catOptionLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  catOptionRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  catDot: { width: 10, height: 10, borderRadius: 5 },
+  catBadge: { fontSize: 13, color: C.textOnNavy.faint, fontWeight: '600', minWidth: 20, textAlign: 'right' },
 });
