@@ -37,6 +37,7 @@ import {
   CubeMultiple24Regular, CubeMultiple24Filled,
   PeopleSettings24Regular, PeopleSettings24Filled,
   PersonAvailable24Regular, PersonAvailable24Filled,
+  CalendarLtr24Regular, CalendarLtr24Filled,
   PlugConnected24Regular, PlugConnected24Filled,
   CloudArrowUp24Regular, CloudArrowUp24Filled,
   Settings24Regular, Settings24Filled,
@@ -123,6 +124,8 @@ const NAV = [
     { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', requiresCan: ['sites', 'edit'], pastel: 'lavender' },
     // v58.13.132ab — admin-only screen to assign a mobile daily job.
     { to: '/app/mobile/assign-daily-jobs', label: 'Ad-hoc Jobs', icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-assign-daily-jobs', requiresCan: ['users', 'edit'], pastel: 'coral' },
+    // Leave Requests — payroll leave emails, approve/reject → Pay Officer.
+    { to: '/app/leave', label: 'Leave Requests', icon: CalendarLtr24Regular, iconActive: CalendarLtr24Filled, testid: 'nav-leave', requiresCan: ['workers', 'view'], pastel: 'sky' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },

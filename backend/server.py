@@ -471,6 +471,9 @@ from hr_employees import (  # noqa: E402
     ensure_indexes as hr_employees_ensure_indexes,
 )
 api.include_router(hr_employees_router)
+# Leave Requests — payroll leave emails → approve/reject → Pay Officer.
+from leave_requests import router as leave_router, ensure_leave_indexes, poll_all_orgs as leave_poll_all_orgs  # noqa: E402
+api.include_router(leave_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -636,6 +639,10 @@ install_backup(app, _mongo_db, require_roles("admin"))
 @app.on_event("startup")
 async def on_startup():
     await ensure_indexes()
+    try:
+        await ensure_leave_indexes()
+    except Exception as e:  # noqa: BLE001
+        log.warning("leave_requests index creation failed: %s", e)
     await session_history_ensure_indexes()
     # v58.13.132ab — daily_job_assignments (org_id, worker_id, date) compound.
     try:
@@ -1339,6 +1346,14 @@ async def on_startup():
                 register_simpro_cron(scheduler)
             except Exception as e:
                 log.warning("simpro_delta_cron scheduler hook failed: %s", e)
+            # Leave Requests — read the leave inbox every 10 min (per-org opt-in
+            # via Leave settings → "Check inbox automatically").
+            try:
+                scheduler.add_job(leave_poll_all_orgs, "interval", minutes=10,
+                                  id="leave_inbox_poll", max_instances=1,
+                                  coalesce=True, replace_existing=True)
+            except Exception as e:
+                log.warning("leave_inbox_poll scheduler hook failed: %s", e)
             scheduler.start()
             app.state.scheduler = scheduler
             # v58.13.17 — Asset-service overnight generation cron.

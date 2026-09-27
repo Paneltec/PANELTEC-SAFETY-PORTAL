@@ -142,6 +142,7 @@ import SwmsAssignmentsAdmin from '@/pages/SwmsAssignmentsAdmin';
 import SiteScanResolver from '@/pages/SiteScanResolver';
 import VisitorSignIn from '@/pages/VisitorSignIn';
 import AdminVisitors from '@/pages/AdminVisitors';
+import LeaveRequests from '@/pages/LeaveRequests';
 import SupplierScanResolver from '@/pages/SupplierScanResolver';
 import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
 import SystemSettings from '@/pages/SystemSettings';
@@ -264,6 +265,7 @@ function App() {
               <Route path="site-signin/*" element={<Navigate to="/app/admin/visitors" replace />} />
               {/* v58.13.106 — Admin visitor register (public sign-ins from QR). */}
               <Route path="admin/visitors" element={<AdminVisitors />} />
+              <Route path="leave" element={<LeaveRequests />} />
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />
               {/* v58.13.12 — Submissions bucket. CS Incidents migrated
