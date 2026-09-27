@@ -301,7 +301,7 @@ export default function SwmsDetailScreen() {
 // ── Styles ──
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   scroll: { paddingBottom: 40 },
 
@@ -318,9 +318,9 @@ const st = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
 
   // Loading / Error
-  loadingText: { fontSize: 14, color: Colors.textTertiary },
+  loadingText: { fontSize: 14, color: '#8A8A8A' },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginTop: 8 },
-  errorText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center' },
+  errorText: { fontSize: 14, color: '#8A8A8A', textAlign: 'center' },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.orange, borderRadius: 12,
@@ -336,13 +336,13 @@ const st = StyleSheet.create({
   },
   swmsTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink, lineHeight: 26 },
   swmsVersion: { fontSize: 13, color: Colors.orange, fontWeight: '700', marginTop: 4 },
-  swmsDesc: { fontSize: 14, color: Colors.textSecondary, marginTop: 8, lineHeight: 20 },
+  swmsDesc: { fontSize: 14, color: '#4B4B4B', marginTop: 8, lineHeight: 20 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   metaChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#F1F5F9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
   },
-  metaText: { fontSize: 12, color: Colors.textTertiary },
+  metaText: { fontSize: 12, color: '#8A8A8A' },
 
   // Sections
   section: {
@@ -356,7 +356,7 @@ const st = StyleSheet.create({
     backgroundColor: '#F1F5F9', borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 2,
   },
-  countText: { fontSize: 11, fontWeight: '700', color: Colors.textTertiary },
+  countText: { fontSize: 11, fontWeight: '700', color: '#8A8A8A' },
 
   // Hazard rows
   hazardRow: {
@@ -366,7 +366,7 @@ const st = StyleSheet.create({
   riskDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
   hazardBody: { flex: 1 },
   hazardLabel: { fontSize: 14, fontWeight: '600', color: Colors.ink, lineHeight: 20 },
-  hazardControls: { fontSize: 12, color: Colors.textTertiary, marginTop: 3, lineHeight: 17 },
+  hazardControls: { fontSize: 12, color: '#8A8A8A', marginTop: 3, lineHeight: 17 },
   riskPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   riskText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
 
@@ -389,7 +389,7 @@ const st = StyleSheet.create({
     backgroundColor: '#F1F5F9', borderRadius: 8,
     paddingHorizontal: 8, paddingVertical: 2,
   },
-  methodText: { fontSize: 11, fontWeight: '600', color: Colors.textTertiary, textTransform: 'capitalize' },
+  methodText: { fontSize: 11, fontWeight: '600', color: '#8A8A8A', textTransform: 'capitalize' },
 
   // Equipment chips
   equipChip: {
@@ -400,6 +400,6 @@ const st = StyleSheet.create({
 
   // Emergency procedures
   emergRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  emergKey: { fontSize: 12, fontWeight: '700', color: Colors.textTertiary, textTransform: 'capitalize', marginBottom: 4 },
+  emergKey: { fontSize: 12, fontWeight: '700', color: '#8A8A8A', textTransform: 'capitalize', marginBottom: 4 },
   emergVal: { fontSize: 14, color: Colors.ink, lineHeight: 20 },
 });

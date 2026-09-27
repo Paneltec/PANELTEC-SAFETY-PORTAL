@@ -97,7 +97,7 @@ export default function SubmittedScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: {
     backgroundColor: Colors.navy, paddingHorizontal: 20, paddingVertical: 16,
     alignItems: 'center',
@@ -118,15 +118,15 @@ const s = StyleSheet.create({
 
   textBlock: { alignItems: 'center', gap: 6 },
   title: { fontSize: 24, fontWeight: '800', color: Colors.ink },
-  subtitle: { fontSize: 16, fontWeight: '600', color: Colors.textSecondary, textAlign: 'center' },
-  timestamp: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
+  subtitle: { fontSize: 16, fontWeight: '600', color: '#4B4B4B', textAlign: 'center' },
+  timestamp: { fontSize: 13, color: '#8A8A8A', marginTop: 2 },
 
   infoBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: Colors.successSoft, borderRadius: 14, padding: 14,
     marginTop: 16, maxWidth: 340,
   },
-  infoText: { flex: 1, fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
+  infoText: { flex: 1, fontSize: 13, color: '#4B4B4B', lineHeight: 18 },
 
   actions: { width: '100%', maxWidth: 340, gap: 10, marginTop: 8 },
   doneBtn: {

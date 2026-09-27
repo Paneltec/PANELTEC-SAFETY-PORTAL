@@ -1,6 +1,7 @@
 /**
  * Form Runner — Fill mode + mandatory Review-before-Submit.
  * v58.13.132kx — Collapsible section groups for SCS, custom rows, ✓ALL.
+ * v58.13.132p2k — White form surfaces with dark text for readability.
  * v58.13.132l — Draft persistence via AsyncStorage keyed by form+worker.
  *   Fill → Review → Confirm & Submit state machine. Review step is
  *   MANDATORY (no bypass). Draft autosave debounced 800ms, cleared
@@ -1212,9 +1213,9 @@ function FieldRenderer({
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20 },
-  emptyText: { fontSize: 15, color: Colors.textTertiary },
+  emptyText: { fontSize: 15, color: '#8A8A8A' },
   scroll: { padding: 16, paddingBottom: 100 },
 
   // Header
@@ -1244,7 +1245,7 @@ const s = StyleSheet.create({
   // Category pill
   catPill: { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 8 },
   catPillText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  description: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20, marginBottom: 16 },
+  description: { fontSize: 14, color: '#4B4B4B', lineHeight: 20, marginBottom: 16 },
 
   // Missing banner
   missingBanner: {
@@ -1273,9 +1274,9 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: Colors.border,
   },
-  reviewLabel: { fontSize: 12, fontWeight: '700', color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 },
+  reviewLabel: { fontSize: 12, fontWeight: '700', color: '#8A8A8A', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 },
   reviewValue: { fontSize: 15, color: Colors.ink, lineHeight: 22 },
-  reviewValueEmpty: { color: Colors.textTertiary, fontStyle: 'italic' },
+  reviewValueEmpty: { color: '#8A8A8A', fontStyle: 'italic' },
   reviewPill: {
     alignSelf: 'flex-start', backgroundColor: Colors.orangeSoft,
     borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5,
@@ -1285,7 +1286,7 @@ const s = StyleSheet.create({
   // ── Field block ──
   fieldBlock: { marginBottom: 16, padding: 4 },
   fieldLabel: { fontSize: 14, fontWeight: '700', color: Colors.ink, marginBottom: 2 },
-  fieldType: { fontSize: 10, color: Colors.textTertiary, textTransform: 'uppercase', fontWeight: '600', letterSpacing: 0.5, marginBottom: 8 },
+  fieldType: { fontSize: 10, color: '#8A8A8A', textTransform: 'uppercase', fontWeight: '600', letterSpacing: 0.5, marginBottom: 8 },
   required: { color: Colors.error },
 
   // Text inputs
@@ -1331,7 +1332,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: Colors.borderLight, borderRadius: 10, padding: 10,
   },
-  unsupportedText: { fontSize: 12, color: Colors.textTertiary },
+  unsupportedText: { fontSize: 12, color: '#8A8A8A' },
 
   // Error
   errorRow: { marginTop: 6 },
@@ -1340,8 +1341,8 @@ const s = StyleSheet.create({
   // ── Bottom bar ──
   submitBar: {
     padding: 16, paddingBottom: 24,
-    borderTopWidth: 1, borderTopColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderTopWidth: 1, borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   reviewBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -1375,7 +1376,7 @@ const s = StyleSheet.create({
 
   // Access denied
   accessTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink, marginTop: 8 },
-  accessText: { fontSize: 14, color: Colors.textSecondary },
+  accessText: { fontSize: 14, color: '#4B4B4B' },
   certRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   certDot: { width: 8, height: 8, borderRadius: 4 },
   certLabel: { fontSize: 14, color: Colors.ink, flex: 1 },
