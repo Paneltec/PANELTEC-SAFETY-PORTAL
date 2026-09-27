@@ -18,7 +18,7 @@ import { acceptDailyJob, declineDailyJob } from '../../src/services/dailyJobs';
 import { useUpdateCheck } from '../../src/features/updates/useUpdateCheck';
 import UpdateBanner from '../../src/features/updates/UpdateBanner';
 import PasteJobSmsModal from '../../src/components/PasteJobSmsModal';
-import { startSmsListener, stopSmsListener, setOnJobCreated, debugFireTestSms } from '../../src/lib/smsReceiver';
+import { startSmsListener, stopSmsListener, setOnJobCreated } from '../../src/lib/smsReceiver';
 import { requestSmsPermission, hasRequestedSmsPermission, type SmsPermResult } from '../../src/lib/smsPermissions';
 
 type ViewMode = 'home' | 'signed_on' | 'job_detail';
@@ -865,22 +865,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* DEV: Simulate SMS receipt (debug only) */}
-        {__DEV__ && (
-          <TouchableOpacity
-            testID="home-debug-sms-btn"
-            style={s.debugSmsBtn}
-            onPress={() => {
-              debugFireTestSms();
-              Alert.alert('Debug', 'Fired test SMS event — check for notification + job tile update.');
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="bug" size={14} color={C.card.textSecondary} />
-            <Text style={s.debugSmsBtnText}>Debug: Fire test SMS</Text>
-          </TouchableOpacity>
-        )}
-
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -1043,15 +1027,6 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.warning,
   },
   smsPermBannerText: { fontSize: 12, color: Colors.warning, flex: 1, lineHeight: 16 },
-
-  // Debug SMS button
-  debugSmsBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 16,
-    borderRadius: 8, borderWidth: 1, borderColor: C.card.border, backgroundColor: C.card.bg,
-    marginTop: 8,
-  },
-  debugSmsBtnText: { fontSize: 12, fontWeight: '600', color: C.card.textSecondary },
 
   // Signed on
   backBtn: { padding: 4, marginRight: 8 },

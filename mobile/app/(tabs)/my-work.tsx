@@ -1,6 +1,7 @@
 /**
- * My Work tab — v58.13.132n5m3
- * Light scaffold: 5 collapsible record categories with counts, last 3 entries, + New button.
+ * My Work tab — v58.13.132p2d
+ * 5 collapsible record categories — compact tiles (~60px), single-line titles,
+ * solid green "+ New" buttons.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -35,7 +36,7 @@ interface CategoryConfig {
 const CATEGORIES: CategoryConfig[] = [
   {
     key: 'pre_start',
-    label: 'Daily Pre-Starts',
+    label: 'Pre-Starts',
     icon: 'checkbox-outline',
     color: C.green.base,
     endpoint: '/api/pre-starts',
@@ -50,7 +51,7 @@ const CATEGORIES: CategoryConfig[] = [
   },
   {
     key: 'hazard',
-    label: 'Hazard Reports',
+    label: 'Hazards',
     icon: 'warning-outline',
     color: '#F59E0B',
     endpoint: '/api/hazards',
@@ -65,7 +66,7 @@ const CATEGORIES: CategoryConfig[] = [
   },
   {
     key: 'incident',
-    label: 'Incident Reports',
+    label: 'Incidents',
     icon: 'alert-circle-outline',
     color: '#EF4444',
     endpoint: '/api/incidents',
@@ -111,12 +112,12 @@ const CATEGORIES: CategoryConfig[] = [
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  open:       { bg: '#FEF3C7', text: '#D97706' },
-  draft:      { bg: '#FEF3C7', text: '#D97706' },
+  open:        { bg: '#FEF3C7', text: '#D97706' },
+  draft:       { bg: '#FEF3C7', text: '#D97706' },
   in_progress: { bg: '#DBEAFE', text: '#2563EB' },
-  submitted:  { bg: '#D1FAE5', text: '#059669' },
-  completed:  { bg: '#D1FAE5', text: '#059669' },
-  closed:     { bg: '#E2E8F0', text: '#64748B' },
+  submitted:   { bg: C.green.softBg, text: C.green.base },
+  completed:   { bg: C.green.softBg, text: C.green.base },
+  closed:      { bg: C.card.bg, text: C.textOnNavy.faint },
 };
 
 export default function MyWorkTab() {
@@ -163,7 +164,7 @@ export default function MyWorkTab() {
     } catch { return iso; }
   };
 
-  const totalRecords = Object.values(data).reduce((s, arr) => s + arr.length, 0);
+  const totalRecords = Object.values(data).reduce((sum, arr) => sum + arr.length, 0);
 
   return (
     <View testID="my-work-tab" style={[s.container, { paddingTop: insets.top }]}>
@@ -192,7 +193,7 @@ export default function MyWorkTab() {
 
             return (
               <View key={cat.key} style={s.catWrap}>
-                {/* Card header */}
+                {/* Compact tile header */}
                 <TouchableOpacity
                   testID={`mywork-card-${cat.key}`}
                   style={s.catCard}
@@ -200,30 +201,28 @@ export default function MyWorkTab() {
                   activeOpacity={0.7}
                 >
                   <View style={[s.catIcon, { backgroundColor: cat.color + '18' }]}>
-                    <Ionicons name={cat.icon} size={22} color={cat.color} />
+                    <Ionicons name={cat.icon} size={18} color={cat.color} />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.catLabel}>{cat.label}</Text>
-                    <Text style={s.catCount}>
-                      {items.length} record{items.length !== 1 ? 's' : ''}
-                    </Text>
+                  <View style={s.catTextWrap}>
+                    <Text style={s.catLabel} numberOfLines={1} ellipsizeMode="tail">{cat.label}</Text>
+                    <Text style={s.catCount}>{items.length} record{items.length !== 1 ? 's' : ''}</Text>
                   </View>
                   <TouchableOpacity
                     testID={`mywork-new-${cat.key}`}
-                    style={[s.newBtn, { borderColor: cat.color + '40' }]}
+                    style={s.newBtn}
                     onPress={() => {
                       router.push({ pathname: cat.newRoute, params: cat.newParams } as never);
                     }}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="add" size={16} color={cat.color} />
-                    <Text style={[s.newBtnText, { color: cat.color }]}>New</Text>
+                    <Ionicons name="add" size={14} color={C.green.buttonText} />
+                    <Text style={s.newBtnText}>New</Text>
                   </TouchableOpacity>
                   <Ionicons
                     name={isOpen ? 'chevron-up' : 'chevron-down'}
-                    size={16}
-                    color={Colors.textTertiary}
-                    style={{ marginLeft: 6 }}
+                    size={14}
+                    color={C.textOnNavy.faint}
+                    style={{ marginLeft: 4 }}
                   />
                 </TouchableOpacity>
 
@@ -232,7 +231,7 @@ export default function MyWorkTab() {
                   <View style={s.itemsWrap}>
                     {items.length === 0 ? (
                       <View style={s.emptyRow}>
-                        <Ionicons name="folder-open-outline" size={20} color={Colors.textTertiary} />
+                        <Ionicons name="folder-open-outline" size={18} color={C.textOnNavy.faint} />
                         <Text style={s.emptyText}>
                           Nothing yet — tap New to capture your first {cat.label.toLowerCase().replace(/s$/, '')}
                         </Text>
@@ -297,65 +296,68 @@ const s = StyleSheet.create({
   },
   headerBadgeText: { color: C.textOnNavy.main, fontSize: 12, fontWeight: '800' },
   headerSub: {
-    color: 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: '500',
+    color: C.textOnNavy.faint, fontSize: 12, fontWeight: '500',
     paddingHorizontal: 20, paddingBottom: 10, backgroundColor: C.screen.bg,
   },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
+  loadingText: { color: C.textOnNavy.faint, fontSize: 13 },
   scrollContent: { padding: 16, paddingBottom: 32 },
 
-  catWrap: { marginBottom: 8 },
+  // ── Compact tile (~60px) ──
+  catWrap: { marginBottom: 6 },
   catCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: C.card.bg, borderRadius: 16, padding: 16,
-    minHeight: 72,
-    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: C.card.bg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    minHeight: 56,
   },
   catIcon: {
-    width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
   },
-  catLabel: { fontSize: 15, fontWeight: '700', color: C.card.textMain },
-  catCount: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 2 },
-  newBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderWidth: 1.5, borderRadius: 10,
-    paddingHorizontal: 10, paddingVertical: 6, minHeight: 34,
-  },
-  newBtnText: { fontSize: 13, fontWeight: '700' },
+  catTextWrap: { flex: 1 },
+  catLabel: { fontSize: 14, fontWeight: '700', color: C.card.textMain },
+  catCount: { fontSize: 11, color: C.card.textLabel, marginTop: 1 },
 
+  // ── Solid green "+ New" button ──
+  newBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: C.green.base, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5, minHeight: 28,
+  },
+  newBtnText: { fontSize: 12, fontWeight: '700', color: C.green.buttonText },
+
+  // ── Expanded items ──
   itemsWrap: {
-    marginLeft: 22, paddingLeft: 14, marginTop: 2, marginBottom: 4,
-    borderLeftWidth: 2, borderLeftColor: Colors.border,
+    marginLeft: 18, paddingLeft: 12, marginTop: 2, marginBottom: 2,
+    borderLeftWidth: 2, borderLeftColor: C.card.border,
   },
   itemRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card.bg, borderRadius: 12, padding: 14, marginBottom: 4,
-    minHeight: 52,
+    backgroundColor: C.card.bg, borderRadius: 10, padding: 12, marginBottom: 3,
+    minHeight: 46,
   },
   itemTitle: { fontSize: 13, fontWeight: '600', color: C.card.textMain },
-  itemDate: { fontSize: 11, color: C.textOnNavy.faint, marginTop: 2 },
-  statusPill: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
+  itemDate: { fontSize: 10, color: C.card.textLabel, marginTop: 1 },
+  statusPill: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
   moreText: {
-    fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: '600',
-    paddingVertical: 8, paddingLeft: 12,
+    fontSize: 11, color: C.textOnNavy.faint, fontWeight: '600',
+    paddingVertical: 6, paddingLeft: 12,
   },
   emptyRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: C.card.bg, borderRadius: 12, padding: 16, marginBottom: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.card.bg, borderRadius: 10, padding: 12, marginBottom: 3,
   },
-  emptyText: { fontSize: 13, color: C.textOnNavy.faint, flex: 1 },
+  emptyText: { fontSize: 12, color: C.textOnNavy.faint, flex: 1 },
 
   summaryCard: {
-    backgroundColor: 'rgba(249,115,22,0.08)', borderRadius: 16, padding: 20,
-    alignItems: 'center', marginTop: 12,
-    borderWidth: 1, borderColor: 'rgba(249,115,22,0.2)',
+    backgroundColor: C.orange.softBg, borderRadius: 14, padding: 18,
+    alignItems: 'center', marginTop: 10,
+    borderWidth: 1, borderColor: C.orange.softBg,
   },
   summaryLabel: {
     fontSize: 11, fontWeight: '700', color: Colors.orange,
     letterSpacing: 0.5, textTransform: 'uppercase',
   },
-  summaryCount: { fontSize: 36, fontWeight: '900', color: C.textOnNavy.main, marginVertical: 4 },
-  summarySub: { fontSize: 12, color: 'rgba(255,255,255,0.5)' },
+  summaryCount: { fontSize: 32, fontWeight: '900', color: C.textOnNavy.main, marginVertical: 2 },
+  summarySub: { fontSize: 12, color: C.textOnNavy.faint },
 });

@@ -696,3 +696,16 @@
   - Version bump .132p2 (v1.0.50, versionCode 172)
 - **Files modified**: mobile/app/(tabs)/home.tsx, mobile/src/lib/maps.ts, mobile/src/lib/version.ts, mobile/app.json
 - **Screenshots**: 132p2_job_before_accept, 132p2_map_card_fallback, 132p2_job_after_accept, 132p2_job_after_accept_buttons, 132p2_job_declined
+
+## Iteration .132p2b — Lock Full Color Palette
+- **Commit**: 29d268c6
+- **Date**: 2026-09-26
+- **Changes**:
+  - Rewrote colors.ts: frozen C token tree (screen/textOnNavy/card/orange/green/grey/misc) + backward-compat Colors flat map
+  - Normalized home.tsx: 0 raw hex remaining (was 50+)
+  - Normalized _layout.tsx tab bar: C.screen.bar, C.tabBarBorder, C.tabActive
+  - Normalized settings, profile, my-work, fleet, PasteJobSmsModal (~25 replacements total)
+  - Left data-mapping files (swms, checklistDetect, folderIcons, categoryColors) as-is
+  - No EAS build — palette rides in next scheduled build
+- **Files modified**: colors.ts, home.tsx, _layout.tsx, settings.tsx, profile.tsx, my-work.tsx, fleet.tsx, PasteJobSmsModal.tsx, version.ts
+- **Screenshots**: 132p2b_home_normalized, 132p2b_job_detail_normalized, 132p2b_tab_bar_normalized, 132p2b_qr_scan_normalized
