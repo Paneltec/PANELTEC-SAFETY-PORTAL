@@ -193,6 +193,15 @@ async def ingest_parsed(org_id: str, parsed: dict, *, source: str,
                     "start_date": parsed["start_date"], "leave_type": parsed["leave_type"]})
 
     existing = await db.leave_requests.find_one(key, {"_id": 0})
+    if not existing:
+        # Payroll email for a request the worker made on the phone → attach to it.
+        who = {"worker_id": worker["id"]} if worker else {"employee_name": parsed["employee_name"]}
+        existing = await db.leave_requests.find_one(
+            {"org_id": org_id, "source": "app", "payroll_request_id": None,
+             "start_date": parsed["start_date"], "category": parsed["category"], **who},
+            {"_id": 0})
+        if existing:
+            key = {"org_id": org_id, "id": existing["id"]}
     status_from_event = {"approved": "approved", "rejected": "rejected",
                          "cancelled": "cancelled"}.get(parsed["event"])
 
@@ -244,6 +253,7 @@ class LeaveSettings(BaseModel):
     inbox_mailbox: Optional[EmailStr] = None      # e.g. leave@paneltec.com.au
     auto_poll_enabled: bool = False
     subject_filter: str = "Leave Request"
+    manager_emails: Optional[str] = None          # comma-separated; told about new phone requests
 
 
 async def _settings(org_id: str) -> dict:
@@ -440,7 +450,7 @@ async def decide(leave_id: str, body: DecisionIn,
     body_html = f"""
       <p>Hi,</p>
       <p>The following leave request has been <b>{verb}</b> by {_html.escape(who)} in the Paneltec Safety Portal.
-      Please action it in payroll.</p>
+      {'The worker requested this on the phone app, so it is <b>not in payroll yet</b> — please enter it.' if (lr.get('source') == 'app' and not lr.get('payroll_request_id') and body.decision == 'approve') else 'Please action it in payroll.'}</p>
       <table cellpadding="4" style="border-collapse:collapse">
         <tr><td><b>Employee</b></td><td>{_html.escape(lr['employee_name'])}</td></tr>
         <tr><td><b>Leave type</b></td><td>{_html.escape(lr['leave_type'])}</td></tr>
@@ -474,3 +484,213 @@ async def ensure_leave_indexes() -> None:
     await db.leave_requests.create_index([("org_id", 1), ("payroll_request_id", 1)])
     await db.leave_requests.create_index([("org_id", 1), ("start_date", 1), ("end_date", 1)])
     await db.leave_requests.create_index([("org_id", 1), ("status", 1)])
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Phone side — workers request leave from the field app
+# ══════════════════════════════════════════════════════════════════════
+from pathlib import Path  # noqa: E402
+
+from fastapi import File, UploadFile  # noqa: E402
+from fastapi.responses import FileResponse  # noqa: E402
+
+from auth import get_current_user  # noqa: E402
+
+me_router = APIRouter(prefix="/me/leave", tags=["leave-requests-me"])
+
+HOURS_PER_DAY = 7.6
+CERT_DIR = Path(__file__).parent / "uploads" / "leave_certs"
+CERT_MAX_BYTES = 8 * 1024 * 1024
+LEAVE_TYPES = {
+    "annual": "Annual Leave",
+    "sick": "Personal/Carer's Leave",
+    "long_service": "Long Service Leave",
+    "unpaid": "Leave Without Pay",
+    "other": "Other Leave",
+}
+WORKER_STATUS = {  # what the worker sees
+    "pending": "Waiting for approval",
+    "info_requested": "Office needs more info",
+    "approved": "Approved",
+    "rejected": "Not approved",
+    "cancelled": "Cancelled",
+}
+
+
+async def _my_worker(user: dict) -> dict:
+    email = (user.get("email") or "").lower()
+    w = await db.workers.find_one(
+        {"org_id": user["org_id"], "deleted_at": None,
+         "$or": [{"user_id": user["id"]}] + ([{"email": email}] if email else [])},
+        {"_id": 0, "id": 1, "first_name": 1, "last_name": 1})
+    if not w:
+        raise HTTPException(404, "Your phone isn't linked to a worker record yet — ask the office.")
+    return w
+
+
+def working_days(start: date, end: date) -> int:
+    n, d = 0, start
+    while d <= end:
+        if d.weekday() < 5:
+            n += 1
+        d += timedelta(days=1)
+    return n
+
+
+def _for_worker(d: dict) -> dict:
+    return {
+        "id": d["id"], "leave_type": d["leave_type"], "category": d["category"],
+        "start_date": d["start_date"], "end_date": d["end_date"], "hours": d["hours"],
+        "reason": d.get("employee_note"), "status": d["status"],
+        "status_label": WORKER_STATUS.get(d["status"], d["status"]),
+        "has_certificate": bool(d.get("certificate_file")),
+        "created_at": d.get("created_at"), "source": d.get("source"),
+        "decided_at": (d.get("decision") or {}).get("at"),
+        "in_payroll": bool(d.get("payroll_request_id")),
+        "can_cancel": d["status"] in ("pending", "info_requested", "approved")
+                      and d["start_date"] > date.today().isoformat(),
+    }
+
+
+class MyLeaveIn(BaseModel):
+    category: str = Field(..., pattern="^(annual|sick|long_service|unpaid|other)$")
+    start_date: date
+    end_date: date
+    hours: Optional[float] = Field(None, gt=0, le=1000)   # blank → weekdays × 7.6
+    reason: Optional[str] = Field(None, max_length=500)
+
+
+@me_router.get("")
+async def my_leave(user: dict = Depends(get_current_user)):
+    w = await _my_worker(user)
+    rows = await db.leave_requests.find(
+        {"org_id": user["org_id"], "worker_id": w["id"]}, {"_id": 0, "raw_body": 0}
+    ).sort([("start_date", -1)]).to_list(200)
+    # Latest balance payroll told us about, per leave type.
+    balances: dict = {}
+    for r in sorted(rows, key=lambda r: r.get("updated_at") or ""):
+        if r.get("balance_hours") is not None:
+            balances[r["category"]] = {"hours": r["balance_hours"], "as_at": r.get("balance_on")}
+    return {"requests": [_for_worker(r) for r in rows], "balances": balances,
+            "hours_per_day": HOURS_PER_DAY}
+
+
+@me_router.post("")
+async def create_my_leave(body: MyLeaveIn, user: dict = Depends(get_current_user)):
+    if body.end_date < body.start_date:
+        raise HTTPException(422, "The last day can't be before the first day.")
+    if body.start_date < date.today() - timedelta(days=14):
+        raise HTTPException(422, "That's more than two weeks ago — talk to the office.")
+    days = working_days(body.start_date, body.end_date)
+    if days == 0 and not body.hours:
+        raise HTTPException(422, "Those dates are a weekend — enter the hours you need.")
+    hours = round(body.hours or days * HOURS_PER_DAY, 2)
+    w = await _my_worker(user)
+    org = user["org_id"]
+    name = f"{w.get('first_name', '')} {w.get('last_name', '')}".strip()
+
+    clash = await db.leave_requests.find_one({
+        "org_id": org, "worker_id": w["id"], "status": {"$in": ["pending", "approved", "info_requested"]},
+        "start_date": {"$lte": body.end_date.isoformat()}, "end_date": {"$gte": body.start_date.isoformat()},
+    }, {"_id": 0, "start_date": 1})
+    if clash:
+        raise HTTPException(409, "You already have leave booked over some of those days.")
+
+    doc = {
+        "id": str(uuid.uuid4()), "org_id": org, "worker_id": w["id"], "employee_name": name,
+        "leave_type": LEAVE_TYPES[body.category], "category": body.category,
+        "start_date": body.start_date.isoformat(), "end_date": body.end_date.isoformat(),
+        "hours": hours, "employee_note": (body.reason or "").strip() or None,
+        "balance_hours": None, "balance_on": None, "payroll_request_id": None,
+        "status": "pending", "last_event": "submitted", "source": "app",
+        "requested_by_user_id": user["id"], "created_at": _now(), "updated_at": _now(),
+        "decision": None, "certificate_file": None,
+        "history": [{"at": _now(), "event": "submitted", "source": "app", "by": name}],
+    }
+    await db.leave_requests.insert_one(dict(doc))
+    doc["flags"] = await _compute_flags(org, doc)
+    await db.leave_requests.update_one({"id": doc["id"]}, {"$set": {"flags": doc["flags"]}})
+    await _notify_managers(org, doc, user)
+    return _for_worker(doc)
+
+
+async def _notify_managers(org: str, doc: dict, user: dict) -> None:
+    s = await _settings(org)
+    to = [e.strip() for e in (s.get("manager_emails") or "").split(",") if e.strip()]
+    if not to:
+        return
+    from email_outbox import queue_email_doc
+    try:
+        await queue_email_doc(
+            org_id=org, to=to,
+            subject=f"New leave request: {doc['employee_name']} {_fmt(doc['start_date'])}",
+            body_html=(
+                f"<p>{_html.escape(doc['employee_name'])} has requested <b>{doc['hours']:g} hours of "
+                f"{_html.escape(doc['leave_type'])}</b> from {_fmt(doc['start_date'])} to {_fmt(doc['end_date'])} "
+                f"using the Paneltec field app.</p>"
+                + (f"<p>Reason: <i>{_html.escape(doc['employee_note'])}</i></p>" if doc.get("employee_note") else "")
+                + "<p>Open the Safety Portal → Leave Requests to approve or reject it.</p>"),
+            created_by=user["id"], resource_kind="leave_request",
+            related_record_type="leave_request", related_record_id=doc["id"],
+        )
+    except Exception as e:  # noqa: BLE001 — never block the worker's submit
+        log.warning("leave.notify_managers failed: %s", e)
+
+
+@me_router.post("/{leave_id}/cancel")
+async def cancel_my_leave(leave_id: str, user: dict = Depends(get_current_user)):
+    w = await _my_worker(user)
+    org = user["org_id"]
+    d = await db.leave_requests.find_one({"org_id": org, "id": leave_id, "worker_id": w["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Leave request not found")
+    if not _for_worker(d)["can_cancel"]:
+        raise HTTPException(409, "This request can't be cancelled from the phone — talk to the office.")
+    was_approved = d["status"] == "approved"
+    await db.leave_requests.update_one(
+        {"id": leave_id},
+        {"$set": {"status": "cancelled", "updated_at": _now()},
+         "$push": {"history": {"at": _now(), "event": "cancelled", "source": "app", "by": d["employee_name"]}}})
+    s = await _settings(org)
+    if was_approved and s.get("pay_officer_email"):
+        from email_outbox import queue_email_doc
+        await queue_email_doc(
+            org_id=org, to=[s["pay_officer_email"]],
+            subject=f"Leave CANCELLED: {d['employee_name']} {_fmt(d['start_date'])}",
+            body_html=(f"<p>{_html.escape(d['employee_name'])} has cancelled their approved "
+                       f"{_html.escape(d['leave_type'])} ({_fmt(d['start_date'])} – {_fmt(d['end_date'])}, "
+                       f"{d['hours']:g} h). Please remove it from payroll.</p>"),
+            created_by=user["id"], resource_kind="leave_request",
+            related_record_type="leave_request", related_record_id=leave_id)
+    return _for_worker({**d, "status": "cancelled"})
+
+
+@me_router.post("/{leave_id}/certificate")
+async def upload_certificate(leave_id: str, file: UploadFile = File(...),
+                             user: dict = Depends(get_current_user)):
+    w = await _my_worker(user)
+    d = await db.leave_requests.find_one(
+        {"org_id": user["org_id"], "id": leave_id, "worker_id": w["id"]}, {"_id": 0, "id": 1})
+    if not d:
+        raise HTTPException(404, "Leave request not found")
+    data = await file.read()
+    if len(data) > CERT_MAX_BYTES:
+        raise HTTPException(413, "That photo is too big (8 MB max).")
+    ext = {"image/png": ".png", "application/pdf": ".pdf"}.get(file.content_type or "", ".jpg")
+    CERT_DIR.mkdir(parents=True, exist_ok=True)
+    name = f"{leave_id}{ext}"
+    (CERT_DIR / name).write_bytes(data)
+    await db.leave_requests.update_one(
+        {"id": leave_id},
+        {"$set": {"certificate_file": name, "updated_at": _now()},
+         "$push": {"history": {"at": _now(), "event": "certificate_added", "source": "app"}}})
+    return {"ok": True}
+
+
+@router.get("/{leave_id}/certificate")
+async def get_certificate(leave_id: str, user: dict = Depends(require_permission("workers", "edit"))):
+    d = await db.leave_requests.find_one({"org_id": user["org_id"], "id": leave_id},
+                                         {"_id": 0, "certificate_file": 1})
+    if not d or not d.get("certificate_file"):
+        raise HTTPException(404, "No certificate on this request")
+    return FileResponse(str(CERT_DIR / d["certificate_file"]))

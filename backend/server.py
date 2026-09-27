@@ -472,8 +472,9 @@ from hr_employees import (  # noqa: E402
 )
 api.include_router(hr_employees_router)
 # Leave Requests — payroll leave emails → approve/reject → Pay Officer.
-from leave_requests import router as leave_router, ensure_leave_indexes, poll_all_orgs as leave_poll_all_orgs  # noqa: E402
+from leave_requests import router as leave_router, me_router as leave_me_router, ensure_leave_indexes, poll_all_orgs as leave_poll_all_orgs  # noqa: E402
 api.include_router(leave_router)
+api.include_router(leave_me_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)

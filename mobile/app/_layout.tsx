@@ -148,6 +148,7 @@ function RootLayout() {
             <Stack.Screen name="profile" />
             <Stack.Screen name="capture" />
             <Stack.Screen name="job" />
+            <Stack.Screen name="leave" />
             <Stack.Screen name="site" />
           </Stack>
         </QueryClientProvider>

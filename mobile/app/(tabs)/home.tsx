@@ -126,6 +126,8 @@ export default function HomeScreen() {
           onPress={() => router.push('/profile/certifications' as never)} />
         <Tile testID="tile-idcard" icon="card" title="My ID Card" desc="Digital worker ID with QR"
           onPress={() => router.push('/profile/id-card' as never)} />
+        <Tile testID="tile-leave" icon="calendar" title="My Leave" desc="Request time off, sick days and see your balance"
+          onPress={() => router.push('/leave' as never)} />
       </View>
 
       {home?.site?.signed_in && home.site.site_name && (
