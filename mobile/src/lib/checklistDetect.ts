@@ -215,14 +215,20 @@ export function computeSectionStatus(
 // ── Row tint styles ──
 
 export const CHECKLIST_TINT = {
-  check: { bg: '#ECFDF5', border: '#10B981' },
-  cross: { bg: '#FFF1F2', border: '#F43F5E' },
+  check: { bg: '#F0FDF4', border: '#22C55E' },
+  cross: { bg: '#FFF7ED', border: '#F97316' },
   na:    { bg: '#F1F5F9', border: '#64748B' },
 } as const;
 
 export const PILL_COLORS = {
-  check:   { bg: '#10B981', text: '#FFFFFF' },
-  cross:   { bg: '#F43F5E', text: '#FFFFFF' },
-  na:      { bg: '#475569', text: '#FFFFFF' },
+  check:   { bg: '#22C55E', text: '#FFFFFF' },
+  cross:   { bg: '#F97316', text: '#FFFFFF' },
+  na:      { bg: '#64748B', text: '#FFFFFF' },
   unset:   { bg: '#FFFFFF', border: '#E2E8F0', text: '#334155' },
+} as const;
+
+export const PILL_TINT = {
+  check:   { bg: '#F0FDF4', border: '#22C55E', text: '#22C55E' },
+  cross:   { bg: '#FFF7ED', border: '#F97316', text: '#F97316' },
+  na:      { bg: '#F1F5F9', border: '#64748B', text: '#64748B' },
 } as const;

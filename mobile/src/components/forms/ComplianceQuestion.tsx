@@ -20,9 +20,9 @@ import { Colors } from '../../theme/colors';
 
 // ── Status button definitions ──
 const STATUS_BUTTONS = [
-  { key: 'compliant', label: 'COMPLIANT', activeBg: '#10B981', activeBorder: '#10B981' },
-  { key: 'at_risk',   label: 'AT RISK',   activeBg: '#F43F5E', activeBorder: '#F43F5E' },
-  { key: 'na',        label: 'N/A',        activeBg: '#94A3B8', activeBorder: '#94A3B8' },
+  { key: 'compliant', label: 'COMPLIANT', activeBg: '#22C55E', activeBorder: '#22C55E', tintBg: '#F0FDF4', tintBorder: '#22C55E', tintText: '#22C55E' },
+  { key: 'at_risk',   label: 'AT RISK',   activeBg: '#F97316', activeBorder: '#F97316', tintBg: '#FFF7ED', tintBorder: '#F97316', tintText: '#F97316' },
+  { key: 'na',        label: 'N/A',        activeBg: '#64748B', activeBorder: '#64748B', tintBg: '#F1F5F9', tintBorder: '#64748B', tintText: '#64748B' },
 ] as const;
 
 type StatusKey = 'compliant' | 'at_risk' | 'na' | null;
@@ -169,7 +169,7 @@ export default function ComplianceQuestion({ field, value, onChange, questionNum
                   cq.pill,
                   active
                     ? { backgroundColor: btn.activeBg, borderColor: btn.activeBorder }
-                    : { backgroundColor: '#FFFFFF', borderColor: Colors.border },
+                    : { backgroundColor: btn.tintBg, borderColor: btn.tintBorder },
                 ]}
                 onPress={() => commitStatus(active ? null : btn.key)}
                 activeOpacity={0.7}
@@ -177,7 +177,7 @@ export default function ComplianceQuestion({ field, value, onChange, questionNum
                 <Text
                   style={[
                     cq.pillText,
-                    active ? { color: '#FFFFFF' } : { color: Colors.textSecondary },
+                    active ? { color: '#FFFFFF' } : { color: btn.tintText },
                   ]}
                 >
                   {btn.label}

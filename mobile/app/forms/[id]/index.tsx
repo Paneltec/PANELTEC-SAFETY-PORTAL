@@ -1102,10 +1102,13 @@ function FieldRenderer({
 
             let selectedBg = Colors.orange;
             let selectedText = Colors.white;
+            let tintBg: string | undefined;
+            let tintBorder: string | undefined;
+            let tintText: string | undefined;
             if (field.type === 'radio') {
-              if (isYes) { selectedBg = Colors.success; selectedText = Colors.white; }
-              else if (isNo) { selectedBg = Colors.error; selectedText = Colors.white; }
-              else if (isNA) { selectedBg = Colors.border; selectedText = Colors.ink; }
+              if (isYes) { selectedBg = '#22C55E'; selectedText = '#FFFFFF'; tintBg = '#F0FDF4'; tintBorder = '#22C55E'; tintText = '#22C55E'; }
+              else if (isNo) { selectedBg = '#F97316'; selectedText = '#FFFFFF'; tintBg = '#FFF7ED'; tintBorder = '#F97316'; tintText = '#F97316'; }
+              else if (isNA) { selectedBg = '#64748B'; selectedText = '#FFFFFF'; tintBg = '#F1F5F9'; tintBorder = '#64748B'; tintText = '#64748B'; }
             }
 
             return (
@@ -1114,12 +1117,23 @@ function FieldRenderer({
                 testID={`field-opt-${field.id}-${opt}`}
                 style={[
                   s.optionBtn,
-                  isSelected && { backgroundColor: selectedBg, borderColor: selectedBg },
+                  isSelected
+                    ? { backgroundColor: selectedBg, borderColor: selectedBg }
+                    : tintBg
+                      ? { backgroundColor: tintBg, borderColor: tintBorder }
+                      : undefined,
                 ]}
                 onPress={() => !locked && onChange(isSelected ? null : opt)}
                 disabled={locked}
               >
-                <Text style={[s.optionText, isSelected && { color: selectedText }]}>
+                <Text style={[
+                  s.optionText,
+                  isSelected
+                    ? { color: selectedText }
+                    : tintText
+                      ? { color: tintText }
+                      : undefined,
+                ]}>
                   {opt}
                 </Text>
               </TouchableOpacity>

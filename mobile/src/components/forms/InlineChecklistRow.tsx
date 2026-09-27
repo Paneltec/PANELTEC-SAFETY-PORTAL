@@ -16,6 +16,7 @@ import {
   findTrinaryOption,
   CHECKLIST_TINT,
   PILL_COLORS,
+  PILL_TINT,
 } from '../../lib/checklistDetect';
 
 interface Props {
@@ -52,23 +53,24 @@ export default function InlineChecklistRow({
   const renderPill = (opt: string | null, kind: 'cross' | 'check' | 'na', label: string) => {
     if (!opt) return null;
     const isSelected = radioValue === opt;
-    const colors = isSelected ? PILL_COLORS[kind] : PILL_COLORS.unset;
+    const sel = PILL_COLORS[kind];
+    const tint = PILL_TINT[kind];
     return (
       <TouchableOpacity
         key={kind}
         testID={`checklist-${kind}-${radio.id}`}
         style={[
           st.pill,
-          { backgroundColor: colors.bg },
+          { backgroundColor: isSelected ? sel.bg : tint.bg },
           isSelected
-            ? { borderColor: colors.bg, shadowColor: colors.bg, shadowOpacity: 0.25, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2 }
-            : { borderColor: PILL_COLORS.unset.border },
+            ? { borderColor: sel.bg, shadowColor: sel.bg, shadowOpacity: 0.25, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2 }
+            : { borderColor: tint.border },
         ]}
         onPress={() => togglePill(opt)}
         disabled={readOnly || locked}
         activeOpacity={0.7}
       >
-        <Text style={[st.pillText, { color: colors.text }]}>{label}</Text>
+        <Text style={[st.pillText, { color: isSelected ? sel.text : tint.text }]}>{label}</Text>
       </TouchableOpacity>
     );
   };
