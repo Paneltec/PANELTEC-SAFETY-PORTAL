@@ -126,6 +126,23 @@ export const Colors = {
   black:          misc.black,
   overlay:        misc.overlay,
 
+  // Option B semantic aliases (.132p3b — for leave screens + ui.tsx)
+  screen:         screen.bg,
+  screenDeep:     screen.bar,
+  screenCard:     screen.faintPanel,
+  card:           card.bg,
+  cardBorder:     card.border,
+  onCard:         card.textMain,
+  onCardMuted:    card.textSecondary,
+  onCardSubtle:   card.textLabel,
+  green:          green.base,
+  greenSoft:      green.softBg,
+  onGreen:        green.buttonText,
+  onScreen:       textOnNavy.main,
+  onScreenMuted:  textOnNavy.secondary,
+  onScreenSubtle: textOnNavy.faint,
+  orangeSoftOnNavy: orange.softBg,
+
   // Company accents
   paneltec:       orange.base,
   viatec:         '#6D28D9',

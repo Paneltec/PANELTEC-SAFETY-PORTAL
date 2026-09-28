@@ -10,15 +10,15 @@ type Props = {
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
-  variant?: 'orange' | 'navy' | 'outline';
+  variant?: 'orange' | 'navy' | 'outline' | 'green' | 'grey';
   style?: ViewStyle;
   testID?: string;
 };
 
 export default function PrimaryButton({ title, onPress, disabled, loading, variant = 'orange', style, testID }: Props) {
-  const bg = variant === 'orange' ? Colors.orange : variant === 'navy' ? Colors.navy : 'transparent';
-  const textColor = variant === 'outline' ? Colors.orange : Colors.white;
-  const borderColor = variant === 'outline' ? Colors.orange : bg;
+  const bg = variant === 'orange' ? Colors.orange : variant === 'navy' ? Colors.navy : variant === 'green' ? Colors.green : variant === 'grey' ? Colors.card : 'transparent';
+  const textColor = variant === 'outline' ? Colors.orange : variant === 'green' ? Colors.onGreen : variant === 'grey' ? Colors.onCardMuted : Colors.white;
+  const borderColor = variant === 'outline' ? Colors.orange : variant === 'grey' ? Colors.cardBorder : bg;
 
   return (
     <TouchableOpacity

@@ -202,6 +202,7 @@ function RootLayout() {
             <Stack.Screen name="profile" />
             <Stack.Screen name="scan" />
             <Stack.Screen name="swms" />
+            <Stack.Screen name="leave" />
           </Stack>
         </QueryClientProvider>
       </CrashRecoveryGate>

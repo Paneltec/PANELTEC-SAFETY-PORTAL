@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paneltec Group Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.56",
+    "version": "1.0.58",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "scheme": ["paneltec-mobile", "paneltec"],
@@ -32,7 +32,7 @@
         "android.permission.RECEIVE_SMS",
         "android.permission.READ_SMS"
       ],
-      "versionCode": 178,
+      "versionCode": 180,
       "intentFilters": [
         {
           "action": "VIEW",
