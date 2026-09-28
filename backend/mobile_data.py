@@ -45,6 +45,7 @@ CATEGORY_LABELS = {
     "inspection": "Inspections",
     "near_miss":  "Near Miss",
     "toolbox":    "Toolbox Talks",
+    "ssra":       "SSRA",
     "general":    "General",
 }
 

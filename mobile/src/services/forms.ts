@@ -111,6 +111,7 @@ export const CATEGORY_ORDER: CategoryMeta[] = [
   { key: 'near_miss',       label: 'Near Miss',       color: '#C2410C', bgColor: '#FED7AA', icon: 'alert-circle-outline' },
   { key: 'incident',        label: 'Incident',        color: '#BE123C', bgColor: '#FDE2E4', icon: 'warning-outline' },
   { key: 'risk_assessment', label: 'Risk Assessment', color: '#7C3AED', bgColor: '#EDE9FE', icon: 'analytics-outline' },
+  { key: 'ssra',            label: 'SSRA',            color: '#0D9488', bgColor: '#CCFBF1', icon: 'shield-checkmark-outline' },
   { key: 'site_diary',      label: 'Site Diary',      color: '#0891B2', bgColor: '#CFFAFE', icon: 'book-outline' },
   { key: 'toolbox',         label: 'Toolbox',         color: '#92400E', bgColor: '#FEF3C7', icon: 'people-outline' },
   { key: 'admin',           label: 'Admin Only',      color: '#64748B', bgColor: '#CBD5E1', icon: 'lock-closed-outline' },

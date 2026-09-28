@@ -88,6 +88,14 @@ const ICONS: Record<string, (c: string) => React.ReactNode> = {
     </G>
   ),
 
+  ssra: (c) => (
+    <G>
+      <Path d="M12 3L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-4z" stroke={c} strokeWidth={1.8} strokeLinejoin="round" />
+      <Rect x="8" y="10" width="8" height="6" rx="1" stroke={c} strokeWidth={1.5} />
+      <Path d="M10 10V8a2 2 0 014 0v2" stroke={c} strokeWidth={1.5} strokeLinecap="round" />
+    </G>
+  ),
+
   site_diary: (c) => (
     <G>
       <Path d="M4 4h16v16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" stroke={c} strokeWidth={1.8} />

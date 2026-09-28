@@ -25,6 +25,7 @@ export const CATEGORY_PALETTE: Record<string, CategoryPalette> = {
   near_miss:       { stripe: '#EAB308', chipBg: '#FEFCE8', chipText: '#A16207', iconBg: '#FEF08A' },
   incident:        { stripe: '#EF4444', chipBg: '#FEF2F2', chipText: '#B91C1C', iconBg: '#FECACA' },
   risk_assessment: { stripe: '#A855F7', chipBg: '#FAF5FF', chipText: '#7E22CE', iconBg: '#E9D5FF' },
+  ssra:            { stripe: '#0D9488', chipBg: '#F0FDFA', chipText: '#115E59', iconBg: '#CCFBF1' },
   site_diary:      { stripe: '#F59E0B', chipBg: '#FFFBEB', chipText: '#B45309', iconBg: '#FDE68A' },
   toolbox:         { stripe: '#10B981', chipBg: '#ECFDF5', chipText: '#047857', iconBg: '#A7F3D0' },
   admin:           { stripe: '#94A3B8', chipBg: '#F1F5F9', chipText: '#475569', iconBg: '#E2E8F0' },
