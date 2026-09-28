@@ -2279,16 +2279,19 @@ export default function Forms() {
   }, [filterOpen]);
 
   const counts = useMemo(() => {
-    const c = { all: rows.length, incident: 0, inspection: 0, toolbox: 0, near_miss: 0, general: 0 };
-    for (const r of rows) if (c[r.category] !== undefined) c[r.category]++;
+    const q = search.trim().toLowerCase();
+    const base = rows.filter((r) => !q || `${r.name} ${r.description || ''} ${categoryLabel(r.category)}`.toLowerCase().includes(q));
+    const c = { all: base.length };
+    for (const cat of CATEGORIES) if (cat.key !== 'all') c[cat.key] = 0;
+    for (const r of base) { if (c[r.category] !== undefined) c[r.category]++; }
     return c;
-  }, [rows]);
+  }, [rows, search]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows
       .filter((r) => filter === 'all' ? true : r.category === filter)
-      .filter((r) => !q || `${r.name} ${r.description || ''}`.toLowerCase().includes(q))
+      .filter((r) => !q || `${r.name} ${r.description || ''} ${categoryLabel(r.category)}`.toLowerCase().includes(q))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [rows, filter, search]);
 
