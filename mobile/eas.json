@@ -44,11 +44,17 @@
     },
     "production": {
       "distribution": "store",
+      "channel": "production",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://whs-compliance.preview.emergentagent.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://whs-compliance.preview.emergentagent.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://07a59b90218092aee6f8992b31684f4b@o4512048722477056.ingest.de.sentry.io/4512048752558160",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD": "true",
+        "GRADLE_OPTS": "-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m"
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "resourceClass": "large"
       }
     }
   },
