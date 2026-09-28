@@ -2,11 +2,12 @@
  * Forms tab — Category-first navigation with Option B colour-coded tiles.
  * v58.13.132p2f — SVG icons, coloured left stripes, tinted icon containers.
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, TextInput,
+  RefreshControl, ActivityIndicator, TextInput, Modal, FlatList,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,7 @@ import {
   fetchFormTemplates,
   groupByCategory,
   SessionExpiredError,
+  CATEGORY_ORDER,
   type FormTemplate,
   type CategoryMeta,
 } from '../../src/services/forms';
@@ -29,11 +31,18 @@ export default function FormsScreen() {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [userRole, setUserRole] = useState<string>('worker');
+  const [selectedCat, setSelectedCat] = useState<string | null>(null);
+  const [catPickerOpen, setCatPickerOpen] = useState(false);
+
+  const CAT_STORAGE_KEY = '@paneltec:formsLibrary:lastCategory';
 
   React.useEffect(() => {
     getStoredUser().then((u) => {
       const role = u?.role_id || u?.role;
       if (role) setUserRole(role);
+    });
+    AsyncStorage.getItem(CAT_STORAGE_KEY).then((v) => {
+      if (v) setSelectedCat(v);
     });
   }, []);
 
@@ -91,6 +100,33 @@ export default function FormsScreen() {
     [templates, userRole],
   );
 
+  // Category counts (respecting search text)
+  const catCounts = useMemo(() => {
+    const all = templates || [];
+    const q = search.trim().toLowerCase();
+    const filtered = q ? all.filter(t => t.name.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q)) : all;
+    const m: Record<string, number> = {};
+    for (const t of filtered) m[t.category] = (m[t.category] || 0) + 1;
+    return m;
+  }, [templates, search]);
+
+  // If persisted category has 0 matches, fall back to all
+  const effectiveCat = selectedCat && (catCounts[selectedCat] || 0) > 0 ? selectedCat : null;
+
+  const filteredGrouped = useMemo(() => {
+    if (!effectiveCat) return grouped;
+    return grouped.filter(g => g.meta.key === effectiveCat);
+  }, [grouped, effectiveCat]);
+
+  const totalFiltered = Object.values(catCounts).reduce((a, b) => a + b, 0);
+
+  const handlePickCat = (key: string | null) => {
+    setSelectedCat(key);
+    setCatPickerOpen(false);
+    if (key) AsyncStorage.setItem(CAT_STORAGE_KEY, key);
+    else AsyncStorage.removeItem(CAT_STORAGE_KEY);
+  };
+
   const totalCount = templates?.length || 0;
 
   return (
@@ -120,6 +156,17 @@ export default function FormsScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Category filter */}
+      <TouchableOpacity testID="forms-category-filter" style={s.catFilter} onPress={() => setCatPickerOpen(true)} activeOpacity={0.7}>
+        {effectiveCat ? (
+          <View style={[s.catDot, { backgroundColor: CATEGORY_ORDER.find(c => c.key === effectiveCat)?.color || '#888' }]} />
+        ) : null}
+        <Text style={s.catFilterText} numberOfLines={1}>
+          {effectiveCat ? (CATEGORY_ORDER.find(c => c.key === effectiveCat)?.label || effectiveCat) : `All categories (${totalFiltered})`}
+        </Text>
+        <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
+      </TouchableOpacity>
 
       {isLoading && !templates ? (
         <View testID="forms-loading" style={s.center}>
@@ -168,14 +215,14 @@ export default function FormsScreen() {
               </View>
             )
           ) : (
-            grouped.length === 0 ? (
+            filteredGrouped.length === 0 ? (
               <View testID="forms-empty" style={s.emptyCard}>
                 <Ionicons name="document-text-outline" size={32} color={Colors.textTertiary} />
                 <Text style={s.emptyTitle}>No forms available</Text>
               </View>
             ) : (
               <View style={s.catGrid}>
-                {grouped.map(({ meta, forms }) => (
+                {filteredGrouped.map(({ meta, forms }) => (
                   <CategoryCard
                     key={meta.key}
                     meta={meta}
@@ -191,6 +238,32 @@ export default function FormsScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
+
+      {/* Category picker modal */}
+      <Modal visible={catPickerOpen} transparent animationType="fade" onRequestClose={() => setCatPickerOpen(false)}>
+        <TouchableOpacity style={s.modalBg} activeOpacity={1} onPress={() => setCatPickerOpen(false)}>
+          <View style={s.modalSheet}>
+            <Text style={s.modalTitle}>Filter by category</Text>
+            <TouchableOpacity testID="forms-cat-all" style={s.modalRow} onPress={() => handlePickCat(null)}>
+              <Text style={[s.modalRowText, !effectiveCat && { fontWeight: '800' }]}>All categories</Text>
+              <Text style={s.modalRowCount}>{totalFiltered}</Text>
+              {!effectiveCat && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
+            </TouchableOpacity>
+            {CATEGORY_ORDER.map(cat => {
+              const cnt = catCounts[cat.key] || 0;
+              const active = effectiveCat === cat.key;
+              return (
+                <TouchableOpacity key={cat.key} testID={`forms-cat-pick-${cat.key}`} style={[s.modalRow, cnt === 0 && { opacity: 0.35 }]} onPress={() => handlePickCat(cat.key)}>
+                  <View style={[s.catDot, { backgroundColor: cat.color }]} />
+                  <Text style={[s.modalRowText, active && { fontWeight: '800' }]}>{cat.label}</Text>
+                  <Text style={s.modalRowCount}>{cnt}</Text>
+                  {active && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -216,7 +289,7 @@ function CategoryCard({ meta, formCount, onPress }: {
       <View style={s.catContent}>
         {/* Tinted icon container */}
         <View style={[s.catIconWrap, { backgroundColor: palette.iconBg }]}>
-          <CategoryIcon category={meta.key} size={22} color={palette.chipText} />
+          <CategoryIcon category={meta.key} size={16} color={palette.chipText} />
         </View>
 
         {/* Text block */}
@@ -295,26 +368,26 @@ const s = StyleSheet.create({
   },
   retryBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 
-  // ── Option B Category tiles ──
-  catGrid: { paddingHorizontal: 16, paddingTop: 8 },
+  // ── Option B Category tiles (compact 2-col grid) ──
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingTop: 8, gap: 8 },
   catCard: {
     flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: Colors.surface, borderRadius: 14, marginBottom: 10,
-    minHeight: 68, overflow: 'hidden',
+    backgroundColor: Colors.surface, borderRadius: 12, marginBottom: 0,
+    minHeight: 52, overflow: 'hidden', width: '48.5%',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  catStripe: { width: 4, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  catStripe: { width: 3, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
   catContent: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 12, paddingHorizontal: 14,
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 8, paddingHorizontal: 10,
   },
   catIconWrap: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 32, height: 32, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
   },
   catTextWrap: { flex: 1 },
-  catName: { fontSize: 16, fontWeight: '700', color: '#1A1A1A' },
-  catCount: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500', marginTop: 2 },
+  catName: { fontSize: 13, fontWeight: '700', color: '#1A1A1A' },
+  catCount: { fontSize: 11, color: Colors.textTertiary, fontWeight: '500', marginTop: 1 },
 
   // ── Search results ──
   searchResults: { paddingHorizontal: 16, paddingTop: 4 },
@@ -338,4 +411,22 @@ const s = StyleSheet.create({
   resultName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   resultDesc: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
   resultCat: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize', marginTop: 4 },
+
+  // ── Category filter pill ──
+  catFilter: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1, borderColor: Colors.border,
+    alignSelf: 'flex-start',
+  },
+  catDot: { width: 8, height: 8, borderRadius: 4 },
+  catFilterText: { fontSize: 13, fontWeight: '600', color: Colors.ink },
+
+  // ── Category picker modal ──
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 16, paddingBottom: 32, maxHeight: '70%' },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: Colors.ink, paddingHorizontal: 20, marginBottom: 8 },
+  modalRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 12 },
+  modalRowText: { flex: 1, fontSize: 15, fontWeight: '600', color: Colors.ink },
+  modalRowCount: { fontSize: 13, fontWeight: '600', color: Colors.textTertiary, marginRight: 4 },
 });

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paneltec Group Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.59",
+    "version": "1.0.60",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "scheme": ["paneltec-mobile", "paneltec"],
@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.paneltec.whs",
-      "buildNumber": "181",
+      "buildNumber": "182",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Scan QR codes for site sign-on and vehicle ID",
@@ -33,7 +33,7 @@
         "android.permission.RECEIVE_SMS",
         "android.permission.READ_SMS"
       ],
-      "versionCode": 181,
+      "versionCode": 182,
       "intentFilters": [
         {
           "action": "VIEW",
