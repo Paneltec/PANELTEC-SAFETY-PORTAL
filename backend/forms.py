@@ -89,7 +89,9 @@ ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general
                       # v58.13.132l — SWMS surfaces as a mobile Forms category
                       # (records still live in db.swms; `list_templates` bridges
                       # them into the FormTemplate shape with is_swms=True).
-                      "swms"}
+                      "swms",
+                      # v58.13.132p3n — SSRA (Site Specific Risk Assessment).
+                      "ssra"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        "photo", "signature", "gps", "vehicle_navixy", "asset_scan",
                        "worker_picker", "job_picker", "site_picker", "customer_picker",
