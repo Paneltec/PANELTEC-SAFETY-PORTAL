@@ -210,6 +210,20 @@ function LoginRedirect() {
   return <Navigate to={{ pathname: '/', search }} replace />;
 }
 
+// v58.13.132p3f — Public convenience redirects for legal pages.
+// The canonical content lives as static HTML in public/legal/.
+// These components do a full-page redirect (not SPA nav) so the
+// browser loads the standalone HTML that Google Play / App Store
+// review bots expect (no JS framework dependency).
+function PrivacyRedirect() {
+  React.useEffect(() => { window.location.replace('/legal/privacy-policy.html'); }, []);
+  return null;
+}
+function TermsRedirect() {
+  React.useEffect(() => { window.location.replace('/legal/terms-of-service.html'); }, []);
+  return null;
+}
+
 function App() {
   // v58.13.67-palette-switcher — hydrate the persisted CIVIL palette onto
   // <html data-palette="…"> before any page renders, so first paint is
@@ -277,6 +291,16 @@ function App() {
                 authorize request; the page exchanges code+state via
                 the backend and postMessages the opener. */}
             <Route path="/dropbox/callback" element={<DropboxCallback />} />
+
+            {/* v58.13.132p3f — Public privacy-policy + terms convenience
+                aliases. The canonical files live at /legal/privacy-policy.html
+                and /legal/terms-of-service.html (static HTML in public/).
+                These routes redirect to the static files so Google Play
+                and shorthand URLs work. */}
+            <Route path="/privacy" element={<PrivacyRedirect />} />
+            <Route path="/legal/privacy" element={<PrivacyRedirect />} />
+            <Route path="/terms" element={<TermsRedirect />} />
+            <Route path="/legal/terms" element={<TermsRedirect />} />
 
             <Route path="/app" element={<MustChangePasswordGuard><AppShell /></MustChangePasswordGuard>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
