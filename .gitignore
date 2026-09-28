@@ -295,3 +295,4 @@ frontend/node_modules/.cache/default-development/113.pack
 # path exists on a fresh clone; the actual .apk binaries stay out of git.
 # =====================================================================
 backend/static/downloads/*.apk
+mobile/credentials/

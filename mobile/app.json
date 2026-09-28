@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.paneltec.whs",
       "buildNumber": "180",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Scan QR codes for site sign-on and vehicle ID",
         "NSPhotoLibraryUsageDescription": "Attach photos to hazard and incident reports",
         "NSLocationWhenInUseUsageDescription": "Show your location on the site map"
