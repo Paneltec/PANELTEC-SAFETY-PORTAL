@@ -1,103 +1,45 @@
 /**
- * Profile — v58.13.132iu
- * Wired to GET /api/auth/me (real endpoint). Falls back to stored session.
+ * Phase 4 — Profile tab.
+ * User info, role, workspace switcher, sign out.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, C } from '../../src/theme/colors';
-import Wordmark from '../../src/components/Wordmark';
-import { getStoredUser, getStoredRoleLabel, clearSession, isPreviewSession } from '../../src/services/auth';
-import { authGet } from '../../src/services/apiClient';
-import { MOBILE_BUNDLE_VERSION } from '../../src/lib/version';
-import {
-  getSimulateRole, setSimulateRole, ROLE_OPTIONS,
-  type SimulateRoleId,
-} from '../../src/services/simulateRole';
-import { useUpdateCheck } from '../../src/features/updates/useUpdateCheck';
+import { civilLogout, getStoredCivilUser } from '../../src/services/civilApi';
 
-interface MeResponse {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  role_id: string;
-  org_id: string;
-  activation_status: string;
-  company_id?: string;
-  created_at?: string;
-  effective_permissions?: Record<string, Record<string, boolean>>;
-  [key: string]: unknown;
-}
+const BLUE = '#2C6BFF';
+const RED = '#EF4444';
+const BG = '#F8FAFC';
+const INK = '#0F172A';
+const MUTED = '#64748B';
 
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState<any>(null);
-  const [roleLabel, setRoleLabel] = useState('');
   const [loading, setLoading] = useState(true);
-  const [dataSource, setDataSource] = useState<'api' | 'stored' | 'none'>('none');
-  const [simRole, setSimRole] = useState<SimulateRoleId>('');
 
-  const update = useUpdateCheck();
+  useEffect(() => {
+    getStoredCivilUser().then(u => {
+      setUser(u);
+      setLoading(false);
+    });
+  }, []);
 
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
-    // Load simulate role
-    const sr = await getSimulateRole();
-    setSimRole(sr);
-
-    // Try real /api/auth/me first
-    const res = await authGet<MeResponse>('/api/auth/me');
-    if (res.ok) {
-      setUser(res.data);
-      setDataSource('api');
-      // In preview mode the stored role label is stale (belongs to the admin,
-      // not the previewed worker) — always use the API response instead.
-      if (isPreviewSession()) {
-        setRoleLabel(res.data.role_label || res.data.role_id || res.data.role || '');
-      } else {
-        const rl = await getStoredRoleLabel();
-        setRoleLabel(rl || res.data.role_label || res.data.role_id || res.data.role || '');
-      }
-    } else if ('expired' in res && res.expired) {
-      await clearSession();
-      router.replace({ pathname: '/(auth)/pin-entry', params: { reason: 'session_expired' } } as never);
-      return;
-    } else {
-      // Fall back to stored session data
-      const storedUser = await getStoredUser();
-      if (storedUser?.name) {
-        setUser(storedUser);
-        setDataSource('stored');
-      } else {
-        setDataSource('none');
-      }
-      if (isPreviewSession()) {
-        setRoleLabel(storedUser?.role_label || storedUser?.role_id || storedUser?.role || '');
-      } else {
-        const rl = await getStoredRoleLabel();
-        setRoleLabel(rl || storedUser?.role_label || storedUser?.role_id || storedUser?.role || '');
-      }
-    }
-    setLoading(false);
-  }, [router]);
-
-  useEffect(() => { loadProfile(); }, [loadProfile]);
-
-  const handleLogout = useCallback(() => {
-    Alert.alert('Sign Out', 'Your device stays provisioned — only your session is cleared.', [
+  const handleSignOut = useCallback(() => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out',
         style: 'destructive',
         onPress: async () => {
-          await clearSession();
-          router.replace('/(auth)/pin-entry');
+          await civilLogout();
+          router.replace('/(auth)/login');
         },
       },
     ]);
@@ -106,222 +48,80 @@ export default function ProfileScreen() {
   const initials = user?.name
     ? user.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
-  const fullName = user?.name || 'Unknown User';
-  const userRole = roleLabel || user?.role_id || user?.role || user?.position || 'Worker';
 
   if (loading) {
     return (
-      <View testID="profile-loading" style={[s.container, { paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.orange} />
+      <View style={[s.container, { paddingTop: insets.top }]}>
+        <ActivityIndicator color={BLUE} size="large" style={{ marginTop: 80 }} />
       </View>
     );
   }
 
   return (
     <View testID="profile-screen" style={[s.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={s.header}>
-        <View style={s.headerRow}>
-          <View style={s.avatarCircle}>
-            <Text style={s.avatarText}>{initials}</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text testID="profile-name" style={s.headerName} numberOfLines={1}>{fullName}</Text>
-            <Text testID="profile-role" style={s.headerRole}>{userRole}</Text>
-            {user?.email && <Text testID="profile-email" style={s.headerEmail}>{user.email}</Text>}
-          </View>
-        </View>
-        {dataSource === 'api' && (
-          <View style={s.liveBanner}>
-            <Ionicons name="checkmark-circle" size={12} color={Colors.success} />
-            <Text style={s.liveBannerText}>Live from /api/auth/me</Text>
-          </View>
-        )}
-        {dataSource === 'stored' && (
-          <View style={s.storedBanner}>
-            <Ionicons name="phone-portrait-outline" size={12} color={Colors.warning} />
-            <Text style={s.storedBannerText}>Showing cached session data</Text>
-          </View>
-        )}
+        <Text style={s.headerTitle}>Profile</Text>
       </View>
 
       <ScrollView contentContainerStyle={s.scrollContent}>
-        <ProfileRow
-          testID="profile-nav-personal"
-          icon="person-outline"
-          iconColor="#3B82F6"
-          iconBg="#DBEAFE"
-          title="Personal Information"
-          subtitle="Contact, address, emergency contacts"
-          onPress={() => router.push('/profile/personal')}
-        />
-        <ProfileRow
-          testID="profile-nav-certs"
-          icon="ribbon-outline"
-          iconColor="#059669"
-          iconBg="#D1FAE5"
-          title="My Certifications"
-          subtitle="Licences and competency cards"
-          onPress={() => router.push('/profile/certifications')}
-        />
-        <ProfileRow
-          testID="profile-nav-inductions"
-          icon="checkmark-circle-outline"
-          iconColor="#7C3AED"
-          iconBg="#EDE9FE"
-          title="My Inductions"
-          subtitle="Site inductions & training records"
-          onPress={() => router.push('/profile/inductions')}
-        />
-        <ProfileRow
-          testID="profile-nav-idcard"
-          icon="card-outline"
-          iconColor="#0891B2"
-          iconBg="#CFFAFE"
-          title="Digital ID Card"
-          subtitle="Worker ID with QR code"
-          onPress={() => router.push('/profile/id-card')}
-        />
+        {/* User card */}
+        <View testID="profile-user-card" style={s.userCard}>
+          <View style={s.avatarBig}>
+            <Text style={s.avatarBigText}>{initials}</Text>
+          </View>
+          <Text style={s.userName}>{user?.name || 'User'}</Text>
+          <Text style={s.userEmail}>{user?.email || ''}</Text>
+          <View style={s.rolePill}>
+            <Text style={s.roleText}>{user?.role || user?.role_id || 'Worker'}</Text>
+          </View>
+        </View>
 
-        <View style={s.divider} />
+        {/* Info rows */}
+        <View style={s.infoCard}>
+          <View style={s.infoRow}>
+            <Ionicons name="business-outline" size={18} color={MUTED} />
+            <Text style={s.infoLabel}>Organization</Text>
+            <Text style={s.infoValue}>{user?.org_id || 'Paneltec'}</Text>
+          </View>
+          <View style={s.divider} />
+          <View style={s.infoRow}>
+            <Ionicons name="id-card-outline" size={18} color={MUTED} />
+            <Text style={s.infoLabel}>User ID</Text>
+            <Text style={s.infoValue} numberOfLines={1}>{user?.id ? user.id.slice(0, 12) + '...' : '—'}</Text>
+          </View>
+          <View style={s.divider} />
+          <View style={s.infoRow}>
+            <Ionicons name="shield-checkmark-outline" size={18} color={MUTED} />
+            <Text style={s.infoLabel}>Status</Text>
+            <Text style={[s.infoValue, { color: '#10B981' }]}>
+              {user?.activation_status || 'Active'}
+            </Text>
+          </View>
+        </View>
 
-        {(user?.role_id === 'admin' || user?.role === 'admin') && (
-          <ProfileRow
-            testID="profile-nav-fleet"
-            icon="car-outline"
-            iconColor={Colors.orange}
-            iconBg={Colors.orangeSoft}
-            title="My Fleet"
-            subtitle="Assigned vehicles & equipment"
-            onPress={() => {}}
-          />
+        {/* Workspace switcher */}
+        {user?.workspace_ids && user.workspace_ids.length > 0 && (
+          <View style={s.wsCard}>
+            <Text style={s.wsTitle}>Workspaces</Text>
+            {user.workspace_ids.map((wsId: string, idx: number) => (
+              <View key={wsId} testID={`profile-workspace-${idx}`} style={s.wsRow}>
+                <Ionicons name="layers-outline" size={16} color={BLUE} />
+                <Text style={s.wsText} numberOfLines={1}>{wsId}</Text>
+              </View>
+            ))}
+          </View>
         )}
 
-        <ProfileRow
-          testID="profile-nav-swms"
-          icon="shield-checkmark-outline"
-          iconColor="#2563EB"
-          iconBg="#DBEAFE"
-          title="My SWMS"
-          subtitle="Safe Work Method Statements"
-          onPress={() => router.push({ pathname: '/forms/category/[key]', params: { key: 'swms', title: 'SWMS' } } as never)}
-        />
-        <ProfileRow
-          testID="profile-nav-settings"
-          icon="settings-outline"
-          iconColor="#64748B"
-          iconBg="#E2E8F0"
-          title="App Settings"
-          subtitle="Notifications, language, theme"
-          onPress={() => {}}
-          badge="Soon"
-        />
-
-        {/* Check for updates */}
+        {/* Sign out */}
         <TouchableOpacity
-          testID="profile-check-updates"
-          style={s.updateRow}
-          onPress={() => {
-            update.manualCheck();
-            if (update.checking) return;
-            setTimeout(() => {
-              if (update.available) {
-                Alert.alert(
-                  'Update Available',
-                  `v${update.serverVersion} is available. Install now?`,
-                  [
-                    { text: 'Later', style: 'cancel' },
-                    { text: 'Install', onPress: update.install },
-                  ],
-                );
-              } else if (update.manualError) {
-                Alert.alert('Check Failed', update.manualError);
-              } else {
-                Alert.alert('Up to Date', `You're on the latest version (v${require('../../app.json').expo.version} · build ${require('../../app.json').expo.android.versionCode}).`);
-              }
-            }, 2000);
-          }}
+          testID="profile-signout-btn"
+          style={s.signOutBtn}
+          onPress={handleSignOut}
           activeOpacity={0.7}
         >
-          <View style={s.updateRowLeft}>
-            <View style={[s.profileIconWrap, { backgroundColor: '#DBEAFE' }]}>
-              <Ionicons name="cloud-download-outline" size={18} color="#2C6BFF" />
-            </View>
-            <View>
-              <Text style={s.updateRowTitle}>Check for Updates</Text>
-              <Text style={s.updateRowSub}>
-                Current: v{require('../../app.json').expo.version} · build {require('../../app.json').expo.android.versionCode}
-              </Text>
-            </View>
-          </View>
-          {update.checking ? (
-            <ActivityIndicator size="small" color={Colors.orange} />
-          ) : update.available ? (
-            <View style={s.updateDot} />
-          ) : (
-            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-          )}
+          <Ionicons name="log-out-outline" size={20} color={RED} />
+          <Text style={s.signOutText}>Sign Out</Text>
         </TouchableOpacity>
-
-        <View style={s.divider} />
-
-        {/* Admin Tools — Role Simulator */}
-        {(user?.role_id === 'admin' || user?.role === 'admin') && (
-          <>
-            <View style={s.adminSection}>
-              <View style={s.adminSectionHeader}>
-                <Ionicons name="construct-outline" size={14} color={Colors.orange} />
-                <Text style={s.adminSectionTitle}>ADMIN TOOLS</Text>
-              </View>
-            </View>
-            <View testID="role-simulator" style={s.simCard}>
-              <Text style={s.simLabel}>Role Simulator</Text>
-              <Text style={s.simHint}>Test worker flows without leaving your admin account</Text>
-              <View style={s.simPills}>
-                {ROLE_OPTIONS.map((opt) => {
-                  const active = simRole === opt.id;
-                  return (
-                    <TouchableOpacity
-                      key={opt.id || 'off'}
-                      testID={`sim-role-${opt.id || 'off'}`}
-                      style={[s.simPill, active && s.simPillActive]}
-                      onPress={async () => {
-                        await setSimulateRole(opt.id);
-                        setSimRole(opt.id);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[s.simPillText, active && s.simPillTextActive]}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              {simRole !== '' && (
-                <View style={s.simActiveBanner}>
-                  <Ionicons name="flash" size={12} color="#7C3AED" />
-                  <Text style={s.simActiveText}>
-                    Active — API calls include X-Simulate-Role: {simRole}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <View style={s.divider} />
-          </>
-        )}
-
-        {/* Sign Out */}
-        <TouchableOpacity testID="profile-logout-btn" style={s.logoutBtn} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={20} color={Colors.error} />
-          <Text style={s.logoutText}>Sign Out</Text>
-        </TouchableOpacity>
-
-        {/* Footer */}
-        <View style={s.footer}>
-          <Wordmark size="sm" color={Colors.border} showSubtitle={false} />
-          <Text style={s.versionText}>{MOBILE_BUNDLE_VERSION}</Text>
-        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -329,118 +129,57 @@ export default function ProfileScreen() {
   );
 }
 
-function ProfileRow({
-  testID, icon, iconColor, iconBg, title, subtitle, onPress, badge,
-}: {
-  testID: string; icon: string; iconColor: string; iconBg: string;
-  title: string; subtitle: string; onPress: () => void; badge?: string;
-}) {
-  return (
-    <TouchableOpacity testID={testID} style={s.navRow} onPress={onPress} activeOpacity={0.7}>
-      <View style={[s.navIcon, { backgroundColor: iconBg }]}>
-        <Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={20} color={iconColor} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={s.navTitle}>{title}</Text>
-        <Text style={s.navSub}>{subtitle}</Text>
-      </View>
-      {badge && (
-        <View style={s.badgePill}>
-          <Text style={s.badgeText}>{badge}</Text>
-        </View>
-      )}
-      <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
-    </TouchableOpacity>
-  );
-}
-
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.screen.bg },
+  container: { flex: 1, backgroundColor: BG },
   header: {
-    backgroundColor: C.screen.bg, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20,
+    backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center' },
-  avatarCircle: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { color: C.textOnNavy.main, fontSize: 22, fontWeight: '800' },
-  headerName: { color: C.textOnNavy.main, fontSize: 20, fontWeight: '700' },
-  headerRole: { color: Colors.orange, fontSize: 13, fontWeight: '600', marginTop: 2, textTransform: 'capitalize' },
-  headerEmail: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 4 },
-  liveBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.successSoft, borderRadius: 10, padding: 8, marginTop: 12,
-    borderWidth: 1, borderColor: '#10B98130',
-  },
-  liveBannerText: { fontSize: 10, fontWeight: '600', color: Colors.success, flex: 1 },
-  storedBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.warningSoft, borderRadius: 10, padding: 8, marginTop: 12,
-    borderWidth: 1, borderColor: '#F59E0B30',
-  },
-  storedBannerText: { fontSize: 10, fontWeight: '600', color: Colors.warning, flex: 1 },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: INK, letterSpacing: -0.5 },
+  scrollContent: { padding: 16, paddingBottom: 32 },
 
-  scrollContent: { paddingBottom: 32 },
+  userCard: {
+    alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16,
+    padding: 24, marginBottom: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  },
+  avatarBig: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: BLUE, alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  },
+  avatarBigText: { fontSize: 24, fontWeight: '800', color: '#FFF' },
+  userName: { fontSize: 20, fontWeight: '700', color: INK },
+  userEmail: { fontSize: 14, color: MUTED, marginTop: 4 },
+  rolePill: {
+    backgroundColor: '#DBEAFE', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 5, marginTop: 10,
+  },
+  roleText: { fontSize: 12, fontWeight: '700', color: BLUE, textTransform: 'capitalize' },
 
-  navRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: C.card.bg,
-    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+  infoCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, paddingHorizontal: 18, marginBottom: 16,
+    borderWidth: 1, borderColor: '#E5E7EB',
   },
-  navIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  navTitle: { fontSize: 15, fontWeight: '700', color: C.card.textMain },
-  navSub: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 2 },
-  badgePill: {
-    backgroundColor: Colors.warningSoft, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+  infoRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16,
   },
-  badgeText: { fontSize: 10, fontWeight: '700', color: Colors.warning },
+  infoLabel: { fontSize: 14, fontWeight: '500', color: MUTED, flex: 1 },
+  infoValue: { fontSize: 14, fontWeight: '600', color: INK },
+  divider: { height: 1, backgroundColor: '#E5E7EB' },
 
-  divider: { height: 8, backgroundColor: C.screen.bg },
+  wsCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, marginBottom: 16,
+    borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  wsTitle: { fontSize: 14, fontWeight: '700', color: INK, marginBottom: 12 },
+  wsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  wsText: { fontSize: 13, color: MUTED, flex: 1 },
 
-  updateRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: C.card.bg, paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
-  },
-  updateRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  updateRowTitle: { fontSize: 14, fontWeight: '600', color: C.card.textMain },
-  updateRowSub: { fontSize: 11, color: C.textOnNavy.faint, marginTop: 2 },
-  updateDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2C6BFF' },
-
-  adminSection: { backgroundColor: C.card.bg, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
-  adminSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  adminSectionTitle: { fontSize: 11, fontWeight: '800', color: Colors.orange, letterSpacing: 1.2 },
-  simCard: {
-    backgroundColor: C.card.bg, paddingHorizontal: 16, paddingBottom: 14,
-  },
-  simLabel: { fontSize: 15, fontWeight: '700', color: C.card.textMain, marginTop: 8 },
-  simHint: { fontSize: 12, color: C.textOnNavy.faint, marginTop: 2, marginBottom: 12 },
-  simPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  simPill: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1.5, borderColor: C.card.border, backgroundColor: Colors.bg,
-  },
-  simPillActive: {
-    borderColor: '#7C3AED', backgroundColor: '#F5F3FF',
-  },
-  simPillText: { fontSize: 12, fontWeight: '600', color: C.textOnNavy.faint },
-  simPillTextActive: { color: Colors.viatec },
-  simActiveBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#F5F3FF', borderRadius: 8, padding: 8, marginTop: 10,
-    borderWidth: 1, borderColor: '#7C3AED20',
-  },
-  simActiveText: { fontSize: 10, fontWeight: '600', color: Colors.viatec, flex: 1 },
-
-  logoutBtn: {
+  signOutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginHorizontal: 16, marginTop: 16, paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1.5, borderColor: Colors.errorSoft, backgroundColor: C.card.bg,
+    borderWidth: 1.5, borderColor: RED, borderRadius: 14,
+    paddingVertical: 16, backgroundColor: '#FFF', marginTop: 8,
+    minHeight: 56,
   },
-  logoutText: { fontSize: 15, fontWeight: '600', color: Colors.error },
-
-  footer: { alignItems: 'center', marginTop: 24, gap: 6, opacity: 0.3 },
-  versionText: { fontSize: 10, color: C.textOnNavy.faint },
+  signOutText: { fontSize: 16, fontWeight: '600', color: RED },
 });
