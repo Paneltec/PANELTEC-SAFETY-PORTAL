@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.whscompliance.fv5aib",
-      "buildNumber": "170",
+      "buildNumber": "180",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan QR codes for site sign-on and vehicle ID",
         "NSPhotoLibraryUsageDescription": "Attach photos to hazard and incident reports",

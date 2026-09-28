@@ -20,6 +20,14 @@
         "simulator": false
       }
     },
+    "preview-ios": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
+    },
     "preview-apk": {
       "distribution": "internal",
       "channel": "preview",
