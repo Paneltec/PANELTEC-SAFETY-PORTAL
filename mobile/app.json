@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.whscompliance.fv5aib",
+      "bundleIdentifier": "com.paneltec.whs",
       "buildNumber": "180",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan QR codes for site sign-on and vehicle ID",
@@ -27,7 +27,7 @@
         "foregroundImage": "./assets/icons/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
-      "package": "com.emergent.whscompliance.fv5aib",
+      "package": "com.paneltec.whs",
       "permissions": [
         "android.permission.RECEIVE_SMS",
         "android.permission.READ_SMS"
