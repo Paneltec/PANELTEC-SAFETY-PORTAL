@@ -451,17 +451,6 @@ export default function HomeScreen() {
             <>
               {/* Decision row */}
               <View style={jd.decisionRow}>
-                <TouchableOpacity
-                  testID="job-detail-decline-btn"
-                  style={jd.declineBtn}
-                  onPress={() => handleDeclineJob(job)}
-                  disabled={jobActioning}
-                  activeOpacity={0.7}
-                >
-                  {jobActioning ? <ActivityIndicator size="small" color={Colors.textTertiary} /> : (
-                    <Text style={jd.declineBtnText}>DECLINE</Text>
-                  )}
-                </TouchableOpacity>
                 <Animated.View style={[
                   jd.acceptBtnWrap,
                   {
@@ -1105,7 +1094,7 @@ const jd = StyleSheet.create({
     backgroundColor: C.grey.declineBg, minHeight: 56,
   },
   declineBtnText: { fontSize: 15, fontWeight: '800', color: C.grey.declineText, letterSpacing: 0.5 },
-  acceptBtnWrap: { flex: 1.6, borderRadius: 14 },
+  acceptBtnWrap: { flex: 1, borderRadius: 14 },
   acceptBtn: {
     backgroundColor: C.green.base, borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
