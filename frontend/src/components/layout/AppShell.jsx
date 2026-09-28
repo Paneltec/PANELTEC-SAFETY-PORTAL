@@ -256,7 +256,7 @@ const NAV = [
     // unmistakable next to the sibling "Ad-hoc Jobs" entry).
     { to: '/app/mobile/issue-job', label: "Issue Today's Job", icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-issue-job', requiresCan: ['users', 'edit'], pastel: 'coral' },
     // Leave Requests — payroll leave emails, approve/reject → Pay Officer.
-    { to: '/app/leave', label: 'Leave Requests', icon: CalendarLtr24Regular, iconActive: CalendarLtr24Filled, testid: 'nav-leave', requiresCan: ['workers', 'view'], pastel: 'sky' },
+    { to: '/app/leave', label: 'Leave Requests', icon: CalendarLtr24Regular, iconActive: CalendarLtr24Filled, testid: 'nav-leave', requiresCan: ['workers', 'view'], pastel: 'sky', badgeKey: 'leavePending' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },
@@ -434,7 +434,7 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
                           {!collapsed && it.badgeKey && badges[it.badgeKey]?.total > 0 && (
                             <span
                               data-testid={`${it.testid}-badge`}
-                              title={`${badges[it.badgeKey].expired} expired · ${badges[it.badgeKey].expiring_soon} expiring soon`}
+                              title={badges[it.badgeKey].title || `${badges[it.badgeKey].total} items need attention`}
                               className="ml-auto text-[10px] leading-none font-semibold text-white bg-red-600 rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
                             >
                               {badges[it.badgeKey].total > 99 ? '99+' : badges[it.badgeKey].total}
@@ -893,6 +893,8 @@ export default function AppShell() {
   // guarded by `@safe_admin_endpoint` so a Mongo hiccup renders the
   // pill as absent instead of exploding the shell.
   const [certBadge, setCertBadge] = useState({ expired: 0, expiring_soon: 0, total: 0 });
+  // v58.13.132p3d — Leave-pending sidebar badge (same pattern as certExpiry).
+  const [leaveBadge, setLeaveBadge] = useState({ total: 0 });
   // v58.13.132dr — Sidebar wordmark now reads the org's chosen brand
   // name (`display_name → trading_name → name → 'Paneltec Civil'`)
   // instead of the historical hard-coded literal. Fetched once on
@@ -982,6 +984,26 @@ export default function AppShell() {
     return () => { alive = false; };
   }, [location.pathname]);
 
+  // v58.13.132p3d — Leave-pending sidebar badge. Same pattern as certExpiry:
+  // refetch on pathname change + every 60 s interval. Uses the existing
+  // /leave/summary endpoint which returns { pending: N, … }.
+  useEffect(() => {
+    if (!getToken()) return;
+    let alive = true;
+    const fetchLeave = () => {
+      api.get('/leave/summary').then((r) => {
+        if (!alive) return;
+        const p = Number(r?.data?.pending || 0);
+        setLeaveBadge({ total: p, title: `${p} leave request${p !== 1 ? 's' : ''} awaiting decision` });
+      }).catch(() => {
+        if (alive) setLeaveBadge({ total: 0 });
+      });
+    };
+    fetchLeave();
+    const iv = setInterval(fetchLeave, 60_000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [location.pathname]);
+
   if (!getToken()) return <Navigate to="/" replace />;
 
   const permsValue = {
@@ -1000,7 +1022,7 @@ export default function AppShell() {
   return (
     <PermissionsProvider value={permsValue}>
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
-      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} brandName={brandName} user={user} />
+      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge, leavePending: leaveBadge }} brandName={brandName} user={user} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-72 civil-chrome max-md:border-r-black">
           <SheetTitle className="sr-only">Navigation menu</SheetTitle>
@@ -1008,7 +1030,7 @@ export default function AppShell() {
             <Logo size="sm" displayName={brandName} />
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 min-w-[48px] min-h-[48px] text-civil-off-white"><X size={20} /></button>
           </div>
-          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} />
+          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge, leavePending: leaveBadge }} />
           {/* v58.13.112 — PWA install button also mounted in the mobile
               drawer so Android Chrome users who never open the desktop
               sidebar still see the install affordance. */}

@@ -106,7 +106,7 @@ function Drawer({ id, onClose, onChanged }) {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30" onClick={onClose} data-testid="leave-detail-drawer-overlay">
-      <div className="w-full max-w-md h-full bg-white shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="leave-detail-drawer">
+      <div className="w-full max-w-md bg-white shadow-xl overflow-y-auto mt-16" style={{ maxHeight: 'calc(100vh - 4rem)' }} onClick={(e) => e.stopPropagation()} data-testid="leave-detail-drawer">
         {!row ? <div className="p-6 text-slate-500">Loading…</div> : (
           <div className="p-6 space-y-5">
             <div className="flex items-start justify-between">
@@ -165,8 +165,8 @@ function Drawer({ id, onClose, onChanged }) {
 // ── Modals ──────────────────────────────────────────────────────────
 function Modal({ title, onClose, children }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl space-y-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 pt-20" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 8rem)' }} onClick={(e) => e.stopPropagation()}>
         <div className="text-lg font-bold text-slate-900">{title}</div>
         {children}
       </div>
