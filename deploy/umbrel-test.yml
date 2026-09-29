@@ -7,7 +7,8 @@
 #   backend  -> 127.0.0.1:8011 (Umbrel only)
 #   database -> 127.0.0.1:27027 (Umbrel only)
 # Watchtower talks to Umbrel's Portainer Docker at /data/docker.sock and pulls
-# new :test images every 5 minutes.
+# new :test images every 5 minutes. The images are public on ghcr.io, so no
+# registry token is needed (a wrong token makes ghcr refuse even public pulls).
 # In Portainer this was pasted into the Web editor with real values in place of ${...}.
 name: paneltec-test
 services:
@@ -130,8 +131,6 @@ services:
       WATCHTOWER_LABEL_ENABLE: 'true'
       WATCHTOWER_POLL_INTERVAL: '300'
       WATCHTOWER_CLEANUP: 'true'
-      REPO_USER: Paneltec
-      REPO_PASS: ${GHCR_TOKEN}
 volumes:
   db: {}
   uploads: {}
