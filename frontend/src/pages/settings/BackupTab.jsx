@@ -2245,6 +2245,46 @@ function DiscoveryCard({ discovered }) {
 // ============================================================
 // Restore from snapshot
 // ============================================================
+function RestoreProgress({ p }) {
+  const [, tick] = useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => tick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.floor((Date.now() - p.startedAt) / 1000);
+  const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  const mb = (b) => (b / (1024 * 1024)).toFixed(0);
+  let pct, label;
+  if (p.phase === "upload") {
+    pct = p.pct || 0;
+    label = `Step 1 of 2 · Uploading ${mb(p.loaded || 0)} of ${mb(p.total || 0)} MB (${pct}%)`;
+  } else {
+    pct = p.count ? Math.round(((p.done || 0) / p.count) * 100) : 0;
+    label = p.count
+      ? `Step 2 of 2 · Restoring ${Math.min((p.done || 0) + 1, p.count)} of ${p.count}${p.current ? ` · ${p.current}` : ""}`
+      : "Step 2 of 2 · Opening the snapshot on the server…";
+  }
+  return (
+    <div data-testid="backup-restore-progress" style={{
+      marginTop: 12, padding: 12, borderRadius: 8,
+      background: "#f8fafc", border: "1px solid #e2e8f0",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between",
+        fontSize: 12, fontWeight: 700, marginBottom: 6, gap: 8 }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        <span style={{ color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{elapsed}</span>
+      </div>
+      <div style={{ height: 10, borderRadius: 5, background: "#e2e8f0", overflow: "hidden" }}>
+        <div style={{ width: `${Math.max(pct, 2)}%`, height: "100%",
+          background: "#f59e0b", transition: "width 0.4s ease" }}/>
+      </div>
+      <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+        Keep this page open until it finishes.
+      </div>
+    </div>
+  );
+}
+
 function RestoreCard() {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
@@ -2265,24 +2305,52 @@ function RestoreCard() {
     setError("");
   };
 
+  // progress: { phase: "upload"|"server", pct, loaded, total, done, count, current, startedAt }
+  const [progress, setProgress] = useState(null);
+
   const send = async (mode) => {
     if (!file) return;
     setBusy(true);
     setError("");
+    const startedAt = Date.now();
+    setProgress({ phase: "upload", pct: 0, loaded: 0, total: file.size, startedAt });
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const qs = mode === "dry_run" ? "?mode=dry_run" :
-                                      `?mode=${mode}&confirm=RESTORE`;
+      const qs = (mode === "dry_run" ? "?mode=dry_run" :
+                                       `?mode=${mode}&confirm=RESTORE`) + "&background=true";
       const r = await api.post(`${API}/restore${qs}`, fd, {
         headers: { ...authHdr() },
+        timeout: 0,
+        onUploadProgress: (ev) => {
+          const total = ev.total || file.size;
+          setProgress(p => ({ ...p, phase: "upload", loaded: ev.loaded, total,
+            pct: Math.min(100, Math.round((ev.loaded / total) * 100)) }));
+        },
       });
-      if (mode === "dry_run") setPreview(r.data);
-      else setResult(r.data);
+      const jobId = r.data?.job_id;
+      let data = r.data;
+      if (jobId) {
+        setProgress(p => ({ ...p, phase: "server", pct: 100 }));
+        // Poll the server-side job until it finishes.
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          await new Promise(res => setTimeout(res, 1500));
+          const j = (await api.get(`${API}/restore/jobs/${jobId}`, {
+            headers: { ...authHdr() }, timeout: 30000 })).data;
+          setProgress(p => ({ ...p, phase: "server", done: j.done, count: j.total,
+            current: j.current }));
+          if (j.state === "done") { data = j.result; break; }
+          if (j.state === "failed") throw new Error(j.error || "Restore failed");
+        }
+      }
+      if (mode === "dry_run") setPreview(data);
+      else setResult(data);
     } catch (e) {
       setError(e?.response?.data?.detail || e.message);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -2360,6 +2428,8 @@ function RestoreCard() {
             {busy ? "Reading…" : "Preview contents"}
           </button>
         )}
+
+        {progress && <RestoreProgress p={progress}/>}
 
         {error && (
           <div style={{

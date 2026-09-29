@@ -2201,50 +2201,23 @@ def install(app, db, require_admin):
     # ------------------------------------------------------------
     # RESTORE  — drag-and-drop a snapshot ZIP and repopulate DB.
     # ------------------------------------------------------------
-    @api_router.post("/restore", dependencies=[Depends(require_admin)])
-    async def restore_from_zip(
-        file: UploadFile = File(...),
-        mode: str = Query("replace", pattern=r"^(replace|merge|dry_run)$"),
-        confirm: str = Query("", description="Type RESTORE to confirm"),
-    ):
-        """Repopulate Mongo collections from an uploaded snapshot ZIP.
+    # Restore jobs, keyed by id. In-memory is fine: one backend
+    # process, and a job only matters while an admin is watching it.
+    _RESTORE_JOBS: Dict[str, Dict[str, Any]] = {}
 
-        modes:
-          • dry_run  – open the ZIP, count rows, return diff. Writes
-                       NOTHING. Default for the UI's "Preview" button.
-          • replace  – drop each collection in the ZIP, then re-insert
-                       (destructive). Requires confirm=RESTORE.
-          • merge    – insert rows that don't exist (by `id`), update
-                       rows that do. Non-destructive — keeps anything
-                       in the live DB that isn't in the ZIP.
+    async def _run_restore(fh, filename: str, mode: str,
+                           job: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Core restore. `fh` is a seekable binary file holding the ZIP.
+        When `job` is given, progress is written into it as we go."""
+        def _p(**kw):
+            if job is not None:
+                job.update(kw)
 
-        The collections we never touch (auth_sessions, anything
-        starting with `system.`, GridFS internals) are skipped even
-        if they're in the ZIP, so a restore can't lock the admin
-        out of their own session.
-        """
-        if mode != "dry_run" and confirm != "RESTORE":
-            raise HTTPException(
-                400,
-                "Restore requires ?confirm=RESTORE — this is destructive.",
-            )
-
-        # Read the ZIP straight from the upload's temp file (spooled to
-        # disk by Starlette) rather than copying it into RAM, so
-        # multi-GB snapshots restore without exhausting memory.
-        MAX_RESTORE_BYTES = 8 * 1024 * 1024 * 1024
-        fh = file.file
-        fh.seek(0, 2)
-        size = fh.tell()
-        fh.seek(0)
-        if size > MAX_RESTORE_BYTES:
-            raise HTTPException(413, "Snapshot too large for restore (>8 GB).")
         try:
             z = zipfile.ZipFile(fh)
         except zipfile.BadZipFile:
             raise HTTPException(415, "Not a valid ZIP file.")
 
-        # Sanity-check the manifest if present.
         manifest: Dict[str, Any] = {}
         if "manifest.json" in z.namelist():
             try:
@@ -2256,19 +2229,19 @@ def install(app, db, require_admin):
             except json.JSONDecodeError:
                 manifest = {}
 
-        # Find every mongo/<coll>.json file.
         coll_files = [n for n in z.namelist()
                       if n.startswith("mongo/") and n.endswith(".json")]
         if not coll_files:
             raise HTTPException(415, "ZIP doesn't contain mongo/<collection>.json files.")
 
-        # Collections we always leave alone — restoring them would
-        # nuke the admin's current login session or system metadata.
         DO_NOT_TOUCH = {"auth_sessions"}
+        coll_files = sorted(coll_files)
+        _p(total=len(coll_files), done=0)
 
         per_coll: List[Dict[str, Any]] = []
-        for path in sorted(coll_files):
+        for idx, path in enumerate(coll_files):
             cname = path[len("mongo/"):-len(".json")]
+            _p(current=cname, done=idx)
             if cname in DO_NOT_TOUCH or cname.startswith("system.") \
                or cname.startswith("bk_fs."):
                 per_coll.append({"collection": cname, "status": "skipped",
@@ -2315,24 +2288,108 @@ def install(app, db, require_admin):
                 entry["updated"] = updated
                 entry["rows_after"] = await db[cname].count_documents({})
             per_coll.append(entry)
+            del rows
 
-        # Audit row.
+        _p(done=len(coll_files), current=None)
+
         if mode != "dry_run":
             await db.bk_restore_log.insert_one({
                 "id": str(uuid.uuid4()),
                 "ran_at": _now_iso(),
                 "mode": mode,
-                "filename": file.filename,
+                "filename": filename,
                 "manifest_id": manifest.get("snapshot_id"),
                 "results": per_coll,
             })
 
-        return {
-            "ok": True,
-            "mode": mode,
-            "collections": per_coll,
-            "manifest": manifest,
-        }
+        return {"ok": True, "mode": mode, "collections": per_coll,
+                "manifest": manifest}
+
+    @api_router.post("/restore", dependencies=[Depends(require_admin)])
+    async def restore_from_zip(
+        file: UploadFile = File(...),
+        mode: str = Query("replace", pattern=r"^(replace|merge|dry_run)$"),
+        confirm: str = Query("", description="Type RESTORE to confirm"),
+        background: bool = Query(False, description="Run as a job; poll /restore/jobs/{id}"),
+    ):
+        """Repopulate Mongo collections from an uploaded snapshot ZIP.
+
+        modes:
+          • dry_run  – open the ZIP, count rows, return diff. Writes
+                       NOTHING. Default for the UI's "Preview" button.
+          • replace  – drop each collection in the ZIP, then re-insert
+                       (destructive). Requires confirm=RESTORE.
+          • merge    – insert rows that don't exist (by `id`), update
+                       rows that do. Non-destructive.
+
+        With background=true the call returns {job_id} at once and the
+        restore runs server-side; poll GET /restore/jobs/{job_id} for
+        progress (collection N of M). auth_sessions, system.* and
+        GridFS internals are never touched.
+        """
+        if mode != "dry_run" and confirm != "RESTORE":
+            raise HTTPException(
+                400,
+                "Restore requires ?confirm=RESTORE — this is destructive.",
+            )
+
+        # The upload is already spooled to a temp file by Starlette —
+        # read the ZIP from there instead of copying it into RAM, so
+        # multi-GB snapshots work.
+        MAX_RESTORE_BYTES = 8 * 1024 * 1024 * 1024
+        fh = file.file
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(0)
+        if size > MAX_RESTORE_BYTES:
+            raise HTTPException(413, "Snapshot too large for restore (>8 GB).")
+
+        if not background:
+            return await _run_restore(fh, file.filename, mode)
+
+        # Background: copy to our own temp file (the upload's is
+        # closed when this request ends), then run as a task.
+        import asyncio
+        import shutil
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(prefix="restore-", suffix=".zip", delete=False)
+        shutil.copyfileobj(fh, tmp, 16 * 1024 * 1024)
+        tmp.close()
+
+        job_id = str(uuid.uuid4())
+        job: Dict[str, Any] = {"id": job_id, "state": "running", "mode": mode,
+                               "filename": file.filename, "started_at": _now_iso(),
+                               "total": 0, "done": 0, "current": None}
+        _RESTORE_JOBS[job_id] = job
+
+        async def _go():
+            try:
+                with open(tmp.name, "rb") as f:
+                    job["result"] = await _run_restore(f, file.filename, mode, job)
+                job["state"] = "done"
+            except HTTPException as e:
+                job["state"] = "failed"
+                job["error"] = e.detail
+            except Exception as e:  # noqa: BLE001
+                logger.exception("restore job failed")
+                job["state"] = "failed"
+                job["error"] = str(e)
+            finally:
+                job["finished_at"] = _now_iso()
+                try:
+                    os.unlink(tmp.name)
+                except OSError:
+                    pass
+
+        asyncio.create_task(_go())
+        return {"ok": True, "job_id": job_id}
+
+    @api_router.get("/restore/jobs/{job_id}", dependencies=[Depends(require_admin)])
+    async def restore_job_status(job_id: str):
+        job = _RESTORE_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(404, "Restore job not found (the server may have restarted).")
+        return job
 
 
 
