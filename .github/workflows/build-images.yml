@@ -39,6 +39,10 @@ jobs:
         id: n
         run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
 
+      - id: stamp
+        run: |
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "when=$(TZ=Australia/Hobart date '+%d/%m %H:%M')" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -48,5 +52,7 @@ jobs:
           tags: |
             ${{ steps.n.outputs.name }}:${{ github.ref_name }}
             ${{ steps.n.outputs.name }}:${{ github.ref_name }}-${{ github.sha }}
+          build-args: |
+            BUILD_STAMP=${{ github.ref_name }} · ${{ steps.stamp.outputs.sha }} · ${{ steps.stamp.outputs.when }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}

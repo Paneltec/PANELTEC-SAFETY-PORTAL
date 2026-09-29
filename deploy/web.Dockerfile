@@ -2,10 +2,12 @@
 # The JavaScript is built once on the build machine; only nginx is per-architecture.
 ARG NODE_IMAGE=node:22-bookworm
 ARG PLACEHOLDER=https://paneltec-public-url.invalid
+ARG BUILD_STAMP=local
 
 # ── Web portal ─────────────────────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS portal
 ARG PLACEHOLDER
+ARG BUILD_STAMP
 WORKDIR /src/frontend
 COPY frontend/ ./
 COPY deploy/strip_emergent.py /tmp/strip_emergent.py
@@ -14,6 +16,7 @@ RUN python3 /tmp/strip_emergent.py public/index.html \
  && python3 -c "import re;p='yarn.lock';s=open(p).read();s=re.sub(r'\n\"@emergentbase/visual-edits@[^\n]*\n(  [^\n]*\n)+','\n',s);open(p,'w').write(s)" \
  && yarn install --network-timeout 600000 --ignore-engines
 RUN REACT_APP_BACKEND_URL=${PLACEHOLDER} REACT_APP_EXPO_URL=${PLACEHOLDER}/m/ \
+    REACT_APP_BUILD_STAMP="${BUILD_STAMP}" \
     CI=false GENERATE_SOURCEMAP=false yarn build
 
 # ── Phone app (web build, used by the in-portal phone viewer) ──────────

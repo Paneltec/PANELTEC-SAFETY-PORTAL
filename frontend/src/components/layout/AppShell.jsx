@@ -867,6 +867,15 @@ const SidebarShell = ({ collapsed, canAdminNav, badges, brandName, user }) => (
             : RUNNING_VERSION.replace(/^paneltec-/, '')}
         </span>
       </div>
+      {/* Build stamp (set by the self-hosted image build): which copy is
+          this, and when was it built — so "has the update arrived?" is
+          a glance at the footer. */}
+      {!collapsed && process.env.REACT_APP_BUILD_STAMP && (
+        <div className="mt-1 text-center font-mono text-[9px] leading-tight text-slate-400 truncate"
+          data-testid="app-build-stamp" title={process.env.REACT_APP_BUILD_STAMP}>
+          {process.env.REACT_APP_BUILD_STAMP}
+        </div>
+      )}
     </div>
     {/* v58.13.112 — PWA install affordance. Hidden entirely when the
         app is already running in standalone mode (usePwaInstall

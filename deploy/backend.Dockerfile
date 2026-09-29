@@ -1,4 +1,5 @@
 # Paneltec Safety Portal: API server (self-hosted)
+ARG BUILD_STAMP=local
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
