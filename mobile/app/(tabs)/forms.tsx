@@ -7,9 +7,8 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator, TextInput, Modal, FlatList,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '../../src/theme/colors';
@@ -34,17 +33,16 @@ export default function FormsScreen() {
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
 
-  const CAT_STORAGE_KEY = '@paneltec:formsLibrary:lastCategory';
+  const params = useLocalSearchParams<{ category?: string }>();
 
   React.useEffect(() => {
     getStoredUser().then((u) => {
       const role = u?.role_id || u?.role;
       if (role) setUserRole(role);
     });
-    AsyncStorage.getItem(CAT_STORAGE_KEY).then((v) => {
-      if (v) setSelectedCat(v);
-    });
-  }, []);
+    // Read from route params (e.g. SSRA tile); default to all
+    if (params.category) setSelectedCat(params.category);
+  }, [params.category]);
 
   const { data: templates, isLoading, isError, error, refetch } = useQuery<FormTemplate[]>({
     queryKey: ['form-templates'],
@@ -123,8 +121,6 @@ export default function FormsScreen() {
   const handlePickCat = (key: string | null) => {
     setSelectedCat(key);
     setCatPickerOpen(false);
-    if (key) AsyncStorage.setItem(CAT_STORAGE_KEY, key);
-    else AsyncStorage.removeItem(CAT_STORAGE_KEY);
   };
 
   const totalCount = templates?.length || 0;

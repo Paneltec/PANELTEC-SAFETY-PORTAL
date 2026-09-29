@@ -1296,7 +1296,7 @@
 // ensures any stale bundle still sitting in his ServiceWorker's
 // static cache is discarded on next visit. Ship memo:
 // v58_13_132fn_worker_edit_permission_fix_shipped_finish_deferred.md
-const CACHE_VERSION = 'paneltec-v166.3.12.58.13.132p42';
+const CACHE_VERSION = 'paneltec-v167.3.12.58.13.132p43';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
