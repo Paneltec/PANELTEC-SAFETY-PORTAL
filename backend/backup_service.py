@@ -1145,6 +1145,56 @@ async def _enforce_pod_side_retention(db_, reason: str = "") -> Dict[str, Any]:
     }
 
 
+
+GRIDFS_SKIP_BUCKETS = {"bk_fs", "bulk_import_failed_pdfs"}
+
+
+def _gridfs_bucket_names(collections: List[str]) -> List[str]:
+    names = []
+    for c in collections:
+        if c.endswith(".files"):
+            b = c[:-len(".files")]
+            if b not in GRIDFS_SKIP_BUCKETS and f"{b}.chunks" in collections:
+                names.append(b)
+    return sorted(names)
+
+
+async def _export_gridfs_buckets(z: "zipfile.ZipFile", collections: List[str], db_) -> Dict[str, Dict[str, int]]:
+    """Write every uploaded file into the zip under gridfs/<bucket>/<id>
+    plus a gridfs/<bucket>.json index. Streams chunk-by-chunk; never
+    holds a whole file in RAM. Returns {bucket: {files, bytes}}."""
+    summary: Dict[str, Dict[str, int]] = {}
+    for b in _gridfs_bucket_names(collections):
+        bucket = AsyncIOMotorGridFSBucket(db_, bucket_name=b)
+        n = 0
+        nbytes = 0
+        index_rows: List[Dict[str, Any]] = []
+        async for fdoc in db_[f"{b}.files"].find({}):
+            fid = fdoc.get("_id")
+            try:
+                grid_out = await bucket.open_download_stream(fid)
+            except Exception as e:  # noqa: BLE001 — orphan files-row; skip it
+                logger.warning("backup.gridfs %s/%s unreadable: %s", b, fid, e)
+                continue
+            # One zip entry open at a time (zipfile requirement).
+            with z.open(f"gridfs/{b}/{fid}", "w", force_zip64=True) as out:
+                while True:
+                    chunk = await grid_out.readchunk()
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    nbytes += len(chunk)
+            meta = dict(fdoc)
+            meta["_id"] = str(fid)
+            index_rows.append(meta)
+            n += 1
+        z.writestr(f"gridfs/{b}.json",
+                   json.dumps(index_rows, default=str, ensure_ascii=False))
+        summary[b] = {"files": n, "bytes": nbytes}
+        logger.info("backup.gridfs bucket=%s files=%d bytes=%d", b, n, nbytes)
+    return summary
+
+
 def install(app, db, require_admin):
     """Mount the backup endpoints. Called from server.py."""
     global _db
@@ -1385,6 +1435,11 @@ def install(app, db, require_admin):
                         continue
                     if cname.startswith("bk_fs."):
                         continue
+                    # Uploaded files (GridFS buckets) are written as
+                    # real files under gridfs/ below — their raw
+                    # .files/.chunks rows are useless as JSON.
+                    if cname.endswith(".files") or cname.endswith(".chunks"):
+                        continue
                     # Stream doc-by-doc into a JSON array entry. Uses
                     # `ZipFile.open(..., "w")` which returns a
                     # write-only file-like whose bytes are compressed
@@ -1410,12 +1465,27 @@ def install(app, db, require_admin):
                     included.append(cname)
                     total_docs += doc_count
 
+                # ── Uploaded files (GridFS buckets) ─────────────────
+                # Every bucket except the backup store itself and the
+                # bulk-import scratch bucket. Each file is streamed
+                # into `gridfs/<bucket>/<id>` and its files-row (with
+                # `_id` kept, so documents that point at the file by
+                # id still resolve after restore) into
+                # `gridfs/<bucket>.json`.
+                gridfs_summary = await _export_gridfs_buckets(z, collections, db)
+                total_files = sum(v["files"] for v in gridfs_summary.values())
+                total_file_bytes = sum(v["bytes"] for v in gridfs_summary.values())
+
                 manifest = {
                     "snapshot_id": snap_id,
                     "created_at": _now_iso(),
                     "scope": "full",
                     "collections": included,
                     "total_documents": total_docs,
+                    "gridfs": gridfs_summary,
+                    "total_files": total_files,
+                    "total_file_bytes": total_file_bytes,
+                    "files_v1": True,
                     "app": "paneltec-hub",
                     # v58.13.132mq — serializer version marker. Restore
                     # keeps reading legacy (unmarked) snapshots with
@@ -2298,10 +2368,15 @@ def install(app, db, require_admin):
                       if n.startswith("mongo/") and n.endswith(".json")]
         if not coll_files:
             raise HTTPException(415, "ZIP doesn't contain mongo/<collection>.json files.")
+        # Uploaded files (files_v1 snapshots): gridfs/<bucket>.json index
+        # + gridfs/<bucket>/<id> blobs.
+        gridfs_idx = sorted(n for n in z.namelist()
+                            if n.startswith("gridfs/") and n.endswith(".json")
+                            and n.count("/") == 1)
 
         DO_NOT_TOUCH = {"auth_sessions"}
         coll_files = sorted(coll_files)
-        _p(total=len(coll_files), done=0)
+        _p(total=len(coll_files) + len(gridfs_idx), done=0)
 
         per_coll: List[Dict[str, Any]] = []
         BATCH = 500
@@ -2315,7 +2390,7 @@ def install(app, db, require_admin):
                 continue
             if _is_gridfs(cname):
                 per_coll.append({"collection": cname, "status": "skipped",
-                                 "reason": "uploaded files — moved separately"})
+                                 "reason": "old-style file rows — use a new backup for files"})
                 continue
 
             existing = await db[cname].count_documents({})
@@ -2389,7 +2464,85 @@ def install(app, db, require_admin):
                 entry["error"] = str(e)[:300]
             per_coll.append(entry)
 
-        _p(done=len(coll_files), current=None)
+        # ── Uploaded files ──────────────────────────────────────────
+        from bson import ObjectId
+        for gi, idx_path in enumerate(gridfs_idx):
+            b = idx_path[len("gridfs/"):-len(".json")]
+            _p(current=f"{b} (files)", done=len(coll_files) + gi, rows_done=0)
+            bucket = AsyncIOMotorGridFSBucket(db, bucket_name=b)
+            existing = await db[f"{b}.files"].count_documents({})
+            entry = {"collection": f"{b} (files)", "rows_in_zip": 0,
+                     "rows_existing": existing}
+            try:
+                if mode == "replace":
+                    await db[f"{b}.files"].delete_many({})
+                    await db[f"{b}.chunks"].delete_many({})
+                n = 0
+                nbytes = 0
+                skipped = 0
+                with z.open(idx_path, "r") as raw:
+                    for meta in _iter_json_array(raw):
+                        if not isinstance(meta, dict) or not meta.get("_id"):
+                            continue
+                        n += 1
+                        blob = f"gridfs/{b}/{meta['_id']}"
+                        if mode == "dry_run":
+                            continue
+                        try:
+                            fid = ObjectId(meta["_id"])
+                        except Exception:  # noqa: BLE001
+                            fid = meta["_id"]
+                        if mode == "merge" and await db[f"{b}.files"].find_one({"_id": fid}, {"_id": 1}):
+                            skipped += 1
+                            continue
+                        try:
+                            info = z.getinfo(blob)
+                        except KeyError:
+                            skipped += 1
+                            continue
+                        md = meta.get("metadata")
+                        grid_in = bucket.open_upload_stream_with_id(
+                            fid, meta.get("filename") or str(fid),
+                            metadata=md if isinstance(md, dict) else None)
+                        with z.open(info, "r") as src:
+                            while True:
+                                chunk = src.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                await grid_in.write(chunk)
+                        await grid_in.close()
+                        nbytes += info.file_size
+                        # Keep the original upload date / content type.
+                        patch = {}
+                        ud = meta.get("uploadDate")
+                        if isinstance(ud, str):
+                            try:
+                                patch["uploadDate"] = datetime.fromisoformat(ud.replace("Z", "+00:00"))
+                            except ValueError:
+                                pass
+                        for k in ("contentType", "aliases"):
+                            if k in meta:
+                                patch[k] = meta[k]
+                        if patch:
+                            await db[f"{b}.files"].update_one({"_id": fid}, {"$set": patch})
+                        if n % 25 == 0:
+                            _p(rows_done=n)
+                entry["rows_in_zip"] = n
+                if mode == "dry_run":
+                    entry["status"] = "preview"
+                else:
+                    entry["status"] = "replaced" if mode == "replace" else "merged"
+                    entry["bytes"] = nbytes
+                    if skipped:
+                        entry["skipped"] = skipped
+                    entry["rows_after"] = await db[f"{b}.files"].count_documents({})
+            except Exception as e:  # noqa: BLE001
+                logger.warning("restore files %s failed: %s", b, e)
+                entry["status"] = "fail"
+                entry["error"] = str(e)[:300]
+            per_coll.append(entry)
+
+        _p(done=len(coll_files) + len(gridfs_idx), current=None)
 
         if mode != "dry_run":
             await db.bk_restore_log.insert_one({
