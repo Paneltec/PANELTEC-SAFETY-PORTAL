@@ -218,7 +218,7 @@ export function groupByCategory(
   return CATEGORY_ORDER
     .filter((cat) => {
       if (cat.key === 'admin' && userRole !== 'admin' && userRole !== 'owner') return false;
-      return (byKey[cat.key] || []).length > 0;
+      return true;
     })
     .map((cat) => ({
       meta: cat,

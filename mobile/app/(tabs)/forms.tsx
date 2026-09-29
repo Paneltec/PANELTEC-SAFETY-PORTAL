@@ -110,8 +110,8 @@ export default function FormsScreen() {
     return m;
   }, [templates, search]);
 
-  // If persisted category has 0 matches, fall back to all
-  const effectiveCat = selectedCat && (catCounts[selectedCat] || 0) > 0 ? selectedCat : null;
+  // If persisted category has 0 matches, still honour it if it exists in CATEGORY_ORDER
+  const effectiveCat = selectedCat && CATEGORY_ORDER.some(c => c.key === selectedCat) ? selectedCat : null;
 
   const filteredGrouped = useMemo(() => {
     if (!effectiveCat) return grouped;
