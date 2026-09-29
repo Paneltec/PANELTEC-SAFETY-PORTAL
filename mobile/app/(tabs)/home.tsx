@@ -20,6 +20,7 @@ import UpdateBanner from '../../src/features/updates/UpdateBanner';
 import PasteJobSmsModal from '../../src/components/PasteJobSmsModal';
 import { startSmsListener, stopSmsListener, setOnJobCreated } from '../../src/lib/smsReceiver';
 import { requestSmsPermission, hasRequestedSmsPermission, type SmsPermResult } from '../../src/lib/smsPermissions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ViewMode = 'home' | 'signed_on' | 'job_detail';
 
@@ -308,7 +309,7 @@ export default function HomeScreen() {
     setJobActioning(true);
     try {
       const updated = await acceptDailyJob(job.id);
-      setTodayJob(updated);
+      setTodayJob({ ...updated, status: updated.status || 'accepted', accepted_at: updated.accepted_at || new Date().toISOString() });
     } catch {
       Alert.alert('Error', 'Could not accept job. Try again.');
     }
@@ -335,8 +336,8 @@ export default function HomeScreen() {
   if (viewMode === 'job_detail') {
     const job = todayJob || MOCK_AD_HOC_JOB;
     const isMocked = !todayJob || job._mocked;
-    const isIssued = job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new' || job.status === 'issued';
-    const isAccepted = job.status === 'accepted';
+    const isIssued = !isAccepted && !isDeclined && (job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new' || job.status === 'issued');
+    const isAccepted = job.status === 'accepted' || !!job.accepted_at;
     const isDeclined = job.status === 'declined';
     const address = job.address || job.site_address || job.site_name || '';
     const truckFull = job.truck_name
@@ -704,6 +705,15 @@ export default function HomeScreen() {
               <Ionicons name="calendar-outline" size={24} color={Colors.green} />
             </View>
             <Text style={s.actionLabel}>My Leave</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="home-action-ssra" style={s.actionTile} onPress={async () => {
+            try { await AsyncStorage.setItem('@paneltec:formsLibrary:lastCategory', 'ssra'); } catch {}
+            router.push('/(tabs)/forms' as never);
+          }}>
+            <View style={[s.actionIcon, { backgroundColor: '#CCFBF1' }]}>
+              <Ionicons name="shield-checkmark-outline" size={24} color="#0D9488" />
+            </View>
+            <Text style={s.actionLabel}>SSRA</Text>
           </TouchableOpacity>
         </View>
 
