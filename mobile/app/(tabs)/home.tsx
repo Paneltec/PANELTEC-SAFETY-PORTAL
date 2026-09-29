@@ -336,9 +336,11 @@ export default function HomeScreen() {
   if (viewMode === 'job_detail') {
     const job = todayJob || MOCK_AD_HOC_JOB;
     const isMocked = !todayJob || job._mocked;
-    const isAccepted = job.status === 'accepted' || !!job.accepted_at;
-    const isDeclined = job.status === 'declined';
-    const isIssued = !isAccepted && !isDeclined && (job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new' || job.status === 'issued');
+    // Defensive: compute status values via explicit ternary to avoid any TDZ edge case
+    const jobStatus = String(job.status || '');
+    const isAccepted = (jobStatus === 'accepted') || (!!job.accepted_at);
+    const isDeclined = (jobStatus === 'declined');
+    const isIssued = (!isAccepted && !isDeclined && (jobStatus === 'pending_accept' || jobStatus === 'pending' || jobStatus === 'new' || jobStatus === 'issued'));
     const address = job.address || job.site_address || job.site_name || '';
     const truckFull = job.truck_name
       ? [job.truck_name, job.truck_reg].filter(Boolean).join(' - ')
@@ -697,6 +699,18 @@ export default function HomeScreen() {
               <Ionicons name="shield-checkmark-outline" size={24} color="#0D9488" />
             </View>
             <Text style={s.actionLabel}>SSRA</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="home-action-hazard" style={s.actionTile} onPress={() => router.push('/capture/hazard' as never)}>
+            <View style={[s.actionIcon, { backgroundColor: '#FEE2E2' }]}>
+              <Ionicons name="camera-outline" size={24} color="#EF4444" />
+            </View>
+            <Text style={s.actionLabel}>Report Hazard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="home-action-capture" style={s.actionTile} onPress={() => router.push('/capture' as never)}>
+            <View style={[s.actionIcon, { backgroundColor: '#EDE9FE' }]}>
+              <Ionicons name="add-circle-outline" size={24} color="#7C3AED" />
+            </View>
+            <Text style={s.actionLabel}>More Capture</Text>
           </TouchableOpacity>
         </View>
 
