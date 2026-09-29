@@ -2229,13 +2229,18 @@ def install(app, db, require_admin):
                 "Restore requires ?confirm=RESTORE — this is destructive.",
             )
 
-        # Read the upload into memory. Snapshots cap around 200 MB
-        # (see retention rules above), so we can hold it in RAM.
-        body = await file.read()
-        if len(body) > 500 * 1024 * 1024:
-            raise HTTPException(413, "Snapshot too large for restore (>500 MB).")
+        # Read the ZIP straight from the upload's temp file (spooled to
+        # disk by Starlette) rather than copying it into RAM, so
+        # multi-GB snapshots restore without exhausting memory.
+        MAX_RESTORE_BYTES = 8 * 1024 * 1024 * 1024
+        fh = file.file
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(0)
+        if size > MAX_RESTORE_BYTES:
+            raise HTTPException(413, "Snapshot too large for restore (>8 GB).")
         try:
-            z = zipfile.ZipFile(io.BytesIO(body))
+            z = zipfile.ZipFile(fh)
         except zipfile.BadZipFile:
             raise HTTPException(415, "Not a valid ZIP file.")
 
@@ -2291,8 +2296,8 @@ def install(app, db, require_admin):
                 entry["status"] = "preview"
             elif mode == "replace":
                 await db[cname].delete_many({})
-                if rows:
-                    await db[cname].insert_many(rows)
+                for i in range(0, len(rows), 1000):
+                    await db[cname].insert_many(rows[i:i + 1000])
                 entry["status"] = "replaced"
                 entry["rows_after"] = await db[cname].count_documents({})
             elif mode == "merge":
