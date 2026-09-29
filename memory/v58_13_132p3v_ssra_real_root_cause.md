@@ -1,40 +1,40 @@
-# Ship `.132p3v` — SSRA deep persistence investigation (third attempt)
+# Ship `.132p3v` — SSRA real root cause: form_routing.py startup migration
 
-## All write endpoints for form templates checked
-1. `POST /api/forms/templates` (forms.py:1039) — create. Uses `_norm_category()`. ✓
-2. `PATCH /api/forms/templates/{id}` (forms.py:1064) — update. Uses `_norm_category()`. ✓
+## ACTUAL ROOT CAUSE
+`backend/form_routing.py` line 107-133: `NAME_PATTERN_SEED_RULES` hardcoded
+all three SSRA templates with `"destination_category": "risk_assessment"`.
 
-Both call the same `_norm_category()` which checks `ALLOWED_CATEGORIES` — fixed in `.132p3p`.
+On every backend startup, `ensure_form_routing_rules()` (called from
+`server.py:1060`) checks each template's category against the rule's
+`destination_category`. If they differ, it **overwrites** the template's
+category (line 280-289). So:
 
-## All category coercion points checked
-- `forms.py:150` — `_norm_category()`: only coercion point. `"ssra"` is in `ALLOWED_CATEGORIES` since `.132p3p`. ✓
-- `asset_service.py:584` — READ path `t.get("category") or "general"` — only applies to missing fields, doesn't write. ✓
-- No Mongo triggers, no schema validators, no background syncs that touch category.
+1. User sets "Construction & Excavation SSRA" to `category: "ssra"` ✓
+2. Backend restarts (deploy, crash, scheduler reload)
+3. `ensure_form_routing_rules()` sees `ssra != risk_assessment` → flips it back
+4. User sees "General" or "Risk Assessment" instead of "SSRA"
 
-## DB direct query
-```
-ssra: 1 template ("Drain Cleaning SSRA")
-Total: 138 templates across 11 categories
-All categories present: admin(3), general(9), incident(5), inspection(29),
-  near_miss(1), pre_start(50), risk_assessment(23), site_diary(5),
-  ssra(1), swms(11), toolbox(1)
-```
+This is why previous fixes (.132p3p ALLOWED_CATEGORIES, .132p3q cache bump)
+didn't help — the backend startup migration overwrote the fix on every restart.
 
-## Playwright end-to-end reproduction
-1. Log in as admin ✓
-2. Search "Drain" → find "Drain Cleaning SSRA" card ✓
-3. Click edit → category shows "ssra" ✓
-4. Change to "general" → save → PATCH response: `category: "general"` ✓
-5. Re-edit → change to "ssra" → save → PATCH response: `category: "ssra"` ✓
-6. **Hard page refresh** → navigate back to Forms → search "Drain" ✓
-7. Card shows **SSRA** teal pill → **PERSISTED after refresh** ✓
+## Fix
+Changed `destination_category` from `"risk_assessment"` to `"ssra"` for all
+three SSRA templates in `NAME_PATTERN_SEED_RULES`. Now the startup migration
+flips TO `ssra` instead of away from it.
 
-## Actual root cause
-The `.132p3p` backend fix WAS the correct and complete fix. The user's report of "still not persisting" was caused by **stale service worker cache** serving the pre-`.132p3n` JS bundle where SSRA was not in the frontend dropdown. The version bump forces cache invalidation. No additional code changes needed beyond the version bump.
+## Verification
+1. Restarted backend → all 3 templates now `category: "ssra"` ✓
+2. Set to general via PATCH → `general` ✓
+3. Set back to ssra → `ssra` ✓
+4. **Restarted backend again** → `category: "ssra"` (not reverted!) ✓
+5. Routing rules also updated to `destination_category: "ssra"` ✓
 
-## User instructions
-If the user still sees old behaviour: **Ctrl+Shift+R** (hard refresh) or DevTools → Application → Service Workers → Unregister.
+## All write endpoints checked
+| Endpoint | File:Line | Writes category? |
+|----------|-----------|-----------------|
+| POST /forms/templates | forms.py:1039 | Yes, via _norm_category() |
+| PATCH /forms/templates/{id} | forms.py:1064 | Yes, via _norm_category() |
+| ensure_form_routing_rules() | form_routing.py:275-289 | **Yes — THIS WAS THE BUG** |
 
 ## Files touched
-- `frontend/src/lib/version.js` — bumped to v58.13.132p3v
-- `frontend/public/service-worker.js` — bumped CACHE_VERSION
+- `backend/form_routing.py` — changed destination_category from "risk_assessment" to "ssra" in 3 rules

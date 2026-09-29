@@ -107,26 +107,26 @@ SEED_RULES: list[dict[str, Any]] = [
 NAME_PATTERN_SEED_RULES: list[dict[str, Any]] = [
     {
         "name_exact": "Construction & Excavation SSRA",
-        "destination_category": "risk_assessment",
+        "destination_category": "ssra",
         "reason": (
-            "v58.13.132ki — SSRA templates route to Risk Assessments "
-            "regardless of the per-org `form_templates.category` value. "
+            "v58.13.132p3v — SSRA templates route to the SSRA category "
+            "(was risk_assessment before .132p3n added the ssra slug). "
             "Extends `.132dz` (single-template-id rule) to all orgs."
         ),
     },
     {
         "name_exact": "Viatec Traffic Solutions SSRA",
-        "destination_category": "risk_assessment",
+        "destination_category": "ssra",
         "reason": (
-            "v58.13.132ki — Viatec SSRA routes to Risk Assessments. "
+            "v58.13.132p3v — Viatec SSRA routes to SSRA category. "
             "Was mis-categorised as `pre_start` on Stephen's org."
         ),
     },
     {
         "name_exact": "Drain Cleaning SSRA",
-        "destination_category": "risk_assessment",
+        "destination_category": "ssra",
         "reason": (
-            "v58.13.132ki — Drain Cleaning SSRA routes to Risk Assessments. "
+            "v58.13.132p3v — Drain Cleaning SSRA routes to SSRA category. "
             "Was mis-categorised as `pre_start` on Stephen's org."
         ),
     },
