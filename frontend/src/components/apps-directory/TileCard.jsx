@@ -342,12 +342,25 @@ export function TileCard({
   // is true (launcher modal path), a GET on `/tile-credentials/{id}`
   // decides whether to intercept the anchor and pop the cheat-sheet
   // window; otherwise the anchor's default `target=_blank` fires.
-  const credentialAwareLaunch = async (e) => {
+  // Saved logins are only released by the server after the PIN has
+  // been entered (tile_unlock.py). `meta.locked` → ask for the PIN,
+  // then run this again with the unlocked URL.
+  const credentialAwareLaunch = async (e, urlOverride) => {
     if (!approved) { e.preventDefault(); return; }
+    const launchUrl = urlOverride || tile.url;
     try {
       const r = await api.get(`/tile-credentials/${tile.id}`);
       const meta = r.data || {};
-      if (!meta.has_password && !(meta.qa_pairs || []).length && !meta.username) return;
+      if (meta.locked && (meta.has_password || meta.has_username || (meta.qa_pairs || []).length)) {
+        e.preventDefault();
+        setPinIntent('launch');
+        setPinModalOpen(true);
+        return;
+      }
+      if (!meta.has_password && !(meta.qa_pairs || []).length && !meta.username) {
+        if (urlOverride) doPlainOpen(urlOverride);
+        return;
+      }
       e.preventDefault();
       let plainPassword = null;
       if (meta.has_password) {
@@ -359,13 +372,15 @@ export function TileCard({
           }
         } catch { /* noop */ }
       }
-      window.open(tile.url, '_blank', 'noopener,noreferrer');
+      window.open(launchUrl, '_blank', 'noopener,noreferrer');
       openCheatSheet(tile, meta, plainPassword);
     } catch { /* GET failed — anchor default fires */ }
   };
 
   const openTile = (e) => {
-    if (!approved || !tile.url) return;
+    // PIN-protected tiles arrive without their link until the PIN is
+    // entered, so don't require `tile.url` for them.
+    if (!approved || (!tile.url && !pinProtected)) return;
     if (pinProtected) {
       if (e) e.preventDefault?.();
       setMenuOpen(false);
@@ -500,7 +515,7 @@ export function TileCard({
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); openTile(); }}
-              disabled={!approved || !tile.url}
+              disabled={!approved || (!tile.url && !pinProtected)}
               data-testid={`${testIdPrefix}-menu-open-${tile.id}`}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -622,7 +637,8 @@ export function TileCard({
             if (intent === 'menu') {
               setMenuOpen(true);
             } else if (intent === 'launch') {
-              doPlainOpen(url);
+              if (credentialLaunch) credentialAwareLaunch({ preventDefault() {} }, url);
+              else doPlainOpen(url);
             }
           }}
         />

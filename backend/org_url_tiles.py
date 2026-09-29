@@ -263,7 +263,8 @@ def _sanitize_color(raw: Optional[str]) -> Optional[str]:
     return s.lower()
 
 
-def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
+def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False,
+         pin_unlocked: bool = True) -> dict:
     """Strip Mongo `_id` + expose the stable API shape.
 
     v58.13.132ez — Adds `approved_for_me` per-viewer flag + optional
@@ -296,7 +297,13 @@ def _out(doc: dict, viewer_id: str = "", *, redact_url: bool = False) -> dict:
         # v58.13.132ez — Redact URL for un-approved viewers when
         # `redact_url=True`. Admin editor / Manage view pass False
         # so they see full detail regardless of personal approval.
-        "url": (doc.get("url") if (approved or not redact_url) else ""),
+        # PIN-protected tiles also withhold the link in the launcher
+        # list until the viewer has entered their PIN (tile_unlock.py).
+        "url": (doc.get("url")
+                if ((approved or not redact_url)
+                    and (not redact_url or pin_unlocked
+                         or not doc.get("pin_protected")))
+                else ""),
         "label": doc.get("label"),
         "icon": doc.get("icon") or "",
         "description": doc.get("description") or "",
@@ -365,6 +372,8 @@ async def list_tiles(include_disabled: bool = False,
         query["$and"] = [
             {"$or": [{"hidden": {"$ne": True}}, {"hidden": {"$exists": False}}]},
         ]
+    from tile_unlock import is_unlocked
+    pin_unlocked = await is_unlocked(user["id"])
     tiles = []
     cur = db.org_url_tiles.find(query).sort([("order", 1),
                                                           ("created_at", 1)])
@@ -379,7 +388,8 @@ async def list_tiles(include_disabled: bool = False,
         # redaction so admins can always edit tiles they aren't
         # personally approved for.
         tiles.append(_out(t, user["id"],
-                            redact_url=not include_disabled))
+                            redact_url=not include_disabled,
+                            pin_unlocked=pin_unlocked))
     return {"tiles": tiles}
 
 
@@ -739,6 +749,35 @@ class TilePinVerifyIn(BaseModel):
     pin: str = Field(..., min_length=4, max_length=4)
 
 
+@router.get("/unlock-status")
+async def unlock_status(user: dict = Depends(get_current_user)):
+    """Is the caller's PIN unlock window open, and until when."""
+    from tile_unlock import unlocked_until, UNLOCK_MINUTES
+    return {"unlocked_until": await unlocked_until(user["id"]),
+            "window_minutes": UNLOCK_MINUTES}
+
+
+@router.post("/lock-now")
+async def lock_now(user: dict = Depends(get_current_user)):
+    """Close the caller's PIN unlock window straight away."""
+    from tile_unlock import revoke, log_access
+    await revoke(user["id"])
+    await log_access(user, None, "locked")
+    return {"ok": True}
+
+
+@router.get("/activity")
+async def tile_activity(limit: int = 200, user: dict = Depends(get_current_user)):
+    """Admin-only, PIN-unlocked: who unlocked, opened or used saved logins."""
+    from tile_unlock import require_unlocked
+    _admin(user)
+    await require_unlocked(user["id"])
+    limit = max(1, min(int(limit), 500))
+    rows = await db.tile_access_log.find(
+        {"org_id": user["org_id"]}, {"_id": 0}).sort([("at", -1)]).to_list(limit)
+    return {"items": rows}
+
+
 @router.post("/{tile_id}/verify-pin")
 async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
                             user: dict = Depends(get_current_user)):
@@ -808,7 +847,9 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
             status_code=403,
             detail="No admin PIN set. Configure one in your profile first.",
         )
+    from tile_unlock import grant, log_access
     if not verify_password(body.pin, existing_hash):
+        await log_access(user, tile_id, "pin_wrong")
         recorded = await _record_failure(user["id"])
         lu = recorded.get("locked_until")
         if lu:
@@ -821,9 +862,12 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
             )
         raise HTTPException(status_code=401, detail="Wrong PIN.")
     await _reset_attempts(user["id"])
+    unlocked_until = await grant(user["id"])
+    await log_access(user, tile_id, "pin_ok")
     log.info("org_url_tiles.verify_pin org=%s tile=%s actor=%s",
              org_id, tile_id, user["id"])
-    return {"ok": True, "url": tile.get("url") or ""}
+    return {"ok": True, "url": tile.get("url") or "",
+            "unlocked_until": unlocked_until}
 
 
 @router.post("/reorder")

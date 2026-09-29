@@ -4,6 +4,7 @@ import {
   Link2, Plus, Pencil, Trash2, ExternalLink, X, Rocket, Lock,
 } from 'lucide-react';
 import api, { apiError } from '../lib/api';
+import { TilePinModal } from './apps-directory/TileCard';
 import { useCan } from '../lib/permissions';
 
 /**
@@ -1404,6 +1405,9 @@ function ConfirmDelete({ tile, onCancel, onConfirm }) {
 // can read/write their own credentials for the tile.
 function CredentialSubEditor({ tileId }) {
   const [meta, setMeta] = React.useState(null);
+  const [pinOpen, setPinOpen] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
+  const [pendingSave, setPendingSave] = React.useState(false);
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
@@ -1420,7 +1424,7 @@ function CredentialSubEditor({ tileId }) {
           ({ label: qa.label, answer: '' })));
       } catch { /* noop */ }
     })();
-  }, [tileId]);
+  }, [tileId, reloadKey]);
 
   const save = async () => {
     setBusy(true);
@@ -1431,6 +1435,7 @@ function CredentialSubEditor({ tileId }) {
       toast.success('Credentials saved');
       setPassword('');
     } catch (e) {
+      if (e?.response?.status === 423) { setPendingSave(true); setPinOpen(true); return; }
       toast.error(apiError(e) || 'Save failed');
     } finally { setBusy(false); }
   };
@@ -1443,6 +1448,7 @@ function CredentialSubEditor({ tileId }) {
       setUsername(''); setPassword(''); setQaPairs([]);
       toast.success('Credentials cleared');
     } catch (e) {
+      if (e?.response?.status === 423) { setPinOpen(true); return; }
       toast.error(apiError(e) || 'Clear failed');
     } finally { setBusy(false); }
   };
@@ -1452,9 +1458,43 @@ function CredentialSubEditor({ tileId }) {
     setQaPairs([...qaPairs, { label: '', answer: '' }]);
   };
 
+  // Saved logins stay hidden until the PIN is entered (server-side).
+  if (meta?.locked) {
+    return (
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+           data-testid="credential-sub-editor-locked">
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+          Your saved login for this tile
+        </div>
+        <p className="text-xs text-slate-600 mb-2">
+          A login is saved here. Enter your 4-digit PIN to see or change it.
+          It locks again after 10 minutes.
+        </p>
+        <button type="button" onClick={() => setPinOpen(true)}
+          data-testid="credential-sub-editor-unlock"
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded bg-slate-900 text-white">
+          <Lock size={12} /> Unlock with PIN
+        </button>
+        {pinOpen && (
+          <TilePinModal tile={{ id: tileId, label: 'saved login' }}
+            onClose={() => setPinOpen(false)}
+            onUnlocked={() => { setPinOpen(false); setReloadKey((k) => k + 1); }} />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
          data-testid="credential-sub-editor">
+      {pinOpen && (
+        <TilePinModal tile={{ id: tileId, label: 'saved login' }}
+          onClose={() => { setPinOpen(false); setPendingSave(false); }}
+          onUnlocked={() => {
+            setPinOpen(false);
+            if (pendingSave) { setPendingSave(false); save(); }
+          }} />
+      )}
       <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
         Your credentials for this tile
       </div>

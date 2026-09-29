@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Rocket } from 'lucide-react';
 import api, { apiError } from '../lib/api';
+import { TileActivityLog } from '../components/apps-directory/TileActivityLog';
+
 import { getUser } from '../lib/auth';
 import {
   DndContext, PointerSensor, KeyboardSensor, TouchSensor,
@@ -37,6 +39,7 @@ export default function AppsDirectory() {
   const [hasAdminPin, setHasAdminPin] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [restorePinOpen, setRestorePinOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   const loadTiles = useCallback(async (includeHidden) => {
     try {
@@ -225,9 +228,18 @@ export default function AppsDirectory() {
               </button>
             </>
           )}
+          <span className="mx-2 text-slate-300">·</span>
+          <button type="button" onClick={() => setActivityOpen(true)}
+            data-testid="apps-directory-activity"
+            className="text-emerald-600 hover:underline">
+            Activity log
+          </button>
         </footer>
       )}
 
+      {activityOpen && tiles.length > 0 && (
+        <TileActivityLog pinTileId={tiles[0].id} onClose={() => setActivityOpen(false)} />
+      )}
       {restorePinOpen && tiles.length > 0 && (
         <TilePinModal
           tile={{ id: tiles[0].id, label: 'Show hidden tiles' }}

@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from auth import get_current_user
 from db import db
 from models import new_id
+from tile_unlock import is_unlocked, require_unlocked, log_access
 
 log = logging.getLogger("paneltec.tile_credentials")
 
@@ -146,8 +147,17 @@ async def get_credentials(tile_id: str,
     })
     if not doc:
         return {"has_password": False, "username": None,
-                "password_preview": "", "qa_pairs": []}
+                "password_preview": "", "qa_pairs": [], "locked": False}
+    if not await is_unlocked(user["id"]):
+        # Saved logins exist but the PIN hasn't been entered: say so,
+        # without the username or any part of the password.
+        return {"locked": True, "username": None,
+                "has_password": bool(doc.get("password_ct")),
+                "has_username": bool(doc.get("username")),
+                "password_preview": "",
+                "qa_pairs": [{"label": qa["label"]} for qa in doc.get("qa_pairs", [])]}
     return {
+        "locked": False,
         "username": doc.get("username"),
         "has_password": bool(doc.get("password_ct")),
         "password_preview": _preview(user["id"], doc),
@@ -161,6 +171,7 @@ async def upsert_credentials(tile_id: str, body: CredentialsIn,
                               user: dict = Depends(get_current_user)):
     _admin(user)
     await _require_approved(user, tile_id)  # v58.13.132ez
+    await require_unlocked(user["id"])
     org_id = user["org_id"]
     now = _now()
     update: dict = {"updated_at": now, "org_id": org_id}
@@ -193,6 +204,7 @@ async def upsert_credentials(tile_id: str, body: CredentialsIn,
         upsert=True,
     )
     await _audit(user["id"], tile_id, "upsert")
+    await log_access(user, tile_id, "login_saved")
     return await get_credentials(tile_id, user)  # type: ignore[misc]
 
 
@@ -201,9 +213,11 @@ async def delete_credentials(tile_id: str,
                               user: dict = Depends(get_current_user)):
     _admin(user)
     await _require_approved(user, tile_id)  # v58.13.132ez
+    await require_unlocked(user["id"])
     res = await db.user_tile_credentials.delete_one(
         {"user_id": user["id"], "tile_id": tile_id})
     await _audit(user["id"], tile_id, "delete")
+    await log_access(user, tile_id, "login_cleared")
     return {"ok": True, "deleted": res.deleted_count}
 
 
@@ -212,6 +226,7 @@ async def reveal_password(tile_id: str,
                            user: dict = Depends(get_current_user)):
     _admin(user)
     await _require_approved(user, tile_id)  # v58.13.132ez
+    await require_unlocked(user["id"])
     doc = await db.user_tile_credentials.find_one({
         "user_id": user["id"], "tile_id": tile_id})
     if not doc or not doc.get("password_ct"):
@@ -219,6 +234,7 @@ async def reveal_password(tile_id: str,
                             detail="No password stored for this tile")
     plain = _decrypt(user["id"], doc["password_ct"], doc["password_nonce"])
     await _audit(user["id"], tile_id, "reveal")
+    await log_access(user, tile_id, "login_revealed")
     return {"password": plain}
 
 
@@ -231,6 +247,7 @@ async def copy_field(tile_id: str, body: CopyFieldIn,
                       user: dict = Depends(get_current_user)):
     _admin(user)
     await _require_approved(user, tile_id)  # v58.13.132ez
+    await require_unlocked(user["id"])
     doc = await db.user_tile_credentials.find_one({
         "user_id": user["id"], "tile_id": tile_id})
     if not doc:
@@ -251,4 +268,5 @@ async def copy_field(tile_id: str, body: CopyFieldIn,
                                 detail=f"QA field '{field}' not found")
         value = _decrypt(user["id"], qa["answer_ct"], qa["answer_nonce"])
     await _audit(user["id"], tile_id, "copy-field", detail=field)
+    await log_access(user, tile_id, "login_copied", detail=field)
     return {"value": value}
