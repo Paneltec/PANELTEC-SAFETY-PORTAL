@@ -2,10 +2,10 @@
  * Home screen — v58.13.132dc
  * Intelligence Briefing (real /api/mobile/ai/briefing) + Compliance list + Notification + Signed On.
  */
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Linking, Platform, Alert, Animated,
+  RefreshControl, ActivityIndicator, Linking, Platform, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -50,24 +50,8 @@ export default function HomeScreen() {
   const [smsPermDenied, setSmsPermDenied] = useState(false);
 
   // Accept button pulse animation
-  const acceptPulseAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const job = todayJob || MOCK_AD_HOC_JOB;
-    const isPendingJob = job && (job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new');
-    if (isPendingJob && viewMode === 'job_detail') {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(acceptPulseAnim, { toValue: 1, duration: 1000, useNativeDriver: false }),
-          Animated.timing(acceptPulseAnim, { toValue: 0, duration: 1000, useNativeDriver: false }),
-        ]),
-      );
-      loop.start();
-      return () => loop.stop();
-    } else {
-      acceptPulseAnim.setValue(0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayJob?.status, viewMode, acceptPulseAnim]);
+  // Accept pulse animation removed in .132p42 — Animated.View blocked web taps
+
 
   // AI Briefing state
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
@@ -309,9 +293,15 @@ export default function HomeScreen() {
   };
 
   const handleAcceptJob = async (job: any) => {
+    console.log('[132p42] handleAcceptJob CALLED with job:', job?.status, 'mocked:', job?._mocked);
+    if (!job) {
+      console.error('[132p42] job is undefined — bailing');
+      return;
+    }
     if (job._mocked) {
       const updated = { ...job, status: 'accepted', accepted_at: new Date().toISOString() };
       setTodayJob(updated);
+      console.log('[132p42] setTodayJob CALLED with:', updated.status);
       return;
     }
     setJobActioning(true);
@@ -455,28 +445,20 @@ export default function HomeScreen() {
             <>
               {/* Decision row */}
               <View style={jd.decisionRow}>
-                <Animated.View pointerEvents="box-none" style={[
-                  jd.acceptBtnWrap,
-                  {
-                    shadowColor: C.green.base,
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowRadius: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [4, 16] }),
-                    shadowOpacity: acceptPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.5] }),
-                    elevation: 4,
-                  },
-                ]}>
-                  <TouchableOpacity
-                    testID="job-detail-accept-btn"
-                    style={jd.acceptBtn}
-                    onPress={() => handleAcceptJob(activeJob)}
-                    disabled={jobActioning}
-                    activeOpacity={0.7}
-                  >
-                    {jobActioning ? <ActivityIndicator size="small" color={Colors.white} /> : (
-                      <Text style={jd.acceptBtnText}>ACCEPT JOB</Text>
-                    )}
-                  </TouchableOpacity>
-                </Animated.View>
+                <TouchableOpacity
+                  testID="job-detail-accept-btn"
+                  style={jd.acceptBtn}
+                  onPress={() => {
+                    console.log('[132p42] ACCEPT tapped, job:', activeJob?.status);
+                    handleAcceptJob(activeJob);
+                  }}
+                  disabled={jobActioning}
+                  activeOpacity={0.7}
+                >
+                  {jobActioning ? <ActivityIndicator size="small" color={Colors.white} /> : (
+                    <Text style={jd.acceptBtnText}>ACCEPT JOB</Text>
+                  )}
+                </TouchableOpacity>
               </View>
               {/* Locked action row — NAVIGATE only */}
               <View style={jd.lockedRow}>
@@ -1045,7 +1027,7 @@ const jd = StyleSheet.create({
     backgroundColor: C.screen.bar, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14,
   },
   backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: C.textOnNavy.main, lineHeight: 26 },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: C.textOnNavy.main, lineHeight: 22 },
   chip: {
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
     borderWidth: 1.5, marginLeft: 8, flexShrink: 0, maxWidth: 180,
@@ -1086,7 +1068,6 @@ const jd = StyleSheet.create({
     backgroundColor: C.grey.declineBg, minHeight: 56,
   },
   declineBtnText: { fontSize: 15, fontWeight: '800', color: C.grey.declineText, letterSpacing: 0.5 },
-  acceptBtnWrap: { flex: 1, borderRadius: 14 },
   acceptBtn: {
     backgroundColor: C.green.base, borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
