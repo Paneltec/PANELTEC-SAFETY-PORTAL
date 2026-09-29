@@ -478,19 +478,15 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 </Animated.View>
               </View>
-              {/* Locked action row */}
+              {/* Locked action row — NAVIGATE only */}
               <View style={jd.lockedRow}>
                 <View style={jd.lockedBtn}>
                   <Ionicons name="lock-closed" size={13} color={C.grey.lockedIcon} />
                   <Text style={jd.lockedBtnText}>NAVIGATE</Text>
                 </View>
-                <View style={jd.lockedBtn}>
-                  <Ionicons name="lock-closed" size={13} color={C.grey.lockedIcon} />
-                  <Text style={jd.lockedBtnText}>SIGN ON AT SITE</Text>
-                </View>
               </View>
               <Text style={jd.footerCaption}>
-                Accept to unlock Navigate and Sign On.{'\n'}The office is notified straight away.
+                Accept to unlock Navigate.{'\n'}The office is notified straight away.
               </Text>
             </>
           )}
