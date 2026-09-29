@@ -2206,6 +2206,70 @@ def install(app, db, require_admin):
     # process, and a job only matters while an admin is watching it.
     _RESTORE_JOBS: Dict[str, Dict[str, Any]] = {}
 
+    def _iter_json_array(raw, chunk_chars: int = 4 * 1024 * 1024):
+        """Yield the objects of a JSON array from a binary file-like,
+        one at a time, without loading the whole entry into memory.
+        The snapshot writer emits `[obj,obj,...]`, so a buffered
+        raw_decode loop is enough."""
+        text = io.TextIOWrapper(raw, encoding="utf-8")
+        dec = json.JSONDecoder()
+        buf = text.read(chunk_chars)
+        pos = 0
+        eof = len(buf) < chunk_chars
+
+        def _fill():
+            nonlocal buf, pos, eof
+            more = text.read(chunk_chars)
+            if len(more) < chunk_chars:
+                eof = True
+            buf = buf[pos:] + more
+            pos = 0
+
+        # Opening bracket.
+        while True:
+            while pos < len(buf) and buf[pos] in " \t\r\n":
+                pos += 1
+            if pos < len(buf):
+                break
+            if eof:
+                return
+            _fill()
+        if buf[pos] != "[":
+            raise ValueError("not a JSON array")
+        pos += 1
+
+        while True:
+            # Skip separators / whitespace; stop at the closing bracket.
+            while True:
+                while pos < len(buf) and buf[pos] in " \t\r\n,":
+                    pos += 1
+                if pos < len(buf):
+                    break
+                if eof:
+                    return
+                _fill()
+            if buf[pos] == "]":
+                return
+            # Decode one object, pulling more text in until it parses.
+            while True:
+                try:
+                    obj, end = dec.raw_decode(buf, pos)
+                    pos = end
+                    yield obj
+                    break
+                except json.JSONDecodeError:
+                    if eof:
+                        raise
+                    _fill()
+
+    # GridFS buckets: the snapshot drops `_id` from every row, so
+    # `<bucket>.chunks` can no longer be tied back to `<bucket>.files`.
+    # Restoring them only fills the DB with orphaned blobs (and it is
+    # where the memory goes on a 1 GB snapshot). Uploaded files move
+    # across separately.
+    def _is_gridfs(cname: str) -> bool:
+        return cname.endswith(".files") or cname.endswith(".chunks")
+
     async def _run_restore(fh, filename: str, mode: str,
                            job: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Core restore. `fh` is a seekable binary file holding the ZIP.
@@ -2240,74 +2304,90 @@ def install(app, db, require_admin):
         _p(total=len(coll_files), done=0)
 
         per_coll: List[Dict[str, Any]] = []
+        BATCH = 500
         for idx, path in enumerate(coll_files):
             cname = path[len("mongo/"):-len(".json")]
-            _p(current=cname, done=idx)
+            _p(current=cname, done=idx, rows_done=0)
             if cname in DO_NOT_TOUCH or cname.startswith("system.") \
                or cname.startswith("bk_fs."):
                 per_coll.append({"collection": cname, "status": "skipped",
                                  "reason": "protected"})
                 continue
-            try:
-                rows = json.loads(z.read(path))
-            except Exception as e:
-                per_coll.append({"collection": cname, "status": "fail",
-                                 "error": str(e)})
-                continue
-            if not isinstance(rows, list):
-                per_coll.append({"collection": cname, "status": "skip",
-                                 "reason": "not a list"})
+            if _is_gridfs(cname):
+                per_coll.append({"collection": cname, "status": "skipped",
+                                 "reason": "uploaded files — moved separately"})
                 continue
 
             existing = await db[cname].count_documents({})
             entry: Dict[str, Any] = {
                 "collection": cname,
-                "rows_in_zip": len(rows),
+                "rows_in_zip": 0,
                 "rows_existing": existing,
             }
 
+            async def _flush(batch, stats):
+                if not batch:
+                    return
+                try:
+                    await db[cname].insert_many(batch, ordered=False)
+                except BulkWriteError as bwe:
+                    # Rows that clash with a unique index (duplicates in
+                    # the source data) are skipped; the rest of the
+                    # batch still goes in (ordered=False).
+                    errs = bwe.details.get("writeErrors", [])
+                    other = [e for e in errs if e.get("code") != 11000]
+                    if other:
+                        raise
+                    stats["dup"] += len(errs)
+                batch.clear()
+
             try:
-              if mode == "dry_run":
-                entry["status"] = "preview"
-              elif mode == "replace":
-                await db[cname].delete_many({})
-                skipped = 0
-                for i in range(0, len(rows), 1000):
-                    try:
-                        await db[cname].insert_many(rows[i:i + 1000], ordered=False)
-                    except BulkWriteError as bwe:
-                        # Rows that clash with a unique index (duplicates
-                        # in the source data) are skipped; the rest of
-                        # the batch still goes in (ordered=False).
-                        errs = bwe.details.get("writeErrors", [])
-                        other = [e for e in errs if e.get("code") != 11000]
-                        if other:
-                            raise
-                        skipped += len(errs)
-                entry["status"] = "replaced"
-                if skipped:
-                    entry["duplicates_skipped"] = skipped
-                entry["rows_after"] = await db[cname].count_documents({})
-              elif mode == "merge":
-                inserted = updated = 0
-                for r in rows:
-                    rid = r.get("id")
-                    if rid and await db[cname].find_one({"id": rid}, {"_id": 0}):
-                        await db[cname].update_one({"id": rid}, {"$set": r})
-                        updated += 1
-                    else:
-                        await db[cname].insert_one(r)
-                        inserted += 1
-                entry["status"] = "merged"
-                entry["inserted"] = inserted
-                entry["updated"] = updated
-                entry["rows_after"] = await db[cname].count_documents({})
+                stats = {"dup": 0, "inserted": 0, "updated": 0}
+                if mode == "replace":
+                    await db[cname].delete_many({})
+                batch: List[Dict[str, Any]] = []
+                n = 0
+                with z.open(path, "r") as raw:
+                    for r in _iter_json_array(raw):
+                        if not isinstance(r, dict):
+                            continue
+                        n += 1
+                        if mode == "dry_run":
+                            pass
+                        elif mode == "replace":
+                            batch.append(r)
+                            if len(batch) >= BATCH:
+                                await _flush(batch, stats)
+                        elif mode == "merge":
+                            rid = r.get("id")
+                            if rid and await db[cname].find_one({"id": rid}, {"_id": 0}):
+                                await db[cname].update_one({"id": rid}, {"$set": r})
+                                stats["updated"] += 1
+                            else:
+                                await db[cname].insert_one(r)
+                                stats["inserted"] += 1
+                        if n % BATCH == 0:
+                            _p(rows_done=n)
+                if mode == "replace":
+                    await _flush(batch, stats)
+                entry["rows_in_zip"] = n
+                if mode == "dry_run":
+                    entry["status"] = "preview"
+                elif mode == "replace":
+                    entry["status"] = "replaced"
+                    if stats["dup"]:
+                        entry["duplicates_skipped"] = stats["dup"]
+                    entry["rows_after"] = await db[cname].count_documents({})
+                else:
+                    entry["status"] = "merged"
+                    entry["inserted"] = stats["inserted"]
+                    entry["updated"] = stats["updated"]
+                    entry["rows_after"] = await db[cname].count_documents({})
             except Exception as e:  # noqa: BLE001 — one bad collection must not stop the rest
                 logger.warning("restore %s failed: %s", cname, e)
                 entry["status"] = "fail"
                 entry["error"] = str(e)[:300]
             per_coll.append(entry)
-            del rows
 
         _p(done=len(coll_files), current=None)
 

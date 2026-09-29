@@ -2353,7 +2353,10 @@ function RestoreCard() {
       if (mode === "dry_run") setPreview(data);
       else setResult(data);
     } catch (e) {
-      setError(e?.response?.data?.detail || e.message);
+      const msg = e?.response?.data?.detail || e.message || "";
+      setError(/Network Error|502|503|504|not found/i.test(msg)
+        ? `${msg} — the server went away mid-restore. Wait a minute for it to come back, then choose the file again.`
+        : msg);
     } finally {
       setBusy(false);
       setProgress(null);
