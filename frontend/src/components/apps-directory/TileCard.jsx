@@ -100,8 +100,11 @@ export function TilePinModal({ tile, onClose, onUnlocked }) {
   useEffect(() => {
     if (pin.length !== 4 || busy) return;
     setBusy(true);
-    api.post(`/org/url-tiles/${tile.id}/verify-pin`, { pin })
-      .then((r) => { onUnlocked(r.data?.url); })
+    // A tile-less modal (tile.id empty) opens the general unlock window
+    // used by Settings → Organisation → Apps Directory.
+    const endpoint = tile?.id ? `/org/url-tiles/${tile.id}/verify-pin` : '/org/url-tiles/unlock';
+    api.post(endpoint, { pin })
+      .then((r) => { onUnlocked(r.data?.url, r.data?.unlocked_until); })
       .catch((e) => {
         const status = e?.response?.status;
         const detail = e?.response?.data?.detail || '';
@@ -121,7 +124,7 @@ export function TilePinModal({ tile, onClose, onUnlocked }) {
         setPin('');
         setTimeout(() => setShake(false), 400);
       });
-  }, [pin, busy, tile.id, onUnlocked]);
+  }, [pin, busy, tile?.id, onUnlocked]);
 
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"

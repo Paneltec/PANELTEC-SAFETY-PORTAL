@@ -778,6 +778,15 @@ async def tile_activity(limit: int = 200, user: dict = Depends(get_current_user)
     return {"items": rows}
 
 
+@router.post("/unlock")
+async def unlock_with_pin(body: TilePinVerifyIn,
+                          user: dict = Depends(get_current_user)):
+    """Open the caller's PIN unlock window without naming a tile —
+    used by the Settings manager (saved logins, hidden tiles, the
+    activity log). Same PIN, same lockout rules as verify-pin."""
+    return await _verify_pin_and_grant(user, body.pin, tile=None)
+
+
 @router.post("/{tile_id}/verify-pin")
 async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
                             user: dict = Depends(get_current_user)):
@@ -801,13 +810,6 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
       · 404 → tile not found in caller's org
       · 429 → locked out
     """
-    # Deferred import — the pin helpers live in a peer router module
-    # and importing at file scope would risk load-order weirdness.
-    import re as _re
-    from admin_console_pin import (
-        _check_lockout, _record_failure, _reset_attempts,
-        verify_password,
-    )
     org_id = user["org_id"]
     tile = await db.org_url_tiles.find_one(
         {"id": tile_id, "org_id": org_id},
@@ -816,15 +818,6 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
     )
     if not tile:
         raise HTTPException(status_code=404, detail="Tile not found")
-    # v58.13.132g6 — PIN is now the gate for the 3-dots menu on
-    # every tile (not just pin_protected ones), so we no longer 400
-    # when a caller wants to verify against a public tile. The
-    # per-tile `pin_protected` flag still drives the URL-launch
-    # gate and the greyed / lock-overlay UI; this endpoint just
-    # verifies the caller's admin PIN against a valid tile id.
-    if not _re.match(r"^\d{4}$", body.pin):
-        raise HTTPException(status_code=400,
-                            detail="PIN must be exactly 4 digits.")
     # Approval gate — if the tile is private and the caller isn't on
     # its ACL, they cannot unlock it. Prevents a non-approved user
     # from using their own PIN to bypass tile visibility.
@@ -833,6 +826,22 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
     if mode == "private" and user["id"] not in allowed:
         raise HTTPException(status_code=403,
                             detail="Not approved for this tile.")
+    return await _verify_pin_and_grant(user, body.pin, tile=tile)
+
+
+async def _verify_pin_and_grant(user: dict, pin: str, tile: Optional[dict]) -> dict:
+    """Check the caller's admin PIN (with the shared lockout rules) and,
+    on success, open their unlock window. Logs the attempt either way."""
+    import re as _re
+    from admin_console_pin import (
+        _check_lockout, _record_failure, _reset_attempts,
+        verify_password,
+    )
+    org_id = user["org_id"]
+    tile_id = (tile or {}).get("id")
+    if not _re.match(r"^\d{4}$", pin):
+        raise HTTPException(status_code=400,
+                            detail="PIN must be exactly 4 digits.")
 
     # Rate-limit BEFORE we touch bcrypt.
     await _check_lockout(user["id"])
@@ -848,7 +857,7 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
             detail="No admin PIN set. Configure one in your profile first.",
         )
     from tile_unlock import grant, log_access
-    if not verify_password(body.pin, existing_hash):
+    if not verify_password(pin, existing_hash):
         await log_access(user, tile_id, "pin_wrong")
         recorded = await _record_failure(user["id"])
         lu = recorded.get("locked_until")
@@ -866,7 +875,7 @@ async def verify_tile_pin(tile_id: str, body: TilePinVerifyIn,
     await log_access(user, tile_id, "pin_ok")
     log.info("org_url_tiles.verify_pin org=%s tile=%s actor=%s",
              org_id, tile_id, user["id"])
-    return {"ok": True, "url": tile.get("url") or "",
+    return {"ok": True, "url": (tile or {}).get("url") or "",
             "unlocked_until": unlocked_until}
 
 

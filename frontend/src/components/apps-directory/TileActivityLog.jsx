@@ -79,8 +79,8 @@ export function TileActivityLog({ pinTileId, onClose }) {
           )}
         </div>
       </div>
-      {pinOpen && pinTileId && (
-        <TilePinModal tile={{ id: pinTileId, label: 'activity log' }}
+      {pinOpen && (
+        <TilePinModal tile={{ id: pinTileId || '', label: 'activity log' }}
           onClose={() => { setPinOpen(false); onClose(); }}
           onUnlocked={() => { setPinOpen(false); load(); }} />
       )}

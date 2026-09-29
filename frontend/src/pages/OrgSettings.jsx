@@ -5,7 +5,7 @@ import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { PageHeader, PrimaryButton, Field, inputClass } from '../components/capture/Ui';
 import ArchiveRulesSection from '../components/ArchiveRulesSection';  // v58.13.132ed
-import QuickLinksSection from '../components/QuickLinksSection';  // v58.13.132eo
+import AppsDirectoryManager from '../components/apps-directory/AppsDirectoryManager';
 import OpenAsPdfButton from '../components/OpenAsPdfButton';
 
 // v58.13.132dp — Organisation Settings expansion (5 items).
@@ -269,7 +269,7 @@ export default function OrgSettings() {
       {/* v58.13.132ep — Quick Links repositioned to ABOVE the
           Organisation section per user request. Was previously at the
           bottom of the page (below Archive rules). Admin-gated. */}
-      {isAdmin && <QuickLinksSection />}
+      {isAdmin && <AppsDirectoryManager />}
 
       {/* v58.13.132dp — 30-day insurance expiry warnings + 7-day
           criticals surfaced above the form. AppShell mounts a

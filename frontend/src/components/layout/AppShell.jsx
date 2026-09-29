@@ -8,7 +8,6 @@ import { toast } from 'sonner';
 import { PwaInstallButton, PwaInstallBanner } from '@/components/PwaInstallControls';
 // v160.3.8.1 — Draggable Settings sub-nav replaces the flat Settings section.
 import SettingsNav from '@/components/settings/SettingsNav';
-import AppsDirectoryModal from '@/components/AppsDirectoryModal';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
@@ -177,7 +176,8 @@ const NAV = [
     // Tiles inside the modal use `target="_blank"` so individual
     // launches still pop new browser tabs — but the hub itself no
     // longer requires a separate browser window.
-    { action: 'open-apps-directory', label: 'Apps Directory', icon: Rocket24Regular, iconActive: Rocket24Filled, testid: 'nav-apps-directory', requiresCan: ['users', 'edit'], pastel: 'peach' },
+    // Apps Directory — a normal page for everyone; locked tiles need an admin PIN.
+    { to: '/app/apps-directory', label: 'Apps Directory', icon: Rocket24Regular, iconActive: Rocket24Filled, testid: 'nav-apps-directory', pastel: 'peach' },
   ]},
   { section: 'Capture', items: [
     { to: '/app/swms', label: 'AI SWMS', icon: DocumentText24Regular, iconActive: DocumentText24Filled, testid: 'nav-swms', resource: 'swms', pastel: 'mint' },
@@ -923,23 +923,14 @@ export default function AppShell() {
   // Phase 3.16 — idle-watch + warning modal driver. Lives here (not in
   // TopBar) so the modal can be rendered as a sibling of <main> below.
   const [warnInfo, setWarnInfo] = useState(null);
-  // v58.13.132es — Apps Directory in-app modal. Toggled by the
-  // sidebar entry via the `paneltec:open-apps-directory` CustomEvent.
-  const [appsDirectoryOpen, setAppsDirectoryOpen] = useState(false);
-  useEffect(() => {
-    const open = () => setAppsDirectoryOpen(true);
-    window.addEventListener('paneltec:open-apps-directory', open);
-    return () => window.removeEventListener('paneltec:open-apps-directory', open);
-  }, []);
-  // v58.13.132et — Auto-open the modal when landing with
-  // `?open=apps-directory` (fed by the legacy /quick-links redirect
-  // so old bookmarks still work).
+  // Old bookmarks: `?open=apps-directory` used to open a pop-up; send
+  // them to the Apps Directory page instead.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('open') === 'apps-directory') {
-      setAppsDirectoryOpen(true);
+      navigate('/app/apps-directory', { replace: true });
     }
-  }, [location.search]);
+  }, [location.search, navigate]);
   useSessionTimeout({
     onWarn: (info) => setWarnInfo(info),
     onLogout: async () => {
@@ -1096,9 +1087,6 @@ export default function AppShell() {
       {/* v58.13.132dp — 7-day insurance critical alert. Admin-only,
           one-time-per-session dismissible. Silent for non-admins. */}
       <InsuranceCriticalModal />
-      {/* v58.13.132es — Apps Directory in-app modal (sidebar entry
-          fires `paneltec:open-apps-directory`). */}
-      <AppsDirectoryModal open={appsDirectoryOpen} onClose={() => setAppsDirectoryOpen(false)} />
     </div>
     </PermissionsProvider>
   );

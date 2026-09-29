@@ -283,7 +283,7 @@ function App() {
                 chrome. Still hits `GET /org/url-tiles` through the
                 authenticated axios instance (localStorage token from
                 the main window is available on the same origin). */}
-            <Route path="/apps-directory" element={<AppsDirectory />} />
+            <Route path="/apps-directory" element={<Navigate to="/app/apps-directory" replace />} />
 
             {/* v58.13.132ld — Dropbox OAuth callback landing.
                 Public route (outside `/app/*`). Dropbox redirects an
@@ -305,13 +305,14 @@ function App() {
             <Route path="/app" element={<MustChangePasswordGuard><AppShell /></MustChangePasswordGuard>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
+              <Route path="apps-directory" element={<AppsDirectory />} />
               <Route path="ask" element={<Ask />} />
               {/* v58.13.132eq — Read-only shared bookmark tiles.
                   v58.13.132et — Sidebar Quick Links entry removed;
                   this legacy route now 302-redirects to the dashboard
                   with `?open=apps-directory` so old bookmarks
                   auto-open the modal on landing. */}
-              <Route path="quick-links" element={<Navigate to="/app/dashboard?open=apps-directory" replace />} />
+              <Route path="quick-links" element={<Navigate to="/app/apps-directory" replace />} />
 
               <Route path="swms" element={<SwmsList />} />
               <Route path="swms/new" element={<SwmsNew />} />
