@@ -516,7 +516,7 @@ export default function HomeScreen() {
                   PRE-START MY TRUCK — {truckFull || 'Truck'}
                 </Text>
               </TouchableOpacity>
-              {/* Navigate + Sign On */}
+              {/* Navigate */}
               <View style={jd.actionRow}>
                 <TouchableOpacity
                   testID="job-detail-navigate-btn"
@@ -526,17 +526,6 @@ export default function HomeScreen() {
                 >
                   <Ionicons name="navigate" size={18} color={Colors.white} />
                   <Text style={jd.navBtnText}>NAVIGATE</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  testID="job-detail-signon-btn"
-                  style={jd.signOnBtn}
-                  onPress={() => {
-                    Alert.alert('Sign On', 'Sign-on at site is coming in Phase 4.\nUse the "Sign On" tile on Home for now.');
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="create-outline" size={18} color={Colors.ink} />
-                  <Text style={jd.signOnBtnText}>SIGN ON AT SITE</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -693,12 +682,6 @@ export default function HomeScreen() {
               <Ionicons name="warning-outline" size={24} color={Colors.error} />
             </View>
             <Text style={s.actionLabel}>Incident Report</Text>
-          </TouchableOpacity>
-          <TouchableOpacity testID="home-action-signon" style={s.actionTile} onPress={() => setViewMode('signed_on')}>
-            <View style={[s.actionIcon, { backgroundColor: Colors.infoSoft }]}>
-              <Ionicons name="log-in-outline" size={24} color={Colors.info} />
-            </View>
-            <Text style={s.actionLabel}>Sign On</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="home-action-leave" style={s.actionTile} onPress={() => router.push('/leave' as never)}>
             <View style={[s.actionIcon, { backgroundColor: C.green.softBg }]}>
