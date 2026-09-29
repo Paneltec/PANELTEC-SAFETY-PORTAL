@@ -164,6 +164,14 @@ export default function HomeScreen() {
   const greeting = user?.name ? `Hi, ${user.name.split(' ')[0]}` : 'Welcome';
   const userRole = user?.role_id || user?.role || '';
 
+  // Job detail computed values (hoisted for stable TDZ semantics — .132p3y)
+  const activeJob = todayJob || MOCK_AD_HOC_JOB;
+  const activeJobIsMocked = !todayJob || activeJob?._mocked;
+  const activeJobIsAccepted = activeJob?.status === 'accepted' || !!activeJob?.accepted_at;
+  const activeJobIsDeclined = activeJob?.status === 'declined';
+  const activeJobIsIssued = !activeJobIsAccepted && !activeJobIsDeclined && (activeJob?.status === 'pending_accept' || activeJob?.status === 'pending' || activeJob?.status === 'new' || activeJob?.status === 'issued');
+
+
   // ── Sign On handler ──
   const handleSignOn = useCallback(async (siteId: string, siteName: string) => {
     setSignOnLoading(true);
@@ -334,41 +342,36 @@ export default function HomeScreen() {
 
   // ── Job Detail view — Phase 3 redesign (.132p2) ──
   if (viewMode === 'job_detail') {
-    const job = todayJob || MOCK_AD_HOC_JOB;
-    const isMocked = !todayJob || job._mocked;
-    const isAccepted = job.status === 'accepted' || !!job.accepted_at;
-    const isDeclined = job.status === 'declined';
-    const isIssued = !isAccepted && !isDeclined && (job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new' || job.status === 'issued');
-    const address = job.address || job.site_address || job.site_name || '';
-    const truckFull = job.truck_name
-      ? [job.truck_name, job.truck_reg].filter(Boolean).join(' - ')
-      : job.truck || '';
+    const address = activeJob.address || activeJob.site_address || activeJob.site_name || '';
+    const truckFull = activeJob.truck_name
+      ? [activeJob.truck_name, activeJob.truck_reg].filter(Boolean).join(' - ')
+      : activeJob.truck || '';
 
     // Filter current user from crew
     const currentName = (user?.name || user?.display_name || user?.full_name || '').trim().toUpperCase();
-    const crewRaw: string[] = Array.isArray(job.staff_names) ? job.staff_names
-      : Array.isArray(job.staff) ? job.staff
-      : (typeof job.staff === 'string' ? job.staff.split(',').map((s: string) => s.trim()) : []);
+    const crewRaw: string[] = Array.isArray(activeJob.staff_names) ? activeJob.staff_names
+      : Array.isArray(activeJob.staff) ? activeJob.staff
+      : (typeof activeJob.staff === 'string' ? activeJob.staff.split(',').map((s: string) => s.trim()) : []);
     const filteredCrew = crewRaw.filter((n: string) => n.trim().toUpperCase() !== currentName);
     const crewLabel = filteredCrew.length > 0 ? filteredCrew.join(', ') : '—';
 
-    const jobDate = job.date || job.job_date || job.issued_at || '';
-    const jobNotes = job.notes || '';
-    const siteName = job.site_name || job.title || '';
+    const jobDate = activeJob.date || activeJob.job_date || activeJob.issued_at || '';
+    const jobNotes = activeJob.notes || '';
+    const siteName = activeJob.site_name || activeJob.title || '';
 
     // Status chip config
-    const chipConfig = isIssued
-      ? { label: `NEW · issued ${formatTime(job.issued_at || job.assigned_at || job.created_at)}`, color: C.orange.base, bg: C.orange.chipBg, border: C.orange.chipBg }
-      : isAccepted
-      ? { label: `ACCEPTED · at ${formatTime(job.accepted_at)}`, color: C.green.base, bg: C.green.softBg, border: C.green.softBg }
-      : { label: `DECLINED · at ${formatTime(job.declined_at)}`, color: C.grey.declineText, bg: C.card.bg, border: C.card.border };
+    const chipConfig = activeJobIsIssued
+      ? { label: `NEW · issued ${formatTime(activeJob.issued_at || activeJob.assigned_at || activeJob.created_at)}`, color: C.orange.base, bg: C.orange.chipBg, border: C.orange.chipBg }
+      : activeJobIsAccepted
+      ? { label: `ACCEPTED · at ${formatTime(activeJob.accepted_at)}`, color: C.green.base, bg: C.green.softBg, border: C.green.softBg }
+      : { label: `DECLINED · at ${formatTime(activeJob.declined_at)}`, color: C.grey.declineText, bg: C.card.bg, border: C.card.border };
 
     // Field table data
     const fieldRows: { label: string; value: string }[] = [
       { label: 'TRUCK', value: truckFull || '—' },
       { label: 'DATE', value: formatJobDate(jobDate) },
       { label: 'SITE', value: siteName || '—' },
-      { label: 'CUSTOMER', value: job.customer || '—' },
+      { label: 'CUSTOMER', value: activeJob.customer || '—' },
       { label: 'CREW', value: crewLabel },
     ];
 
@@ -388,7 +391,7 @@ export default function HomeScreen() {
         </View>
 
         <ScrollView contentContainerStyle={jd.scroll} showsVerticalScrollIndicator={false}>
-          {isMocked && (
+          {activeJobIsMocked && (
             <View style={s.mockBadge}>
               <Ionicons name="flask-outline" size={12} color={C.misc.errorText} />
               <Text style={s.mockBadgeText}>Demo data — no live job assigned</Text>
@@ -448,7 +451,7 @@ export default function HomeScreen() {
           </View>
 
           {/* ── State 1: BEFORE ACCEPT ── */}
-          {isIssued && (
+          {activeJobIsIssued && (
             <>
               {/* Decision row */}
               <View style={jd.decisionRow}>
@@ -465,7 +468,7 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     testID="job-detail-accept-btn"
                     style={jd.acceptBtn}
-                    onPress={() => handleAcceptJob(job)}
+                    onPress={() => handleAcceptJob(activeJob)}
                     disabled={jobActioning}
                     activeOpacity={0.7}
                   >
@@ -493,13 +496,13 @@ export default function HomeScreen() {
           )}
 
           {/* ── State 2: AFTER ACCEPT ── */}
-          {isAccepted && (
+          {activeJobIsAccepted && (
             <>
               {/* Accepted pill */}
               <View style={jd.acceptedPill}>
                 <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
                 <Text style={jd.acceptedPillText}>
-                  ACCEPTED at {formatTime(job.accepted_at)}
+                  ACCEPTED at {formatTime(activeJob.accepted_at)}
                 </Text>
               </View>
               {/* Pre-start truck button */}
@@ -532,7 +535,7 @@ export default function HomeScreen() {
           )}
 
           {/* ── State 3: DECLINED ── */}
-          {isDeclined && (
+          {activeJobIsDeclined && (
             <View style={jd.declinedBlock}>
               <Ionicons name="close-circle-outline" size={36} color={C.grey.lockedIcon} />
               <Text style={jd.declinedTitle}>You declined this job</Text>
