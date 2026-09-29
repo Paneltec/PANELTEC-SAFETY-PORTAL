@@ -98,6 +98,8 @@ services:
         listen 3951;
         server_name _;
         client_max_body_size 4g;
+        proxy_request_buffering off;
+        client_body_timeout 600s;
         root /usr/share/nginx/html;
         location /api/ {
           proxy_pass http://127.0.0.1:8011;
