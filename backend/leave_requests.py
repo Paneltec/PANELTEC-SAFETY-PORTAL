@@ -193,6 +193,15 @@ async def ingest_parsed(org_id: str, parsed: dict, *, source: str,
                     "start_date": parsed["start_date"], "leave_type": parsed["leave_type"]})
 
     existing = await db.leave_requests.find_one(key, {"_id": 0})
+    if not existing:
+        # Payroll email for a request the worker made on the phone → attach to it.
+        who = {"worker_id": worker["id"]} if worker else {"employee_name": parsed["employee_name"]}
+        existing = await db.leave_requests.find_one(
+            {"org_id": org_id, "source": "app", "payroll_request_id": None,
+             "start_date": parsed["start_date"], "category": parsed["category"], **who},
+            {"_id": 0})
+        if existing:
+            key = {"org_id": org_id, "id": existing["id"]}
     status_from_event = {"approved": "approved", "rejected": "rejected",
                          "cancelled": "cancelled"}.get(parsed["event"])
 
@@ -244,6 +253,7 @@ class LeaveSettings(BaseModel):
     inbox_mailbox: Optional[EmailStr] = None      # e.g. leave@paneltec.com.au
     auto_poll_enabled: bool = False
     subject_filter: str = "Leave Request"
+    manager_emails: Optional[str] = None          # comma-separated; told about new phone requests
 
 
 async def _settings(org_id: str) -> dict:
@@ -440,7 +450,7 @@ async def decide(leave_id: str, body: DecisionIn,
     body_html = f"""
       <p>Hi,</p>
       <p>The following leave request has been <b>{verb}</b> by {_html.escape(who)} in the Paneltec Safety Portal.
-      Please action it in payroll.</p>
+      {'The worker requested this on the phone app, so it is <b>not in payroll yet</b> — please enter it.' if (lr.get('source') == 'app' and not lr.get('payroll_request_id') and body.decision == 'approve') else 'Please action it in payroll.'}</p>
       <table cellpadding="4" style="border-collapse:collapse">
         <tr><td><b>Employee</b></td><td>{_html.escape(lr['employee_name'])}</td></tr>
         <tr><td><b>Leave type</b></td><td>{_html.escape(lr['leave_type'])}</td></tr>
@@ -477,7 +487,7 @@ async def ensure_leave_indexes() -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Phone side — workers request leave from the field app (.132p3b)
+# Phone side — workers request leave from the field app
 # ══════════════════════════════════════════════════════════════════════
 from pathlib import Path  # noqa: E402
 
@@ -498,7 +508,7 @@ LEAVE_TYPES = {
     "unpaid": "Leave Without Pay",
     "other": "Other Leave",
 }
-WORKER_STATUS = {
+WORKER_STATUS = {  # what the worker sees
     "pending": "Waiting for approval",
     "info_requested": "Office needs more info",
     "approved": "Approved",
@@ -518,7 +528,7 @@ async def _my_worker(user: dict) -> dict:
     return w
 
 
-def _working_days(start: date, end: date) -> int:
+def working_days(start: date, end: date) -> int:
     n, d = 0, start
     while d <= end:
         if d.weekday() < 5:
@@ -546,7 +556,7 @@ class MyLeaveIn(BaseModel):
     category: str = Field(..., pattern="^(annual|sick|long_service|unpaid|other)$")
     start_date: date
     end_date: date
-    hours: Optional[float] = Field(None, gt=0, le=1000)
+    hours: Optional[float] = Field(None, gt=0, le=1000)   # blank → weekdays × 7.6
     reason: Optional[str] = Field(None, max_length=500)
 
 
@@ -556,6 +566,7 @@ async def my_leave(user: dict = Depends(get_current_user)):
     rows = await db.leave_requests.find(
         {"org_id": user["org_id"], "worker_id": w["id"]}, {"_id": 0, "raw_body": 0}
     ).sort([("start_date", -1)]).to_list(200)
+    # Latest balance payroll told us about, per leave type.
     balances: dict = {}
     for r in sorted(rows, key=lambda r: r.get("updated_at") or ""):
         if r.get("balance_hours") is not None:
@@ -570,7 +581,7 @@ async def create_my_leave(body: MyLeaveIn, user: dict = Depends(get_current_user
         raise HTTPException(422, "The last day can't be before the first day.")
     if body.start_date < date.today() - timedelta(days=14):
         raise HTTPException(422, "That's more than two weeks ago — talk to the office.")
-    days = _working_days(body.start_date, body.end_date)
+    days = working_days(body.start_date, body.end_date)
     if days == 0 and not body.hours:
         raise HTTPException(422, "Those dates are a weekend — enter the hours you need.")
     hours = round(body.hours or days * HOURS_PER_DAY, 2)
@@ -599,7 +610,31 @@ async def create_my_leave(body: MyLeaveIn, user: dict = Depends(get_current_user
     await db.leave_requests.insert_one(dict(doc))
     doc["flags"] = await _compute_flags(org, doc)
     await db.leave_requests.update_one({"id": doc["id"]}, {"$set": {"flags": doc["flags"]}})
+    await _notify_managers(org, doc, user)
     return _for_worker(doc)
+
+
+async def _notify_managers(org: str, doc: dict, user: dict) -> None:
+    s = await _settings(org)
+    to = [e.strip() for e in (s.get("manager_emails") or "").split(",") if e.strip()]
+    if not to:
+        return
+    from email_outbox import queue_email_doc
+    try:
+        await queue_email_doc(
+            org_id=org, to=to,
+            subject=f"New leave request: {doc['employee_name']} {_fmt(doc['start_date'])}",
+            body_html=(
+                f"<p>{_html.escape(doc['employee_name'])} has requested <b>{doc['hours']:g} hours of "
+                f"{_html.escape(doc['leave_type'])}</b> from {_fmt(doc['start_date'])} to {_fmt(doc['end_date'])} "
+                f"using the Paneltec field app.</p>"
+                + (f"<p>Reason: <i>{_html.escape(doc['employee_note'])}</i></p>" if doc.get("employee_note") else "")
+                + "<p>Open the Safety Portal → Leave Requests to approve or reject it.</p>"),
+            created_by=user["id"], resource_kind="leave_request",
+            related_record_type="leave_request", related_record_id=doc["id"],
+        )
+    except Exception as e:  # noqa: BLE001 — never block the worker's submit
+        log.warning("leave.notify_managers failed: %s", e)
 
 
 @me_router.post("/{leave_id}/cancel")
@@ -611,10 +646,22 @@ async def cancel_my_leave(leave_id: str, user: dict = Depends(get_current_user))
         raise HTTPException(404, "Leave request not found")
     if not _for_worker(d)["can_cancel"]:
         raise HTTPException(409, "This request can't be cancelled from the phone — talk to the office.")
+    was_approved = d["status"] == "approved"
     await db.leave_requests.update_one(
         {"id": leave_id},
         {"$set": {"status": "cancelled", "updated_at": _now()},
          "$push": {"history": {"at": _now(), "event": "cancelled", "source": "app", "by": d["employee_name"]}}})
+    s = await _settings(org)
+    if was_approved and s.get("pay_officer_email"):
+        from email_outbox import queue_email_doc
+        await queue_email_doc(
+            org_id=org, to=[s["pay_officer_email"]],
+            subject=f"Leave CANCELLED: {d['employee_name']} {_fmt(d['start_date'])}",
+            body_html=(f"<p>{_html.escape(d['employee_name'])} has cancelled their approved "
+                       f"{_html.escape(d['leave_type'])} ({_fmt(d['start_date'])} – {_fmt(d['end_date'])}, "
+                       f"{d['hours']:g} h). Please remove it from payroll.</p>"),
+            created_by=user["id"], resource_kind="leave_request",
+            related_record_type="leave_request", related_record_id=leave_id)
     return _for_worker({**d, "status": "cancelled"})
 
 
