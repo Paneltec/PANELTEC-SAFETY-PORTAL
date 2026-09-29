@@ -69,6 +69,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, He
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ConfigDict
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+from pymongo.errors import BulkWriteError
 
 from auth_helpers import verify_bearer_token  # shared helper — breaks the
                                               # legacy `server.py` ↔
@@ -2265,15 +2266,29 @@ def install(app, db, require_admin):
                 "rows_existing": existing,
             }
 
-            if mode == "dry_run":
+            try:
+              if mode == "dry_run":
                 entry["status"] = "preview"
-            elif mode == "replace":
+              elif mode == "replace":
                 await db[cname].delete_many({})
+                skipped = 0
                 for i in range(0, len(rows), 1000):
-                    await db[cname].insert_many(rows[i:i + 1000])
+                    try:
+                        await db[cname].insert_many(rows[i:i + 1000], ordered=False)
+                    except BulkWriteError as bwe:
+                        # Rows that clash with a unique index (duplicates
+                        # in the source data) are skipped; the rest of
+                        # the batch still goes in (ordered=False).
+                        errs = bwe.details.get("writeErrors", [])
+                        other = [e for e in errs if e.get("code") != 11000]
+                        if other:
+                            raise
+                        skipped += len(errs)
                 entry["status"] = "replaced"
+                if skipped:
+                    entry["duplicates_skipped"] = skipped
                 entry["rows_after"] = await db[cname].count_documents({})
-            elif mode == "merge":
+              elif mode == "merge":
                 inserted = updated = 0
                 for r in rows:
                     rid = r.get("id")
@@ -2287,6 +2302,10 @@ def install(app, db, require_admin):
                 entry["inserted"] = inserted
                 entry["updated"] = updated
                 entry["rows_after"] = await db[cname].count_documents({})
+            except Exception as e:  # noqa: BLE001 — one bad collection must not stop the rest
+                logger.warning("restore %s failed: %s", cname, e)
+                entry["status"] = "fail"
+                entry["error"] = str(e)[:300]
             per_coll.append(entry)
             del rows
 
