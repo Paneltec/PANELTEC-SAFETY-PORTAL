@@ -336,9 +336,9 @@ export default function HomeScreen() {
   if (viewMode === 'job_detail') {
     const job = todayJob || MOCK_AD_HOC_JOB;
     const isMocked = !todayJob || job._mocked;
-    const isIssued = !isAccepted && !isDeclined && (job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new' || job.status === 'issued');
     const isAccepted = job.status === 'accepted' || !!job.accepted_at;
     const isDeclined = job.status === 'declined';
+    const isIssued = !isAccepted && !isDeclined && (job.status === 'pending_accept' || job.status === 'pending' || job.status === 'new' || job.status === 'issued');
     const address = job.address || job.site_address || job.site_name || '';
     const truckFull = job.truck_name
       ? [job.truck_name, job.truck_reg].filter(Boolean).join(' - ')
