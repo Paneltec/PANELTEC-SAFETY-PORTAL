@@ -2456,6 +2456,21 @@ function RestoreCard() {
               Preview · {preview.manifest?.snapshot_id?.slice(0, 8) || "—"} ·
               {" "}{preview.collections.length} collections
             </div>
+            <div style={{ marginBottom: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => {
+                if (window.confirm("MERGE: insert new rows + update existing by id. Continue?")) send("merge");
+              }} disabled={busy}
+                style={btn(ACCENT)} data-testid="backup-restore-merge-btn">
+                ✚ Merge (non-destructive)
+              </button>
+              <button onClick={() => {
+                if (window.confirm("REPLACE: WIPE each collection in the ZIP before re-inserting. THIS IS DESTRUCTIVE. Continue?")) send("replace");
+              }} disabled={busy}
+                style={btn("#fee2e2")} data-testid="backup-restore-replace-btn">
+                ⚠ Replace (destructive)
+              </button>
+              <button onClick={reset} style={btn()}>Cancel</button>
+            </div>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f1f5f9" }}>
@@ -2478,21 +2493,6 @@ function RestoreCard() {
                 ))}
               </tbody>
             </table>
-            <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={() => {
-                if (window.confirm("MERGE: insert new rows + update existing by id. Continue?")) send("merge");
-              }} disabled={busy}
-                style={btn(ACCENT)} data-testid="backup-restore-merge-btn">
-                ✚ Merge (non-destructive)
-              </button>
-              <button onClick={() => {
-                if (window.confirm("REPLACE: WIPE each collection in the ZIP before re-inserting. THIS IS DESTRUCTIVE. Continue?")) send("replace");
-              }} disabled={busy}
-                style={btn("#fee2e2")} data-testid="backup-restore-replace-btn">
-                ⚠ Replace (destructive)
-              </button>
-              <button onClick={reset} style={btn()}>Cancel</button>
-            </div>
           </div>
         )}
 
