@@ -2293,9 +2293,12 @@ function RestoreCard() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
+  const inputRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+  fileRef.current = file;
   const onPick = (f) => {
     if (!f) return;
-    if (!f.name.endsWith(".zip")) {
+    if (!f.name.toLowerCase().endsWith(".zip")) {
       setError("Pick a .zip snapshot file");
       return;
     }
@@ -2303,12 +2306,15 @@ function RestoreCard() {
     setPreview(null);
     setResult(null);
     setError("");
+    // Start the preview straight away — one less click.
+    send("dry_run", f);
   };
 
   // progress: { phase: "upload"|"server", pct, loaded, total, done, count, current, startedAt }
   const [progress, setProgress] = useState(null);
 
-  const send = async (mode) => {
+  const send = async (mode, pickedFile) => {
+    const file = pickedFile || fileRef.current;
     if (!file) return;
     setBusy(true);
     setError("");
@@ -2398,7 +2404,7 @@ function RestoreCard() {
             e.preventDefault(); setDragging(false);
             onPick(e.dataTransfer.files[0]);
           }}
-          onClick={() => document.getElementById("backup-restore-input")?.click()}
+          onClick={() => inputRef.current?.click()}
           data-testid="backup-restore-dropzone"
           style={{
             border: `2px dashed ${dragging ? "#fbbf24" : "#94a3b8"}`,
@@ -2409,16 +2415,21 @@ function RestoreCard() {
           }}>
           <Download className="w-6 h-6 inline-block mb-2" style={{ transform: "rotate(180deg)" }}/>
           <div style={{ fontSize: 13, fontWeight: 700 }}>
-            {file ? file.name : "Drop a paneltec-snapshot-….zip here"}
+            {file ? `✓ ${file.name}` : "Drop a paneltec-snapshot-….zip here"}
           </div>
           <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
             {file
               ? `${(file.size / (1024 * 1024)).toFixed(1)} MB · click to change`
               : "or click to browse"}
           </div>
-          <input id="backup-restore-input" type="file" accept=".zip"
+          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>
+            Restore v2 · progress bar
+          </div>
+          <input id="backup-restore-input" ref={inputRef} type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
             style={{ display: "none" }}
-            onChange={e => onPick(e.target.files[0])}
+            onClick={e => e.stopPropagation()}
+            onChange={e => { onPick(e.target.files && e.target.files[0]); e.target.value = ""; }}
             data-testid="backup-restore-file"/>
         </div>
 
