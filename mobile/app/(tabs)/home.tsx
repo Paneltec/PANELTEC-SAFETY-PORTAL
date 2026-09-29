@@ -455,7 +455,7 @@ export default function HomeScreen() {
             <>
               {/* Decision row */}
               <View style={jd.decisionRow}>
-                <Animated.View style={[
+                <Animated.View pointerEvents="box-none" style={[
                   jd.acceptBtnWrap,
                   {
                     shadowColor: C.green.base,
