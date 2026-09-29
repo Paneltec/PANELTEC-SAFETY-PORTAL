@@ -123,6 +123,17 @@ function Drawer({ id, onClose, onChanged }) {
               <div><dt className="text-slate-500 text-xs">Hours</dt><dd className="font-medium" data-testid="leave-detail-hours">{row.hours}</dd></div>
               <div><dt className="text-slate-500 text-xs">Balance on start</dt><dd className="font-medium" data-testid="leave-detail-balance">{row.balance_hours != null ? `${row.balance_hours} h` : '—'}</dd></div>
             </dl>
+            {row.certificate_file && (
+              <button data-testid="leave-view-certificate" onClick={async () => {
+                try {
+                  const res = await api.get(`/leave/${row.id}/certificate`, { responseType: 'blob' });
+                  window.open(URL.createObjectURL(res.data), '_blank');
+                } catch (e) { toast.error(apiError(e)); }
+              }} className="text-sm font-semibold text-orange-600 underline">View medical certificate</button>
+            )}
+            {row.source === 'app' && !row.payroll_request_id && (
+              <div data-testid="leave-phone-note" className="text-xs rounded-lg bg-sky-50 border border-sky-200 text-sky-800 p-2">Requested on the phone app. When you approve it, the Pay Officer is emailed to enter it in payroll.</div>
+            )}
             {row.employee_note && <div data-testid="leave-detail-note" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm italic text-slate-700">&ldquo;{row.employee_note}&rdquo;</div>}
             {row.flags?.length > 0 && (
               <div className="space-y-1" data-testid="leave-detail-flags">
@@ -206,13 +217,14 @@ function SettingsModal({ onClose }) {
   const [s, setS] = useState(null);
   useEffect(() => { api.get('/leave/settings').then(({ data }) => setS(data)).catch((e) => toast.error(apiError(e))); }, []);
   const save = async () => {
-    try { await api.put('/leave/settings', { pay_officer_email: s.pay_officer_email || null, inbox_mailbox: s.inbox_mailbox || null, auto_poll_enabled: !!s.auto_poll_enabled, subject_filter: s.subject_filter || 'Leave Request' }); toast.success('Saved'); onClose(); }
+    try { await api.put('/leave/settings', { pay_officer_email: s.pay_officer_email || null, inbox_mailbox: s.inbox_mailbox || null, auto_poll_enabled: !!s.auto_poll_enabled, subject_filter: s.subject_filter || 'Leave Request', manager_emails: s.manager_emails || null }); toast.success('Saved'); onClose(); }
     catch (e) { toast.error(apiError(e)); }
   };
   if (!s) return <Modal title="Leave settings" onClose={onClose}><div className="text-slate-500">Loading…</div></Modal>;
   return (
     <Modal title="Leave settings" onClose={onClose}>
       <SettingsField label="Pay Officer email" k="pay_officer_email" ph="payroll@paneltec.com.au" s={s} setS={setS} />
+      <SettingsField label="Tell these managers about phone requests (comma-separated)" k="manager_emails" ph="supervisor@paneltec.com.au, ops@paneltec.com.au" s={s} setS={setS} />
       <SettingsField label="Leave inbox (Microsoft 365 mailbox)" k="inbox_mailbox" ph="leave@paneltec.com.au" s={s} setS={setS} />
       <SettingsField label="Only read emails whose subject contains" k="subject_filter" ph="Leave Request" s={s} setS={setS} />
       <label className="flex items-center gap-2 text-sm"><input data-testid="leave-settings-auto-poll" type="checkbox" checked={!!s.auto_poll_enabled} onChange={(e) => setS({ ...s, auto_poll_enabled: e.target.checked })} /> Check the inbox automatically every 10 minutes</label>
@@ -305,7 +317,7 @@ export default function LeaveRequests() {
             {shown.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-500" data-testid="leave-table-empty">Nothing here.</td></tr>}
             {shown.map((r) => (
               <tr key={r.id} data-testid={`leave-row-${r.id}`} onClick={() => setOpenId(r.id)} className="border-t border-slate-100 hover:bg-orange-50/40 cursor-pointer">
-                <td className="p-3 font-medium text-slate-900">{r.employee_name}</td>
+                <td className="p-3 font-medium text-slate-900">{r.employee_name}{r.source === 'app' && <span data-testid="leave-phone-tag" className="ml-2 inline-flex px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 text-[10px] font-bold uppercase">Phone</span>}</td>
                 <td className="p-3"><span className="inline-flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${(CAT[r.category] || CAT.other).bar}`} />{r.leave_type}</span></td>
                 <td className="p-3 text-slate-600">{fmtShort(r.start_date)} – {fmtShort(r.end_date)}</td>
                 <td className="p-3 text-right tabular-nums">{r.hours}</td>

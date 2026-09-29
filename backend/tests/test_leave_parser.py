@@ -59,3 +59,11 @@ def test_parses_html_and_approved_subject():
 
 def test_ignores_unrelated_email():
     assert parse_leave_email("Invoice", "Please find attached invoice 123.") is None
+
+
+def test_working_days_skips_weekends():
+    from datetime import date
+    from leave_requests import working_days
+    assert working_days(date(2027, 1, 11), date(2027, 1, 15)) == 5   # Mon–Fri
+    assert working_days(date(2027, 1, 15), date(2027, 1, 18)) == 2   # Fri–Mon
+    assert working_days(date(2027, 1, 16), date(2027, 1, 17)) == 0   # weekend
