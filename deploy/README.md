@@ -1,5 +1,9 @@
 # Self-hosting the Paneltec Safety Portal (Umbrel + Portainer)
 
+> **Umbrel note:** the setup actually running on the Umbrel is `deploy/umbrel-test.yml`
+> (host networking, Watchtower for updates, web on http://umbrel.local:3951).
+> The generic `docker-compose.*.yml` files below suit a normal Docker host.
+
 Two copies run side by side on the Umbrel:
 
 | Copy | Portainer stack | Compose file | Web address (LAN) | Emails/SMS |

@@ -1,0 +1,135 @@
+# Paneltec Safety Portal: TEST copy on the Umbrel (umbrelOS + Portainer app)
+# What is actually running on the Umbrel (29 Sep 2026).
+# Umbrel's Portainer runs Docker-in-Docker, where containers on a private
+# network can't reach each other or be reached from the LAN, so every service
+# uses the Umbrel's own network (network_mode: host):
+#   website  -> port 3951 (open on the LAN)      http://umbrel.local:3951
+#   backend  -> 127.0.0.1:8011 (Umbrel only)
+#   database -> 127.0.0.1:27027 (Umbrel only)
+# Watchtower talks to Umbrel's Portainer Docker at /data/docker.sock and pulls
+# new :test images every 5 minutes.
+# In Portainer this was pasted into the Web editor with real values in place of ${...}.
+name: paneltec-test
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    network_mode: host
+    command:
+    - mongod
+    - --bind_ip
+    - 127.0.0.1
+    - --port
+    - '27027'
+    volumes:
+    - db:/data/db
+    healthcheck:
+      test:
+      - CMD
+      - mongosh
+      - --port
+      - '27027'
+      - --quiet
+      - --eval
+      - db.adminCommand('ping').ok
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  backend:
+    image: ghcr.io/paneltec/paneltec-safety-portal/backend:test
+    restart: unless-stopped
+    network_mode: host
+    labels:
+    - com.centurylinklabs.watchtower.enable=true
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command:
+    - uvicorn
+    - server:app
+    - --host
+    - 127.0.0.1
+    - --port
+    - '8011'
+    - --proxy-headers
+    - --forwarded-allow-ips
+    - '*'
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -fsS
+      - http://127.0.0.1:8011/api/health
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    environment:
+      MONGO_URL: mongodb://127.0.0.1:27027
+      DB_NAME: paneltec
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: '*'
+      FRONTEND_PUBLIC_URL: ${PUBLIC_URL}
+      IS_PROD: 'false'
+      COMMS_SAFE_MODE: 'on'
+      EMERGENT_LLM_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PANELTEC_VAULT_SECRET: ${PANELTEC_VAULT_SECRET}
+      INTEGRATIONS_ENC_KEY: ${INTEGRATIONS_ENC_KEY}
+      BACKUP_DEST_ENC_KEY: ${BACKUP_DEST_ENC_KEY}
+    volumes:
+    - uploads:/app/backend/uploads
+  web:
+    image: ghcr.io/paneltec/paneltec-safety-portal/web:test
+    restart: unless-stopped
+    network_mode: host
+    labels:
+    - com.centurylinklabs.watchtower.enable=true
+    depends_on:
+    - backend
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL}
+    entrypoint:
+    - sh
+    - -c
+    - |-
+      cat > /etc/nginx/conf.d/default.conf <<'EOF'
+      server {
+        listen 3951;
+        server_name _;
+        client_max_body_size 4g;
+        root /usr/share/nginx/html;
+        location /api/ {
+          proxy_pass http://127.0.0.1:8011;
+          proxy_http_version 1.1;
+          proxy_set_header Host $$host;
+          proxy_set_header X-Real-IP $$remote_addr;
+          proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $$scheme;
+          proxy_set_header Upgrade $$http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_read_timeout 600s;
+          proxy_send_timeout 600s;
+        }
+        location /m/ { try_files $$uri $$uri.html $$uri/index.html /m/index.html; }
+        location = /service-worker.js { add_header Cache-Control "no-cache"; try_files $$uri =404; }
+        location = /index.html { add_header Cache-Control "no-cache"; }
+        location / { try_files $$uri /index.html; }
+      }
+      EOF
+      exec /docker-entrypoint.sh nginx -g 'daemon off;'
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+    - /data/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_LABEL_ENABLE: 'true'
+      WATCHTOWER_POLL_INTERVAL: '300'
+      WATCHTOWER_CLEANUP: 'true'
+      REPO_USER: Paneltec
+      REPO_PASS: ${GHCR_TOKEN}
+volumes:
+  db: {}
+  uploads: {}
