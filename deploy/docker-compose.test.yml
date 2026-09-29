@@ -1,0 +1,60 @@
+# Paneltec Safety Portal: TEST copy
+# Deployed by Portainer straight from GitHub (Stacks → Repository).
+# Settings marked ${...} are filled in from the stack's Environment variables in Portainer.
+name: paneltec-test
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - db:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  backend:
+    image: ghcr.io/paneltec/paneltec-safety-portal/backend:test
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: ${DB_NAME:-paneltec}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: "*"
+      FRONTEND_PUBLIC_URL: ${PUBLIC_URL}
+      IS_PROD: "false"
+      COMMS_SAFE_MODE: "on"
+      # AI features use your own Anthropic key
+      EMERGENT_LLM_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Copied once from Emergent so saved logins and integration keys still unlock
+      PANELTEC_VAULT_SECRET: ${PANELTEC_VAULT_SECRET}
+      INTEGRATIONS_ENC_KEY: ${INTEGRATIONS_ENC_KEY}
+      BACKUP_DEST_ENC_KEY: ${BACKUP_DEST_ENC_KEY}
+      TIGRIS_ENDPOINT: ${TIGRIS_ENDPOINT:-}
+      TIGRIS_ACCESS_KEY_ID: ${TIGRIS_ACCESS_KEY_ID:-}
+      TIGRIS_SECRET_ACCESS_KEY: ${TIGRIS_SECRET_ACCESS_KEY:-}
+      TIGRIS_BUCKET: ${TIGRIS_BUCKET:-}
+    volumes:
+      - uploads:/app/backend/uploads
+
+  web:
+    image: ghcr.io/paneltec/paneltec-safety-portal/web:test
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL}
+    ports:
+      - "3951:80"
+
+volumes:
+  db:
+  uploads:

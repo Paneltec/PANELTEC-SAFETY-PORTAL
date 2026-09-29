@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/.expo
+**/build
+**/dist
+frontend/node_modules
+mobile/node_modules
+backend/uploads
+backend/.env
+backend/tests
+memory
+test_reports
+tests
+**/*.apk
+backend/static/downloads
+**/__pycache__
