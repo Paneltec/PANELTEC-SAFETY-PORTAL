@@ -1,2 +1,2 @@
-export const MOBILE_BUNDLE_VERSION = 'paneltec-v182.3.12.58.13.132p3r';
-export const SHIP_LABEL = '.132p3r';
+export const MOBILE_BUNDLE_VERSION = 'paneltec-v183.3.12.58.13.132p3s';
+export const SHIP_LABEL = '.132p3s';

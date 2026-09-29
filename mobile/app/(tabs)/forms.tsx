@@ -244,23 +244,25 @@ export default function FormsScreen() {
         <TouchableOpacity style={s.modalBg} activeOpacity={1} onPress={() => setCatPickerOpen(false)}>
           <View style={s.modalSheet}>
             <Text style={s.modalTitle}>Filter by category</Text>
-            <TouchableOpacity testID="forms-cat-all" style={s.modalRow} onPress={() => handlePickCat(null)}>
-              <Text style={[s.modalRowText, !effectiveCat && { fontWeight: '800' }]}>All categories</Text>
-              <Text style={s.modalRowCount}>{totalFiltered}</Text>
-              {!effectiveCat && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
-            </TouchableOpacity>
-            {CATEGORY_ORDER.map(cat => {
-              const cnt = catCounts[cat.key] || 0;
-              const active = effectiveCat === cat.key;
-              return (
-                <TouchableOpacity key={cat.key} testID={`forms-cat-pick-${cat.key}`} style={[s.modalRow, cnt === 0 && { opacity: 0.35 }]} onPress={() => handlePickCat(cat.key)}>
-                  <View style={[s.catDot, { backgroundColor: cat.color }]} />
-                  <Text style={[s.modalRowText, active && { fontWeight: '800' }]}>{cat.label}</Text>
-                  <Text style={s.modalRowCount}>{cnt}</Text>
-                  {active && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
-                </TouchableOpacity>
-              );
-            })}
+            <ScrollView style={{ flexGrow: 0 }} bounces={false}>
+              <TouchableOpacity testID="forms-cat-all" style={s.modalRow} onPress={() => handlePickCat(null)}>
+                <Text style={[s.modalRowText, !effectiveCat && { fontWeight: '800' }]}>All categories</Text>
+                <Text style={s.modalRowCount}>{totalFiltered}</Text>
+                {!effectiveCat && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
+              </TouchableOpacity>
+              {CATEGORY_ORDER.map(cat => {
+                const cnt = catCounts[cat.key] || 0;
+                const active = effectiveCat === cat.key;
+                return (
+                  <TouchableOpacity key={cat.key} testID={`forms-cat-pick-${cat.key}`} style={[s.modalRow, cnt === 0 && { opacity: 0.35 }]} onPress={() => handlePickCat(cat.key)}>
+                    <View style={[s.catDot, { backgroundColor: cat.color }]} />
+                    <Text style={[s.modalRowText, active && { fontWeight: '800' }]}>{cat.label}</Text>
+                    <Text style={s.modalRowCount}>{cnt}</Text>
+                    {active && <Ionicons name="checkmark" size={18} color={Colors.orange} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -289,7 +291,7 @@ function CategoryCard({ meta, formCount, onPress }: {
       <View style={s.catContent}>
         {/* Tinted icon container */}
         <View style={[s.catIconWrap, { backgroundColor: palette.iconBg }]}>
-          <CategoryIcon category={meta.key} size={16} color={palette.chipText} />
+          <CategoryIcon category={meta.key} size={22} color={palette.chipText} />
         </View>
 
         {/* Text block */}
@@ -368,26 +370,26 @@ const s = StyleSheet.create({
   },
   retryBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 
-  // ── Option B Category tiles (compact 2-col grid) ──
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingTop: 8, gap: 8 },
+  // ── Option B Category tiles ──
+  catGrid: { paddingHorizontal: 16, paddingTop: 8 },
   catCard: {
     flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: Colors.surface, borderRadius: 12, marginBottom: 0,
-    minHeight: 52, overflow: 'hidden', width: '48.5%',
+    backgroundColor: Colors.surface, borderRadius: 14, marginBottom: 10,
+    minHeight: 68, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  catStripe: { width: 3, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
+  catStripe: { width: 4, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
   catContent: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 8, paddingHorizontal: 10,
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 12, paddingHorizontal: 14,
   },
   catIconWrap: {
-    width: 32, height: 32, borderRadius: 8,
+    width: 44, height: 44, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
   catTextWrap: { flex: 1 },
-  catName: { fontSize: 13, fontWeight: '700', color: '#1A1A1A' },
-  catCount: { fontSize: 11, color: Colors.textTertiary, fontWeight: '500', marginTop: 1 },
+  catName: { fontSize: 16, fontWeight: '700', color: '#1A1A1A' },
+  catCount: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500', marginTop: 2 },
 
   // ── Search results ──
   searchResults: { paddingHorizontal: 16, paddingTop: 4 },

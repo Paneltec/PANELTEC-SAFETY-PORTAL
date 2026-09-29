@@ -84,6 +84,9 @@ export default function MyWorkScreen() {
   return (
     <View testID="my-work-screen" style={[s.container, { paddingTop: insets.top }]}>
       <View style={s.header}>
+        <TouchableOpacity testID="my-records-back-btn" onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={24} color={Colors.white} />
+        </TouchableOpacity>
         <Text style={s.headerTitle}>My Records</Text>
       </View>
       <Text style={s.headerSub}>All your submissions grouped by type</Text>
@@ -197,6 +200,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 20, paddingTop: 16,
   },
+  backBtn: { padding: 4 },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerSub: {
     color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: '500',
