@@ -363,7 +363,7 @@ export default function HomeScreen() {
     const chipConfig = activeJobIsIssued
       ? { label: `NEW · issued ${formatTime(activeJob.issued_at || activeJob.assigned_at || activeJob.created_at)}`, color: C.orange.base, bg: C.orange.chipBg, border: C.orange.chipBg }
       : activeJobIsAccepted
-      ? { label: `ACCEPTED · at ${formatTime(activeJob.accepted_at)}`, color: C.green.base, bg: C.green.softBg, border: C.green.softBg }
+      ? { label: 'ACCEPTED', color: '#065F46', bg: '#DCFCE7', border: '#86EFAC' }
       : { label: `DECLINED · at ${formatTime(activeJob.declined_at)}`, color: C.grey.declineText, bg: C.card.bg, border: C.card.border };
 
     // Field table data
@@ -382,10 +382,10 @@ export default function HomeScreen() {
           <TouchableOpacity testID="job-detail-back" onPress={() => setViewMode('home')} style={jd.backBtn}>
             <Ionicons name="chevron-back" size={24} color={Colors.white} />
           </TouchableOpacity>
-          <View style={{ flex: 1, marginRight: 8 }}>
+          <View style={{ flex: 1, marginRight: 8, minWidth: 0 }}>
             <Text style={jd.headerTitle} numberOfLines={2}>{siteName || address || 'Job Assignment'}</Text>
           </View>
-          <View style={[jd.chip, { backgroundColor: chipConfig.bg, borderColor: chipConfig.border }]}>
+          <View style={[jd.chip, { backgroundColor: chipConfig.bg, borderColor: chipConfig.border, flexShrink: 1, maxWidth: 120 }]}>
             <Text style={[jd.chipText, { color: chipConfig.color }]}>{chipConfig.label}</Text>
           </View>
         </View>
