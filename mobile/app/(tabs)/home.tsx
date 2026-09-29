@@ -1060,16 +1060,17 @@ const jd = StyleSheet.create({
   },
   declineBtnText: { fontSize: 15, fontWeight: '800', color: C.grey.declineText, letterSpacing: 0.5 },
   acceptBtn: {
-    backgroundColor: C.green.base, borderRadius: 14,
-    paddingVertical: 20, alignItems: 'center', justifyContent: 'center',
-    minHeight: 60,
+    backgroundColor: C.green.base, borderRadius: 32,
+    paddingVertical: 22, paddingHorizontal: 32,
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch',
+    minHeight: 64,
     shadowColor: C.green.base,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
     shadowOpacity: 0.35,
     elevation: 6,
   },
-  acceptBtnText: { fontSize: 15, fontWeight: '800', color: C.green.buttonText, letterSpacing: 0.5 },
+  acceptBtnText: { fontSize: 20, fontWeight: '700', color: C.green.buttonText, letterSpacing: 0.5 },
   // Locked row (issued)
   lockedRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   lockedBtn: {
