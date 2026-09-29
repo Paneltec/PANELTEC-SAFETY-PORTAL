@@ -2245,6 +2245,46 @@ function DiscoveryCard({ discovered }) {
 // ============================================================
 // Restore from snapshot
 // ============================================================
+function RestoreProgress({ p }) {
+  const [, tick] = useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => tick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.floor((Date.now() - p.startedAt) / 1000);
+  const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  const mb = (b) => (b / (1024 * 1024)).toFixed(0);
+  let pct, label;
+  if (p.phase === "upload") {
+    pct = p.pct || 0;
+    label = `Step 1 of 2 · Uploading ${mb(p.loaded || 0)} of ${mb(p.total || 0)} MB (${pct}%)`;
+  } else {
+    pct = p.count ? Math.round(((p.done || 0) / p.count) * 100) : 0;
+    label = p.count
+      ? `Step 2 of 2 · Restoring ${Math.min((p.done || 0) + 1, p.count)} of ${p.count}${p.current ? ` · ${p.current}` : ""}`
+      : "Step 2 of 2 · Opening the snapshot on the server…";
+  }
+  return (
+    <div data-testid="backup-restore-progress" style={{
+      marginTop: 12, padding: 12, borderRadius: 8,
+      background: "#f8fafc", border: "1px solid #e2e8f0",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between",
+        fontSize: 12, fontWeight: 700, marginBottom: 6, gap: 8 }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        <span style={{ color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{elapsed}</span>
+      </div>
+      <div style={{ height: 10, borderRadius: 5, background: "#e2e8f0", overflow: "hidden" }}>
+        <div style={{ width: `${Math.max(pct, 2)}%`, height: "100%",
+          background: "#f59e0b", transition: "width 0.4s ease" }}/>
+      </div>
+      <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+        Keep this page open until it finishes.
+      </div>
+    </div>
+  );
+}
+
 function RestoreCard() {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
@@ -2253,9 +2293,12 @@ function RestoreCard() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
+  const inputRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+  fileRef.current = file;
   const onPick = (f) => {
     if (!f) return;
-    if (!f.name.endsWith(".zip")) {
+    if (!f.name.toLowerCase().endsWith(".zip")) {
       setError("Pick a .zip snapshot file");
       return;
     }
@@ -2263,26 +2306,60 @@ function RestoreCard() {
     setPreview(null);
     setResult(null);
     setError("");
+    // Start the preview straight away — one less click.
+    send("dry_run", f);
   };
 
-  const send = async (mode) => {
+  // progress: { phase: "upload"|"server", pct, loaded, total, done, count, current, startedAt }
+  const [progress, setProgress] = useState(null);
+
+  const send = async (mode, pickedFile) => {
+    const file = pickedFile || fileRef.current;
     if (!file) return;
     setBusy(true);
     setError("");
+    const startedAt = Date.now();
+    setProgress({ phase: "upload", pct: 0, loaded: 0, total: file.size, startedAt });
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const qs = mode === "dry_run" ? "?mode=dry_run" :
-                                      `?mode=${mode}&confirm=RESTORE`;
+      const qs = (mode === "dry_run" ? "?mode=dry_run" :
+                                       `?mode=${mode}&confirm=RESTORE`) + "&background=true";
       const r = await api.post(`${API}/restore${qs}`, fd, {
         headers: { ...authHdr() },
+        timeout: 0,
+        onUploadProgress: (ev) => {
+          const total = ev.total || file.size;
+          setProgress(p => ({ ...p, phase: "upload", loaded: ev.loaded, total,
+            pct: Math.min(100, Math.round((ev.loaded / total) * 100)) }));
+        },
       });
-      if (mode === "dry_run") setPreview(r.data);
-      else setResult(r.data);
+      const jobId = r.data?.job_id;
+      let data = r.data;
+      if (jobId) {
+        setProgress(p => ({ ...p, phase: "server", pct: 100 }));
+        // Poll the server-side job until it finishes.
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          await new Promise(res => setTimeout(res, 1500));
+          const j = (await api.get(`${API}/restore/jobs/${jobId}`, {
+            headers: { ...authHdr() }, timeout: 30000 })).data;
+          setProgress(p => ({ ...p, phase: "server", done: j.done, count: j.total,
+            current: j.current }));
+          if (j.state === "done") { data = j.result; break; }
+          if (j.state === "failed") throw new Error(j.error || "Restore failed");
+        }
+      }
+      if (mode === "dry_run") setPreview(data);
+      else setResult(data);
     } catch (e) {
-      setError(e?.response?.data?.detail || e.message);
+      const msg = e?.response?.data?.detail || e.message || "";
+      setError(/Network Error|502|503|504|not found/i.test(msg)
+        ? `${msg} — the server went away mid-restore. Wait a minute for it to come back, then choose the file again.`
+        : msg);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -2330,7 +2407,7 @@ function RestoreCard() {
             e.preventDefault(); setDragging(false);
             onPick(e.dataTransfer.files[0]);
           }}
-          onClick={() => document.getElementById("backup-restore-input")?.click()}
+          onClick={() => inputRef.current?.click()}
           data-testid="backup-restore-dropzone"
           style={{
             border: `2px dashed ${dragging ? "#fbbf24" : "#94a3b8"}`,
@@ -2341,16 +2418,21 @@ function RestoreCard() {
           }}>
           <Download className="w-6 h-6 inline-block mb-2" style={{ transform: "rotate(180deg)" }}/>
           <div style={{ fontSize: 13, fontWeight: 700 }}>
-            {file ? file.name : "Drop a paneltec-snapshot-….zip here"}
+            {file ? `✓ ${file.name}` : "Drop a paneltec-snapshot-….zip here"}
           </div>
           <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
             {file
               ? `${(file.size / (1024 * 1024)).toFixed(1)} MB · click to change`
               : "or click to browse"}
           </div>
-          <input id="backup-restore-input" type="file" accept=".zip"
+          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>
+            Restore v2 · progress bar
+          </div>
+          <input id="backup-restore-input" ref={inputRef} type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
             style={{ display: "none" }}
-            onChange={e => onPick(e.target.files[0])}
+            onClick={e => e.stopPropagation()}
+            onChange={e => { onPick(e.target.files && e.target.files[0]); e.target.value = ""; }}
             data-testid="backup-restore-file"/>
         </div>
 
@@ -2360,6 +2442,8 @@ function RestoreCard() {
             {busy ? "Reading…" : "Preview contents"}
           </button>
         )}
+
+        {progress && <RestoreProgress p={progress}/>}
 
         {error && (
           <div style={{
@@ -2374,6 +2458,21 @@ function RestoreCard() {
             <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>
               Preview · {preview.manifest?.snapshot_id?.slice(0, 8) || "—"} ·
               {" "}{preview.collections.length} collections
+            </div>
+            <div style={{ marginBottom: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => {
+                if (window.confirm("MERGE: insert new rows + update existing by id. Continue?")) send("merge");
+              }} disabled={busy}
+                style={btn(ACCENT)} data-testid="backup-restore-merge-btn">
+                ✚ Merge (non-destructive)
+              </button>
+              <button onClick={() => {
+                if (window.confirm("REPLACE: WIPE each collection in the ZIP before re-inserting. THIS IS DESTRUCTIVE. Continue?")) send("replace");
+              }} disabled={busy}
+                style={btn("#fee2e2")} data-testid="backup-restore-replace-btn">
+                ⚠ Replace (destructive)
+              </button>
+              <button onClick={reset} style={btn()}>Cancel</button>
             </div>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
@@ -2397,21 +2496,6 @@ function RestoreCard() {
                 ))}
               </tbody>
             </table>
-            <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={() => {
-                if (window.confirm("MERGE: insert new rows + update existing by id. Continue?")) send("merge");
-              }} disabled={busy}
-                style={btn(ACCENT)} data-testid="backup-restore-merge-btn">
-                ✚ Merge (non-destructive)
-              </button>
-              <button onClick={() => {
-                if (window.confirm("REPLACE: WIPE each collection in the ZIP before re-inserting. THIS IS DESTRUCTIVE. Continue?")) send("replace");
-              }} disabled={busy}
-                style={btn("#fee2e2")} data-testid="backup-restore-replace-btn">
-                ⚠ Replace (destructive)
-              </button>
-              <button onClick={reset} style={btn()}>Cancel</button>
-            </div>
           </div>
         )}
 

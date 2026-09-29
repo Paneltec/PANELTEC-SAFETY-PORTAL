@@ -69,6 +69,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, He
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ConfigDict
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+from pymongo.errors import BulkWriteError
 
 from auth_helpers import verify_bearer_token  # shared helper — breaks the
                                               # legacy `server.py` ↔
@@ -1144,6 +1145,56 @@ async def _enforce_pod_side_retention(db_, reason: str = "") -> Dict[str, Any]:
     }
 
 
+
+GRIDFS_SKIP_BUCKETS = {"bk_fs", "bulk_import_failed_pdfs"}
+
+
+def _gridfs_bucket_names(collections: List[str]) -> List[str]:
+    names = []
+    for c in collections:
+        if c.endswith(".files"):
+            b = c[:-len(".files")]
+            if b not in GRIDFS_SKIP_BUCKETS and f"{b}.chunks" in collections:
+                names.append(b)
+    return sorted(names)
+
+
+async def _export_gridfs_buckets(z: "zipfile.ZipFile", collections: List[str], db_) -> Dict[str, Dict[str, int]]:
+    """Write every uploaded file into the zip under gridfs/<bucket>/<id>
+    plus a gridfs/<bucket>.json index. Streams chunk-by-chunk; never
+    holds a whole file in RAM. Returns {bucket: {files, bytes}}."""
+    summary: Dict[str, Dict[str, int]] = {}
+    for b in _gridfs_bucket_names(collections):
+        bucket = AsyncIOMotorGridFSBucket(db_, bucket_name=b)
+        n = 0
+        nbytes = 0
+        index_rows: List[Dict[str, Any]] = []
+        async for fdoc in db_[f"{b}.files"].find({}):
+            fid = fdoc.get("_id")
+            try:
+                grid_out = await bucket.open_download_stream(fid)
+            except Exception as e:  # noqa: BLE001 — orphan files-row; skip it
+                logger.warning("backup.gridfs %s/%s unreadable: %s", b, fid, e)
+                continue
+            # One zip entry open at a time (zipfile requirement).
+            with z.open(f"gridfs/{b}/{fid}", "w", force_zip64=True) as out:
+                while True:
+                    chunk = await grid_out.readchunk()
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    nbytes += len(chunk)
+            meta = dict(fdoc)
+            meta["_id"] = str(fid)
+            index_rows.append(meta)
+            n += 1
+        z.writestr(f"gridfs/{b}.json",
+                   json.dumps(index_rows, default=str, ensure_ascii=False))
+        summary[b] = {"files": n, "bytes": nbytes}
+        logger.info("backup.gridfs bucket=%s files=%d bytes=%d", b, n, nbytes)
+    return summary
+
+
 def install(app, db, require_admin):
     """Mount the backup endpoints. Called from server.py."""
     global _db
@@ -1384,6 +1435,11 @@ def install(app, db, require_admin):
                         continue
                     if cname.startswith("bk_fs."):
                         continue
+                    # Uploaded files (GridFS buckets) are written as
+                    # real files under gridfs/ below — their raw
+                    # .files/.chunks rows are useless as JSON.
+                    if cname.endswith(".files") or cname.endswith(".chunks"):
+                        continue
                     # Stream doc-by-doc into a JSON array entry. Uses
                     # `ZipFile.open(..., "w")` which returns a
                     # write-only file-like whose bytes are compressed
@@ -1409,12 +1465,27 @@ def install(app, db, require_admin):
                     included.append(cname)
                     total_docs += doc_count
 
+                # ── Uploaded files (GridFS buckets) ─────────────────
+                # Every bucket except the backup store itself and the
+                # bulk-import scratch bucket. Each file is streamed
+                # into `gridfs/<bucket>/<id>` and its files-row (with
+                # `_id` kept, so documents that point at the file by
+                # id still resolve after restore) into
+                # `gridfs/<bucket>.json`.
+                gridfs_summary = await _export_gridfs_buckets(z, collections, db)
+                total_files = sum(v["files"] for v in gridfs_summary.values())
+                total_file_bytes = sum(v["bytes"] for v in gridfs_summary.values())
+
                 manifest = {
                     "snapshot_id": snap_id,
                     "created_at": _now_iso(),
                     "scope": "full",
                     "collections": included,
                     "total_documents": total_docs,
+                    "gridfs": gridfs_summary,
+                    "total_files": total_files,
+                    "total_file_bytes": total_file_bytes,
+                    "files_v1": True,
                     "app": "paneltec-hub",
                     # v58.13.132mq — serializer version marker. Restore
                     # keeps reading legacy (unmarked) snapshots with
@@ -2201,45 +2272,87 @@ def install(app, db, require_admin):
     # ------------------------------------------------------------
     # RESTORE  — drag-and-drop a snapshot ZIP and repopulate DB.
     # ------------------------------------------------------------
-    @api_router.post("/restore", dependencies=[Depends(require_admin)])
-    async def restore_from_zip(
-        file: UploadFile = File(...),
-        mode: str = Query("replace", pattern=r"^(replace|merge|dry_run)$"),
-        confirm: str = Query("", description="Type RESTORE to confirm"),
-    ):
-        """Repopulate Mongo collections from an uploaded snapshot ZIP.
+    # Restore jobs, keyed by id. In-memory is fine: one backend
+    # process, and a job only matters while an admin is watching it.
+    _RESTORE_JOBS: Dict[str, Dict[str, Any]] = {}
 
-        modes:
-          • dry_run  – open the ZIP, count rows, return diff. Writes
-                       NOTHING. Default for the UI's "Preview" button.
-          • replace  – drop each collection in the ZIP, then re-insert
-                       (destructive). Requires confirm=RESTORE.
-          • merge    – insert rows that don't exist (by `id`), update
-                       rows that do. Non-destructive — keeps anything
-                       in the live DB that isn't in the ZIP.
+    def _iter_json_array(raw, chunk_chars: int = 4 * 1024 * 1024):
+        """Yield the objects of a JSON array from a binary file-like,
+        one at a time, without loading the whole entry into memory.
+        The snapshot writer emits `[obj,obj,...]`, so a buffered
+        raw_decode loop is enough."""
+        text = io.TextIOWrapper(raw, encoding="utf-8")
+        dec = json.JSONDecoder()
+        buf = text.read(chunk_chars)
+        pos = 0
+        eof = len(buf) < chunk_chars
 
-        The collections we never touch (auth_sessions, anything
-        starting with `system.`, GridFS internals) are skipped even
-        if they're in the ZIP, so a restore can't lock the admin
-        out of their own session.
-        """
-        if mode != "dry_run" and confirm != "RESTORE":
-            raise HTTPException(
-                400,
-                "Restore requires ?confirm=RESTORE — this is destructive.",
-            )
+        def _fill():
+            nonlocal buf, pos, eof
+            more = text.read(chunk_chars)
+            if len(more) < chunk_chars:
+                eof = True
+            buf = buf[pos:] + more
+            pos = 0
 
-        # Read the upload into memory. Snapshots cap around 200 MB
-        # (see retention rules above), so we can hold it in RAM.
-        body = await file.read()
-        if len(body) > 500 * 1024 * 1024:
-            raise HTTPException(413, "Snapshot too large for restore (>500 MB).")
+        # Opening bracket.
+        while True:
+            while pos < len(buf) and buf[pos] in " \t\r\n":
+                pos += 1
+            if pos < len(buf):
+                break
+            if eof:
+                return
+            _fill()
+        if buf[pos] != "[":
+            raise ValueError("not a JSON array")
+        pos += 1
+
+        while True:
+            # Skip separators / whitespace; stop at the closing bracket.
+            while True:
+                while pos < len(buf) and buf[pos] in " \t\r\n,":
+                    pos += 1
+                if pos < len(buf):
+                    break
+                if eof:
+                    return
+                _fill()
+            if buf[pos] == "]":
+                return
+            # Decode one object, pulling more text in until it parses.
+            while True:
+                try:
+                    obj, end = dec.raw_decode(buf, pos)
+                    pos = end
+                    yield obj
+                    break
+                except json.JSONDecodeError:
+                    if eof:
+                        raise
+                    _fill()
+
+    # GridFS buckets: the snapshot drops `_id` from every row, so
+    # `<bucket>.chunks` can no longer be tied back to `<bucket>.files`.
+    # Restoring them only fills the DB with orphaned blobs (and it is
+    # where the memory goes on a 1 GB snapshot). Uploaded files move
+    # across separately.
+    def _is_gridfs(cname: str) -> bool:
+        return cname.endswith(".files") or cname.endswith(".chunks")
+
+    async def _run_restore(fh, filename: str, mode: str,
+                           job: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Core restore. `fh` is a seekable binary file holding the ZIP.
+        When `job` is given, progress is written into it as we go."""
+        def _p(**kw):
+            if job is not None:
+                job.update(kw)
+
         try:
-            z = zipfile.ZipFile(io.BytesIO(body))
+            z = zipfile.ZipFile(fh)
         except zipfile.BadZipFile:
             raise HTTPException(415, "Not a valid ZIP file.")
 
-        # Sanity-check the manifest if present.
         manifest: Dict[str, Any] = {}
         if "manifest.json" in z.namelist():
             try:
@@ -2251,83 +2364,284 @@ def install(app, db, require_admin):
             except json.JSONDecodeError:
                 manifest = {}
 
-        # Find every mongo/<coll>.json file.
         coll_files = [n for n in z.namelist()
                       if n.startswith("mongo/") and n.endswith(".json")]
         if not coll_files:
             raise HTTPException(415, "ZIP doesn't contain mongo/<collection>.json files.")
+        # Uploaded files (files_v1 snapshots): gridfs/<bucket>.json index
+        # + gridfs/<bucket>/<id> blobs.
+        gridfs_idx = sorted(n for n in z.namelist()
+                            if n.startswith("gridfs/") and n.endswith(".json")
+                            and n.count("/") == 1)
 
-        # Collections we always leave alone — restoring them would
-        # nuke the admin's current login session or system metadata.
         DO_NOT_TOUCH = {"auth_sessions"}
+        coll_files = sorted(coll_files)
+        _p(total=len(coll_files) + len(gridfs_idx), done=0)
 
         per_coll: List[Dict[str, Any]] = []
-        for path in sorted(coll_files):
+        BATCH = 500
+        for idx, path in enumerate(coll_files):
             cname = path[len("mongo/"):-len(".json")]
+            _p(current=cname, done=idx, rows_done=0)
             if cname in DO_NOT_TOUCH or cname.startswith("system.") \
                or cname.startswith("bk_fs."):
                 per_coll.append({"collection": cname, "status": "skipped",
                                  "reason": "protected"})
                 continue
-            try:
-                rows = json.loads(z.read(path))
-            except Exception as e:
-                per_coll.append({"collection": cname, "status": "fail",
-                                 "error": str(e)})
-                continue
-            if not isinstance(rows, list):
-                per_coll.append({"collection": cname, "status": "skip",
-                                 "reason": "not a list"})
+            if _is_gridfs(cname):
+                per_coll.append({"collection": cname, "status": "skipped",
+                                 "reason": "old-style file rows — use a new backup for files"})
                 continue
 
             existing = await db[cname].count_documents({})
             entry: Dict[str, Any] = {
                 "collection": cname,
-                "rows_in_zip": len(rows),
+                "rows_in_zip": 0,
                 "rows_existing": existing,
             }
 
-            if mode == "dry_run":
-                entry["status"] = "preview"
-            elif mode == "replace":
-                await db[cname].delete_many({})
-                if rows:
-                    await db[cname].insert_many(rows)
-                entry["status"] = "replaced"
-                entry["rows_after"] = await db[cname].count_documents({})
-            elif mode == "merge":
-                inserted = updated = 0
-                for r in rows:
-                    rid = r.get("id")
-                    if rid and await db[cname].find_one({"id": rid}, {"_id": 0}):
-                        await db[cname].update_one({"id": rid}, {"$set": r})
-                        updated += 1
-                    else:
-                        await db[cname].insert_one(r)
-                        inserted += 1
-                entry["status"] = "merged"
-                entry["inserted"] = inserted
-                entry["updated"] = updated
-                entry["rows_after"] = await db[cname].count_documents({})
+            async def _flush(batch, stats):
+                if not batch:
+                    return
+                try:
+                    await db[cname].insert_many(batch, ordered=False)
+                except BulkWriteError as bwe:
+                    # Rows that clash with a unique index (duplicates in
+                    # the source data) are skipped; the rest of the
+                    # batch still goes in (ordered=False).
+                    errs = bwe.details.get("writeErrors", [])
+                    other = [e for e in errs if e.get("code") != 11000]
+                    if other:
+                        raise
+                    stats["dup"] += len(errs)
+                batch.clear()
+
+            try:
+                stats = {"dup": 0, "inserted": 0, "updated": 0}
+                if mode == "replace":
+                    await db[cname].delete_many({})
+                batch: List[Dict[str, Any]] = []
+                n = 0
+                with z.open(path, "r") as raw:
+                    for r in _iter_json_array(raw):
+                        if not isinstance(r, dict):
+                            continue
+                        n += 1
+                        if mode == "dry_run":
+                            pass
+                        elif mode == "replace":
+                            batch.append(r)
+                            if len(batch) >= BATCH:
+                                await _flush(batch, stats)
+                        elif mode == "merge":
+                            rid = r.get("id")
+                            if rid and await db[cname].find_one({"id": rid}, {"_id": 0}):
+                                await db[cname].update_one({"id": rid}, {"$set": r})
+                                stats["updated"] += 1
+                            else:
+                                await db[cname].insert_one(r)
+                                stats["inserted"] += 1
+                        if n % BATCH == 0:
+                            _p(rows_done=n)
+                if mode == "replace":
+                    await _flush(batch, stats)
+                entry["rows_in_zip"] = n
+                if mode == "dry_run":
+                    entry["status"] = "preview"
+                elif mode == "replace":
+                    entry["status"] = "replaced"
+                    if stats["dup"]:
+                        entry["duplicates_skipped"] = stats["dup"]
+                    entry["rows_after"] = await db[cname].count_documents({})
+                else:
+                    entry["status"] = "merged"
+                    entry["inserted"] = stats["inserted"]
+                    entry["updated"] = stats["updated"]
+                    entry["rows_after"] = await db[cname].count_documents({})
+            except Exception as e:  # noqa: BLE001 — one bad collection must not stop the rest
+                logger.warning("restore %s failed: %s", cname, e)
+                entry["status"] = "fail"
+                entry["error"] = str(e)[:300]
             per_coll.append(entry)
 
-        # Audit row.
+        # ── Uploaded files ──────────────────────────────────────────
+        from bson import ObjectId
+        for gi, idx_path in enumerate(gridfs_idx):
+            b = idx_path[len("gridfs/"):-len(".json")]
+            _p(current=f"{b} (files)", done=len(coll_files) + gi, rows_done=0)
+            bucket = AsyncIOMotorGridFSBucket(db, bucket_name=b)
+            existing = await db[f"{b}.files"].count_documents({})
+            entry = {"collection": f"{b} (files)", "rows_in_zip": 0,
+                     "rows_existing": existing}
+            try:
+                if mode == "replace":
+                    await db[f"{b}.files"].delete_many({})
+                    await db[f"{b}.chunks"].delete_many({})
+                n = 0
+                nbytes = 0
+                skipped = 0
+                with z.open(idx_path, "r") as raw:
+                    for meta in _iter_json_array(raw):
+                        if not isinstance(meta, dict) or not meta.get("_id"):
+                            continue
+                        n += 1
+                        blob = f"gridfs/{b}/{meta['_id']}"
+                        if mode == "dry_run":
+                            continue
+                        try:
+                            fid = ObjectId(meta["_id"])
+                        except Exception:  # noqa: BLE001
+                            fid = meta["_id"]
+                        if mode == "merge" and await db[f"{b}.files"].find_one({"_id": fid}, {"_id": 1}):
+                            skipped += 1
+                            continue
+                        try:
+                            info = z.getinfo(blob)
+                        except KeyError:
+                            skipped += 1
+                            continue
+                        md = meta.get("metadata")
+                        grid_in = bucket.open_upload_stream_with_id(
+                            fid, meta.get("filename") or str(fid),
+                            metadata=md if isinstance(md, dict) else None)
+                        with z.open(info, "r") as src:
+                            while True:
+                                chunk = src.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                await grid_in.write(chunk)
+                        await grid_in.close()
+                        nbytes += info.file_size
+                        # Keep the original upload date / content type.
+                        patch = {}
+                        ud = meta.get("uploadDate")
+                        if isinstance(ud, str):
+                            try:
+                                patch["uploadDate"] = datetime.fromisoformat(ud.replace("Z", "+00:00"))
+                            except ValueError:
+                                pass
+                        for k in ("contentType", "aliases"):
+                            if k in meta:
+                                patch[k] = meta[k]
+                        if patch:
+                            await db[f"{b}.files"].update_one({"_id": fid}, {"$set": patch})
+                        if n % 25 == 0:
+                            _p(rows_done=n)
+                entry["rows_in_zip"] = n
+                if mode == "dry_run":
+                    entry["status"] = "preview"
+                else:
+                    entry["status"] = "replaced" if mode == "replace" else "merged"
+                    entry["bytes"] = nbytes
+                    if skipped:
+                        entry["skipped"] = skipped
+                    entry["rows_after"] = await db[f"{b}.files"].count_documents({})
+            except Exception as e:  # noqa: BLE001
+                logger.warning("restore files %s failed: %s", b, e)
+                entry["status"] = "fail"
+                entry["error"] = str(e)[:300]
+            per_coll.append(entry)
+
+        _p(done=len(coll_files) + len(gridfs_idx), current=None)
+
         if mode != "dry_run":
             await db.bk_restore_log.insert_one({
                 "id": str(uuid.uuid4()),
                 "ran_at": _now_iso(),
                 "mode": mode,
-                "filename": file.filename,
+                "filename": filename,
                 "manifest_id": manifest.get("snapshot_id"),
                 "results": per_coll,
             })
 
-        return {
-            "ok": True,
-            "mode": mode,
-            "collections": per_coll,
-            "manifest": manifest,
-        }
+        return {"ok": True, "mode": mode, "collections": per_coll,
+                "manifest": manifest}
+
+    @api_router.post("/restore", dependencies=[Depends(require_admin)])
+    async def restore_from_zip(
+        file: UploadFile = File(...),
+        mode: str = Query("replace", pattern=r"^(replace|merge|dry_run)$"),
+        confirm: str = Query("", description="Type RESTORE to confirm"),
+        background: bool = Query(False, description="Run as a job; poll /restore/jobs/{id}"),
+    ):
+        """Repopulate Mongo collections from an uploaded snapshot ZIP.
+
+        modes:
+          • dry_run  – open the ZIP, count rows, return diff. Writes
+                       NOTHING. Default for the UI's "Preview" button.
+          • replace  – drop each collection in the ZIP, then re-insert
+                       (destructive). Requires confirm=RESTORE.
+          • merge    – insert rows that don't exist (by `id`), update
+                       rows that do. Non-destructive.
+
+        With background=true the call returns {job_id} at once and the
+        restore runs server-side; poll GET /restore/jobs/{job_id} for
+        progress (collection N of M). auth_sessions, system.* and
+        GridFS internals are never touched.
+        """
+        if mode != "dry_run" and confirm != "RESTORE":
+            raise HTTPException(
+                400,
+                "Restore requires ?confirm=RESTORE — this is destructive.",
+            )
+
+        # The upload is already spooled to a temp file by Starlette —
+        # read the ZIP from there instead of copying it into RAM, so
+        # multi-GB snapshots work.
+        MAX_RESTORE_BYTES = 8 * 1024 * 1024 * 1024
+        fh = file.file
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(0)
+        if size > MAX_RESTORE_BYTES:
+            raise HTTPException(413, "Snapshot too large for restore (>8 GB).")
+
+        if not background:
+            return await _run_restore(fh, file.filename, mode)
+
+        # Background: copy to our own temp file (the upload's is
+        # closed when this request ends), then run as a task.
+        import asyncio
+        import shutil
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(prefix="restore-", suffix=".zip", delete=False)
+        shutil.copyfileobj(fh, tmp, 16 * 1024 * 1024)
+        tmp.close()
+
+        job_id = str(uuid.uuid4())
+        job: Dict[str, Any] = {"id": job_id, "state": "running", "mode": mode,
+                               "filename": file.filename, "started_at": _now_iso(),
+                               "total": 0, "done": 0, "current": None}
+        _RESTORE_JOBS[job_id] = job
+
+        async def _go():
+            try:
+                with open(tmp.name, "rb") as f:
+                    job["result"] = await _run_restore(f, file.filename, mode, job)
+                job["state"] = "done"
+            except HTTPException as e:
+                job["state"] = "failed"
+                job["error"] = e.detail
+            except Exception as e:  # noqa: BLE001
+                logger.exception("restore job failed")
+                job["state"] = "failed"
+                job["error"] = str(e)
+            finally:
+                job["finished_at"] = _now_iso()
+                try:
+                    os.unlink(tmp.name)
+                except OSError:
+                    pass
+
+        asyncio.create_task(_go())
+        return {"ok": True, "job_id": job_id}
+
+    @api_router.get("/restore/jobs/{job_id}", dependencies=[Depends(require_admin)])
+    async def restore_job_status(job_id: str):
+        job = _RESTORE_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(404, "Restore job not found (the server may have restarted).")
+        return job
 
 
 
