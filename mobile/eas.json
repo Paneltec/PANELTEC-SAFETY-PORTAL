@@ -76,7 +76,7 @@
     "production": {
       "ios": {
         "appleId": "stephen@paneltec.com.au",
-        "ascAppId": "PLACEHOLDER_FILL_AFTER_FIRST_BUILD",
+        "ascAppId": "6816909908",
         "appleTeamId": "Y7DP56U4HS",
         "ascApiKeyPath": "./credentials/AuthKey_9UP969M2KF.p8",
         "ascApiKeyId": "9UP969M2KF",
