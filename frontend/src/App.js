@@ -176,6 +176,12 @@ import SiteScanResolver from '@/pages/SiteScanResolver';
 import VisitorSignIn from '@/pages/VisitorSignIn';
 import AdminVisitors from '@/pages/AdminVisitors';
 import LeaveRequests from '@/pages/LeaveRequests';
+import PayShell from '@/pages/pay/PayShell';
+import PayOverview from '@/pages/pay/PayOverview';
+import PayTimesheets from '@/pages/pay/PayTimesheets';
+import PayPeriods from '@/pages/pay/PayPeriods';
+import PayPeople from '@/pages/pay/PayPeople';
+import PaySettings from '@/pages/pay/PaySettings';
 import SupplierScanResolver from '@/pages/SupplierScanResolver';
 import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
 import SystemSettings from '@/pages/SystemSettings';
@@ -352,6 +358,13 @@ function App() {
               {/* v58.13.106 — Admin visitor register (public sign-ins from QR). */}
               <Route path="admin/visitors" element={<AdminVisitors />} />
               <Route path="leave" element={<LeaveRequests />} />
+              <Route path="pay" element={<PayShell />}>
+                <Route index element={<PayOverview />} />
+                <Route path="timesheets" element={<PayTimesheets />} />
+                <Route path="periods" element={<PayPeriods />} />
+                <Route path="people" element={<PayPeople />} />
+                <Route path="settings" element={<PaySettings />} />
+              </Route>
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />
               {/* v58.13.132hz — Dedicated SSRA capture route. Filters

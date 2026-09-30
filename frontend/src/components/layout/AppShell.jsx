@@ -39,6 +39,7 @@ import {
   PeopleSettings24Regular, PeopleSettings24Filled,
   PersonAvailable24Regular, PersonAvailable24Filled,
   CalendarLtr24Regular, CalendarLtr24Filled,
+  Money24Regular, Money24Filled,
   PlugConnected24Regular, PlugConnected24Filled,
   CloudArrowUp24Regular, CloudArrowUp24Filled,
   Settings24Regular, Settings24Filled,
@@ -257,6 +258,11 @@ const NAV = [
     { to: '/app/mobile/issue-job', label: "Issue Today's Job", icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-issue-job', requiresCan: ['users', 'edit'], pastel: 'coral' },
     // Leave Requests — payroll leave emails, approve/reject → Pay Officer.
     { to: '/app/leave', label: 'Leave Requests', icon: CalendarLtr24Regular, iconActive: CalendarLtr24Filled, testid: 'nav-leave', requiresCan: ['workers', 'view'], pastel: 'sky', badgeKey: 'leavePending' },
+  ]},
+  // Paneltec Pay — timesheets → approval → export to the payroll provider.
+  // Its own look (indigo/gold) so staff know they're in the pay area.
+  { section: 'Pay', items: [
+    { to: '/app/pay', label: 'Paneltec Pay', icon: Money24Regular, iconActive: Money24Filled, testid: 'nav-pay', requiresCan: ['payroll', 'view'], pastel: 'lavender' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },

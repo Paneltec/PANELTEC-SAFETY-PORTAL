@@ -592,8 +592,11 @@ from hr_employees import (  # noqa: E402
 api.include_router(hr_employees_router)
 # Leave Requests — payroll leave emails → approve/reject → Pay Officer.
 from leave_requests import router as leave_router, ensure_leave_indexes, poll_all_orgs as leave_poll_all_orgs, me_router as leave_me_router  # noqa: E402
+from payroll import router as payroll_router, me_router as payroll_me_router, ensure_payroll_indexes  # noqa: E402
 api.include_router(leave_router)
 api.include_router(leave_me_router)  # .132p3b — worker-side leave endpoints
+api.include_router(payroll_router)      # Paneltec Pay — office side
+api.include_router(payroll_me_router)   # Paneltec Pay — worker's own timesheets
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -881,6 +884,10 @@ async def on_startup():
         await ensure_leave_indexes()
     except Exception as e:  # noqa: BLE001
         log.warning("leave_requests index creation failed: %s", e)
+    try:
+        await ensure_payroll_indexes()
+    except Exception as e:  # noqa: BLE001
+        log.warning("payroll index creation failed: %s", e)
     # v58.13.132mg — Sweep zombie Dropbox migration runs at boot.
     # If a previous uvicorn worker died mid-migration (any restart
     # during a `state=running` run), the state doc gets frozen with

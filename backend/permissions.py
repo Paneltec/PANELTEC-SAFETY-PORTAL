@@ -100,6 +100,9 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     # extended actions: reveal_pii / archive / reimport / audit_view
     # gate the sensitive endpoints in `hr_employees.py`.
     "hr_employees":    {"label": "HR Employees",           "email_supported": False, "delete_supported": True},
+    # Paneltec Pay — timesheets, pay periods, export. Admin only by default;
+    # grant view/edit to the pay officer via Users & Permissions.
+    "payroll":         {"label": "Paneltec Pay (timesheets)", "email_supported": False, "delete_supported": False},
     # v58.13.90 — Comms Safe Mode toggle. Deliberately isolated from
     # the generic `admin` role auto-grant below (see the explicit
     # `ROLE_DEFAULTS["admin"]["comms_safe_mode"]` denial after the
@@ -310,6 +313,14 @@ del _role
 # default so they can see the visitor register + force-signout. All
 # other roles blocked (grant via user_permissions override if needed).
 ROLE_DEFAULTS["admin"]["sites_visitors"] = _grant(view=True, edit=True, delete=True)
+
+# Paneltec Pay: admin full (via the comprehension); everyone else nothing
+# until an admin grants it.
+for _r in ROLE_DEFAULTS:
+    if _r != "admin":
+        ROLE_DEFAULTS[_r]["payroll"] = _grant()
+del _r
+
 for _r in ("member", "auditor", "contractor", "worker"):
     if _r in ROLE_DEFAULTS:
         ROLE_DEFAULTS[_r]["sites_visitors"] = _grant()  # all False
