@@ -431,6 +431,21 @@ def _role_default_hardcoded(role: Optional[str], resource: str, action: str) -> 
     return bool(ROLE_DEFAULTS.get(role, {}).get(resource, {}).get(action, False))
 
 
+def _tokens_cover(tokens, resource: str) -> bool:
+    """True when the stored token set says anything at all about `resource`."""
+    prefix = resource + "."
+    return any(t.startswith(prefix) for t in tokens)
+
+
+def _new_resource_for_admin(role_str, tokens, resource: str) -> bool:
+    """A resource added to the app after a role's tokens were saved has no
+    tokens at all in the DB doc. For the org admin that must not silently
+    hide the new area, so fall back to the hardcoded admin defaults for
+    that resource only."""
+    return (role_str == "admin" and tokens is not None
+            and not _tokens_cover(tokens, resource))
+
+
 async def _role_default(
     user_or_role,
     resource: str,
@@ -466,8 +481,9 @@ async def _role_default(
         role_str = user_or_role
         lookup_id = user_or_role
     tokens = await _role_tokens(lookup_id)
-    if tokens is None:
-        # DB has no active role doc — fall back to the hardcoded map.
+    if tokens is None or _new_resource_for_admin(role_str, tokens, resource):
+        # DB has no active role doc (or it predates this resource and the
+        # caller is the org admin) — fall back to the hardcoded map.
         return _role_default_hardcoded(role_str, resource, action)
     return f"{resource}.{action}" in tokens
 
@@ -550,7 +566,7 @@ async def effective_for(user: dict) -> Dict[str, Dict[str, bool]]:
             res_over = overrides.get(resource) or {}
             if action in res_over:
                 out[resource][action] = bool(res_over[action])
-            elif db_tokens is not None:
+            elif db_tokens is not None and not _new_resource_for_admin(role_str, db_tokens, resource):
                 out[resource][action] = f"{resource}.{action}" in db_tokens
             else:
                 out[resource][action] = _role_default_hardcoded(role_str, resource, action)
