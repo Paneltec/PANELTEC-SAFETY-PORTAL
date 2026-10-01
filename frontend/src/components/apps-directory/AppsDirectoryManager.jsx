@@ -499,12 +499,12 @@ export default function AppsDirectoryManager() {
           <table className="w-full text-sm">
             <thead className="text-[11px] uppercase tracking-wider text-slate-500 text-left bg-slate-50">
               <tr>
-                <th className="px-4 py-2 font-semibold">App</th>
-                <th className="px-2 py-2 font-semibold">Link</th>
+                <th className="px-3 py-2 font-semibold">App</th>
+                <th className="px-2 py-2 font-semibold hidden xl:table-cell">Link</th>
                 <th className="px-2 py-2 font-semibold">Who can use it</th>
-                <th className="px-2 py-2 font-semibold">Your saved login</th>
-                <th className="px-2 py-2 font-semibold text-center">Order</th>
-                <th className="px-2 py-2 font-semibold text-right pr-4">Actions</th>
+                <th className="px-1 py-2 font-semibold text-center" title="Your saved login for this app">Login</th>
+                <th className="px-1 py-2 font-semibold text-center">Order</th>
+                <th className="px-1 py-2 font-semibold text-right pr-3">Edit</th>
               </tr>
             </thead>
             <tbody>
@@ -513,22 +513,23 @@ export default function AppsDirectoryManager() {
                 const saved = loginMeta[t.id]?.saved;
                 return (
                   <tr key={t.id} className={`border-t border-slate-100 ${acc === 'hidden' ? 'opacity-60' : ''}`} data-testid={`mgr-row-${t.id}`}>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-3 min-w-[180px]">
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2.5 min-w-[150px] max-w-[220px]">
                         <TileGlyph tile={t} />
                         <div className="min-w-0">
-                          <div className="font-semibold text-slate-900 truncate">{t.label}</div>
-                          {t.description && <div className="text-xs text-slate-500 truncate max-w-[260px]">{t.description}</div>}
+                          <div className="font-semibold text-slate-900 truncate" title={t.description || t.label}>{t.label}</div>
+                          <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-xs text-slate-500 hover:underline truncate block xl:hidden" title={t.url}>{hostOf(t.url)}</a>
+                          {t.description && <div className="text-xs text-slate-500 truncate hidden xl:block">{t.description}</div>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-2 py-2.5 text-slate-600">
+                    <td className="px-2 py-2.5 text-slate-600 hidden xl:table-cell">
                       <a href={t.url} target="_blank" rel="noopener noreferrer" className="hover:underline truncate block max-w-[200px]" title={t.url}>{hostOf(t.url)}</a>
                     </td>
                     <td className="px-2 py-2.5">
                       <div className="flex items-center gap-1.5">
                         <select value={acc} onChange={(e) => changeAccess(t, e.target.value)}
-                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white" data-testid={`mgr-access-${t.id}`}>
+                          className="rounded-lg border border-slate-300 px-1.5 py-1.5 text-sm bg-white max-w-[150px]" data-testid={`mgr-access-${t.id}`}>
                           {ACCESS.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
                         </select>
                         {acc === 'selected' && (
@@ -539,18 +540,20 @@ export default function AppsDirectoryManager() {
                         )}
                       </div>
                     </td>
-                    <td className="px-2 py-2.5">
+                    <td className="px-1 py-2.5 text-center">
                       <button type="button" onClick={() => withPin(() => setLoginFor(t))}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${saved ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                        title={saved ? 'Your saved login: saved. Click to change.' : 'Set up your saved login for this app'}
+                        aria-label={saved ? 'Saved login (saved)' : 'Set up saved login'}
+                        className={`inline-flex items-center justify-center gap-1 rounded-lg border w-10 h-9 text-xs font-semibold ${saved ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
                         data-testid={`mgr-login-${t.id}`}>
-                        <KeyRound size={12} /> {saved ? 'Saved ✓' : 'Set up'}
+                        <KeyRound size={14} />{saved && <Check size={12} />}
                       </button>
                     </td>
-                    <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                    <td className="px-1 py-2.5 text-center whitespace-nowrap">
                       <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="p-1 rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label="Move up" data-testid={`mgr-up-${t.id}`}><ArrowUp size={14} /></button>
                       <button type="button" onClick={() => move(i, 1)} disabled={i === tiles.length - 1} className="p-1 rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label="Move down" data-testid={`mgr-down-${t.id}`}><ArrowDown size={14} /></button>
                     </td>
-                    <td className="px-2 py-2.5 text-right whitespace-nowrap pr-4">
+                    <td className="px-1 py-2.5 text-right whitespace-nowrap pr-3">
                       <button type="button" onClick={() => setForm(t)} className="p-1.5 rounded text-slate-600 hover:bg-slate-100" aria-label="Edit" title="Edit" data-testid={`mgr-edit-${t.id}`}><Pencil size={15} /></button>
                       <button type="button" onClick={() => remove(t)} className="p-1.5 rounded text-rose-600 hover:bg-rose-50" aria-label="Delete" title="Delete" data-testid={`mgr-delete-${t.id}`}><Trash2 size={15} /></button>
                     </td>
@@ -563,6 +566,7 @@ export default function AppsDirectoryManager() {
       </div>
 
       <div className="px-4 py-3 border-t border-slate-100 text-xs text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
+        <span className="inline-flex items-center gap-1"><KeyRound size={11} /> <strong>Login:</strong> your own saved username and password for that app (needs your PIN).</span>
         {ACCESS.map((a) => { const Icon = a.icon; return <span key={a.key} className="inline-flex items-center gap-1"><Icon size={11} /> <strong>{a.label}:</strong> {a.help}</span>; })}
       </div>
 
