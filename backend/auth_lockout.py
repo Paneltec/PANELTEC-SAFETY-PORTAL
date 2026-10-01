@@ -33,8 +33,8 @@ from models import now_iso
 
 log = logging.getLogger("paneltec.auth_lockout")
 
-LOCKOUT_FAILS = 5
-LOCKOUT_MINUTES = 15
+LOCKOUT_FAILS = 6
+LOCKOUT_MINUTES = 5
 # v58.13.132mh — counter resets if last fail was >30 min ago. This
 # codifies the "5 failures per 15 min per email" behaviour that the
 # auth.py comment already advertised.
@@ -93,9 +93,10 @@ async def record_login_attempt(
     ip: Optional[str] = None,
     user_agent: Optional[str] = None,
     reason: Optional[str] = None,
-) -> None:
+) -> Optional[int]:
     """Track failed attempts + lock after N consecutive failures with
-    a sliding 30-min window. On success, reset counter."""
+    a sliding 30-min window. On success, reset counter.
+    Returns the number of tries left before a lock (None when unknown)."""
     user = await db.users.find_one(
         {"email": email},
         {"_id": 0, "id": 1, "failed_login_attempts": 1,
@@ -158,6 +159,18 @@ async def record_login_attempt(
         reason=reason or "bad-password",
         ip=ip, user_agent=user_agent,
     )
+    return max(0, LOCKOUT_FAILS - fails)
+
+
+async def clear_all_lockouts() -> int:
+    """Forget every stored failed-attempt counter and lock. Used after a
+    restore, so a lock carried over from the old server can't keep
+    people out of the new one."""
+    r = await db.users.update_many(
+        {"$or": [{"failed_login_attempts": {"$gt": 0}}, {"locked_until": {"$ne": None}}]},
+        {"$set": {"failed_login_attempts": 0, "locked_until": None, "last_failed_login_at": None}},
+    )
+    return r.modified_count
 
 
 async def is_locked(email: str) -> bool:

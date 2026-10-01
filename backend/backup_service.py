@@ -2545,6 +2545,17 @@ def install(app, db, require_admin):
         _p(done=len(coll_files) + len(gridfs_idx), current=None)
 
         if mode != "dry_run":
+            # A lock or failed-attempt count from the old server must not
+            # follow people to the new one.
+            try:
+                from auth_lockout import clear_all_lockouts
+                cleared = await clear_all_lockouts()
+                if cleared:
+                    logger.info("restore: cleared login lockouts on %d user(s)", cleared)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("restore: could not clear lockouts: %s", e)
+
+        if mode != "dry_run":
             await db.bk_restore_log.insert_one({
                 "id": str(uuid.uuid4()),
                 "ran_at": _now_iso(),

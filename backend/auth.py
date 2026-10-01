@@ -532,13 +532,13 @@ async def login(request: Request, body: LoginIn):
         await record_login_attempt(email, success=False, ip=_ip,
                                        user_agent=_ua, reason="locked")
         raise HTTPException(status_code=423,
-                            detail="Account temporarily locked after too many failed attempts. "
-                                   "Try again in 15 minutes or ask your admin to unlock.",
+                            detail="Too many wrong tries. Please wait 5 minutes and try again, "
+                                   "or ask your administrator to unlock the account.",
                             headers={"X-Auth-Reason": "locked"})
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(body.password, user["password_hash"]):
-        await record_login_attempt(email, success=False, ip=_ip,
-                                       user_agent=_ua, reason="bad-password")
+        left = await record_login_attempt(email, success=False, ip=_ip,
+                                          user_agent=_ua, reason="bad-password")
         # v58.13.132du — When a legitimate user hasn't completed
         # first-sign-in yet (has `must_change_password=true` AND a
         # live `reset_token_hash` or `pin_hash`), the naked
@@ -561,8 +561,13 @@ async def login(request: Request, body: LoginIn):
                                 and (user.get("pin_expires_at") or "") > _now)
             if has_live_reset or has_live_pin:
                 extra_headers["X-Auth-Reason"] = "pending-first-signin"
-        raise HTTPException(status_code=401,
-                            detail="Invalid email or password",
+        from auth_lockout import LOCKOUT_MINUTES
+        msg = "Invalid email or password"
+        if left is not None and user:
+            msg += (f". {left} more {'try' if left == 1 else 'tries'} before a "
+                    f"{LOCKOUT_MINUTES}-minute lock." if left > 0
+                    else f". Locked for {LOCKOUT_MINUTES} minutes.")
+        raise HTTPException(status_code=401, detail=msg,
                             headers=extra_headers or None)
     if user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="Account disabled — contact your administrator",
