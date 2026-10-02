@@ -29,6 +29,7 @@ const KIND_MAP = {
   m365:      { route: '/app/settings/integrations/microsoft365' },
   textmagic: { route: '/app/settings/integrations/textmagic' },
   navixy:    { route: '/app/settings/integrations/navixy' },
+  smartfill: { route: '/app/settings/integrations/smartfill' },
 };
 
 const STATUS_STYLE = {
@@ -315,7 +316,7 @@ export default function Integrations() {
           </p>
         </div>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-violet-soft text-brand-violet text-xs font-medium border border-violet-200">
-          <Plug size={13} /> 5 connectors available
+          <Plug size={13} /> 6 connectors available
         </div>
       </div>
 

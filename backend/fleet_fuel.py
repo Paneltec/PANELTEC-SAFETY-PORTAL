@@ -1464,6 +1464,9 @@ class SmartFillStatus(BaseModel):
     rate_limit_state: dict
     auto_sync_enabled: bool
     cron_registered: bool
+    # False when neither the env nor Settings → Integrations → SmartFill
+    # holds credentials on this server (Sync now would fail).
+    configured: bool = True
 
 
 class SmartFillAutoSyncToggle(BaseModel):
@@ -1556,7 +1559,7 @@ async def smartfill_status_ep(
 ):
     """SmartFill sync-status card feed. Non-admin viewers get the
     rate-limit + last-run summary but not the toggle mutation."""
-    from integrations_smartfill import get_rate_limit_state
+    from integrations_smartfill import get_rate_limit_state, is_configured
     settings = await db.org_settings.find_one({"org_id": user["org_id"]}, {"_id": 0}) or {}
     last_batch_id = settings.get("fuel_smartfill_last_batch_id")
     last_batch_summary = None
@@ -1575,6 +1578,7 @@ async def smartfill_status_ep(
         rate_limit_state=get_rate_limit_state(),
         auto_sync_enabled=bool(settings.get("fuel_smartfill_auto_sync_enabled")),
         cron_registered=(os.environ.get("SMARTFILL_AUTO_SYNC_CRON") == "1"),
+        configured=is_configured(),
     )
 
 

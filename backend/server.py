@@ -897,6 +897,13 @@ async def on_startup():
             log.info("dropbox: tokens loaded from the database")
     except Exception as e:  # noqa: BLE001
         log.warning("dropbox token load failed: %s", e)
+    # SmartFill credentials saved under Settings → Integrations (env wins if set).
+    try:
+        from integrations_smartfill import load_config_from_db
+        if await load_config_from_db():
+            log.info("smartfill: credentials available")
+    except Exception as e:  # noqa: BLE001
+        log.warning("smartfill credential load failed: %s", e)
     # v58.13.132mg — Sweep zombie Dropbox migration runs at boot.
     # If a previous uvicorn worker died mid-migration (any restart
     # during a `state=running` run), the state doc gets frozen with

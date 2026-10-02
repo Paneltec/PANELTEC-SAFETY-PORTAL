@@ -106,21 +106,67 @@ class SmartFillRateLimitError(RuntimeError):
 
 
 # ── Credentials + JSON-RPC body ──────────────────────────────────
+# Where the credentials come from, in order:
+#   1. SMARTFILL_API_URL / _KEY / _SECRET in the environment (how the
+#      Emergent copy was set up), or
+#   2. Settings → Integrations → SmartFill, stored encrypted in
+#      `integration_configs` (kind="smartfill") and loaded into the
+#      process by `load_config_from_db()` at startup / `apply_config()`
+#      on save. This is what makes the feature work on a new host
+#      without anyone editing env files.
+DEFAULT_API_URL = "https://fmtdata.com/API/api.php"   # per memory/v58_13_131k_smartfill_probe.md
+
+ENV_URL, ENV_KEY, ENV_SECRET = "SMARTFILL_API_URL", "SMARTFILL_API_KEY", "SMARTFILL_API_SECRET"
+CONFIG_FIELDS = {"api_url": ENV_URL, "api_key": ENV_KEY, "api_secret": ENV_SECRET}
+
+NOT_CONFIGURED_MSG = (
+    "SmartFill isn't connected on this server yet. An admin can add the "
+    "SmartFill client reference and secret under Settings → Integrations → SmartFill."
+)
+
+
+def is_configured() -> bool:
+    return all(os.environ.get(n) for n in (ENV_URL, ENV_KEY, ENV_SECRET))
+
+
+def apply_config(cfg: dict) -> bool:
+    """Push a (plaintext) SmartFill config dict into the process env so
+    `_creds()` picks it up. Blank values are ignored. Returns True when
+    the integration is fully configured afterwards."""
+    for field, env_name in CONFIG_FIELDS.items():
+        v = (cfg or {}).get(field)
+        if isinstance(v, str) and v.strip():
+            os.environ[env_name] = v.strip()
+    if os.environ.get(ENV_KEY) and os.environ.get(ENV_SECRET) and not os.environ.get(ENV_URL):
+        os.environ[ENV_URL] = DEFAULT_API_URL
+    return is_configured()
+
+
+async def load_config_from_db() -> bool:
+    """Startup hook (server.py): if the env has no SmartFill credentials,
+    take them from Settings → Integrations. Returns True when configured."""
+    if is_configured():
+        return True
+    try:
+        from db import db
+        from integrations import hydrate_integration_config
+        doc = await db.integration_configs.find_one({"kind": "smartfill"})
+        if not doc:
+            return False
+        return apply_config(hydrate_integration_config(doc))
+    except Exception as e:  # noqa: BLE001
+        log.warning("smartfill: could not load credentials from the database: %s", e)
+        return False
+
+
 def _creds() -> tuple[str, str, str]:
     """Return `(url, key, secret)` from env. Fail fast with a clean
     error that NEVER echoes the values."""
-    url = os.environ.get("SMARTFILL_API_URL")
-    key = os.environ.get("SMARTFILL_API_KEY")
-    secret = os.environ.get("SMARTFILL_API_SECRET")
-    missing = [n for n, v in (
-        ("SMARTFILL_API_URL", url),
-        ("SMARTFILL_API_KEY", key),
-        ("SMARTFILL_API_SECRET", secret),
-    ) if not v]
-    if missing:
-        raise SmartFillConfigError(
-            f"SmartFill not configured: missing env {', '.join(missing)}"
-        )
+    url = os.environ.get(ENV_URL)
+    key = os.environ.get(ENV_KEY)
+    secret = os.environ.get(ENV_SECRET)
+    if not (url and key and secret):
+        raise SmartFillConfigError(NOT_CONFIGURED_MSG)
     return url, key, secret  # type: ignore[return-value]
 
 

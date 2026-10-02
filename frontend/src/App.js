@@ -60,6 +60,7 @@ import NavixyAdmin from '@/pages/NavixyAdmin';
 import SimproAdmin from '@/pages/SimproAdmin';
 import Microsoft365Admin from '@/pages/Microsoft365Admin';
 import TextMagicAdmin from '@/pages/TextMagicAdmin';
+import SmartFillAdmin from '@/pages/SmartFillAdmin';
 import Vehicles from '@/pages/Vehicles';
 // v58.13.120e — `PlantVehicles.jsx` retired and file deleted this
 // ship. The `/app/vehicles` route now resolves to
@@ -445,6 +446,7 @@ function App() {
               <Route path="settings/integrations/simpro" element={<SimproAdmin />} />
               <Route path="settings/integrations/microsoft365" element={<Microsoft365Admin />} />
               <Route path="settings/integrations/textmagic" element={<TextMagicAdmin />} />
+              <Route path="settings/integrations/smartfill" element={<SmartFillAdmin />} />
               <Route path="settings/users" element={<UsersAndRolesShell />} />
               {/* v160.3.7i — dedicated help page for the Simpro ZIP import walkthrough. */}
               <Route path="settings/help/simpro-import" element={<SimproImportGuidePage />} />

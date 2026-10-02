@@ -175,6 +175,14 @@ export const INTEGRATIONS = [
     logoChar: 'N',
     logoBg: '#16A34A',
   },
+  {
+    key: 'smartfill',
+    name: 'SmartFill',
+    purpose: 'Fuel fills from SmartFill tanks feed Fleet → Fuel Reports.',
+    status: 'Not connected',
+    logoChar: 'F',
+    logoBg: '#0E7490',
+  },
 ];
 
 // MOCKED: workspaces in topbar switcher

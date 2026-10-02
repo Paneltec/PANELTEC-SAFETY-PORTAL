@@ -38,6 +38,7 @@ Nothing in Portainer has to be edited for normal updates.
 | `TIGRIS_*` | Only if you use Tigris storage on Emergent |
 | `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET` | From the Dropbox App Console (the "Paneltec" app). Needed for Settings → Dropbox. After setting them, add `https://<this copy's address>/dropbox/callback` to the app's Redirect URIs in the Dropbox App Console, then click Connect in Settings → Dropbox. The tokens are then kept in the database. |
 | `DROPBOX_TEAM_FOLDER_ID`, `DROPBOX_TEAM_FOLDER_NAME` | Optional; defaults to the Paneltec-General Administration team folder. |
+| `SMARTFILL_API_URL`, `SMARTFILL_API_KEY`, `SMARTFILL_API_SECRET` | Optional. SmartFill fuel credentials (Fleet → Fuel Reports). Not needed if an admin enters them in the app under Settings → Integrations → SmartFill — the app stores them encrypted and uses them on any host. Env values win if both are set. |
 
 Keep these in Portainer only. Never put them in GitHub.
 

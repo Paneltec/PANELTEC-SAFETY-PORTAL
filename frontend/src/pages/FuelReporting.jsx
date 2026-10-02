@@ -1847,6 +1847,35 @@ function SmartFillSyncCard({
       </div>
     );
   }
+  if (status.configured === false) {
+    return (
+      <div
+        className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3 flex-wrap"
+        data-testid="fuel-reporting-smartfill-card-unconfigured"
+      >
+        <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+          <Zap className="text-amber-700" size={18} />
+        </div>
+        <div className="flex-1 min-w-[220px]">
+          <div className="font-bold text-amber-900 text-sm">SmartFill isn't connected on this server</div>
+          <div className="text-xs text-amber-800 mt-1">
+            Fuel fills can't be synced until the SmartFill client reference and secret are saved
+            {isAdmin ? ' under Settings → Integrations → SmartFill.' : '. Ask an administrator to add them under Settings → Integrations → SmartFill.'}
+            {' '}Reports below still show the fills already imported.
+          </div>
+        </div>
+        {isAdmin && (
+          <Link
+            to="/app/settings/integrations/smartfill"
+            data-testid="fuel-reporting-smartfill-connect"
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-600 text-white hover:bg-amber-700 inline-flex items-center gap-1.5"
+          >
+            Connect SmartFill →
+          </Link>
+        )}
+      </div>
+    );
+  }
   const enabled = !!status.auto_sync_enabled;
   const cronReg = !!status.cron_registered;
   const last = status.last_batch_summary || {};

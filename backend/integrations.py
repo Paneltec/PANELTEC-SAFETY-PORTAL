@@ -33,8 +33,8 @@ from models import new_id, now_iso
 log = logging.getLogger("paneltec.integrations")
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
-Kind = Literal["simpro", "microsoft365", "textmagic", "navixy"]
-ALL_KINDS: list[Kind] = ["simpro", "microsoft365", "textmagic", "navixy"]
+Kind = Literal["simpro", "microsoft365", "textmagic", "navixy", "smartfill"]
+ALL_KINDS: list[Kind] = ["simpro", "microsoft365", "textmagic", "navixy", "smartfill"]
 
 
 class NavixyConfig(BaseModel):
@@ -59,6 +59,10 @@ SECRETS_BY_KIND: dict[str, list[str]] = {
     "microsoft365": ["client_secret", "access_token", "refresh_token"],
     "textmagic": ["api_key"],
     "dropbox": ["access_token", "refresh_token"],
+    # SmartFill fuel (Fleet → Fuel Reports). `api_key` is the client
+    # reference (an identifier, shown in the UI); `api_secret` is the
+    # client secret.
+    "smartfill": ["api_secret"],
 }
 
 # ─────────────────────────────────────────────────────────
@@ -338,8 +342,49 @@ async def put_integration(kind: Kind, body: dict, user: dict = Depends(require_r
         upsert=True,
     )
     saved = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": kind}, {"_id": 0})
+    if kind == "smartfill":
+        # Make the new credentials live immediately (no restart needed).
+        from integrations_smartfill import apply_config
+        apply_config(hydrate_integration_config(saved))
     saved["config"] = _mask(kind, saved.get("config") or {})
     return saved
+
+
+# ---------- SmartFill (fuel) ----------
+
+@router.post("/smartfill/test-connection")
+async def smartfill_test_connection(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    """One cheap SmartFill call (Tank:Level) with the saved credentials.
+    Counts against SmartFill's 6/min rate limit like any other call."""
+    from integrations_smartfill import (
+        SmartFillAPIError, SmartFillConfigError, SmartFillRateLimitError,
+        apply_config, is_configured, smartfill_fetch_tank_levels,
+    )
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "smartfill"})
+    if doc:
+        apply_config(hydrate_integration_config(doc))
+    if not is_configured():
+        raise HTTPException(400, "Enter the SmartFill client reference and secret, then save.")
+    try:
+        rows = await smartfill_fetch_tank_levels()
+    except SmartFillConfigError as e:
+        raise HTTPException(400, str(e))
+    except SmartFillRateLimitError as e:
+        raise HTTPException(429, f"SmartFill rate limit reached — try again in {int(e.retry_after_s)} s.")
+    except SmartFillAPIError as e:
+        await db.integration_configs.update_one(
+            {"org_id": user["org_id"], "kind": "smartfill"},
+            {"$set": {"status": "error", "last_tested_at": now_iso(), "last_error": str(e)}})
+        raise HTTPException(502, f"SmartFill rejected the credentials: {e}")
+    except Exception as e:  # noqa: BLE001
+        await db.integration_configs.update_one(
+            {"org_id": user["org_id"], "kind": "smartfill"},
+            {"$set": {"status": "error", "last_tested_at": now_iso(), "last_error": str(e)[:300]}})
+        raise HTTPException(502, f"Could not reach SmartFill: {type(e).__name__}")
+    await db.integration_configs.update_one(
+        {"org_id": user["org_id"], "kind": "smartfill"},
+        {"$set": {"status": "connected", "last_tested_at": now_iso(), "last_error": None}})
+    return {"ok": True, "tanks": len(rows), "tested_at": now_iso()}
 
 
 # ---------- Navixy live endpoints ----------

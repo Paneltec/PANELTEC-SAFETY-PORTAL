@@ -338,6 +338,27 @@ async def health_integrations(user: dict = Depends(require_permission("integrati
     log.info("health.integrations.check name=textmagic status=%s disarmed=%s detail=%r",
              tm_res["status"], tm_res.get("disarmed", False), tm_res.get("detail"))
 
+    # SmartFill (fuel) — credentials from env or Settings → Integrations.
+    try:
+        from integrations_smartfill import is_configured as _sf_configured
+        sf_cfg = configs.get("smartfill") or {}
+        if sf_cfg.get("status") == "error":
+            sf_res = {"status": "down",
+                      "detail": f"Last test failed · {str(sf_cfg.get('last_error') or '')[:80]}",
+                      "last_checked_at": sf_cfg.get("last_tested_at")}
+        elif _sf_configured():
+            tested = sf_cfg.get("last_tested_at")
+            sf_res = {"status": "up",
+                      "detail": "Credentials set" + (f" · verified {tested[:10]}" if tested else " · not verified yet"),
+                      "last_checked_at": tested}
+        else:
+            sf_res = {"status": "amber",
+                      "detail": "Not connected on this server — add the client reference and secret under Configure",
+                      "last_checked_at": None}
+        items.append({"name": "SmartFill", "kind": "smartfill", **sf_res})
+    except Exception as e:  # noqa: BLE001
+        log.warning("health.integrations smartfill check failed: %s", e)
+
     # MongoDB — cheap ping.
     try:
         await db.command("ping")
