@@ -70,9 +70,19 @@ _BACKGROUND_TASKS: set = set()
 # ever go multi-worker, move this to Mongo with a TTL index.
 _OAUTH_STATES: Dict[str, float] = {}
 _OAUTH_STATE_TTL_S = 5 * 60
-_DROPBOX_REDIRECT_URI = (
-    "https://whs-compliance.preview.emergentagent.com/dropbox/callback"
-)
+def _redirect_uri() -> str:
+    """Where Dropbox sends the browser back after "Connect". Follows the
+    address this copy of the app runs on (FRONTEND_PUBLIC_URL), so the
+    same build works on Emergent, the Umbrel and the hosting company.
+    DROPBOX_REDIRECT_URI overrides it. The exact value must also be in
+    the Dropbox App Console → OAuth 2 → Redirect URIs."""
+    explicit = os.environ.get("DROPBOX_REDIRECT_URI", "").strip()
+    if explicit:
+        return explicit
+    base = (os.environ.get("FRONTEND_PUBLIC_URL") or os.environ.get("PUBLIC_URL") or "").strip().rstrip("/")
+    if base:
+        return f"{base}/dropbox/callback"
+    return "https://whs-compliance.preview.emergentagent.com/dropbox/callback"
 _DROPBOX_AUTHORIZE_URL = "https://www.dropbox.com/oauth2/authorize"
 _DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 # Space-separated per Dropbox spec (though the SDK also accepts a list).
@@ -146,6 +156,74 @@ def _redact(s: str) -> str:
 
 # ── .env update (append-or-replace, atomic) ─────────────────────
 _ENV_PATH = Path(__file__).resolve().parent / ".env"
+
+
+# ── Token persistence in the database ──────────────────────────
+# Emergent kept the Dropbox tokens in backend/.env, which does not
+# survive a container rebuild and never travelled with backups. They
+# now also live in `integration_configs` (kind "dropbox"), encrypted
+# with INTEGRATIONS_ENC_KEY like every other integration secret, and
+# are loaded into the process env at startup / first use.
+async def _save_tokens_to_db(access: str, refresh: str) -> None:
+    from db import db
+    from integrations import _encrypt_secrets_for_storage
+    from models import now_iso
+    try:
+        cfg = _encrypt_secrets_for_storage("dropbox", {"access_token": access, "refresh_token": refresh})
+    except Exception as e:  # noqa: BLE001
+        log.warning("dropbox: could not encrypt tokens for storage (%s)", e)
+        return
+    await db.integration_configs.update_one(
+        {"org_id": "__global__", "kind": "dropbox"},
+        {"$set": {"org_id": "__global__", "kind": "dropbox", "config": cfg,
+                  "status": "connected", "updated_at": now_iso()}},
+        upsert=True,
+    )
+
+
+def _save_tokens_to_db_sync(access: str, refresh: str) -> None:
+    """The OAuth callback is a plain (threadpool) handler, so hop onto
+    the main event loop to write to Mongo."""
+    try:
+        loop = _MAIN_LOOP[0]
+        if loop is None:
+            log.warning("dropbox: no event loop captured; tokens not saved to the database")
+            return
+        fut = asyncio.run_coroutine_threadsafe(_save_tokens_to_db(access, refresh), loop)
+        fut.result(timeout=10)
+    except Exception as e:  # noqa: BLE001
+        log.warning("dropbox: saving tokens to the database failed (%s)", e)
+
+
+_MAIN_LOOP: list = [None]
+
+
+async def remember_event_loop() -> None:
+    """Call once at startup (server.py) so the sync OAuth callback can
+    reach Mongo."""
+    _MAIN_LOOP[0] = asyncio.get_running_loop()
+
+
+async def load_tokens_from_db() -> bool:
+    """Put DB-stored tokens into the env if the env has none. Returns
+    True when tokens are available afterwards."""
+    if os.environ.get("DROPBOX_REFRESH_TOKEN", "").strip():
+        return True
+    try:
+        from db import db
+        from integrations import hydrate_integration_config
+        doc = await db.integration_configs.find_one({"org_id": "__global__", "kind": "dropbox"})
+        if not doc:
+            return False
+        cfg = hydrate_integration_config(doc)
+        if cfg.get("refresh_token"):
+            os.environ["DROPBOX_REFRESH_TOKEN"] = cfg["refresh_token"]
+            if cfg.get("access_token"):
+                os.environ["DROPBOX_ACCESS_TOKEN"] = cfg["access_token"]
+            return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("dropbox: could not load tokens from the database (%s)", e)
+    return False
 
 
 def _env_upsert(updates: Dict[str, str]) -> None:
@@ -238,7 +316,7 @@ def dropbox_oauth_start(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
     qs = urlencode({
         "client_id": app_key,
         "response_type": "code",
-        "redirect_uri": _DROPBOX_REDIRECT_URI,
+        "redirect_uri": _redirect_uri(),
         "token_access_type": "offline",
         "scope": _DROPBOX_SCOPES,
         "state": state,
@@ -246,7 +324,7 @@ def dropbox_oauth_start(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
     return {
         "authorize_url": f"{_DROPBOX_AUTHORIZE_URL}?{qs}",
         "state": state,
-        "redirect_uri": _DROPBOX_REDIRECT_URI,
+        "redirect_uri": _redirect_uri(),
         "scopes": _DROPBOX_SCOPES.split(),
         "ttl_seconds": _OAUTH_STATE_TTL_S,
     }
@@ -291,7 +369,7 @@ def dropbox_oauth_callback(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
                 "grant_type": "authorization_code",
                 "client_id": app_key,
                 "client_secret": app_secret,
-                "redirect_uri": _DROPBOX_REDIRECT_URI,
+                "redirect_uri": _redirect_uri(),
             },
             timeout=15,
         )
@@ -316,12 +394,16 @@ def dropbox_oauth_callback(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
 
     # Persist to .env AND to in-process env so the SDK picks up
     # immediately without a supervisor restart.
-    _env_upsert({
-        "DROPBOX_ACCESS_TOKEN": access,
-        "DROPBOX_REFRESH_TOKEN": refresh,
-    })
+    try:
+        _env_upsert({
+            "DROPBOX_ACCESS_TOKEN": access,
+            "DROPBOX_REFRESH_TOKEN": refresh,
+        })
+    except Exception as e:  # noqa: BLE001 — no .env in a container; the DB copy below is the one that matters
+        log.info("dropbox: .env not updated (%s); tokens kept in the database", e)
     os.environ["DROPBOX_ACCESS_TOKEN"] = access
     os.environ["DROPBOX_REFRESH_TOKEN"] = refresh
+    _save_tokens_to_db_sync(access, refresh)
 
     # Fire a quick identity probe so we can echo the account email
     # back to the frontend for the "Connected as ..." UI.

@@ -58,6 +58,7 @@ SECRETS_BY_KIND: dict[str, list[str]] = {
     "simpro": ["api_token"],
     "microsoft365": ["client_secret", "access_token", "refresh_token"],
     "textmagic": ["api_key"],
+    "dropbox": ["access_token", "refresh_token"],
 }
 
 # ─────────────────────────────────────────────────────────

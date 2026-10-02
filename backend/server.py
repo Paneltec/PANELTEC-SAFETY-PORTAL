@@ -888,6 +888,15 @@ async def on_startup():
         await ensure_payroll_indexes()
     except Exception as e:  # noqa: BLE001
         log.warning("payroll index creation failed: %s", e)
+    # Dropbox: tokens live in the database now (not .env); load them so
+    # the connection survives container rebuilds and host moves.
+    try:
+        from integrations_dropbox import remember_event_loop, load_tokens_from_db
+        await remember_event_loop()
+        if await load_tokens_from_db():
+            log.info("dropbox: tokens loaded from the database")
+    except Exception as e:  # noqa: BLE001
+        log.warning("dropbox token load failed: %s", e)
     # v58.13.132mg — Sweep zombie Dropbox migration runs at boot.
     # If a previous uvicorn worker died mid-migration (any restart
     # during a `state=running` run), the state doc gets frozen with

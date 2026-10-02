@@ -36,6 +36,8 @@ Nothing in Portainer has to be edited for normal updates.
 | `BACKUP_DEST_ENC_KEY` | Copy from Emergent (unlocks the saved NAS backup password) |
 | `ANTHROPIC_API_KEY` | Your own Anthropic key for the AI features (replaces Emergent's AI key) |
 | `TIGRIS_*` | Only if you use Tigris storage on Emergent |
+| `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET` | From the Dropbox App Console (the "Paneltec" app). Needed for Settings → Dropbox. After setting them, add `https://<this copy's address>/dropbox/callback` to the app's Redirect URIs in the Dropbox App Console, then click Connect in Settings → Dropbox. The tokens are then kept in the database. |
+| `DROPBOX_TEAM_FOLDER_ID`, `DROPBOX_TEAM_FOLDER_NAME` | Optional; defaults to the Paneltec-General Administration team folder. |
 
 Keep these in Portainer only. Never put them in GitHub.
 
