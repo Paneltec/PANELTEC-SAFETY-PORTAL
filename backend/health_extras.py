@@ -371,6 +371,15 @@ async def health_integrations(user: dict = Depends(require_permission("integrati
                   "status": mongo_status, "detail": mongo_detail})
     log.info("health.integrations.check name=mongodb status=%s", mongo_status)
 
+    # The admin page for each integration shows the stored result of its
+    # last "Test connection" (`status`). Pass it through so the Settings →
+    # Integrations tiles can show the same truth as the page behind them.
+    _cfg_kind = {"m365": "microsoft365"}
+    for x in items:
+        row = configs.get(_cfg_kind.get(x["kind"], x["kind"]))
+        if row is not None:
+            x["connected"] = (row.get("status") or "").lower() == "connected"
+
     up = sum(1 for x in items if x["status"] == "up")
     payload = {
         "items": items,

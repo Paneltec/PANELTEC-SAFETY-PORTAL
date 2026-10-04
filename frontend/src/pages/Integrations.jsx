@@ -223,9 +223,16 @@ function DropboxCard() {
 function Card({ integ, health }) {
   const meta = KIND_MAP[integ.key] || {};
   const route = meta.route;
-  const status = health?.status;
+  // The tile shows the same truth as the integration's own page: if its
+  // last Test connection succeeded it is Connected. Live checks (sync
+  // freshness, Comms Safe Mode) appear underneath as the detail line /
+  // Disarmed chip instead of overriding the headline.
+  let status = health?.status;
+  let label = STATUS_LABEL[status] || (health ? 'Unknown' : 'Checking…');
+  if (health?.connected === true) { status = 'up'; label = 'Connected'; }
+  else if (health && status === 'down' && /not connected/i.test(health.detail || '')) { label = 'Not connected'; }
+  else if (status === 'amber') { label = 'Needs attention'; }
   const cls = STATUS_STYLE[status] || 'bg-slate-100 text-slate-600 border-slate-200';
-  const label = STATUS_LABEL[status] || 'Unknown';
   const disarmed = !!health?.disarmed;
   const detail = health?.detail || '';
 
@@ -252,7 +259,7 @@ function Card({ integ, health }) {
               <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-200"
                     title="Comms Safe Mode is on — outbound sends are intentionally suppressed."
                     data-testid={`integration-disarmed-${integ.key}`}>
-                <Shield size={10} /> Disarmed
+                <Shield size={10} /> Sending paused
               </span>
             )}
           </div>
@@ -289,6 +296,7 @@ export default function Integrations() {
           status:   row.status,
           detail:   row.detail,
           disarmed: !!row.disarmed,
+          connected: row.connected,
         };
       });
       setByKind(map);
@@ -310,7 +318,7 @@ export default function Integrations() {
             Third-party services this workspace is configured for. Live status
             reflects your <b>Comms Safe Mode</b> setting — connectors marked
             <span className="mx-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-semibold border border-violet-200">
-              <Shield size={10} /> Disarmed
+              <Shield size={10} /> Sending paused
             </span>
             are intentionally suppressed, not broken.
           </p>
