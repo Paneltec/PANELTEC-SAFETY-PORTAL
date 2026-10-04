@@ -197,13 +197,13 @@ export default function SettingsScreen() {
           testID="settings-privacy-policy"
           icon="shield-checkmark-outline" iconColor="#0EA5E9" iconBg="#E0F2FE"
           title="Privacy Policy"
-          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/legal/privacy-policy.html')}
+          onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/legal/privacy-policy.html`)}
         />
         <SettingsRow
           testID="settings-terms-of-service"
           icon="document-text-outline" iconColor="#64748B" iconBg="#F1F5F9"
           title="Terms of Service"
-          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/legal/terms-of-service.html')}
+          onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/legal/terms-of-service.html`)}
         />
 
         {/* Help & Support */}
@@ -212,14 +212,14 @@ export default function SettingsScreen() {
           testID="settings-user-manual"
           icon="book-outline" iconColor="#0891B2" iconBg="#CFFAFE"
           title="User Manual (Phone)"
-          onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/manuals/user')}
+          onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/manuals/user`)}
         />
         {isAdmin && (
           <SettingsRow
             testID="settings-admin-manual"
             icon="desktop-outline" iconColor="#3B82F6" iconBg="#DBEAFE"
             title="App / Admin Manual"
-            onPress={() => Linking.openURL('https://whs-compliance.preview.emergentagent.com/manuals/admin')}
+            onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/manuals/admin`)}
           />
         )}
 
