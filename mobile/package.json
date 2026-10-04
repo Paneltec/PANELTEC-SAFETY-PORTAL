@@ -8,7 +8,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "eas-build-pre-install": "node check-backend.cjs",
+    "test:backend-config": "node --test check-backend.test.cjs"
   },
   "dependencies": {
     "@babel/runtime": "^7.20.6",
