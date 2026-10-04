@@ -212,14 +212,14 @@ export default function SettingsScreen() {
           testID="settings-user-manual"
           icon="book-outline" iconColor="#0891B2" iconBg="#CFFAFE"
           title="User Manual (Phone)"
-          onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/manuals/user`)}
+          onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/manuals/user.html`)}
         />
         {isAdmin && (
           <SettingsRow
             testID="settings-admin-manual"
             icon="desktop-outline" iconColor="#3B82F6" iconBg="#DBEAFE"
             title="App / Admin Manual"
-            onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/manuals/admin`)}
+            onPress={() => Linking.openURL(`${(process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '')}/manuals/admin.html`)}
           />
         )}
 
