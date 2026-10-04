@@ -234,7 +234,10 @@ function Card({ integ, health }) {
   else if (status === 'amber') { label = 'Needs attention'; }
   const cls = STATUS_STYLE[status] || 'bg-slate-100 text-slate-600 border-slate-200';
   const disarmed = !!health?.disarmed;
-  const detail = health?.detail || '';
+  let detail = health?.detail || '';
+  if (health?.connected === true && /not connected/i.test(detail)) {
+    detail = 'Connection tested and working';
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 flex flex-col"
