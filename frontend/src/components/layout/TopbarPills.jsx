@@ -65,10 +65,10 @@ export function ApiHealthPill() {
                   <span className="shrink-0 font-semibold uppercase tracking-wider inline-flex items-center gap-1.5">
                     <span>{it.name}</span>
                     {it.disarmed && (
-                      <span title="Deliberately disarmed by Comms Safe Mode"
+                      <span title="Sending paused by Comms Safe Mode"
                             data-testid={`api-health-disarmed-${it.kind}`}
                             className="inline-flex items-center gap-1 px-1.5 py-0 rounded border border-slate-600 bg-slate-800/60 text-slate-300 text-[9px] font-semibold tracking-wider normal-case">
-                        🛡 disarmed
+                        🛡 paused
                       </span>
                     )}
                     {!route && it.kind === 'mongodb' && (
@@ -113,9 +113,9 @@ export function ApiHealthPill() {
           {data.comms_safe_mode === 'on' && (
             <div className="mt-3 px-2 py-1.5 rounded-md bg-amber-950/40 border border-amber-700/40 text-[10px] text-amber-300 leading-snug"
                  data-testid="api-health-safe-mode-note">
-              Comms Safe Mode is <span className="font-bold">ON</span> — outbound
-              email & SMS integrations show red on purpose. They'll re-arm the
-              moment safe mode is lifted.
+              Comms Safe Mode is <span className="font-bold">ON</span> — email &
+              SMS are connected but sending is paused on purpose. Sends resume
+              the moment safe mode is turned off.
             </div>
           )}
         </div>

@@ -379,6 +379,15 @@ async def health_integrations(user: dict = Depends(require_permission("integrati
         row = configs.get(_cfg_kind.get(x["kind"], x["kind"]))
         if row is not None:
             x["connected"] = (row.get("status") or "").lower() == "connected"
+        # Headline = the truth from the last Test connection. A working
+        # integration is green everywhere (header light, tiles, My Apps);
+        # Comms Safe Mode is shown as a "sending paused" note, not as red.
+        if x.get("connected"):
+            if x.get("disarmed"):
+                x["detail"] = "Connected · sending paused by Comms Safe Mode"
+            elif x["status"] != "up" or "not connected" in (x.get("detail") or "").lower():
+                x["detail"] = "Connected · last test passed"
+            x["status"] = "up"
 
     up = sum(1 for x in items if x["status"] == "up")
     payload = {
