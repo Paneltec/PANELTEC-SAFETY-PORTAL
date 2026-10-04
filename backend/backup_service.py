@@ -120,7 +120,11 @@ def _env_int(name: str, default: int) -> int:
 # takes effect without a code redeploy. Wrapped in helpers so the
 # behaviour is unit-testable via monkeypatch of `os.environ`.
 def _backups_enabled() -> bool:
-    return _env_bool("BACKUPS_ENABLED", default=False)
+    # Default ON, matching the scheduler in server.py. Previously this
+    # defaulted to off while the scheduler defaulted to on, so any host
+    # without BACKUPS_ENABLED set showed "next snapshot in …" and then
+    # silently skipped every run.
+    return _env_bool("BACKUPS_ENABLED", default=True)
 
 def _snapshot_max_count() -> int:
     return _env_int("SNAPSHOT_MAX_COUNT", default=7)
@@ -279,6 +283,11 @@ async def _release_backup_lock(db_, ok: bool):
 # Wired up to the same Mongo connection server.py uses. We import lazily
 # inside the router setup so this file can be imported before .env loads.
 _db = None
+
+
+# Strong refs for fire-and-forget off-site uploads (asyncio only keeps
+# weak refs to tasks).
+_OFFSITE_TASKS: set = set()
 
 
 def _now_iso() -> str:
@@ -1557,6 +1566,19 @@ def install(app, db, require_admin):
             await _apply_retention_policy(db, fs)
 
             await _release_backup_lock(db, ok=True)
+
+            # Off-site copy straight to Dropbox (no office agent needed).
+            # Runs in the background so a slow upload never blocks the
+            # snapshot; result lands on the row + app_state.
+            try:
+                import asyncio as _aio
+                from backup_offsite import push_snapshot as _push_offsite
+                _t = _aio.create_task(_push_offsite(db, snap_id, filepath))
+                _OFFSITE_TASKS.add(_t)
+                _t.add_done_callback(_OFFSITE_TASKS.discard)
+            except Exception as _e:  # noqa: BLE001
+                logger.warning("backup.offsite could not start: %s", _e)
+
             return {"ok": True, "snapshot_id": snap_id,
                     "size": size, "sha256": sha,
                     "documents": total_docs,
@@ -1918,6 +1940,14 @@ def install(app, db, require_admin):
                 "agent_name": agent_name,
             }
 
+        # ---- Off-site copy (Dropbox, pushed by the server itself)
+        try:
+            from backup_offsite import status as _offsite_status
+            offsite = await _offsite_status(db)
+        except Exception:  # noqa: BLE001
+            offsite = {"enabled": False}
+        backups_on = _backups_enabled()
+
         # ---- Next scheduled snapshot
         next_snapshot_at = None
         scheduler = getattr(app.state, "scheduler", None)
@@ -1937,6 +1967,11 @@ def install(app, db, require_admin):
             "first_delivery_ok": delivery is not None,
         }
         setup["complete"] = all(setup.values())
+        # A working off-site copy is a complete setup on its own — the
+        # office NAS agent becomes an optional second copy.
+        offsite_ok_age_h = _age_h(offsite.get("last_ok_at")) if offsite.get("last_ok_at") else None
+        if offsite.get("enabled") and offsite_ok_age_h is not None:
+            setup["complete"] = True
 
         # ---- Traffic-light health (v58.13.132kw — delivery-centric)
         #
@@ -1977,7 +2012,25 @@ def install(app, db, require_admin):
                 return ""
             return f" Last local snapshot: {snap_age_h:.1f}h ago (this widget reflects delivery health, not snapshot cadence)."
 
-        if not setup["complete"]:
+        lan_fresh = del_age_h is not None and del_age_h < DELIVERY_DOWN_H and not any_silent
+        off_fresh = offsite_ok_age_h is not None and offsite_ok_age_h < DELIVERY_DOWN_H
+
+        if not backups_on:
+            health = "down"
+            why = ("Automatic backups are switched off on this server. Ask the host "
+                   "to set BACKUPS_ENABLED=true for the backend and restart it.")
+        elif off_fresh:
+            # Off-site copy is fresh → data is safe even if the office
+            # agent is silent. Mention the agent as a secondary note.
+            extra = ""
+            if agents and not lan_fresh:
+                silent = [a.get("name") or "agent" for a in agents if _agent_silent(a)]
+                extra = (" Office NAS copy is behind"
+                         + (f" (agent silent: {', '.join(silent)})" if silent else "")
+                         + " — not urgent while the Dropbox copy is current.")
+            health = "attention" if offsite_ok_age_h >= DELIVERY_ATTENTION_H else "healthy"
+            why = (f"Off-site copy saved to Dropbox {offsite_ok_age_h:.1f}h ago." + extra)
+        elif not setup["complete"]:
             health, why = "setup", "Backup setup is incomplete."
         elif del_age_h is None:
             # No delivery ever recorded — genuine outage.
@@ -2025,7 +2078,15 @@ def install(app, db, require_admin):
             "setup": setup,
             "agent_count": len(agents),
             "destination_count": len(dests),
+            "offsite": offsite,
+            "backups_enabled": backups_on,
         }
+
+    @api_router.post("/offsite/retry", dependencies=[Depends(require_admin)])
+    async def offsite_retry():
+        """Upload the newest snapshot that has no off-site copy yet."""
+        from backup_offsite import push_latest_pending
+        return await push_latest_pending(db)
 
 
     @api_router.get("/retention", dependencies=[Depends(require_admin)])

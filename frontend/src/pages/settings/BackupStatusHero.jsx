@@ -89,6 +89,18 @@ export default function BackupStatusHero() {
     }
   };
 
+  const retryOffsite = async () => {
+    toast.message('Uploading to Dropbox — this can take a few minutes…');
+    try {
+      const r = await fetch((process.env.REACT_APP_BACKEND_URL || '') + '/api/backup/offsite/retry',
+        { method: 'POST', headers: authHdr() });
+      const j = await r.json().catch(() => ({}));
+      if (j.ok) toast.success(j.nothing_to_do ? 'Nothing waiting to upload' : 'Off-site copy saved to Dropbox');
+      else toast.error(j.error || j.reason || 'Upload failed');
+      load?.();
+    } catch (e) { toast.error(e.message); }
+  };
+
   const scrollToHistory = () => {
     // v155c — Snapshot History now lives inside the AdvancedAccordion.
     // Fire the global event so AdvancedAccordion opens the section AND
@@ -217,8 +229,31 @@ export default function BackupStatusHero() {
         {/* v58.13.132kw — "Last delivery" is the source of truth for
             the health pill. Rendered first + emphasised; the local
             snapshot row is demoted to context-only. */}
+        <div data-testid="backup-status-offsite">
+          <strong>Off-site (Dropbox):</strong>{' '}
+          {!data.offsite?.enabled ? (
+            <span style={{ opacity: 0.8 }}>not set up — connect Dropbox in Settings → Dropbox</span>
+          ) : data.offsite.last_ok_at ? (
+            <>
+              {fmtAge(data.offsite.last_ok_at)}
+              {data.offsite.last_ok_bytes ? <> · {fmtBytes(data.offsite.last_ok_bytes)}</> : null}
+              <> · {data.offsite.folder}</>
+            </>
+          ) : 'waiting for the first copy'}
+          {data.offsite?.enabled && data.offsite.last_error
+            && (!data.offsite.last_ok_at || data.offsite.last_error_at > data.offsite.last_ok_at) && (
+            <div style={{ fontSize: 11, color: '#b91c1c' }}>
+              Last attempt failed: {data.offsite.last_error}{' '}
+              <button type="button" onClick={retryOffsite} disabled={busy}
+                style={{ textDecoration: 'underline', background: 'none', border: 'none',
+                         color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 11 }}>
+                Retry now
+              </button>
+            </div>
+          )}
+        </div>
         <div data-testid="backup-status-last-delivery">
-          <strong>Last delivery:</strong>{' '}
+          <strong>Office NAS copy:</strong>{' '}
           {del ? (
             <>
               {fmtAge(del.received_at)}
@@ -237,7 +272,7 @@ export default function BackupStatusHero() {
               {snap.size ? <> · {fmtBytes(snap.size)}</> : null}
               {snap.total_documents ? <> · {snap.total_documents.toLocaleString()} docs</> : null}
               <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>
-                (context only — pill reflects delivery health)
+                (made on the server, then copied off-site)
               </span>
             </>
           ) : 'never'}

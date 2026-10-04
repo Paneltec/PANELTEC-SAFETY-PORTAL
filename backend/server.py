@@ -1753,6 +1753,18 @@ async def on_startup():
                                   id="backup_snapshot_cob", max_instances=1,
                                   coalesce=True, replace_existing=True,
                                   misfire_grace_time=3 * 3600)
+                # Hourly: retry the off-site (Dropbox) copy of the newest
+                # snapshot if its upload failed or was interrupted.
+                async def _offsite_retry():
+                    try:
+                        from backup_offsite import push_latest_pending, offsite_enabled
+                        if offsite_enabled():
+                            await push_latest_pending(_mongo_db)
+                    except Exception as oe:  # noqa: BLE001
+                        log.warning("backup offsite retry failed: %s", oe)
+                scheduler.add_job(_offsite_retry, "interval", minutes=60,
+                                  id="backup_offsite_retry", max_instances=1,
+                                  coalesce=True, replace_existing=True)
                 log.info("APScheduler jobs registered — backup_snapshot_6h (every 6h) + backup_snapshot_cob (mon-fri 17:00 Sydney) · grace=3h")
                 # v160.3.6r — catch-up: if the most recent snapshot is >25h old,
                 # kick one immediately. Runs 60 s after startup so the rest of

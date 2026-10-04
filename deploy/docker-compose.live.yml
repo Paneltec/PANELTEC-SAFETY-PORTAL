@@ -36,12 +36,15 @@ services:
       PANELTEC_VAULT_SECRET: ${PANELTEC_VAULT_SECRET}
       INTEGRATIONS_ENC_KEY: ${INTEGRATIONS_ENC_KEY}
       BACKUP_DEST_ENC_KEY: ${BACKUP_DEST_ENC_KEY}
+      BACKUPS_ENABLED: "true"
       TIGRIS_ENDPOINT: ${TIGRIS_ENDPOINT:-}
       TIGRIS_ACCESS_KEY_ID: ${TIGRIS_ACCESS_KEY_ID:-}
       TIGRIS_SECRET_ACCESS_KEY: ${TIGRIS_SECRET_ACCESS_KEY:-}
       TIGRIS_BUCKET: ${TIGRIS_BUCKET:-}
     volumes:
       - uploads:/app/backend/uploads
+      # Backup snapshots (kept between updates; copied to Dropbox automatically)
+      - backups:/app/backups
 
   web:
     image: ghcr.io/paneltec/paneltec-safety-portal/web:live
@@ -57,3 +60,4 @@ services:
 volumes:
   db:
   uploads:
+  backups:

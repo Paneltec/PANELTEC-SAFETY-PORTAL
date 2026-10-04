@@ -42,6 +42,14 @@ Nothing in Portainer has to be edited for normal updates.
 
 Keep these in Portainer only. Never put them in GitHub.
 
+## Backups (how they stay reliable)
+
+- The server makes a full snapshot every 6 hours (and 5 pm weekdays). `BACKUPS_ENABLED` is on by default; the stack files set it explicitly.
+- Snapshots are written to the `backups` volume (`/app/backups`) so they survive updates.
+- Each finished snapshot is copied **straight from the server to Dropbox** (`/Paneltec Portal Backups/` in the connected account's own space — not the shared team folder). The newest 14 are kept. Failed uploads retry every hour. No office machine needs to be running.
+  - Needs Settings → Dropbox connected. Optional: `BACKUP_DROPBOX_FOLDER`, `BACKUP_DROPBOX_KEEP`, `BACKUP_OFFSITE_DROPBOX=false` to switch off.
+- The office NAS agent is now an optional second copy. If it stops, the Backup page shows amber, not red, while the Dropbox copy is current.
+
 ## Moving data from Emergent
 
 Emergent → Settings → Backup → download the latest snapshot `.zip`, then in

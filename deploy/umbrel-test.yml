@@ -78,8 +78,10 @@ services:
       PANELTEC_VAULT_SECRET: ${PANELTEC_VAULT_SECRET}
       INTEGRATIONS_ENC_KEY: ${INTEGRATIONS_ENC_KEY}
       BACKUP_DEST_ENC_KEY: ${BACKUP_DEST_ENC_KEY}
+      BACKUPS_ENABLED: 'true'
     volumes:
     - uploads:/app/backend/uploads
+    - backups:/app/backups
   web:
     image: ghcr.io/paneltec/paneltec-safety-portal/web:test
     restart: unless-stopped
@@ -134,3 +136,4 @@ services:
 volumes:
   db: {}
   uploads: {}
+  backups: {}
