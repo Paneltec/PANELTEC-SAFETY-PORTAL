@@ -532,11 +532,14 @@ const s = StyleSheet.create({
   },
 
   // Rows
+  // Each row is its own rounded tile with a gap between tiles.
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 16,
+    paddingHorizontal: 16, paddingVertical: 14,
     backgroundColor: C.card.bg, minHeight: 60,
-    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+    marginHorizontal: 16, marginBottom: 10, borderRadius: 16,
+    shadowColor: C.misc.shadow, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
   rowIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   rowContent: { flex: 1 },
@@ -545,7 +548,7 @@ const s = StyleSheet.create({
   updateDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2C6BFF' },
 
   // Admin
-  simCard: { backgroundColor: C.card.bg, paddingHorizontal: 16, paddingVertical: 14 },
+  simCard: { backgroundColor: C.card.bg, paddingHorizontal: 16, paddingVertical: 14, marginHorizontal: 16, marginBottom: 10, borderRadius: 16 },
   simLabel: { fontSize: 16, fontWeight: '700', color: C.card.textMain },
   simHint: { fontSize: 13, color: C.textOnNavy.faint, marginTop: 2, marginBottom: 12 },
   simPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -606,7 +609,7 @@ const s = StyleSheet.create({
   // About panel (.132mo)
   aboutPanel: {
     backgroundColor: C.card.bg, paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+    marginHorizontal: 16, marginTop: -4, marginBottom: 10, borderRadius: 16,
   },
   aboutRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
