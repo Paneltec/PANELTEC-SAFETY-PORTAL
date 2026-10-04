@@ -1,0 +1,81 @@
+{
+  "name": "paneltec-hosted",
+  "services": {
+    "mongo": {
+      "image": "mongo:7",
+      "restart": "unless-stopped",
+      "volumes": [
+        "db:/data/db"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "db.adminCommand('ping').ok"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 5
+      }
+    },
+    "backend": {
+      "build": {
+        "context": ".",
+        "dockerfile": "deploy/backend.Dockerfile"
+      },
+      "image": "paneltec-hosted-backend:walkers-1",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "mongo": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "MONGO_URL": "mongodb://mongo:27017",
+        "DB_NAME": "paneltec_hosted",
+        "JWT_SECRET": "${JWT_SECRET:?Required}",
+        "CORS_ORIGINS": "${PUBLIC_URL:?Required HTTPS URL}",
+        "FRONTEND_PUBLIC_URL": "${PUBLIC_URL:?Required HTTPS URL}",
+        "IS_PROD": "true",
+        "COMMS_SAFE_MODE": "${COMMS_SAFE_MODE:-on}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY:-}",
+        "EMERGENT_LLM_KEY": "${ANTHROPIC_API_KEY:-}",
+        "PANELTEC_VAULT_SECRET": "${PANELTEC_VAULT_SECRET:?Required original key}",
+        "INTEGRATIONS_ENC_KEY": "${INTEGRATIONS_ENC_KEY:?Required original key}",
+        "BACKUP_DEST_ENC_KEY": "${BACKUP_DEST_ENC_KEY:?Required original key}",
+        "BACKUPS_ENABLED": "${BACKUPS_ENABLED:-false}",
+        "BACKUP_OFFSITE_DROPBOX": "${BACKUP_OFFSITE_DROPBOX:-false}",
+        "DROPBOX_APP_KEY": "${DROPBOX_APP_KEY:-}",
+        "DROPBOX_APP_SECRET": "${DROPBOX_APP_SECRET:-}"
+      },
+      "volumes": [
+        "uploads:/app/backend/uploads",
+        "backups:/app/backups"
+      ]
+    },
+    "web": {
+      "build": {
+        "context": ".",
+        "dockerfile": "deploy/web.Dockerfile"
+      },
+      "image": "paneltec-hosted-web:walkers-1",
+      "restart": "unless-stopped",
+      "depends_on": [
+        "backend"
+      ],
+      "environment": {
+        "PUBLIC_URL": "${PUBLIC_URL:?Required HTTPS URL}"
+      },
+      "ports": [
+        "127.0.0.1:3953:80"
+      ]
+    }
+  },
+  "volumes": {
+    "db": {},
+    "uploads": {},
+    "backups": {}
+  }
+}

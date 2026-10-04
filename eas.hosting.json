@@ -1,0 +1,88 @@
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_SENTRY_DSN": "https://07a59b90218092aee6f8992b31684f4b@o4512048722477056.ingest.de.sentry.io/4512048752558160",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD": "true"
+      },
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "remote"
+      },
+      "ios": {
+        "simulator": false
+      },
+      "environment": "preview"
+    },
+    "preview-ios": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      },
+      "environment": "preview"
+    },
+    "preview-apk": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_SENTRY_DSN": "https://07a59b90218092aee6f8992b31684f4b@o4512048722477056.ingest.de.sentry.io/4512048752558160",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD": "true"
+      },
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "remote"
+      },
+      "environment": "preview"
+    },
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_SENTRY_DSN": "https://07a59b90218092aee6f8992b31684f4b@o4512048722477056.ingest.de.sentry.io/4512048752558160",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD": "true",
+        "GRADLE_OPTS": "-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m"
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "resourceClass": "large"
+      },
+      "environment": "production"
+    },
+    "testflight": {
+      "distribution": "store",
+      "channel": "production",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_SENTRY_DSN": "https://07a59b90218092aee6f8992b31684f4b@o4512048722477056.ingest.de.sentry.io/4512048752558160",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD": "true",
+        "APP_ENV": "production"
+      },
+      "environment": "production"
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "stephen@paneltec.com.au",
+        "ascAppId": "6816909908",
+        "appleTeamId": "Y7DP56U4HS",
+        "ascApiKeyPath": "./credentials/AuthKey_9UP969M2KF.p8",
+        "ascApiKeyId": "9UP969M2KF",
+        "ascApiKeyIssuerId": "5f5e11d2-1c69-465a-94b6-6ebf334315ff"
+      }
+    }
+  }
+}

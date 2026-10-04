@@ -1,0 +1,12 @@
+--- a/backend/seed.py
++++ b/backend/seed.py
+@@ -339,6 +339,9 @@
+ 
+ 
+ async def seed_all() -> dict:
++    # Production must never create demo users or reset their passwords.
++    if os.environ.get("IS_PROD", "false").strip().lower() in ("true", "1", "yes", "on"):
++        return {"counts": {}, "skipped": "production"}
+     org_id, ws_ids = await _ensure_org_and_workspaces()
+     user_ids = await _ensure_users(org_id, ws_ids)
+     await _seed_capture(org_id, ws_ids, user_ids)

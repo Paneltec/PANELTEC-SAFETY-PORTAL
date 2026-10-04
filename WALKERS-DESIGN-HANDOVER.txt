@@ -1,0 +1,38 @@
+PANELTEC — WALKERS DESIGN HOSTING HANDOVER
+
+This branch copies the self-hosted test source at commit 298e23a4ab820536667b7a630c58eddeab6187da. It is a handover branch, not an automatic production deployment. Data backups and secrets are supplied separately. Domain and hosting provider specifications are awaiting agreement.
+
+START HERE
+1. Confirm Linux Docker Engine / Compose v2 hosting, persistent storage, HTTPS domain, DNS, monitoring and support ownership. Static/PHP-only hosting is insufficient. An initial sizing estimate is 4 vCPU, 8 GB RAM and 80 GB SSD, subject to load and retention measurement. Build capacity may need to be larger.
+2. Before building, apply production-seed-guard.patch using git apply, then run python test_production_seed_guard.py from the repository root. This prevents seed_all from creating or resetting demo users in production. Existing demo accounts in a restored database require separate review. This patch does not disable other startup migrations.
+3. Populate hosting.env.example privately outside Git, for example /etc/paneltec/hosting.env. Set PUBLIC_URL to the final HTTPS origin. Use a new JWT_SECRET and obtain the three original encryption keys through a secure channel. Never repeat a VARIABLE_NAME= prefix inside its value.
+4. Run from the repository root:
+   docker compose --env-file /etc/paneltec/hosting.env -f compose.hosting.json config --quiet
+   docker compose --env-file /etc/paneltec/hosting.env -f compose.hosting.json build
+   docker compose --env-file /etc/paneltec/hosting.env -f compose.hosting.json up -d
+   docker compose --env-file /etc/paneltec/hosting.env -f compose.hosting.json ps
+   curl -fsS http://127.0.0.1:3953/api/health
+5. Supply a host TLS reverse proxy to 127.0.0.1:3953. The supplied Compose does not expose MongoDB or the backend publicly. Allow large backup uploads and 600-second timeouts; review CDN upload limits. The inner deploy/nginx.conf currently overwrites X-Forwarded-Proto with its HTTP scheme: correct/test trusted forwarded headers for the chosen proxy before OAuth/cookie flows go live.
+6. Keep communications paused during migration. Restore into a distinct empty target and retain the old service for rollback. With production demo seeding disabled, first administrator access needs an authenticated bootstrap or reviewed offline restoration process. Do not expose demo credentials to bootstrap production. Verify every restore result, collection count and representative PDF/photo; completion of the job alone is insufficient.
+7. Review restored accounts, effective permissions, admin PIN and saved credentials. Legacy snapshots may represent encrypted binary vault fields as strings: verify Apps Directory credential decryption. Do not rotate encryption keys before migrating stored ciphertext.
+
+BACKUPS
+Automatic backups and Dropbox uploads default off in this migration configuration. Review restored schedules/destinations, use persistent backup/upload volumes, connect the selected independent offsite store, and configure or deliberately repoint the NAS agent to the final domain. Enable BACKUPS_ENABLED=true after review; enable BACKUP_OFFSITE_DROPBOX only after Dropbox is configured. Recreate the backend, run a new backup and restore it into an isolated test database. Confirm delivery, retention, alerting and agreed RPO/RTO. Historical backup status is not evidence of a new successful backup.
+
+INTEGRATIONS
+Retain original encryption keys and validate Simpro, Navixy, Microsoft 365 and TextMagic credentials/expiry. Begin with read-only checks. Re-register exact OAuth callback URLs for the final domain where applicable. Dropbox uses /dropbox/callback. Obtain the AI provider key and verify features supported by deploy/shims. SmartFill/Tigris are optional; confirm usage. Review queues and schedules before unblocking communications. Do not test email/SMS to workers without an explicitly selected recipient and approval.
+
+WINDOWS AND PHONES
+Windows can use the existing PWA over HTTPS via Edge installation; this is not an MSI/EXE package. Test launch, updates and sign-in. /m/ is the phone web interface, not proof of a native release.
+Replace mobile/eas.json with eas.hosting.json after reviewing account ownership. Configure EXPO_PUBLIC_BACKEND_URL in both EAS preview and production environments; it is a public URL, never a secret. This removes old backend URL overrides. The inspected package uses Expo ^57: use package.json and lockfile rather than older README SDK references. Run dependency compatibility checks and physical device tests.
+Preserve the owner's existing app identities and signing keys, increment build versions, and validate EAS/Apple/Google account access. Build preview Android and iPhone apps first. Typical production command from mobile/: npx eas-cli build --platform all --profile production. Store submission is a separate approved release step. Test camera, location, QR, role access, documents, offline capture/reconnect and deep links.
+
+RELEASE REVIEW
+This branch inherits source and history from the existing repository, including legacy hard-coded test credentials. Review/remove those and disable or rotate any active equivalents before public deployment. Do not commit populated environment files, private keys, recovery YAML, data ZIPs or business records. Avoid unattended production Watchtower updates; use reviewed release images/digests and a rollback record. This package is a starting configuration, not a completed production security audit.
+The isolated seed-guard test passed locally. Full Docker/native builds, production restore reconciliation, integration tests and public hosting acceptance remain to be performed by the deployment team. The guard patch must be applied before building this configuration.
+
+Official references:
+https://docs.expo.dev/eas/environment-variables/
+https://docs.expo.dev/eas/environment-variables/usage/
+https://docs.expo.dev/build/eas-json/
+https://support.microsoft.com/en-us/edge/install-manage-or-uninstall-apps-in-microsoft-edge
