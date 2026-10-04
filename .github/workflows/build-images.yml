@@ -4,7 +4,7 @@ name: Build server images
 
 on:
   push:
-    branches: [test, live]
+    branches: [test, live, walkers-design-handover]
   workflow_dispatch:
 
 permissions:
