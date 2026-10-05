@@ -811,6 +811,9 @@ api.include_router(health_extras_router)
 from dashboards import router as dashboards_router  # noqa: E402
 api.include_router(dashboards_router)
 
+from app_updates import router as app_updates_router
+api.include_router(app_updates_router)
+
 app.include_router(api)
 
 # Phase 4.19 (v143) — Real MongoDB backup grafted from Paneltec Portal.
