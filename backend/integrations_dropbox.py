@@ -28,6 +28,9 @@ Admin gate mirrors the mobile+web `.132kt` set.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+from urllib.parse import urlsplit
 import json
 import logging
 import os
@@ -68,7 +71,7 @@ _BACKGROUND_TASKS: set = set()
 # from the same pod; state is not shared across replicas (we run
 # one uvicorn worker) and OAuth flows complete in <60s. If we
 # ever go multi-worker, move this to Mongo with a TTL index.
-_OAUTH_STATES: Dict[str, float] = {}
+_OAUTH_STATES: Dict[str, dict] = {}
 _OAUTH_STATE_TTL_S = 5 * 60
 def _redirect_uri() -> str:
     """Where Dropbox sends the browser back after "Connect". Follows the
@@ -82,35 +85,16 @@ def _redirect_uri() -> str:
     base = (os.environ.get("FRONTEND_PUBLIC_URL") or os.environ.get("PUBLIC_URL") or "").strip().rstrip("/")
     if base:
         return f"{base}/dropbox/callback"
-    return "https://whs-compliance.preview.emergentagent.com/dropbox/callback"
+    return ""
 _DROPBOX_AUTHORIZE_URL = "https://www.dropbox.com/oauth2/authorize"
 _DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
-# Space-separated per Dropbox spec (though the SDK also accepts a list).
+# User-scoped tokens work with the existing Dropbox user client and shared
+# team-folder namespace. Ordinary delete uses files_delete_v2, not permanent
+# deletion; requesting that unused team scope requires team_data.member and
+# would also require an explicit member selector on every file operation.
 _DROPBOX_SCOPES = (
-    "account_info.read "
-    "files.metadata.read files.content.read sharing.read "
-    # v58.13.132n2 — write scopes for the in-app Dropbox file browser
-    # (`backend/dropbox_browse.py`). Existing refresh tokens minted
-    # before this change are read-only; admins must re-authorise via
-    # `/api/dropbox/oauth/start` to mint a token with write scopes.
-    "files.content.write "
-    # v58.13.132n4a — sharing.write pre-added ahead of the `.132n4b`
-    # Share/Permissions ship. Added here NOW (even though the App
-    # Console still needs the ticked scope + a re-authorise) so the
-    # next OAuth mint automatically requests it — no code touch
-    # needed to unhook the deferred sharing UI. `sharing.read` is
-    # already granted; `sharing.write` is what's new.
-    "sharing.write "
-    # v58.13.132n5_hk1 — files.permanent_delete pre-added ahead of
-    # the trash-housekeeping run (scripts/dropbox_housekeeping_132n5_trash.py).
-    # Same pattern as `sharing.write` above: adding to the scope
-    # string is only half the fix — the App Console (App ID 8619475)
-    # still needs `files.permanent_delete` ticked under Permissions,
-    # and then an admin must re-authorise via /api/dropbox/oauth/start
-    # to mint a fresh refresh token that carries the new scope. The
-    # existing token (minted pre-n5_hk1) will still 400 on
-    # /2/files/permanently_delete with 'missing_scope' until re-auth.
-    "files.permanent_delete"
+    "account_info.read files.metadata.read files.content.read "
+    "files.content.write sharing.read sharing.write"
 )
 
 
@@ -306,25 +290,42 @@ def dropbox_oauth_start(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
     # Prune expired states, then mint a fresh one.
     now = time.time()
     for k, ts in list(_OAUTH_STATES.items()):
-        if now - ts > _OAUTH_STATE_TTL_S:
+        if now - ts["created"] > _OAUTH_STATE_TTL_S:
             _OAUTH_STATES.pop(k, None)
     state = secrets.token_urlsafe(24)
-    _OAUTH_STATES[state] = now
+    redirect = _redirect_uri()
+    parsed = urlsplit(redirect)
+    # Dropbox only accepts HTTPS callbacks (HTTP loopback is the exception).
+    if not (parsed.scheme == "https" or (
+        parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    )):
+        redirect = ""
+    verifier = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    _OAUTH_STATES[state] = {
+        "created": now, "owner": user.get("id"), "redirect": redirect,
+        "verifier": verifier,
+    }
 
     # URL-encode manually — Dropbox is strict about `scope` spacing.
     from urllib.parse import urlencode
-    qs = urlencode({
+    params = {
         "client_id": app_key,
         "response_type": "code",
-        "redirect_uri": _redirect_uri(),
         "token_access_type": "offline",
         "scope": _DROPBOX_SCOPES,
         "state": state,
-    })
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+    if redirect:
+        params["redirect_uri"] = redirect
+    qs = urlencode(params)
     return {
         "authorize_url": f"{_DROPBOX_AUTHORIZE_URL}?{qs}",
         "state": state,
-        "redirect_uri": _redirect_uri(),
+        "redirect_uri": redirect,
+        "manual": not bool(redirect),
         "scopes": _DROPBOX_SCOPES.split(),
         "ttl_seconds": _OAUTH_STATE_TTL_S,
     }
@@ -333,6 +334,15 @@ def dropbox_oauth_start(user: dict = Depends(_require_admin)) -> Dict[str, Any]:
 # ── /oauth/callback — public (fired by frontend page) ──────────
 @router.post("/oauth/callback")
 def dropbox_oauth_callback(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    return _finish_oauth(body, manual=False)
+
+
+@router.post("/oauth/complete")
+def dropbox_oauth_complete(body: Dict[str, Any] = Body(...), user: dict = Depends(_require_admin)) -> Dict[str, Any]:
+    return _finish_oauth(body, manual=True, owner=user.get("id"))
+
+
+def _finish_oauth(body: Dict[str, Any], manual: bool, owner=None) -> Dict[str, Any]:
     """Exchange an authorize code for access + refresh tokens.
     Public route (Dropbox redirects an anon browser here) — CSRF
     is enforced via the `state` allowlist minted in `/oauth/start`.
@@ -349,10 +359,10 @@ def dropbox_oauth_callback(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
         raise HTTPException(400, "code and state are required")
 
     # CSRF check.
-    minted = _OAUTH_STATES.pop(state, None)
+    minted = _OAUTH_STATES.get(state)
     if minted is None:
         raise HTTPException(400, "unknown or expired state token")
-    if time.time() - minted > _OAUTH_STATE_TTL_S:
+    if time.time() - minted["created"] > _OAUTH_STATE_TTL_S:
         raise HTTPException(400, "state token expired — restart the flow")
 
     app_key = os.environ.get("DROPBOX_APP_KEY", "").strip()
@@ -360,25 +370,31 @@ def dropbox_oauth_callback(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     if not app_key or not app_secret:
         raise HTTPException(500, "Dropbox app credentials missing from env")
 
+    if manual != (not bool(minted["redirect"])):
+        raise HTTPException(400, "Incorrect completion method — restart Connect Dropbox")
+    if manual and (not owner or owner != minted["owner"]):
+        raise HTTPException(403, "Complete this connection using the administrator who started it")
+    _OAUTH_STATES.pop(state, None)
+    token_data = {
+        "code": code, "grant_type": "authorization_code",
+        "client_id": app_key, "client_secret": app_secret,
+        "code_verifier": minted["verifier"],
+    }
+    if minted["redirect"]:
+        token_data["redirect_uri"] = minted["redirect"]
     # Exchange code → tokens.
     try:
         r = requests.post(
             _DROPBOX_TOKEN_URL,
-            data={
-                "code": code,
-                "grant_type": "authorization_code",
-                "client_id": app_key,
-                "client_secret": app_secret,
-                "redirect_uri": _redirect_uri(),
-            },
+            data=token_data,
             timeout=15,
         )
     except requests.RequestException as e:
-        raise HTTPException(502, _redact(f"token exchange request failed: {e}"))
+        raise HTTPException(502, "Dropbox could not be reached. Restart Connect Dropbox and try again.")
     if r.status_code != 200:
         raise HTTPException(
             502,
-            _redact(f"Dropbox token exchange HTTP {r.status_code}: {r.text[:400]}"),
+            f"Dropbox rejected the authorization code (HTTP {r.status_code}). Restart Connect Dropbox and use a fresh code.",
         )
     payload = r.json()
     access = payload.get("access_token")
