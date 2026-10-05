@@ -531,7 +531,7 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
                 title={`${badge.expired} expired · ${badge.expiring_soon} expiring soon`}
                 className="ml-auto text-[10px] leading-none font-semibold text-white bg-red-600 rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
               >
-                {badgeTotal > 99 ? '99+' : badgeTotal}
+                {badge.label || (badgeTotal > 99 ? '99+' : badgeTotal)}
               </span>
             )}
           </>
