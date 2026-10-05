@@ -16,7 +16,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify-updater:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test update safety checks
+        run: python -m unittest discover -s deploy -p test_paneltec_updater.py
+      - name: Prepare disposable Docker fixture
+        run: docker pull python:3.11-slim
+      - name: Test real container replacement and rollback
+        run: python -m unittest discover -s deploy -p test_updater_docker.py
   build:
+    needs: verify-updater
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
