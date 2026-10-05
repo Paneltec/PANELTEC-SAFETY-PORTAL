@@ -18,6 +18,7 @@ import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import SessionTimeoutCard from '../components/settings/SessionTimeoutCard';
+import AppUpdateCard from '../components/settings/AppUpdateCard';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -195,6 +196,8 @@ export default function SystemSettings() {
           coverage (XLSX, PPTX, ODT, scanned-PDF text extraction).
         </p>
       </header>
+
+      <AppUpdateCard />
 
       <div className="grid md:grid-cols-3 gap-4 mb-6" data-testid="tools-grid">
         <ToolCard
