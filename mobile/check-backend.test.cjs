@@ -20,7 +20,7 @@ test('all EAS profiles use configured environments rather than an old URL', () =
   const eas = require('./eas.json');
   for (const [name, profile] of Object.entries(eas.build)) {
     assert.equal(profile.environment, ['production', 'testflight'].includes(name) ? 'production' : 'preview');
-    assert.equal(profile.env?.EXPO_PUBLIC_BACKEND_URL, undefined);
+    assert.equal(profile.env?.EXPO_PUBLIC_BACKEND_URL, name === 'iphone-readiness' ? '' : undefined);
   }
   assert.equal(require('./package.json').scripts['eas-build-pre-install'], 'node check-backend.cjs');
 });

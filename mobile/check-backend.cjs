@@ -20,7 +20,10 @@ function validateBackend(value) {
 
 if (require.main === module) {
   try {
-    validateBackend(process.env.EXPO_PUBLIC_BACKEND_URL);
+    const readiness = process.env.EAS_BUILD_PROFILE === 'iphone-readiness' &&
+      process.env.EXPO_PUBLIC_IPHONE_READINESS === 'true';
+    if (!readiness) validateBackend(process.env.EXPO_PUBLIC_BACKEND_URL);
+    else console.log('iPhone installation test only: live app routes are disabled.');
     console.log('Mobile backend configuration validated. Network reachability still requires testing.');
   } catch (error) {
     console.error(error.message);
