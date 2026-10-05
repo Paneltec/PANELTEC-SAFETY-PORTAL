@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import useAppUpdateBadge from '@/lib/useAppUpdateBadge';
 import { runSwVersionGuard } from '@/lib/swVersionGuard';
 import RebrandNudge from '@/components/RebrandNudge';
 import { toast } from 'sonner';
@@ -901,6 +902,7 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(getUser());
+  const appUpdateBadge = useAppUpdateBadge(user?.role);
   // v58.13.109 — Sidebar Certifications badge. `{expired, expiring_soon,
   // total}` refreshed on shell mount + on every route change. Cheap
   // count endpoint (`/api/certifications/expiry-count`) — no polling
@@ -1028,7 +1030,7 @@ export default function AppShell() {
   return (
     <PermissionsProvider value={permsValue}>
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
-      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge, leavePending: leaveBadge }} brandName={brandName} user={user} />
+      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge, leavePending: leaveBadge, appUpdate: appUpdateBadge }} brandName={brandName} user={user} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-72 civil-chrome max-md:border-r-black">
           <SheetTitle className="sr-only">Navigation menu</SheetTitle>
@@ -1036,7 +1038,7 @@ export default function AppShell() {
             <Logo size="sm" displayName={brandName} />
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 min-w-[48px] min-h-[48px] text-civil-off-white"><X size={20} /></button>
           </div>
-          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge, leavePending: leaveBadge }} />
+          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge, leavePending: leaveBadge, appUpdate: appUpdateBadge }} />
           {/* v58.13.112 — PWA install button also mounted in the mobile
               drawer so Android Chrome users who never open the desktop
               sidebar still see the install affordance. */}
