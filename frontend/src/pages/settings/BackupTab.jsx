@@ -153,7 +153,7 @@ export default function BackupTab() {
       // eslint-disable-next-line no-constant-condition
       while (true) {
         if (Date.now() > deadline) {
-          setError("Backup didn't complete in 3 minutes — check the ops log.");
+          setError("The backup is still taking longer than expected. It may still be running. Refresh the backup history before trying again.");
           break;
         }
         // eslint-disable-next-line no-await-in-loop
@@ -215,12 +215,16 @@ export default function BackupTab() {
           health. Mounted at the very top so a glance answers "is
           my backup working?" without scrolling. Reads GET
           /api/backup/summary; polls 60 s while tab visible. */}
-      <BackupStatusHero/>
+      <header className="mb-5">
+        <h1 className="text-3xl font-bold text-slate-900">Backup & Restore</h1>
+        <p className="mt-2 text-slate-600">Check your saved copies, make a backup, or recover your data.</p>
+      </header>
+      <BackupStatusHero onBackup={snapshotNow} busy={busy} onRefresh={refresh}/>
 
       {/* v155c — Setup wizard auto-hides once setup.complete === true.
           Renders BETWEEN hero and silent-agent alert so setup issues
           take priority over delivery alerts. */}
-      <SetupWizard/>
+
 
       {/* v153 — Red banner surfaces the "silent agent" scenario the
           moment the operator opens this tab. Non-dismissable by design:
@@ -230,11 +234,15 @@ export default function BackupTab() {
 
       {/* v155c — Collapsible plain-English explainer, replaces the
           old ArchitectureBanner. No dismiss flag, no localStorage. */}
-      <HowItWorks/>
+
 
       {/* ───── Live delivery health (top of page so it's the first
             thing the operator sees) ───── */}
       <LanDeliveryCard/>
+      <details className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer font-semibold text-slate-800">Backup setup and connection help</summary>
+        <div className="mt-4"><SetupWizard/><HowItWorks/></div>
+      </details>
 
       {/* v155c — All 7 advanced admin cards live inside a single
           Advanced accordion. Collapsed by default (no localStorage,
@@ -244,21 +252,21 @@ export default function BackupTab() {
           continues even when the section is collapsed. */}
       <AdvancedAccordion sections={[
         { id: "schedule",
-          title: "Auto-snapshot schedule",
+          title: "Automatic backup schedule",
           icon: <RefreshCw className="w-4 h-4" style={{ color: "#64748b" }}/>,
           children: <ScheduleCard/> },
         { id: "retention",
-          title: "Retention policy",
+          title: "How many backups to keep",
           icon: <Trash2 className="w-4 h-4" style={{ color: "#64748b" }}/>,
           children: <RetentionCard/> },
         { id: "snapshot-history",
-          title: "Snapshot history",
+          title: "Backup history and downloads",
           icon: <Archive className="w-4 h-4" style={{ color: "#64748b" }}/>,
           children: (
             <>
               {/* Legacy anchor retained so any older link still resolves. */}
               <div data-testid="backup-snapshot-history-anchor"/>
-              <Section title="Snapshot history"
+              <Section title="Saved backups"
                 icon={<Server className="w-4 h-4"/>}
                 action={
                   <button
@@ -854,7 +862,7 @@ function LanDeliveryCard() {
 
   if (!s) {
     return (
-      <Section title="Last LAN delivery" icon={<Server className="w-4 h-4"/>}>
+      <Section title="NAS backup delivery" icon={<Server className="w-4 h-4"/>}>
         <div style={{ padding: 10, color: "#64748b" }}>{err || "Loading…"}</div>
       </Section>
     );
@@ -863,9 +871,9 @@ function LanDeliveryCard() {
   // Colour scheme keyed off the rollup health
   const palette = {
     ok:     { bg: "#ecfdf5", border: "#10b981", fg: "#065f46", chip: "#10b981", chipFg: "white", label: "Healthy" },
-    stale:  { bg: "#fff7ed", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "white", label: "Stale" },
-    behind: { bg: "#fff7ed", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "white", label: "Behind" },
-    down:   { bg: "#fef2f2", border: "#ef4444", fg: "#7f1d1d", chip: "#ef4444", chipFg: "white", label: "Agent down" },
+    stale:  { bg: "#fff7ed", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "white", label: "Copy overdue" },
+    behind: { bg: "#fff7ed", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "white", label: "New copy pending" },
+    down:   { bg: "#fef2f2", border: "#ef4444", fg: "#7f1d1d", chip: "#ef4444", chipFg: "white", label: "NAS connection offline" },
     never:  { bg: "#f3f4f6", border: "#6b7280", fg: "#374151", chip: "#6b7280", chipFg: "white", label: "Never delivered" },
   }[s.health] || { bg: "#f3f4f6", border: "#6b7280", fg: "#374151", chip: "#6b7280", chipFg: "white", label: s.health };
 
@@ -879,15 +887,15 @@ function LanDeliveryCard() {
 
   // Friendly one-line explainer per health state
   const explainer = {
-    ok:     <>Snapshots are landing on your NAS as expected.</>,
+    ok:     <>Your NAS has received a backup successfully.</>,
     stale:  <>Last delivery is older than {s.stale_after_h}h — check the agent is still polling.</>,
-    behind: <>A newer snapshot is sitting on the Hub but the agent hasn't shipped it yet. It usually catches up within a minute.</>,
+    behind: <>A newer backup is ready on Umbrel. Waiting for the NAS to finish collecting it; large backups can take several minutes.</>,
     down:   <>The LAN agent hasn't checked in for {fmtMin(s.last_any_report_age_min)}. The container may be stopped.</>,
     never:  <>No snapshots have ever been delivered to the NAS. Register an agent and start the Docker container.</>,
   }[s.health] || null;
 
   return (
-    <Section title="Last LAN delivery"
+    <Section title="NAS backup delivery"
       icon={<Server className="w-4 h-4"/>}
       action={
         <button
@@ -932,7 +940,7 @@ function LanDeliveryCard() {
           </span>
           {s.last_delivery ? (
             <span style={{ fontWeight: 700 }}>
-              Last shipped to NAS: <strong>{fmtMin(s.last_delivery_age_min)}</strong>
+              Last saved to NAS: <strong>{fmtMin(s.last_delivery_age_min)}</strong>
               {s.last_delivery.bytes_written && (
                 <> · {fmtBytes(s.last_delivery.bytes_written)}</>
               )}
@@ -943,6 +951,9 @@ function LanDeliveryCard() {
         </div>
         {explainer && <div style={{ marginBottom: 8 }}>{explainer}</div>}
 
+        <details className="mt-3">
+          <summary className="cursor-pointer font-semibold">Connection, storage and file details</summary>
+          <div className="mt-3">
         {/* Detail grid */}
         <div style={{
           display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 18px",
@@ -995,6 +1006,8 @@ function LanDeliveryCard() {
           agentName={s.agent?.name}
           agentLastSeenAgeMin={s.agent_last_seen_age_min}
         />
+          </div>
+        </details>
       </div>
     </Section>
   );

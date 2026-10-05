@@ -50,7 +50,7 @@ export function AdvancedAccordion({ sections }) {
         textTransform: 'uppercase',
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <Settings className="w-3.5 h-3.5"/> Advanced
+        <Settings className="w-3.5 h-3.5"/> Backup settings and recovery
         <span style={{
           marginLeft: 'auto', fontSize: 10, fontWeight: 600,
           letterSpacing: '0.06em', textTransform: 'none',
@@ -69,6 +69,7 @@ export function AdvancedAccordion({ sections }) {
             <button type="button"
               data-testid={`accordion-toggle-${s.id}`}
               onClick={() => toggle(s.id)}
+              aria-expanded={open}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                 padding: '12px 16px', background: open ? '#f8fafc' : '#fff',
@@ -78,7 +79,7 @@ export function AdvancedAccordion({ sections }) {
               {s.icon}
               <span style={{
                 fontWeight: 700, fontSize: 12, color: '#0f172a',
-                letterSpacing: '0.14em', textTransform: 'uppercase', flex: 1,
+                flex: 1,
               }}>
                 {s.title}
               </span>

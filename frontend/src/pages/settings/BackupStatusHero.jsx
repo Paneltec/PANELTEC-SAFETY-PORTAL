@@ -1,290 +1,124 @@
-// Paneltec Civil · v155b — Backup admin traffic-light hero card.
-// Reads GET /api/backup/summary. Polls 60 s while tab visible.
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { CheckCircle2, AlertCircle, RefreshCw, ArrowDown, HelpCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState, useEffect, useCallback } from 'react';
+import { CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { TOKEN_KEY } from '@/lib/api';
+import { openAccordionSection } from './AdvancedAccordion';
 
 const SUMMARY_URL = (process.env.REACT_APP_BACKEND_URL || '') + '/api/backup/summary';
-const SNAPSHOT_URL = (process.env.REACT_APP_BACKEND_URL || '') + '/api/backup/snapshots';
-
-const authHdr = () => {
-  const t = localStorage.getItem(TOKEN_KEY) || '';
-  return t ? { Authorization: `Bearer ${t}` } : {};
+const bytes = n => n ? `${(n / 1048576).toFixed(1)} MB` : 'Size not reported';
+const when = value => {
+  const date = new Date(value);
+  return value && Number.isFinite(date.getTime())
+    ? date.toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+    : 'Not recorded yet';
 };
 
-const fmtBytes = (n) => {
-  if (!n) return '—';
-  if (n < 1024) return `${n} B`;
-  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`;
-  return `${(n / 1073741824).toFixed(2)} GB`;
-};
-
-const fmtAge = (iso) => {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
-  if (ms < 3600_000) return `${Math.floor(ms / 60_000)} min ago`;
-  if (ms < 86400_000) return `${Math.floor(ms / 3600_000)}h ago`;
-  return `${Math.floor(ms / 86400_000)}d ago`;
-};
-
-const fmtFuture = (iso) => {
-  if (!iso) return '—';
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return 'imminent';
-  if (ms < 3600_000) return `in ${Math.floor(ms / 60_000)} min`;
-  if (ms < 86400_000) return `in ${(ms / 3600_000).toFixed(1)} h`;
-  return `in ${(ms / 86400_000).toFixed(1)} d`;
-};
-
-const PALETTES = {
-  healthy:   { bg: '#065f46', bgSoft: '#ecfdf5', border: '#10b981', fg: '#064e3b', chipBg: '#10b981', label: 'Healthy' },
-  attention: { bg: '#92400e', bgSoft: '#fff7ed', border: '#f59e0b', fg: '#7c2d12', chipBg: '#f59e0b', label: 'Attention' },
-  down:      { bg: '#7f1d1d', bgSoft: '#fef2f2', border: '#ef4444', fg: '#7f1d1d', chipBg: '#ef4444', label: 'Down' },
-  setup:     { bg: '#334155', bgSoft: '#f1f5f9', border: '#64748b', fg: '#0f172a', chipBg: '#64748b', label: 'Setup incomplete' },
-};
-
-export default function BackupStatusHero() {
+export default function BackupStatusHero({ onBackup, busy = false, onRefresh }) {
   const [data, setData] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [tipOpen, setTipOpen] = useState(false);
-  const busyRef = useRef(false);
-
+  const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryMessage, setRetryMessage] = useState('');
   const load = useCallback(async () => {
     try {
-      const r = await fetch(SUMMARY_URL, { headers: authHdr(), cache: 'no-store' });
-      if (r.ok) setData(await r.json());
-    } catch (_e) { /* ignore transient */ }
+      const token = localStorage.getItem(TOKEN_KEY) || '';
+      const response = await fetch(SUMMARY_URL, { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store' });
+      if (!response.ok) throw new Error('Unable to refresh backup status. Please try again.');
+      setData(await response.json());
+      setError('');
+    } catch (e) { setError(e.message); }
   }, []);
-
   useEffect(() => {
     load();
-    let iv = null;
-    const arm = () => { if (!iv) iv = setInterval(() => {
-      if (document.visibilityState === 'visible') load();
-    }, 60_000); };
-    const onVis = () => {
-      if (document.visibilityState === 'visible') { load(); arm(); }
-      else if (iv) { clearInterval(iv); iv = null; }
-    };
-    document.addEventListener('visibilitychange', onVis);
-    arm();
-    return () => { document.removeEventListener('visibilitychange', onVis); if (iv) clearInterval(iv); };
+    const tick = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 15000);
+    return () => clearInterval(tick);
   }, [load]);
-
-  const snapshotNow = async () => {
-    if (busyRef.current) return;
-    busyRef.current = true; setBusy(true);
+  useEffect(() => { if (!busy) load(); }, [busy, load]);
+  const refresh = async () => {
+    setRefreshing(true);
+    try { await Promise.all([load(), onRefresh?.()]); }
+    finally { setRefreshing(false); }
+  };
+  const retryDropbox = async () => {
+    setRetrying(true); setRetryMessage('Retrying the Dropbox backup. This can take a few minutes.');
     try {
-      const r = await fetch(SNAPSHOT_URL, { method: 'POST', headers: authHdr() });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      toast.success('Snapshot created');
+      const token = localStorage.getItem(TOKEN_KEY) || '';
+      const response = await fetch((process.env.REACT_APP_BACKEND_URL || '') + '/api/backup/offsite/retry', {
+        method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || result.reason || 'Dropbox backup failed.');
+      setRetryMessage(result.nothing_to_do ? 'No backup is waiting to upload.' : 'Backup saved to Dropbox.');
       await load();
-    } catch (e) {
-      toast.error(`Snapshot failed: ${e.message}`);
-    } finally {
-      busyRef.current = false; setBusy(false);
-    }
+    } catch (e) { setRetryMessage(e.message); }
+    finally { setRetrying(false); }
   };
+  if (!data) return <div className="mb-5 rounded-xl border bg-white p-6" role="status">
+    {error || 'Checking your backups...'}
+    {error && <button className="ml-3 underline" onClick={load}>Try again</button>}
+  </div>;
 
-  const retryOffsite = async () => {
-    toast.message('Uploading to Dropbox — this can take a few minutes…');
-    try {
-      const r = await fetch((process.env.REACT_APP_BACKEND_URL || '') + '/api/backup/offsite/retry',
-        { method: 'POST', headers: authHdr() });
-      const j = await r.json().catch(() => ({}));
-      if (j.ok) toast.success(j.nothing_to_do ? 'Nothing waiting to upload' : 'Off-site copy saved to Dropbox');
-      else toast.error(j.error || j.reason || 'Upload failed');
-      load?.();
-    } catch (e) { toast.error(e.message); }
-  };
-
-  const scrollToHistory = () => {
-    // v155c — Snapshot History now lives inside the AdvancedAccordion.
-    // Fire the global event so AdvancedAccordion opens the section AND
-    // scrolls to it in the correct order (scrolling to a collapsed
-    // section lands at the wrong offset). Fallback to the legacy
-    // anchor scroll if the accordion isn't mounted yet.
-    window.dispatchEvent(new CustomEvent('paneltec:openAccordionSection', {
-      detail: { id: 'snapshot-history' },
-    }));
-    setTimeout(() => {
-      const el = document.querySelector('[data-testid="accordion-section-snapshot-history"]')
-        || document.querySelector('[data-testid="backup-snapshot-history-anchor"]');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 120);
-  };
-
-  if (!data) {
-    return (
-      <div data-testid="backup-status-hero-loading"
-           style={{ padding: 16, background: '#f1f5f9', borderRadius: 10,
-                    marginBottom: 16, color: '#64748b', fontSize: 13 }}>
-        Loading backup status…
-      </div>
-    );
-  }
-
-  const p = PALETTES[data.health] || PALETTES.setup;
   const snap = data.last_snapshot;
-  const del = data.last_delivery;
-
-  return (
-    <div data-testid="backup-status-hero"
-         data-health={data.health}
-         style={{
-           background: p.bgSoft, border: `1px solid ${p.border}55`,
-           borderLeft: `6px solid ${p.border}`, borderRadius: 10,
-           padding: '18px 22px', marginBottom: 20,
-           boxShadow: '0 10px 24px -12px rgba(15,23,42,0.15)',
-         }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-                    gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 260 }}>
-          <span data-testid="backup-status-pill"
-                style={{
-                  background: p.chipBg, color: '#fff',
-                  padding: '6px 14px', borderRadius: 999,
-                  fontSize: 11, fontWeight: 900, letterSpacing: '0.16em',
-                  textTransform: 'uppercase',
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                }}>
-            {data.health === 'healthy'
-              ? <CheckCircle2 className="w-3.5 h-3.5"/>
-              : <AlertCircle className="w-3.5 h-3.5"/>}
-            {p.label}
-          </span>
-          <div style={{ fontSize: 15, fontWeight: 800, color: p.fg }}>
-            Backup status
-          </div>
-          <button type="button"
-            data-testid="backup-status-why"
-            aria-label="Why is the status this?"
-            onClick={() => setTipOpen(v => !v)}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer',
-                     color: p.fg, padding: 2, opacity: 0.7 }}>
-            <HelpCircle className="w-4 h-4"/>
-          </button>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button"
-            data-testid="backup-status-snapshot-now"
-            onClick={snapshotNow}
-            disabled={busy}
-            style={{
-              background: p.bg, color: '#fff', border: 'none',
-              padding: '9px 16px', borderRadius: 6,
-              fontSize: 12, fontWeight: 800, letterSpacing: '0.06em',
-              textTransform: 'uppercase', cursor: busy ? 'wait' : 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              opacity: busy ? 0.7 : 1,
-            }}>
-            <RefreshCw className="w-3.5 h-3.5" style={{
-              animation: busy ? 'ptSpin 1s linear infinite' : 'none' }}/>
-            {busy ? 'Snapshotting…' : 'Backup now'}
-          </button>
-          <button type="button"
-            data-testid="backup-status-show-history"
-            onClick={scrollToHistory}
-            style={{
-              background: '#fff', color: p.fg, border: `1px solid ${p.border}`,
-              padding: '9px 16px', borderRadius: 6,
-              fontSize: 12, fontWeight: 800, letterSpacing: '0.06em',
-              textTransform: 'uppercase', cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-            }}>
-            <ArrowDown className="w-3.5 h-3.5"/> Show history
-          </button>
+  const delivered = data.last_delivery;
+  const enabled = data.backups_enabled !== false;
+  const healthy = data.health === 'healthy' && !error;
+  const title = error ? 'Backup status could not be refreshed' : !enabled ? 'Automatic backups are switched off' : healthy ? 'Your backups are working' : 'Your backups need attention';
+  const explanation = !enabled ? 'Enable backups on the server before making a new backup.'
+    : healthy ? 'A recent backup has reached a backup destination. The details below show where it was saved.'
+    : 'Check the last saved copy below. A backup made on Umbrel still needs to reach your NAS or an off-site destination.';
+  const buttonClass = 'rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50';
+  return <section data-testid="backup-status-hero" data-health={error ? 'unknown' : data.health} className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className={`border-b p-5 sm:p-6 ${healthy ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+      <div className="flex items-start gap-3">
+        {healthy ? <CheckCircle2 className="mt-1 h-6 w-6 shrink-0 text-emerald-700"/> : <AlertCircle className="mt-1 h-6 w-6 shrink-0 text-amber-700"/>}
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900" data-testid="backup-status-pill">{title}</h2>
+          <p className="mt-1 max-w-3xl text-sm text-slate-700">{explanation}</p>
+          {error && <p role="alert" className="mt-2 text-sm text-red-700">{error} The details below may be out of date.</p>}
         </div>
       </div>
-
-      {/* v160.3.7j — When status is anything other than healthy, surface
-          the health_reason inline (no click required) so admins immediately
-          see the diagnostic sentence explaining the DOWN / ATTENTION state. */}
-      {data.health !== 'healthy' && data.health_reason && (
-        <div data-testid="backup-status-diagnostic"
-             style={{ marginTop: 10, padding: '8px 12px',
-                      background: 'rgba(15,23,42,0.06)', borderRadius: 6,
-                      fontSize: 12, color: p.fg }}>
-          {data.health_reason}
-        </div>
-      )}
-
-      {tipOpen && (
-        <div data-testid="backup-status-tooltip"
-             style={{ marginTop: 10, padding: '8px 12px',
-                      background: 'rgba(15,23,42,0.06)', borderRadius: 6,
-                      fontSize: 12, color: p.fg }}>
-          {data.health_reason}
-        </div>
-      )}
-
-      <div style={{
-        marginTop: 14, display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-        gap: '6px 20px', fontSize: 13, color: p.fg, lineHeight: 1.5,
-      }}>
-        {/* v58.13.132kw — "Last delivery" is the source of truth for
-            the health pill. Rendered first + emphasised; the local
-            snapshot row is demoted to context-only. */}
-        <div data-testid="backup-status-offsite">
-          <strong>Off-site (Dropbox):</strong>{' '}
-          {!data.offsite?.enabled ? (
-            <span style={{ opacity: 0.8 }}>not set up — connect Dropbox in Settings → Dropbox</span>
-          ) : data.offsite.last_ok_at ? (
-            <>
-              {fmtAge(data.offsite.last_ok_at)}
-              {data.offsite.last_ok_bytes ? <> · {fmtBytes(data.offsite.last_ok_bytes)}</> : null}
-              <> · {data.offsite.folder}</>
-            </>
-          ) : 'waiting for the first copy'}
-          {data.offsite?.enabled && data.offsite.last_error
-            && (!data.offsite.last_ok_at || data.offsite.last_error_at > data.offsite.last_ok_at) && (
-            <div style={{ fontSize: 11, color: '#b91c1c' }}>
-              Last attempt failed: {data.offsite.last_error}{' '}
-              <button type="button" onClick={retryOffsite} disabled={busy}
-                style={{ textDecoration: 'underline', background: 'none', border: 'none',
-                         color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 11 }}>
-                Retry now
-              </button>
-            </div>
-          )}
-        </div>
-        <div data-testid="backup-status-last-delivery">
-          <strong>Office NAS copy:</strong>{' '}
-          {del ? (
-            <>
-              {fmtAge(del.received_at)}
-              {del.dest_name ? <> · → {del.dest_name}</> : null}
-              {del.agent_name ? <> · via {del.agent_name}</> : null}
-              {del.bytes_written ? <> · {fmtBytes(del.bytes_written)}</> : null}
-            </>
-          ) : 'never'}
-        </div>
-        <div data-testid="backup-status-last-snapshot"
-             style={{ opacity: 0.75 }}>
-          <strong>Last snapshot:</strong>{' '}
-          {snap ? (
-            <>
-              {fmtAge(snap.created_at)}
-              {snap.size ? <> · {fmtBytes(snap.size)}</> : null}
-              {snap.total_documents ? <> · {snap.total_documents.toLocaleString()} docs</> : null}
-              <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>
-                (made on the server, then copied off-site)
-              </span>
-            </>
-          ) : 'never'}
-        </div>
-        <div data-testid="backup-status-next-snapshot">
-          <strong>Next snapshot:</strong>{' '}
-          {data.next_snapshot_at
-            ? <>{fmtFuture(data.next_snapshot_at)} ({new Date(data.next_snapshot_at).toLocaleString()})</>
-            : 'scheduler idle'}
-        </div>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <button data-testid="backup-status-snapshot-now" onClick={onBackup} disabled={busy || !enabled}
+          className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500">
+          {busy ? 'Creating backup...' : 'Back up now'}
+        </button>
+        <button data-testid="backup-status-show-history" className={buttonClass} onClick={() => openAccordionSection('snapshot-history')}>View backup history</button>
+        <button className={buttonClass} onClick={() => openAccordionSection('restore')}>Restore a backup</button>
+        <button className={buttonClass} onClick={refresh} disabled={refreshing}>
+          <RefreshCw className={`mr-2 inline h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}/>{refreshing ? 'Refreshing...' : 'Refresh status'}
+        </button>
       </div>
-      <style>{`@keyframes ptSpin { to { transform: rotate(360deg); } }`}</style>
+      <p role="status" className="mt-3 text-sm text-slate-600">{busy ? 'Step 1 of 2: creating a backup on Umbrel. The NAS will collect it automatically when ready.' : !enabled ? 'Automatic backups need to be enabled on the server.' : 'Backups run automatically. Use Back up now whenever you need an extra copy.'}</p>
     </div>
-  );
+    <div className="grid gap-5 p-5 sm:grid-cols-3 sm:p-6">
+      <div data-testid="backup-status-last-delivery">
+        <h3 className="text-sm font-semibold text-slate-500">Last successful NAS copy</h3>
+        <p className="mt-2 text-lg font-semibold text-slate-900">{delivered ? when(delivered.received_at) : 'Waiting for first copy'}</p>
+        <p className="mt-1 text-sm text-slate-600">{delivered ? `${delivered.dest_name || 'Office NAS'} | ${bytes(delivered.bytes_written)}` : 'A successful delivery will appear here.'}</p>
+      </div>
+      <div data-testid="backup-status-last-snapshot">
+        <h3 className="text-sm font-semibold text-slate-500">Latest backup on Umbrel</h3>
+        <p className="mt-2 text-lg font-semibold text-slate-900">{snap ? when(snap.created_at) : 'No backup created yet'}</p>
+        <p className="mt-1 text-sm text-slate-600">{snap ? bytes(snap.size) : 'Use Back up now to create your first copy.'}</p>
+        <p className="mt-1 text-xs text-slate-500">Creating this file does not confirm delivery to the NAS.</p>
+      </div>
+      <div data-testid="backup-status-next-snapshot">
+        <h3 className="text-sm font-semibold text-slate-500">Next automatic backup</h3>
+        <p className="mt-2 text-lg font-semibold text-slate-900">{!enabled ? 'Switched off' : data.next_snapshot_at ? when(data.next_snapshot_at) : 'Not scheduled'}</p>
+        <button className="mt-2 text-sm font-semibold text-blue-700 underline" onClick={() => openAccordionSection('schedule')}>View schedule</button>
+      </div>
+    </div>
+    <div data-testid="backup-status-offsite" className="border-t border-slate-100 px-5 py-4 text-sm text-slate-600 sm:px-6">
+      <strong>Optional Dropbox backup: </strong>{!data.offsite?.enabled ? 'Not enabled for backups. This is separate from browsing files in Dropbox.' : data.offsite.last_ok_at ? `Last saved ${when(data.offsite.last_ok_at)}.` : 'Waiting for the first successful copy.'}
+      {data.offsite?.enabled && data.offsite.last_error && (!data.offsite.last_ok_at || data.offsite.last_error_at > data.offsite.last_ok_at) && <p className="mt-1 text-red-700">The latest Dropbox backup attempt failed. Open technical details below.</p>}
+    </div>
+    <details className="border-t border-slate-100 px-5 py-3 text-sm sm:px-6">
+      <summary className="cursor-pointer font-semibold text-slate-600">Technical status details</summary>
+      <p className="mt-3 break-words text-slate-600">{data.health_reason || 'No additional status details.'}</p>
+      {data.offsite?.enabled && data.offsite.last_error && <div className="mt-2">
+        <p className="break-words text-red-700">Dropbox: {data.offsite.last_error}</p>
+        <button onClick={retryDropbox} disabled={retrying || busy} className="mt-2 font-semibold text-blue-700 underline disabled:opacity-50">{retrying ? 'Retrying...' : 'Retry Dropbox backup'}</button>
+        {retryMessage && <p role="status" className="mt-2">{retryMessage}</p>}
+      </div>}
+    </details>
+  </section>;
 }
