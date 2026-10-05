@@ -460,11 +460,16 @@ export default function AppsDirectoryManager() {
 
   return (
     <section id="apps-directory" className="mb-6 rounded-2xl border border-slate-200 bg-white shadow-sm" data-testid="apps-directory-manager">
+      <details>
+        <summary className="cursor-pointer rounded-2xl p-4 font-bold text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500">
+          Apps Directory
+          <span className="ml-3 text-xs font-normal text-slate-500">Open to manage apps</span>
+        </summary>
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3 p-4 border-b border-slate-100">
         <Rocket size={22} className="text-emerald-500" />
         <div className="flex-1 min-w-[200px]">
-          <div className="font-bold text-slate-900">Apps Directory</div>
+          <div className="font-bold text-slate-900">Manage apps</div>
           <div className="text-xs text-slate-500">
             {tiles.length} tile{tiles.length === 1 ? '' : 's'}
             {counts.locked ? ` · ${counts.locked} locked` : ''}{counts.selected ? ` · ${counts.selected} selected people` : ''}{counts.hidden ? ` · ${counts.hidden} hidden` : ''}
@@ -570,6 +575,7 @@ export default function AppsDirectoryManager() {
         {ACCESS.map((a) => { const Icon = a.icon; return <span key={a.key} className="inline-flex items-center gap-1"><Icon size={11} /> <strong>{a.label}:</strong> {a.help}</span>; })}
       </div>
 
+      </details>
       {/* Modals */}
       {form && <TileForm tile={form.id ? form : null} users={users} onClose={() => setForm(null)} onSaved={() => { setForm(null); load(); }} />}
       {loginFor && <LoginEditor tile={loginFor} onClose={() => setLoginFor(null)} onChanged={() => loadLogins(tiles)} />}
