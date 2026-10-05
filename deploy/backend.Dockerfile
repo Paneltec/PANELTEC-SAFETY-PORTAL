@@ -18,6 +18,7 @@ RUN grep -viE "emergentintegrations|litellm|assets\.emergent|emergentagent" /tmp
 
 COPY deploy/shims /opt/shims
 COPY backend /app/backend
+COPY scripts/paneltec_backup_agent.py /app/scripts/paneltec_backup_agent.py
 RUN rm -f /app/backend/.env && mkdir -p /app/backend/uploads /app/backend/static/downloads
 
 EXPOSE 8001
