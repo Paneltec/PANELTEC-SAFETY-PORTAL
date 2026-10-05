@@ -9,6 +9,7 @@
  *   - No expo-notifications init at module scope
  */
 import React, { useEffect } from 'react';
+import IphoneReadiness from '../src/components/IphoneReadiness';
 import { AppState, Platform, View, Text, StyleSheet } from 'react-native';
 import type { AppStateStatus } from 'react-native';
 import { Stack } from 'expo-router';
@@ -34,7 +35,7 @@ function onAppStateChange(status: AppStateStatus) {
 // v58.13.132cj — Sentry init: NATIVE DISABLED to avoid Android pre-JS crash.
 // JS-level capture still works for React errors + unhandled promises.
 const _SENTRY_DSN = (process.env.EXPO_PUBLIC_SENTRY_DSN || '').trim();
-if (_SENTRY_DSN.startsWith('https://')) {
+if (process.env.EXPO_PUBLIC_IPHONE_READINESS !== 'true' && _SENTRY_DSN.startsWith('https://')) {
   try {
     Sentry.init({
       dsn: _SENTRY_DSN,
@@ -169,6 +170,11 @@ function SimulateBanner() {
 export default Sentry.wrap(RootLayout);
 
 function RootLayout() {
+  if (process.env.EXPO_PUBLIC_IPHONE_READINESS === 'true') return <IphoneReadiness />;
+  return <ConnectedRootLayout />;
+}
+
+function ConnectedRootLayout() {
   // .132js — focusManager: refetch stale queries when app returns to foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', onAppStateChange);
