@@ -198,6 +198,7 @@ def _serialise_entry(e: Any) -> Dict[str, Any]:
     JSON shape the frontend expects. Never leaks SDK types."""
     from dropbox.files import FolderMetadata, FileMetadata
     base: Dict[str, Any] = {
+        "id": getattr(e, "id", None),
         "name": e.name,
         "path": e.path_display,
     }
@@ -309,7 +310,34 @@ async def list_folder(
     except Exception as exc:
         log.warning("[browse.list] %s: %s", resolved, exc)
         raise _wrap_dropbox_error(exc, "list")
-    return {"path": resolved, "entries": entries}
+    from dropbox_activity import annotate
+    try:
+        activity = await annotate(db, user["org_id"], _get_team_namespace_id(),
+                                  user["id"], dbx_arg, entries)
+    except Exception:
+        log.exception("Dropbox new-entry tracking unavailable")
+        activity = {"error": "New-entry tracking is temporarily unavailable."}
+    return {"path": resolved, "entries": entries, "activity": activity}
+
+
+class ActivityCheckBody(BaseModel):
+    path: str = ""
+    observed_at: float = Field(..., ge=0, allow_inf_nan=False)
+
+
+@router.post("/activity/check")
+async def check_folder_activity(
+    body: ActivityCheckBody,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_permission("integrations", "view")),
+):
+    from dropbox_activity import mark_checked
+    if body.observed_at > time.time():
+        raise HTTPException(400, "Review time cannot be in the future")
+    path = _team_root_arg(_normalise_path(body.path))
+    await mark_checked(db, user["org_id"], _get_team_namespace_id(),
+                       user["id"], path, body.observed_at)
+    return {"ok": True}
 
 
 @router.get("/download")
