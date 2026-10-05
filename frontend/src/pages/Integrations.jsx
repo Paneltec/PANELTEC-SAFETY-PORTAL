@@ -60,6 +60,9 @@ function DropboxCard() {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const pollRef = useRef(null);
+  const [connection, setConnection] = useState(null);
+  const [authorizationCode, setAuthorizationCode] = useState('');
+  const [completing, setCompleting] = useState(false);
 
   const fetchHealth = React.useCallback(async () => {
     try {
@@ -78,7 +81,7 @@ function DropboxCard() {
     fetchHealth();
     // Listen for the postMessage from the OAuth callback tab.
     const onMsg = (ev) => {
-      if (ev?.data?.type === 'dropbox-oauth-connected') {
+      if (ev.origin === window.location.origin && ev?.data?.type === 'dropbox-oauth-connected') {
         fetchHealth();
         toast.success(`Dropbox connected as ${ev.data.account_email || 'account'}`);
       }
@@ -95,11 +98,10 @@ function DropboxCard() {
     try {
       const { data } = await api.get('/dropbox/oauth/start');
       if (!data?.authorize_url) throw new Error('missing authorize_url');
-      const win = window.open(data.authorize_url, '_blank', 'noopener,noreferrer');
-      if (!win) {
-        toast.error('Popup blocked — allow popups for this site and try again.');
-        return;
-      }
+      setConnection(data);
+      setAuthorizationCode('');
+      // An explicit link avoids popup blockers and does not retain an opener.
+      if (data.manual) return;
       // Poll /health every 5s while the OAuth tab is open. Stop when
       // `connected && scopes_ok && refresh_token_present`.
       if (pollRef.current) clearInterval(pollRef.current);
@@ -121,6 +123,27 @@ function DropboxCard() {
       toast.error(apiError(err, 'Failed to start Dropbox OAuth'));
     } finally {
       setStarting(false);
+    }
+  };
+
+  const completeConnect = async (event) => {
+    event.preventDefault();
+    setCompleting(true);
+    try {
+      await api.post('/dropbox/oauth/complete', {
+        state: connection.state, code: authorizationCode.trim(),
+      });
+      setAuthorizationCode('');
+      setConnection(null);
+      const result = await fetchHealth();
+      if (result?.connected && result?.scopes_ok) toast.success('Dropbox connected');
+      else toast.error('Authorization saved, but folder access needs attention. See the connection diagnostic.');
+    } catch (err) {
+      setAuthorizationCode('');
+      setConnection(null);
+      toast.error(apiError(err, 'Connection failed. Start Connect Dropbox again.'));
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -216,6 +239,26 @@ function DropboxCard() {
           OAuth · offline access
         </span>
       </div>
+      {connection && (
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <a href={connection.authorize_url} target="_blank" rel="noopener noreferrer"
+             className="font-semibold text-blue-700 underline">Open Dropbox to authorize</a>
+          {connection.manual ? (
+            <form onSubmit={completeConnect} className="space-y-3">
+              <p className="text-sm">After approving in Dropbox, copy the displayed code and paste it here within five minutes. Keep this page open.</p>
+              <label className="block text-sm">Dropbox authorization code
+                <input type="password" autoComplete="off" value={authorizationCode}
+                  onChange={(event) => setAuthorizationCode(event.target.value)}
+                  className="block w-full border rounded p-2 mt-1" required />
+              </label>
+              <button type="submit" disabled={completing || !authorizationCode.trim()}
+                className="rounded bg-slate-900 text-white px-4 py-2 disabled:opacity-50">
+                {completing ? 'Connecting…' : 'Finish connecting'}
+              </button>
+            </form>
+          ) : <p className="text-sm">Approve in Dropbox. You will return to this app automatically.</p>}
+        </div>
+      )}
     </div>
   );
 }
