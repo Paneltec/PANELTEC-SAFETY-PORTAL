@@ -101,6 +101,9 @@ export default function DropboxBrowser() {
     query: '', loading: false, results: [], error: null, hasMore: false,
   });
   const searchAbortRef = useRef(null);
+  const [activityFilter, setActivityFilter] = useState('all');
+  const [checking, setChecking] = useState(false);
+  const refreshSequence = useRef(0);
   const [sortBy, setSortBy] = useState({ col: 'name', dir: 'asc' });
   const [uploads, setUploads] = useState([]); // {name, size, progress, status, error}
   const [confirmDelete, setConfirmDelete] = useState(null); // entry to delete
@@ -150,16 +153,34 @@ export default function DropboxBrowser() {
 
   const refresh = useCallback(async () => {
     if (!allowed) return;
+    const sequence = ++refreshSequence.current;
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const { data } = await api.get('/dropbox/browse', { params: { path } });
-      setState({ loading: false, error: null, entries: data.entries || [] });
+      if (sequence !== refreshSequence.current) return;
+      setState({ loading: false, error: null, entries: data.entries || [], activity: data.activity, path });
     } catch (e) {
+      if (sequence !== refreshSequence.current) return;
       setState({ loading: false, error: apiError(e), entries: [] });
     }
   }, [path, allowed]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); return () => { refreshSequence.current += 1; }; }, [refresh]);
+
+  const markFolderChecked = async () => {
+    if (!state.activity?.observed_at || state.path !== path) return;
+    setChecking(true);
+    try {
+      await api.post('/dropbox/browse/activity/check', {
+        path: state.path, observed_at: state.activity.observed_at,
+      });
+      await refresh();
+      toast.success('This folder is marked as checked for your account.');
+    } catch (err) { toast.error(apiError(err)); }
+    finally { setChecking(false); }
+  };
+  useEffect(() => { setSelectedIds(new Set()); }, [activityFilter]);
+
 
   // v58.13.132n6 — Debounced Dropbox global search.  Runs whenever
   // `search.query` changes AND is >= 3 chars after trim.  Cancels
@@ -238,7 +259,9 @@ export default function DropboxBrowser() {
     // retired when we moved to server-side search.  `rows` now
     // just sorts the folder's own entries; matching happens in
     // the overlay panel against `search.results`.
-    let out = [...state.entries];
+    let out = state.entries.filter((entry) => activityFilter === 'all'
+      || (activityFilter === 'unread' && entry.new_since_check)
+      || (activityFilter === 'week' && entry.new_last_week));
     out.sort((a, b) => {
       if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
       const dir = sortBy.dir === 'asc' ? 1 : -1;
@@ -250,7 +273,7 @@ export default function DropboxBrowser() {
       return 0;
     });
     return out;
-  }, [state.entries, sortBy]);
+  }, [state.entries, sortBy, activityFilter]);
 
   const toggleSort = (col) => setSortBy((s) => ({
     col,
@@ -883,6 +906,33 @@ export default function DropboxBrowser() {
         </div>
       </div>
 
+      <section aria-label="New Dropbox entries" className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            ['all', 'All entries', state.entries.length],
+            ['unread', 'Since my last check', state.entries.filter(e => e.new_since_check).length],
+            ['week', 'New in last 7 days', state.entries.filter(e => e.new_last_week).length],
+          ].map(([value, label, count]) => (
+            <button key={value} type="button" aria-pressed={activityFilter === value}
+              onClick={() => setActivityFilter(value)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium ${activityFilter === value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-200'}`}>
+              {label} ({state.loading ? '…' : count})
+            </button>
+          ))}
+          <button type="button" onClick={markFolderChecked}
+            disabled={checking || state.loading || !state.activity?.observed_at || state.path !== path}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50">
+            {checking ? 'Saving…' : 'Mark this folder checked'}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-slate-600">
+          Flags apply to this folder. New means first detected after its initial scan; existing items start unflagged.
+          Refresh to check for additions. Global search below is not filtered.
+          {state.activity?.checked_at ? ` Last checked: ${new Date(state.activity.checked_at * 1000).toLocaleString()}.` : ''}
+        </p>
+        {state.activity?.error && <p role="alert" className="mt-2 text-sm text-amber-800">{state.activity.error}</p>}
+      </section>
+
       {/* v58.13.132n6 — Global search results overlay. Renders only
           when the debounced search state is meaningful (query >= 3
           chars OR an in-flight/errored request from a prior query).
@@ -1005,7 +1055,7 @@ export default function DropboxBrowser() {
             {!state.loading && !state.error && rows.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-12 text-center text-slate-500 text-sm" data-testid="dropbox-empty">
-                  {<>This folder is empty. Upload a file or create a folder to get started.</>}
+                  {activityFilter === 'all' ? 'This folder is empty. Upload a file or create a folder to get started.' : 'No new entries match this filter in this folder.'}
                 </td>
               </tr>
             )}
@@ -1360,6 +1410,11 @@ function Row({
             className={entry.type === 'folder' ? '' : 'text-slate-500'}
           />
           <span className="text-sm text-slate-800 font-medium hover:underline">{entry.name}</span>
+          {entry.new_since_check && <span title="Added since you last marked this folder checked"
+            className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">NEW</span>}
+          {entry.new_last_week && <span title="First detected by Paneltec in the last seven days"
+            className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">LAST 7 DAYS</span>}
+
           {/* `.132n4a` — folder file-count badge. Renders once the
               lazy `/count` fetch resolves. Nothing shown while
               loading (avoids a flash of "—" then a number). */}
