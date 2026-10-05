@@ -861,7 +861,7 @@ const SidebarShell = ({ collapsed, canAdminNav, badges, brandName, user }) => (
     <div
       className={`${collapsed ? 'px-1.5' : 'px-3'} mt-auto pt-3 pb-5`}
       data-testid="app-version-footer"
-      title={RUNNING_VERSION}
+      title={`${RUNNING_VERSION} | ${process.env.REACT_APP_BUILD_STAMP || "Local development build"}`}
     >
       <div
         className={`w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-slate-100 text-slate-700 font-mono font-semibold text-[10px] leading-none py-1.5 ${collapsed ? 'px-1.5' : 'px-2.5'} shadow-sm`}
@@ -869,18 +869,14 @@ const SidebarShell = ({ collapsed, canAdminNav, badges, brandName, user }) => (
       >
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
         <span className="truncate">
-          {collapsed
-            ? RUNNING_VERSION.split('-').pop()
-            : RUNNING_VERSION.replace(/^paneltec-/, '')}
+          {collapsed ? 'Ver.' : 'Installed version'}
         </span>
       </div>
-      {/* Build stamp (set by the self-hosted image build): which copy is
-          this, and when was it built — so "has the update arrived?" is
-          a glance at the footer. */}
-      {!collapsed && process.env.REACT_APP_BUILD_STAMP && (
-        <div className="mt-1 text-center font-mono text-[9px] leading-tight text-slate-400 truncate"
-          data-testid="app-build-stamp" title={process.env.REACT_APP_BUILD_STAMP}>
-          {process.env.REACT_APP_BUILD_STAMP}
+      {!collapsed && (
+        <div className="mt-1 text-center text-xs font-semibold leading-tight text-slate-700"
+          data-testid="app-build-stamp" title={process.env.REACT_APP_BUILD_STAMP || RUNNING_VERSION}>
+          {process.env.REACT_APP_BUILD_STAMP?.match(/\b[0-9a-f]{7,40}\b/i)?.[0]?.slice(0, 7) || 'Local build'}
+          <div className="mt-1 text-[10px] font-normal text-slate-500">Updates: Settings / System</div>
         </div>
       )}
     </div>
