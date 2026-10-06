@@ -1,3 +1,4 @@
+import PayrollTimesheetDays from './PayrollTimesheetDays';
 import DateField from './DateField';
 import {useSearchParams,Link} from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
@@ -15,7 +16,7 @@ import PayrollEmployeeRecord from './PayrollEmployeeRecord';
 
 const money = n => n == null ? 'Needs review' : new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(n);
 const hours = n => n == null ? 'Not entered' : `${Number(n).toFixed(2)} h`;
-function monday() { const d = new Date(); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function currentFriday() { const d = new Date(); d.setDate(d.getDate() - (d.getDay() + 2) % 7); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 const profile = { employment_type:'unconfirmed', hourly_rate:0, ordinary_weekly_hours:38, classification:'', conditions_reviewed:false, tax_mode:'unconfirmed', tax_declaration_reviewed:false, annual_weeks:4, personal_weeks:2, leave_loading_percent:0 };
 const entry = { ordinary:0, ot1:0, ot2:0, annual:0, personal:0, public_holiday:0, taxable_allowances:0, post_tax_deductions:0, reimbursements:0, extra_withholding:0, manual_payg:null, payg_reference:'', qualifying_earnings:null, super_reviewed:false, hours_reviewed:false, opening_annual:null, opening_personal:null };
 const inputClass = 'w-full border rounded-lg px-3 py-2 bg-white text-slate-900';
@@ -26,7 +27,7 @@ export default function PayWorkbench() {
   const [searchParams]=useSearchParams();
   const [submitted,setSubmitted]=useState({});
   const [locked,setLocked]=useState(false),[sealedBranding,setSealedBranding]=useState(null);
-  const [week,setWeek] = useState(monday), [loadedWeek,setLoadedWeek] = useState('');
+  const [week,setWeek] = useState(currentFriday), [loadedWeek,setLoadedWeek] = useState('');
   const [sheet,setSheet] = useState(null), [workers,setWorkers] = useState([]), [report,setReport] = useState(null);
   const [selected,setSelected] = useState(''), [query,setQuery] = useState(''), [busy,setBusy] = useState(false);
   const [dirty,setDirty] = useState(false), [error,setError] = useState(''), [message,setMessage] = useState(''), [sources,setSources] = useState([]);
@@ -63,11 +64,11 @@ export default function PayWorkbench() {
     <PayrollIssuing key={loadedWeek} week={loadedWeek||week} revision={sheet?.revision||0} workers={workers} dirty={dirty} locked={locked}/>
     <PayrollReports sealedBranding={sealedBranding} report={report} sheet={sheet} week={loadedWeek} dirty={dirty} busy={busy} onCalculate={()=>calculate()} onDownload={download}/>
     <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm mb-4"><strong>Payroll review stage.</strong> This workspace calculates and saves worksheets. It does not transfer wages, lodge Single Touch Payroll or send super. Complete pay run emails payslips after payment is confirmed and issuing is enabled. Compare initial runs with Wojo before switching. No enterprise agreement does not mean award-free; confirm each worker’s award and classification.</div>
-    <div className="flex flex-wrap gap-3 items-end mb-4"><label className="text-sm">Week starting Monday<DateField className={inputClass} value={week} onChange={e=>setWeek(e.target.value)}/></label>{btn('Open week',()=>{if(!dirty||window.confirm('Discard unsaved worksheet changes?'))load(week);},!week)}<span className="text-sm text-slate-600">Currently editing: {loadedWeek || 'Loading…'}</span></div>
+    <div className="flex flex-wrap gap-3 items-end mb-4"><label className="text-sm">Week starting<DateField className={inputClass} value={week} onChange={e=>setWeek(e.target.value)}/></label>{btn('Open week',()=>{if(!dirty||window.confirm('Discard unsaved worksheet changes?'))load(week);},!week)}<span className="text-sm text-slate-600">Currently editing: {loadedWeek || 'Loading…'}</span></div>
     {error&&<p role="alert" className="bg-red-50 text-red-800 p-3 rounded-lg my-3">{typeof error==='string'?error:JSON.stringify(error)}</p>}
     {sheet&&<fieldset disabled={busy||locked} className="space-y-4 min-w-0">
       <div className="grid sm:grid-cols-4 gap-3"><label className="text-sm">Payday<DateField className={inputClass} value={sheet.payday} onChange={e=>change({...sheet,payday:e.target.value})}/></label>{[['ot1_multiplier','Overtime tier 1 multiplier'],['ot2_multiplier','Overtime tier 2 multiplier'],['super_percent','Super contribution %']].map(([key,label])=><NumberField key={key} label={label} min={key==='super_percent'?12:1} value={sheet.rules[key]} onChange={v=>change({...sheet,rules:{...sheet.rules,[key]:v}})}/>)}</div>
-      <p className="text-xs text-slate-600">New weeks default to the following Thursday; change the date if your payroll timing differs. Overtime 1.5× / 2× are editable review defaults, not automatic award interpretation. Super defaults to 12% of reviewed qualifying earnings.</p>
+      <p className="text-xs text-slate-600">New runs default to Thursday on or after the period ends; change the date if your payroll timing differs. Overtime 1.5× / 2× are editable review defaults, not automatic award interpretation. Super defaults to 12% of reviewed qualifying earnings.</p>
       <div className="flex flex-wrap gap-2">{btn('Calculate preview',()=>calculate())}{btn('Save draft',()=>calculate(true),false,true)}{btn('Mark reviewed and save',()=>calculate(true,true),!report?.ready)}{['pay','payg','super','leave'].map(k=><React.Fragment key={k}>{btn(`${k==='payg'?'PAYG':k[0].toUpperCase()+k.slice(1)} CSV`,()=>download(k),dirty||!sheet.revision)}</React.Fragment>)}</div>
       <p className="text-sm text-slate-600" role="status">{message}</p>
       {report&&<div className="grid grid-cols-2 lg:grid-cols-5 gap-2">{[['gross','Gross wages'],['payg','PAYG withholding'],['net','Net wages'],['super','Super contributions'],['annual_base_value','Annual leave base value']].map(([k,label])=><div key={k} className="bg-indigo-50 p-3 rounded-xl"><div className="text-xs text-slate-600">{label}</div><strong>{money(report.totals[k])}</strong></div>)}</div>}
@@ -80,7 +81,7 @@ export default function PayWorkbench() {
         {!row?<div className="border border-dashed rounded-xl p-8 text-slate-600">Select an employee. New employees must first be imported from Simpro.</div>:<div className="border rounded-xl p-4 space-y-4">
           <div className="flex justify-between gap-3"><h3 className="font-bold">{workers.find(w=>w.id===selected)?.name||selected}</h3>{btn('Remove from week',()=>{change({...sheet,rows:sheet.rows.filter(r=>r.worker_id!==selected)});setSelected('');})}</div>
           <p className="text-sm text-slate-600">{workers.find(w=>w.id===selected)?.department||'Department not recorded'} · {workers.find(w=>w.id===selected)?.division==='viatec'?'Viatec':'Paneltec Civil'}</p>
-          <section className="bg-indigo-50 rounded-lg p-3"><h4 className="font-semibold">Phone-submitted days</h4>{submitted[selected]?.days.length?<><table className="w-full text-sm my-2"><thead><tr className="text-left"><th>Date</th><th>Type</th><th>Hours</th><th>Status</th></tr></thead><tbody>{submitted[selected].days.map(d=><tr key={d.id}><td>{d.date}</td><td>{d.kind}</td><td>{d.hours}</td><td>{d.status}{d.notes&&<span className="block text-xs">{d.notes}</span>}{d.allowances?.length>0&&<span className="block text-xs">Allowances: {d.allowances.map(a=>`${a.code}: ${a.units ?? a.quantity ?? ''}`).join(', ')}</span>}</td></tr>)}</tbody></table>{submitted[selected].notes.map((n,i)=><p className="text-sm text-amber-900" key={i}>{n}</p>)}</>:<p className="text-sm my-2">No submitted days this week. Enter and verify hours with the employee if needed.</p>}{btn('Refresh submitted hours for this employee',refreshHours)}<p className="text-xs mt-2">Overtime splits are estimates. Review allowances, leave and missing days before approving pay.</p></section>
+          <PayrollTimesheetDays key={selected+loadedWeek} source={submitted[selected]} onRefresh={refreshHours} onChanged={async()=>{const {data}=await api.get(`/payroll/workbench/${loadedWeek}/submissions`);setSubmitted(data.workers);change({...sheet,rows:sheet.rows.map(r=>r.worker_id===selected?{...r,entry:{...r.entry,hours_reviewed:false,super_reviewed:false}}:r)});}}/>
           <PayrollEmployeeRecord key={selected} workerId={selected} profile={row.profile} onApply={profile=>change({...sheet,rows:sheet.rows.map(r=>r.worker_id===selected?{...r,profile}:r)})}/>
           <h4 className="font-semibold">Employment and rates</h4><div className="grid sm:grid-cols-3 gap-3">
             <label className="text-sm">Employment<select className={inputClass} value={row.profile.employment_type} onChange={e=>patchRow('profile','employment_type',e.target.value)}>{[['unconfirmed','Choose…'],['full_time','Full time'],['part_time','Part time'],['casual','Casual'],['contractor','Contractor — separate assessment']].map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label>

@@ -44,11 +44,12 @@ def weekly_tax(gross, mode, payday):
         if limit is None or x < limit:
             return max(Decimal(0), rounded(dec(a)*x-dec(b), "1"))
 
-def next_payday(monday, weekday=3, lag_weeks=1):
-    start = date.fromisoformat(str(monday))
-    if start.weekday() != 0:
-        raise ValueError("Pay period must start on Monday")
-    return (start + timedelta(days=weekday + 7*lag_weeks)).isoformat()
+def next_payday(period_start, weekday=3, lag_weeks=1):
+    """Pay on the chosen weekday on/after the seven-day period ends."""
+    start = date.fromisoformat(str(period_start))
+    end = start + timedelta(days=6)
+    return (end + timedelta(days=(weekday-end.weekday()) % 7 + 7*(lag_weeks-1))).isoformat()
+
 
 def calculate_line(profile, entry, rules, payday):
     """Explicit hours buckets; overtime classification stays subject to award review."""

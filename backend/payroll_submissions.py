@@ -13,13 +13,17 @@ async def submissions(org, week):
         if row.get('status') not in ('submitted', 'approved', 'locked'):
             continue
         grouped.setdefault(row['worker_id'], []).append({k: row.get(k) for k in
-            ('id', 'date', 'kind', 'hours', 'start', 'finish', 'break_minutes', 'estimate', 'allowances', 'notes', 'status', 'updated_at', 'source')})
+            ('id', 'date', 'kind', 'hours', 'start', 'finish', 'break_minutes', 'estimate', 'allowances', 'notes', 'status', 'updated_at', 'source', 'segments', 'site_name', 'job_ref', 'revision')})
     out = {}
     for worker, rows in grouped.items():
         rows.sort(key=lambda r: (r['date'], str(r['id'])))
         if len({r['date'] for r in rows}) != len(rows):
             raise HTTPException(409, 'Duplicate submitted days must be resolved before importing hours')
-        digest = hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
+        # Keep pre-segment fingerprints stable for existing saved payroll runs.
+        hashed = [{k: v for k, v in r.items() if k not in ('site_name', 'job_ref', 'revision', 'segments')} for r in rows]
+        for original, hashed_row in zip(rows, hashed):
+            if original.get('segments') is not None: hashed_row['segments'] = original['segments']
+        digest = hashlib.sha256(json.dumps(hashed, sort_keys=True, default=str).encode()).hexdigest()
         totals = {'ordinary': 0, 'ot1': 0, 'ot2': 0, 'public_holiday': 0}
         notes = []
         for row in rows:

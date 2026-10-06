@@ -2,6 +2,7 @@
 from fastapi import APIRouter,Depends,HTTPException
 from pydantic import BaseModel,Field,ConfigDict
 from bson import BSON
+from datetime import timedelta
 from db import db
 from models import now_iso
 from permissions import require_permission
@@ -32,6 +33,13 @@ async def finalize(week:str,body:Transition,user=Depends(require_permission('pay
     doc=await db.pay_review_sheets.find_one({'_id':key})
     if not doc or doc['worksheet']['revision']!=body.revision:raise HTTPException(409,'Reload the saved worksheet before finalising')
     if doc.get('state')=='finalized':return {'status':'finalized','revision':body.revision}
+    # A calendar change must not pay overlapping dates in two finalized runs.
+    start=period(week);end=start+timedelta(days=6)
+    worker_ids={r['worker_id'] for r in doc['worksheet']['rows']}
+    async for other in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized','week':{'$ne':week}}):
+        other_start=period(other['week'])
+        if other_start<=end and other_start+timedelta(days=6)>=start and worker_ids.intersection(r['worker_id'] for r in other.get('worksheet',{}).get('rows',[])):
+            raise HTTPException(409, 'This period overlaps an already finalized pay run. Resolve the calendar transition before paying these employees again.')
     worksheet=Worksheet(**doc['worksheet'])
     calculated=await check_leave_sources(worksheet,user['org_id'],week,report(worksheet,await workers(user['org_id'])))
     if not worksheet.reviewed or not calculated['ready']:raise HTTPException(422,'Save a reviewed worksheet and resolve changed leave before finalising')

@@ -8,7 +8,7 @@ os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
 os.environ.setdefault("DB_NAME", "test_payroll")
 from payroll import period_for, periods_between, hours_between, split_overtime, PaySettings  # noqa: E402
 
-S = PaySettings().model_dump()  # weekly, Monday start
+S = PaySettings(week_starts="monday").model_dump()  # legacy configured Monday start
 
 
 def test_weekly_period_monday_start():
@@ -58,3 +58,10 @@ def test_overtime_split_weekend():
     r = S["overtime"]
     assert split_overtime(6, date(2026, 10, 3), r) == {"ordinary": 0.0, "ot_1": 6.0, "ot_2": 0.0}   # Saturday
     assert split_overtime(6, date(2026, 10, 4), r) == {"ordinary": 0.0, "ot_1": 0.0, "ot_2": 6.0}   # Sunday
+
+
+def test_friday_default_and_thursday_boundary():
+    settings = PaySettings().model_dump()
+    assert settings["week_starts"] == "friday"
+    assert period_for(date(2026, 10, 8), settings) == {"id":"2026-10-02","start":"2026-10-02","end":"2026-10-08"}
+    assert period_for(date(2026, 10, 9), settings)["start"] == "2026-10-09"

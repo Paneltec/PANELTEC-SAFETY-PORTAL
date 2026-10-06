@@ -50,7 +50,8 @@ class PayrollEngineTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.line()
     def test_payday(self):
         self.assertEqual(next_payday('2026-10-05'),'2026-10-15')
-        with self.assertRaises(ValueError):next_payday('2026-10-06')
+        self.assertEqual(next_payday('2026-10-02'),'2026-10-08')
+        with self.assertRaises(ValueError):next_payday('invalid')
     def test_seventy_workers(self):
         rows=[self.line() for _ in range(70)]
         self.assertEqual(sum(Decimal(str(r['gross'])) for r in rows),105350)

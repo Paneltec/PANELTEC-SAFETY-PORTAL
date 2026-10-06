@@ -136,11 +136,18 @@ async def save_connections(body:Connections,user=Depends(require_permission('pay
 def period(value):
     try:
         d = date.fromisoformat(value)
-        if d.weekday() != 0:
-            raise ValueError()
         return d
     except ValueError:
-        raise HTTPException(422, "Choose a Monday for the week starting date")
+        raise HTTPException(422, "Choose a valid ISO week starting date")
+
+async def validate_new_week(org, week):
+    start = period(week)
+    if await db.pay_review_sheets.find_one({'_id': f'{org}:{week}'}): return
+    settings = await db.pay_settings.find_one({'org_id': org}) or {}
+    day = settings.get('week_starts', 'friday')
+    weekdays = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+    if start.weekday() != weekdays.index(day):
+        raise HTTPException(422, f'New pay runs must start on {day.title()}. Open older runs from Saved pay runs.')
 
 async def workers(org):
     from payroll_roster import roster
@@ -253,6 +260,7 @@ async def submitted_hours(week:str,user=Depends(require_permission('payroll','vi
 @router.get("/{week}")
 async def load(week: str, user=Depends(require_permission("payroll", "view"))):
     period(week)
+    await validate_new_week(user["org_id"], week)
     names = await workers(user["org_id"])
     saved = await db.pay_review_sheets.find_one({"_id": f"{user['org_id']}:{week}"}, {"_id": 0})
     body = Worksheet(**saved["worksheet"]) if saved else Worksheet(payday=next_payday(week))
@@ -283,6 +291,7 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
 
 @router.post("/{week}/preview")
 async def preview(week: str, body: Worksheet, user=Depends(require_permission("payroll", "view"))):
+    await validate_new_week(user["org_id"], week)
     start = period(week)
     if body.payday < start or body.payday > start + timedelta(days=35):
         raise HTTPException(422, "Payday must fall between the week starting date and 35 days later")

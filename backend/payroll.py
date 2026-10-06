@@ -77,7 +77,7 @@ class AllowanceType(BaseModel):
 
 class PaySettings(BaseModel):
     period_type: str = Field("weekly", pattern=r"^(weekly|fortnightly)$")
-    week_starts: str = Field("monday", pattern=r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$")
+    week_starts: str = Field("friday", pattern=r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$")
     # For fortnightly: a date that starts one of the periods, so we know which week is which.
     period_anchor: Optional[str] = None
     ordinary_hours_per_week: float = Field(38, ge=0, le=80)
@@ -124,7 +124,7 @@ def period_for(day: date, settings: Dict[str, Any]) -> Dict[str, Any]:
     """The pay period containing `day`: {id, start, end} with ISO dates.
     Weekly periods start on `week_starts`. Fortnightly ones also honour
     `period_anchor` so the right week is the first of the pair."""
-    ws = WEEKDAYS.index(settings.get("week_starts", "monday"))
+    ws = WEEKDAYS.index(settings.get("week_starts", "friday"))
     delta = (day.weekday() - ws) % 7
     start = day - timedelta(days=delta)
     length = 7
@@ -337,7 +337,10 @@ def _compute(entry: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
     d = _parse_date(entry["date"])
     entry["period_id"] = period_for(d, settings)["id"]
     if entry.get("kind", "work") == "work":
-        if entry.get("start") and entry.get("finish"):
+        if "segments" in entry:
+            from payroll_segments import aggregate
+            entry.update(aggregate(entry["segments"]))
+        elif entry.get("start") and entry.get("finish"):
             entry["hours"] = hours_between(entry["start"], entry["finish"], entry.get("break_minutes", 0))
         else:
             entry["hours"] = float(entry.get("hours") or 0)
@@ -412,6 +415,9 @@ async def patch_timesheet(entry_id: str, body: TimesheetEntryPatch,
     e = await _entry_or_404(user["org_id"], entry_id)
     if e.get("status") == "locked":
         raise HTTPException(409, "This period is closed. Reopen it to make changes.")
+    from payroll_segments import unlocked
+    await unlocked(user['org_id'], e['date'])
+    if 'segments' in e: raise HTTPException(409, 'Send this day back to the worker to edit its client time entries.')
     changes = {k: v for k, v in body.model_dump().items() if v is not None}
     e.update(changes)
     if e.get("status") == "rejected" and "status" not in changes:
@@ -428,7 +434,10 @@ async def delete_timesheet(entry_id: str, user: dict = Depends(require_permissio
     e = await _entry_or_404(user["org_id"], entry_id)
     if e.get("status") == "locked":
         raise HTTPException(409, "This period is closed. Reopen it to make changes.")
-    await db.timesheet_entries.delete_one({"id": entry_id})
+    from payroll_segments import unlocked
+    await unlocked(user['org_id'], e['date'])
+    if 'segments' in e: raise HTTPException(409, 'Send this day back to the worker to remove time entries.')
+    await db.timesheet_entries.delete_one({'org_id':user['org_id'], "id": entry_id})
     return {"ok": True}
 
 
@@ -439,9 +448,10 @@ class IdsIn(BaseModel):
 
 @router.post("/timesheets/approve")
 async def approve_timesheets(body: IdsIn, user: dict = Depends(require_permission("payroll", "edit"))):
-    async for run in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized'}):
-        run_end=(_parse_date(run['week'])+timedelta(days=6)).isoformat()
-        if run['week']<=p['end'] and run_end>=p['start']:raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
+    from payroll_segments import unlocked
+    for entry_id in body.ids:
+        entry = await _entry_or_404(user['org_id'], entry_id)
+        await unlocked(user['org_id'], entry['date'])
     r = await db.timesheet_entries.update_many(
         {"org_id": user["org_id"], "id": {"$in": body.ids}, "status": {"$in": ["draft", "submitted", "rejected"]}},
         {"$set": {"status": "approved", "approved_by": user["id"], "approved_by_name": user.get("name") or user.get("email"),
@@ -451,9 +461,10 @@ async def approve_timesheets(body: IdsIn, user: dict = Depends(require_permissio
 
 @router.post("/timesheets/reject")
 async def reject_timesheets(body: IdsIn, user: dict = Depends(require_permission("payroll", "edit"))):
-    async for run in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized'}):
-        run_end=(_parse_date(run['week'])+timedelta(days=6)).isoformat()
-        if run['week']<=p['end'] and run_end>=p['start']:raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
+    from payroll_segments import unlocked
+    for entry_id in body.ids:
+        entry = await _entry_or_404(user['org_id'], entry_id)
+        await unlocked(user['org_id'], entry['date'])
     r = await db.timesheet_entries.update_many(
         {"org_id": user["org_id"], "id": {"$in": body.ids}, "status": {"$in": ["draft", "submitted", "approved"]}},
         {"$set": {"status": "rejected", "rejected_by": user["id"], "rejected_at": now_iso(),
@@ -680,14 +691,13 @@ async def my_upsert(day: str, body: MyEntryIn, user: dict = Depends(get_current_
     settings = await get_settings(user["org_id"])
     wid = await _my_worker_id(user)
     _parse_date(day)
-    locked_week=(_parse_date(day)-timedelta(days=_parse_date(day).weekday())).isoformat()
-    saved_run=await db.pay_review_sheets.find_one({'_id':f"{user['org_id']}:{locked_week}"})
-    if saved_run and saved_run.get('state')=='finalized':raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
+    from payroll_segments import unlocked
+    await unlocked(user['org_id'], day)
     if body.date != day:
         raise HTTPException(400, "Date mismatch")
     existing = await db.timesheet_entries.find_one({"org_id": user["org_id"], "worker_id": wid, "date": day})
-    if existing and existing.get("status") in ("approved", "locked"):
-        raise HTTPException(409, "That day has already been approved. Ask the office to change it.")
+    if existing and (existing.get("status") in ("submitted", "approved", "locked") or "segments" in existing):
+        raise HTTPException(409, "This day is sent or uses client entries. Refresh your app; ask the office to send back a submitted day.")
     e = {**(existing or {}), **body.model_dump(), "worker_id": wid, "org_id": user["org_id"],
          "status": "draft", "updated_at": now_iso(), "updated_by": user["id"]}
     if not existing:
@@ -707,7 +717,7 @@ async def my_submit(period_id: Optional[str] = None, user: dict = Depends(get_cu
         run_end=(_parse_date(run['week'])+timedelta(days=6)).isoformat()
         if run['week']<=p['end'] and run_end>=p['start']:raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
     r = await db.timesheet_entries.update_many(
-        {"org_id": user["org_id"], "worker_id": wid, "period_id": p["id"], "status": {"$in": ["draft", "rejected"]}},
+        {"org_id": user["org_id"], "worker_id": wid, "date": {"$gte": p["start"], "$lte": p["end"]}, "hours": {"$gt": 0}, "status": {"$in": ["draft", "rejected"]}},
         {"$set": {"status": "submitted", "submitted_at": now_iso(), "updated_at": now_iso()}})
     return {"ok": True, "submitted": r.modified_count, "period": p}
 
@@ -717,3 +727,7 @@ async def ensure_payroll_indexes() -> None:
     await db.timesheet_entries.create_index([("org_id", 1), ("period_id", 1), ("status", 1)])
     await db.pay_profiles.create_index([("org_id", 1), ("worker_id", 1)], unique=True)
     await db.pay_periods.create_index([("org_id", 1), ("id", 1)], unique=True)
+
+from payroll_segments import phone as segments_phone, office as segments_office
+me_router.include_router(segments_phone)
+router.include_router(segments_office)
