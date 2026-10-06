@@ -329,11 +329,40 @@ class TimesheetEntryPatch(BaseModel):
     status: Optional[str] = Field(None, pattern=r"^(draft|submitted)$")
 
 
+def _roll_up_lines(entry: Dict[str, Any]) -> None:
+    """A day can be split across clients (`lines`). Each line keeps its
+    own times; the day's start/finish/break/hours are rolled up from them
+    so the office grid, export and overtime estimate keep working."""
+    lines = entry.get("lines") or []
+    if not lines:
+        return
+    for ln in lines:
+        ln.setdefault("id", new_id())
+        ln["hours"] = hours_between(ln["start"], ln["finish"], ln.get("break_minutes", 0))
+    lines.sort(key=lambda ln: ln["start"])
+    entry["start"] = lines[0]["start"]
+    entry["finish"] = max(ln["finish"] for ln in lines)
+    entry["break_minutes"] = sum(int(ln.get("break_minutes") or 0) for ln in lines)
+    entry["hours"] = round(sum(ln["hours"] for ln in lines), 2)
+    names = []
+    for ln in lines:
+        n = ln.get("client_name")
+        if n and n not in names:
+            names.append(n)
+    entry["site_name"] = " · ".join(names)[:160] or entry.get("site_name")
+    refs = [ln["job_ref"] for ln in lines if ln.get("job_ref")]
+    if refs:
+        entry["job_ref"] = ", ".join(dict.fromkeys(refs))[:120]
+
+
 def _compute(entry: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
     """Fill hours/period/overtime estimate on an entry dict (in place)."""
     d = _parse_date(entry["date"])
     entry["period_id"] = period_for(d, settings)["id"]
-    if entry.get("kind", "work") == "work":
+    if entry.get("kind", "work") == "work" and entry.get("lines"):
+        _roll_up_lines(entry)
+        entry["estimate"] = split_overtime(entry["hours"], d, settings.get("overtime", {}))
+    elif entry.get("kind", "work") == "work":
         if entry.get("start") and entry.get("finish"):
             entry["hours"] = hours_between(entry["start"], entry["finish"], entry.get("break_minutes", 0))
         else:
@@ -656,7 +685,20 @@ async def my_timesheets(period_id: Optional[str] = None, user: dict = Depends(ge
                          "break_minutes": settings["default_break_minutes"]}}
 
 
+class TimeLine(BaseModel):
+    """One block of time on one client/job within a day."""
+    id: Optional[str] = None
+    client_id: Optional[str] = Field(None, max_length=80)
+    client_name: str = Field(min_length=1, max_length=160)
+    job_ref: Optional[str] = Field(None, max_length=120)
+    start: str = Field(pattern=r"^\d{2}:\d{2}$")
+    finish: str = Field(pattern=r"^\d{2}:\d{2}$")
+    break_minutes: int = Field(0, ge=0, le=600)
+    notes: Optional[str] = Field(None, max_length=500)
+
+
 class MyEntryIn(BaseModel):
+    lines: List[TimeLine] = Field(default_factory=list, max_length=12)
     date: str
     start: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     finish: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
@@ -680,6 +722,13 @@ async def my_upsert(day: str, body: MyEntryIn, user: dict = Depends(get_current_
     existing = await db.timesheet_entries.find_one({"org_id": user["org_id"], "worker_id": wid, "date": day})
     if existing and existing.get("status") in ("approved", "locked"):
         raise HTTPException(409, "That day has already been approved. Ask the office to change it.")
+    for ln in body.lines:
+        if ln.finish <= ln.start:
+            raise HTTPException(400, f"{ln.client_name}: finish must be after start")
+    ordered = sorted(body.lines, key=lambda ln: ln.start)
+    for a, b in zip(ordered, ordered[1:]):
+        if b.start < a.finish:
+            raise HTTPException(400, f"{a.client_name} and {b.client_name} overlap — check the times")
     e = {**(existing or {}), **body.model_dump(), "worker_id": wid, "org_id": user["org_id"],
          "status": "draft", "updated_at": now_iso(), "updated_by": user["id"]}
     if not existing:
@@ -688,6 +737,61 @@ async def my_upsert(day: str, body: MyEntryIn, user: dict = Depends(get_current_
     e.pop("_id", None)
     await db.timesheet_entries.replace_one({"org_id": user["org_id"], "worker_id": wid, "date": day}, e, upsert=True)
     return _out(e)
+
+
+@me_router.get("/clients")
+async def my_clients(q: Optional[str] = None, user: dict = Depends(get_current_user)):
+    """Clients a worker can book time to: the ones they used recently
+    first, then Simpro customers (from the cached list) with their open
+    jobs, plus internal codes (Yard, Travel, Training…)."""
+    org = user["org_id"]
+    needle = (q or "").strip().lower()
+    out: Dict[str, Dict[str, Any]] = {}
+
+    def add(name: Optional[str], cid: Optional[str] = None, source: str = "simpro") -> Optional[Dict[str, Any]]:
+        if not name:
+            return None
+        key = name.strip().lower()
+        if needle and needle not in key:
+            return None
+        row = out.get(key)
+        if not row:
+            row = out[key] = {"id": cid or key, "name": name.strip(), "source": source, "jobs": [], "recent": False}
+        return row
+
+    # Recently used by this worker (last 60 days)
+    try:
+        wid = await _my_worker_id(user)
+        since = (date.today() - timedelta(days=60)).isoformat()
+        async for e in db.timesheet_entries.find(
+                {"org_id": org, "worker_id": wid, "date": {"$gte": since}, "lines.0": {"$exists": True}},
+                {"_id": 0, "lines": 1}).sort([("date", -1)]).limit(40):
+            for ln in e.get("lines") or []:
+                r = add(ln.get("client_name"), ln.get("client_id"), "recent")
+                if r:
+                    r["recent"] = True
+    except HTTPException:
+        pass
+
+    # Open Simpro jobs → client + job list
+    async for j in db.simpro_jobs.find(
+            {"org_id": org, "status_bucket": {"$ne": "completed"}, "customer_name": {"$nin": [None, ""]}},
+            {"_id": 0, "customer_name": 1, "simpro_job_id": 1, "name": 1, "site_name": 1}).limit(2000):
+        r = add(j.get("customer_name"))
+        if r and len(r["jobs"]) < 30:
+            r["jobs"].append({"ref": str(j.get("simpro_job_id")), "name": j.get("name"), "site": j.get("site_name")})
+
+    # Simpro customer list (cached — never calls Simpro from here)
+    cfg = await db.integration_configs.find_one({"org_id": org, "kind": "simpro"}, {"_id": 0, "customers_cache": 1}) or {}
+    for c in (cfg.get("customers_cache") or [])[:5000]:
+        add(c.get("company_name") or c.get("name"), str(c.get("id") or c.get("simpro_id") or "") or None)
+
+    internal = [{"id": f"internal:{k}", "name": n, "source": "internal", "jobs": [], "recent": False}
+                for k, n in (("yard", "Yard / Workshop"), ("travel", "Travel"), ("training", "Training"),
+                             ("admin", "Office / Admin"))
+                if not needle or needle in n.lower()]
+    rows = sorted(out.values(), key=lambda r: (not r["recent"], not r["jobs"], r["name"].lower()))
+    return {"clients": rows[:200], "internal": internal}
 
 
 @me_router.post("/submit")

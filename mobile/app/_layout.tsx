@@ -203,6 +203,7 @@ function RootLayout() {
             <Stack.Screen name="scan" />
             <Stack.Screen name="swms" />
             <Stack.Screen name="leave" />
+            <Stack.Screen name="time" />
           </Stack>
         </QueryClientProvider>
       </CrashRecoveryGate>

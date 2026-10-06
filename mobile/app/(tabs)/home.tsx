@@ -656,6 +656,12 @@ export default function HomeScreen() {
             </View>
             <Text style={s.actionLabel}>Incident Report</Text>
           </TouchableOpacity>
+          <TouchableOpacity testID="home-action-time" style={s.actionTile} onPress={() => router.push('/time' as never)}>
+            <View style={[s.actionIcon, { backgroundColor: C.orange.softBg }]}>
+              <Ionicons name="time-outline" size={24} color={Colors.orange} />
+            </View>
+            <Text style={s.actionLabel}>My Timesheet</Text>
+          </TouchableOpacity>
           <TouchableOpacity testID="home-action-leave" style={s.actionTile} onPress={() => router.push('/leave' as never)}>
             <View style={[s.actionIcon, { backgroundColor: C.green.softBg }]}>
               <Ionicons name="calendar-outline" size={24} color={Colors.green} />

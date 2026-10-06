@@ -55,3 +55,21 @@ def test_overtime_split_weekend():
     r = S["overtime"]
     assert split_overtime(6, date(2026, 10, 3), r) == {"ordinary": 0.0, "ot_1": 6.0, "ot_2": 0.0}   # Saturday
     assert split_overtime(6, date(2026, 10, 4), r) == {"ordinary": 0.0, "ot_1": 0.0, "ot_2": 6.0}   # Sunday
+
+
+def test_lines_roll_up_into_day():
+    import payroll
+    settings = {"period_type": "weekly", "week_starts": "monday", "period_anchor": None,
+                "overtime": {"daily_ordinary_hours": 7.6, "first_tier_hours": 2, "first_tier_rate": 1.5,
+                             "second_tier_rate": 2, "saturday_rate": 1.5, "sunday_rate": 2}}
+    e = {"date": "2026-10-07", "kind": "work", "lines": [
+        {"client_name": "Hydro Tas", "job_ref": "1203", "start": "12:30", "finish": "15:30", "break_minutes": 0},
+        {"client_name": "City of Launceston", "start": "07:00", "finish": "12:00", "break_minutes": 30},
+    ]}
+    payroll._compute(e, settings)
+    assert e["start"] == "07:00" and e["finish"] == "15:30"
+    assert e["break_minutes"] == 30
+    assert e["hours"] == 7.5
+    assert e["lines"][0]["client_name"] == "City of Launceston"
+    assert e["site_name"] == "City of Launceston · Hydro Tas"
+    assert e["job_ref"] == "1203"
