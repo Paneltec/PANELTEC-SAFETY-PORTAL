@@ -78,10 +78,10 @@ async def catalog(org):
 
 async def unlocked(org, day):
     d = date.fromisoformat(day)
-    week = (d-timedelta(days=d.weekday())).isoformat()
-    run = await db.pay_review_sheets.find_one({'_id': f'{org}:{week}'})
-    if run and run.get('state') == 'finalized':
-        raise HTTPException(409, 'Payroll is finalized. Ask the pay officer to open a correction.')
+    async for run in db.pay_review_sheets.find({'org_id': org, 'state': 'finalized'}):
+        start = date.fromisoformat(run['week'])
+        if start <= d <= start+timedelta(days=6):
+            raise HTTPException(409, 'Payroll is finalized. Ask the pay officer to open a correction.')
 
 async def resolve(segments, org, old=()):
     clients = {c['key']: c for c in await catalog(org)}

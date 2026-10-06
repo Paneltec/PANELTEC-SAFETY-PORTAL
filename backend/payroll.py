@@ -77,7 +77,7 @@ class AllowanceType(BaseModel):
 
 class PaySettings(BaseModel):
     period_type: str = Field("weekly", pattern=r"^(weekly|fortnightly)$")
-    week_starts: str = Field("monday", pattern=r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$")
+    week_starts: str = Field("friday", pattern=r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$")
     # For fortnightly: a date that starts one of the periods, so we know which week is which.
     period_anchor: Optional[str] = None
     ordinary_hours_per_week: float = Field(38, ge=0, le=80)
@@ -124,7 +124,7 @@ def period_for(day: date, settings: Dict[str, Any]) -> Dict[str, Any]:
     """The pay period containing `day`: {id, start, end} with ISO dates.
     Weekly periods start on `week_starts`. Fortnightly ones also honour
     `period_anchor` so the right week is the first of the pair."""
-    ws = WEEKDAYS.index(settings.get("week_starts", "monday"))
+    ws = WEEKDAYS.index(settings.get("week_starts", "friday"))
     delta = (day.weekday() - ws) % 7
     start = day - timedelta(days=delta)
     length = 7
@@ -691,9 +691,8 @@ async def my_upsert(day: str, body: MyEntryIn, user: dict = Depends(get_current_
     settings = await get_settings(user["org_id"])
     wid = await _my_worker_id(user)
     _parse_date(day)
-    locked_week=(_parse_date(day)-timedelta(days=_parse_date(day).weekday())).isoformat()
-    saved_run=await db.pay_review_sheets.find_one({'_id':f"{user['org_id']}:{locked_week}"})
-    if saved_run and saved_run.get('state')=='finalized':raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
+    from payroll_segments import unlocked
+    await unlocked(user['org_id'], day)
     if body.date != day:
         raise HTTPException(400, "Date mismatch")
     existing = await db.timesheet_entries.find_one({"org_id": user["org_id"], "worker_id": wid, "date": day})
