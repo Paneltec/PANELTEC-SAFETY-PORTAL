@@ -84,6 +84,7 @@ client=TestClient(app)
 class PayrollAPITests(unittest.TestCase):
     def setUp(self):
         for col in db.__dict__.values():col.rows=[]
+        db.pay_settings.rows=[{'org_id':'org-a','week_starts':'monday'}]
         os.environ['PAYROLL_BANK_ENC_KEY']=Fernet.generate_key().decode()
         db.workers.rows=[{'id':'w1','org_id':'org-a','first_name':'TEST','last_name':'WORKER','simpro_employee_id':'42'},
                          {'id':'w2','org_id':'org-b','first_name':'OTHER','last_name':'ORG','simpro_employee_id':'43'}]

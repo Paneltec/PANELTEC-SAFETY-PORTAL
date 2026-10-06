@@ -113,4 +113,23 @@ class SegmentFlowTests(PhoneFlowTests):
         response=self.put([self.segment]);self.assertEqual(response.status_code,200,response.text)
         self.assertEqual(response.json()['notes'],'Keep this')
 
+    def test_friday_phone_and_pay_run_use_same_period(self):
+        api.db.pay_settings.rows[0]['week_starts']='friday'
+        self.assertEqual(self.put([self.segment]).status_code,200)
+        period=self.client.get('/me/payroll/timesheets?period_id=2026-10-07').json()['period']
+        self.assertEqual(period,{'id':'2026-10-02','start':'2026-10-02','end':'2026-10-08'})
+        self.assertEqual(self.client.post('/me/payroll/submit?period_id=2026-10-02').json()['submitted'],1)
+        run=api.client.get('/payroll/workbench/2026-10-02')
+        self.assertEqual(run.status_code,200,run.text)
+        self.assertEqual(run.json()['worksheet']['payday'],'2026-10-08')
+        self.assertEqual(run.json()['worksheet']['rows'][0]['entry']['ordinary'],4.5)
+        api.db.pay_review_sheets.rows=[{'_id':'org-a:2026-10-02','org_id':'org-a','week':'2026-10-02','state':'finalized'}]
+        self.assertEqual(self.put([self.segment],1).status_code,409)
+    def test_calendar_change_keeps_saved_monday_run(self):
+        fixture=api.PayrollAPITests();fixture.setUp();self.assertEqual(fixture.save().status_code,200)
+        api.db.pay_settings.rows[0]['week_starts']='friday'
+        self.assertEqual(api.client.get('/payroll/workbench/2026-10-05').status_code,200)
+        self.assertEqual(api.client.get('/payroll/workbench/2026-10-12').status_code,422)
+        self.assertEqual(api.client.get('/payroll/workbench/2026-10-09').status_code,200)
+
 if __name__=='__main__':unittest.main()
