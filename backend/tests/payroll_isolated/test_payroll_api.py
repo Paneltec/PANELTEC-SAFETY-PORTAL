@@ -15,6 +15,7 @@ def matches(row,q):
         if isinstance(v,dict):
             for op,val in v.items():
                 if op=='$in' and x not in val:return False
+                if op=='$gt' and not (x is not None and x>val):return False
                 if op=='$lt' and not (x is not None and x<val):return False
                 if op=='$lte' and not (x is not None and x<=val):return False
                 if op=='$gte' and not (x is not None and x>=val):return False
@@ -53,6 +54,7 @@ class Collection:
         row=next((r for r in self.rows if matches(r,q)),None)
         if row is not None:row.clear();row.update(copy.deepcopy(doc))
         elif upsert:self.rows.append(copy.deepcopy(doc))
+        return types.SimpleNamespace(matched_count=int(row is not None))
     async def update_many(self,q,update):
         rows=[r for r in self.rows if matches(r,q)]
         for row in rows:row.update(copy.deepcopy(update.get('$set',{})))
@@ -62,7 +64,7 @@ class Collection:
         self.rows.append(copy.deepcopy(row))
 class DB:
     def __init__(self):
-        for k in ('workers','leave_requests','pay_review_sheets','pay_bank_details','pay_bank_exports','pay_branding','pay_employee_records','pay_run_archive','pay_connection_settings','timesheet_entries','pay_delivery_settings','pay_payslip_batches','pay_payslip_delivery','integration_configs','pay_settings','pay_profiles','pay_periods'):setattr(self,k,Collection())
+        for k in ('workers','leave_requests','pay_review_sheets','pay_bank_details','pay_bank_exports','pay_branding','pay_employee_records','pay_run_archive','pay_connection_settings','timesheet_entries','pay_delivery_settings','pay_payslip_batches','pay_payslip_delivery','integration_configs','pay_settings','pay_profiles','pay_periods','simpro_jobs'):setattr(self,k,Collection())
 db=DB()
 def require_permission(resource,action):
     async def guard(x_role:str=Header('editor'),x_org:str=Header('org-a')):
