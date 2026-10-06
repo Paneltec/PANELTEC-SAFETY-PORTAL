@@ -26,17 +26,16 @@ async def state(week:str,user=Depends(require_permission('payroll','view'))):
 
 @router.post('/{week}/finalize')
 async def finalize(week:str,body:Transition,user=Depends(require_permission('payroll','edit'))):
-    from payroll_workbench import period,Worksheet,report,check_leave_sources
-    from payroll_branding import Branding
+    from payroll_workbench import period,Worksheet,report,check_leave_sources,workers
+    from payroll_branding import resolved_branding
     period(week);key=f"{user['org_id']}:{week}"
     doc=await db.pay_review_sheets.find_one({'_id':key})
     if not doc or doc['worksheet']['revision']!=body.revision:raise HTTPException(409,'Reload the saved worksheet before finalising')
     if doc.get('state')=='finalized':return {'status':'finalized','revision':body.revision}
     worksheet=Worksheet(**doc['worksheet'])
-    calculated=await check_leave_sources(worksheet,user['org_id'],week,report(worksheet,{r['worker_id']:r['name'] for r in doc['report']['rows']}))
+    calculated=await check_leave_sources(worksheet,user['org_id'],week,report(worksheet,await workers(user['org_id'])))
     if not worksheet.reviewed or not calculated['ready']:raise HTTPException(422,'Save a reviewed worksheet and resolve changed leave before finalising')
-    source=await db.pay_branding.find_one({'_id':user['org_id']}) or {}
-    branding=Branding(**{k:v for k,v in source.items() if k in Branding.model_fields}).model_dump()
+    branding=await resolved_branding(user['org_id'])
     if not branding['employer_name'].strip() or not valid_abn(branding['employer_abn']):raise HTTPException(422,'Configure the legal employer name and valid ABN first')
     for row in calculated['rows']:
         if not row['profile'].get('super_fund_name','').strip() or not row['profile'].get('super_fund_usi','').strip():

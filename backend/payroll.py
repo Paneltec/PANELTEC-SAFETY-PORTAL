@@ -158,9 +158,12 @@ def hours_between(start: Optional[str], finish: Optional[str], break_minutes: in
         fh, fm = [int(x) for x in finish.split(":")]
     except ValueError:
         raise HTTPException(400, "Times must be HH:MM")
+    if not (0 <= sh <= 23 and 0 <= fh <= 23 and 0 <= sm <= 59 and 0 <= fm <= 59):
+        raise HTTPException(422, "Enter real times between 00:00 and 23:59")
     mins = (fh * 60 + fm) - (sh * 60 + sm)
     if mins < 0:
         mins += 24 * 60
+    if int(break_minutes or 0) > mins:raise HTTPException(422, "Break cannot exceed the shift duration")
     mins -= max(0, int(break_minutes or 0))
     return round(max(0, mins) / 60, 2)
 
@@ -253,14 +256,8 @@ class PayProfileIn(BaseModel):
 
 
 async def _workers(org_id: str) -> List[Dict[str, Any]]:
-    rows = []
-    async for w in db.workers.find(
-            {"org_id": org_id, "$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]},
-            {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "email": 1, "position": 1,
-             "active": 1, "user_id": 1}).sort([("last_name", 1), ("first_name", 1)]):
-        w["name"] = f"{w.get('first_name', '')} {w.get('last_name', '')}".strip()
-        rows.append(w)
-    return rows
+    from payroll_roster import roster
+    return await roster(org_id)
 
 
 @router.get("/profiles")
@@ -288,8 +285,8 @@ async def list_profiles(user: dict = Depends(require_permission("payroll", "view
 @router.put("/profiles/{worker_id}")
 async def put_profile(worker_id: str, body: PayProfileIn,
                       user: dict = Depends(require_permission("payroll", "edit"))):
-    w = await db.workers.find_one({"id": worker_id, "org_id": user["org_id"]}, {"_id": 0, "id": 1})
-    if not w:
+    allowed = {w["id"] for w in await _workers(user["org_id"])}
+    if worker_id not in allowed:
         raise HTTPException(404, "Worker not found")
     doc = {k: v for k, v in body.model_dump().items() if v is not None}
     doc.update({"org_id": user["org_id"], "worker_id": worker_id, "updated_at": now_iso(), "updated_by": user["id"]})
@@ -394,6 +391,7 @@ async def list_timesheets(period_id: Optional[str] = None, start: Optional[str] 
 
 @router.post("/timesheets")
 async def create_timesheet(body: TimesheetEntryIn, user: dict = Depends(require_permission("payroll", "edit"))):
+    if body.worker_id not in {w["id"] for w in await _workers(user["org_id"])}:raise HTTPException(422,"Choose a current Simpro employee")
     settings = await get_settings(user["org_id"])
     _parse_date(body.date)
     dup = await db.timesheet_entries.find_one(
@@ -441,6 +439,9 @@ class IdsIn(BaseModel):
 
 @router.post("/timesheets/approve")
 async def approve_timesheets(body: IdsIn, user: dict = Depends(require_permission("payroll", "edit"))):
+    async for run in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized'}):
+        run_end=(_parse_date(run['week'])+timedelta(days=6)).isoformat()
+        if run['week']<=p['end'] and run_end>=p['start']:raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
     r = await db.timesheet_entries.update_many(
         {"org_id": user["org_id"], "id": {"$in": body.ids}, "status": {"$in": ["draft", "submitted", "rejected"]}},
         {"$set": {"status": "approved", "approved_by": user["id"], "approved_by_name": user.get("name") or user.get("email"),
@@ -450,6 +451,9 @@ async def approve_timesheets(body: IdsIn, user: dict = Depends(require_permissio
 
 @router.post("/timesheets/reject")
 async def reject_timesheets(body: IdsIn, user: dict = Depends(require_permission("payroll", "edit"))):
+    async for run in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized'}):
+        run_end=(_parse_date(run['week'])+timedelta(days=6)).isoformat()
+        if run['week']<=p['end'] and run_end>=p['start']:raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
     r = await db.timesheet_entries.update_many(
         {"org_id": user["org_id"], "id": {"$in": body.ids}, "status": {"$in": ["draft", "submitted", "approved"]}},
         {"$set": {"status": "rejected", "rejected_by": user["id"], "rejected_at": now_iso(),
@@ -638,13 +642,8 @@ async def export_csv(period_id: str, fmt: str = Query("summary", pattern=r"^(sum
 # ── Worker-side (phone / My Work) ────────────────────────────────────
 
 async def _my_worker_id(user: dict) -> str:
-    if user.get("worker_id"):
-        return user["worker_id"]
-    w = await db.workers.find_one({"org_id": user["org_id"], "$or": [{"user_id": user["id"]}, {"email": user.get("email")}]},
-                                  {"_id": 0, "id": 1})
-    if not w:
-        raise HTTPException(404, "No worker record is linked to your login. Ask the office to link it.")
-    return w["id"]
+    from payroll_roster import my_worker
+    return await my_worker(user)
 
 
 @me_router.get("/timesheets")
@@ -681,6 +680,9 @@ async def my_upsert(day: str, body: MyEntryIn, user: dict = Depends(get_current_
     settings = await get_settings(user["org_id"])
     wid = await _my_worker_id(user)
     _parse_date(day)
+    locked_week=(_parse_date(day)-timedelta(days=_parse_date(day).weekday())).isoformat()
+    saved_run=await db.pay_review_sheets.find_one({'_id':f"{user['org_id']}:{locked_week}"})
+    if saved_run and saved_run.get('state')=='finalized':raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
     if body.date != day:
         raise HTTPException(400, "Date mismatch")
     existing = await db.timesheet_entries.find_one({"org_id": user["org_id"], "worker_id": wid, "date": day})
@@ -701,6 +703,9 @@ async def my_submit(period_id: Optional[str] = None, user: dict = Depends(get_cu
     settings = await get_settings(user["org_id"])
     wid = await _my_worker_id(user)
     p = period_for(_parse_date(period_id) if period_id else date.today(), settings)
+    async for run in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized'}):
+        run_end=(_parse_date(run['week'])+timedelta(days=6)).isoformat()
+        if run['week']<=p['end'] and run_end>=p['start']:raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
     r = await db.timesheet_entries.update_many(
         {"org_id": user["org_id"], "worker_id": wid, "period_id": p["id"], "status": {"$in": ["draft", "rejected"]}},
         {"$set": {"status": "submitted", "submitted_at": now_iso(), "updated_at": now_iso()}})

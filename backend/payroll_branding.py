@@ -30,16 +30,21 @@ class Branding(BaseModel):
     viatec:Division=Field(default_factory=lambda:Division(name='Viatec'))
     assignments:dict[str,Literal['paneltec','viatec']]=Field(default_factory=dict,max_length=1000)
 
+async def resolved_branding(org):
+    from payroll_roster import roster
+    doc=await db.pay_branding.find_one({'_id':org}) or {}
+    setting=Branding(**{k:v for k,v in doc.items() if k in Branding.model_fields})
+    setting.assignments={w['id']:w['division'] for w in await roster(org)}
+    return setting.model_dump()
+
 @router.get('')
 async def load(user=Depends(require_permission('payroll','view'))):
-    doc=await db.pay_branding.find_one({'_id':user['org_id']},{'_id':0})
-    setting=Branding(**{k:v for k,v in (doc or {}).items() if k in Branding.model_fields})
-    workers=[{'id':w['id'],'name':(' '.join([w.get('first_name',''),w.get('last_name','')])).strip() or w['id']} async for w in db.workers.find({'org_id':user['org_id'],'deleted_at':None})]
-    return {'settings':setting.model_dump(),'workers':sorted(workers,key=lambda w:w['name'])}
+    from payroll_roster import roster,public_roster
+    return {'settings':await resolved_branding(user['org_id']),'workers':public_roster(await roster(user['org_id']))}
 
 @router.put('')
 async def save(body:Branding,user=Depends(require_permission('payroll','edit'))):
-    allowed={w['id'] async for w in db.workers.find({'org_id':user['org_id']})}
-    if set(body.assignments)-allowed:raise HTTPException(422,'Division assignments must use workers from this organisation')
+    from payroll_roster import roster
+    body.assignments={w['id']:w['division'] for w in await roster(user['org_id'])}
     await db.pay_branding.update_one({'_id':user['org_id']},{'$set':{**body.model_dump(),'updated_by':user['id'],'updated_at':now_iso()}},upsert=True)
     return {'settings':body.model_dump()}
