@@ -45,7 +45,10 @@ class Collection:
             if not upsert:return types.SimpleNamespace(matched_count=0,upserted_id=None)
             if any(r['_id']==q['_id'] for r in self.rows):raise DuplicateKeyError('duplicate')
             row={'_id':q['_id']};self.rows.append(row)
-        row.update(copy.deepcopy(update.get('$set',{})))
+        for k,v in copy.deepcopy(update.get('$set',{})).items():
+            target=row;bits=k.split('.')
+            for bit in bits[:-1]:target=target.setdefault(bit,{})
+            target[bits[-1]]=v
         for k,v in update.get('$push',{}).items():
             if '$each' in v:row[k]=(row.get(k,[])+copy.deepcopy(v['$each']))[v['$slice']:]
             else:row.setdefault(k,[]).append(copy.deepcopy(v))

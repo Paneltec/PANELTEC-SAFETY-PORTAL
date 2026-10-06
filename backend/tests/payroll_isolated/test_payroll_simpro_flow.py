@@ -111,7 +111,8 @@ class DeliveryTests(unittest.TestCase):
         self.provider.assert_awaited_once()
         kwargs=self.provider.call_args.kwargs
         self.assertEqual(kwargs['to'],['employee@example.com']);self.assertEqual(kwargs['cc'],[])
-        self.assertIn(b'TEST WORKER',kwargs['attachments'][0]['content_bytes'])
+        self.assertTrue(kwargs['attachments'][0]['content_bytes'].startswith(b'%PDF-'))
+        self.assertTrue(kwargs['attachments'][0]['filename'].endswith('.pdf'))
         self.assertNotIn('file_url',kwargs['attachments'][0])
         self.assertEqual(C.get(URL+'/delivery/1',headers={'x-org':'org-b'}).json()['recipients'],[])
         self.assertEqual(C.post(URL+'/delivery/1/w2').status_code,404)
