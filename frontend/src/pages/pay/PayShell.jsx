@@ -1,3 +1,4 @@
+import { useCan } from '../../lib/permissions';
 // Paneltec Pay — the pay area's own frame (Overview → Paneltec Pay).
 //
 // Deliberately a different look from the rest of the portal so staff
@@ -18,6 +19,7 @@ export const PAY = {
 };
 
 const TABS = [
+  { to: '/app/pay/payroll', label: 'Payroll' },
   { to: '/app/pay', label: 'Overview', end: true },
   { to: '/app/pay/timesheets', label: 'Timesheets' },
   { to: '/app/pay/periods', label: 'Pay periods' },
@@ -79,6 +81,8 @@ export function fmtRange(start, end) {
 }
 
 export default function PayShell() {
+  const can = useCan();
+  if (!can('payroll', 'view')) return <div role="alert" className="p-6 rounded-xl border bg-white">Payroll access is restricted. Contact the payroll owner to request access.</div>;
   return (
     <div className="-mx-4 -mt-6 sm:-mx-6 sm:-mt-8 lg:-mx-8 lg:-mt-10 min-h-full rounded-b-2xl" style={{ background: PAY.paper }} data-testid="pay-shell">
       <div className="px-4 sm:px-6 lg:px-8 pt-5 pb-0 text-white" style={{ background: `linear-gradient(135deg, ${PAY.ink} 0%, ${PAY.ink2} 100%)` }}>
@@ -91,7 +95,7 @@ export default function PayShell() {
               <div className="text-[10px] font-bold uppercase tracking-[0.28em]" style={{ color: PAY.gold }}>Paneltec Group</div>
               <h1 className="font-display font-extrabold text-2xl leading-tight">Paneltec Pay</h1>
             </div>
-            <div className="ml-auto hidden sm:block text-xs text-indigo-200">Hours in · approved · exported to payroll</div>
+            <div className="ml-auto hidden sm:block text-xs text-indigo-200">Weekly pay · payslips · reports</div>
           </div>
           <nav className="mt-4 flex gap-1 overflow-x-auto" data-testid="pay-tabs">
             {TABS.map((t) => (

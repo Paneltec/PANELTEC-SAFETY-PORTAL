@@ -14,6 +14,8 @@ from permissions import (
     require_permission, upsert_overrides,
 )
 
+from payroll_access import is_payroll_owner, payroll_grants
+
 log = logging.getLogger("paneltec.users")
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -477,6 +479,7 @@ async def get_permissions(user_id: str, actor: dict = Depends(require_permission
         "reasons": (override_doc or {}).get("reasons", {}),
         "effective": await effective_for(target),
         "schema": PERMISSIONS_SCHEMA,
+        "payroll_access": {"can_manage": is_payroll_owner(actor), "is_owner": is_payroll_owner(target), "grants": (await payroll_grants(target))["payroll"]},
     }
 
 
@@ -1146,3 +1149,26 @@ async def bulk_assign_role(
         "detail": {"updated": updated, "skipped": skipped, "errors": errors},
     }
 
+
+
+class PayrollAccessIn(BaseModel):
+    level: Literal["none", "view", "edit"]
+
+@router.put("/{user_id}/payroll-access")
+async def set_payroll_access(user_id: str, body: PayrollAccessIn, actor: dict = Depends(get_current_user)):
+    if not is_payroll_owner(actor):
+        raise HTTPException(403, "Only the payroll owner can authorise payroll access")
+    target = await db.users.find_one({"id": user_id, "org_id": actor["org_id"]})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if is_payroll_owner(target):
+        raise HTTPException(400, "The payroll owner retains access")
+    if body.level != "none" and target.get("role") != "admin":
+        raise HTTPException(400, "Payroll access is restricted to administrators")
+    key = str(actor["org_id"]) + ":" + user_id
+    # Audit history and current grant are one atomic document update.
+    await db.payroll_access.update_one({"_id": key}, {"$set": {
+        "org_id": actor["org_id"], "user_id": user_id, "level": body.level,
+        "updated_by": actor["id"], "updated_at": now_iso()}, "$push": {
+        "history": {"level": body.level, "actor": actor["id"], "at": now_iso()}}}, upsert=True)
+    return {"level": body.level}

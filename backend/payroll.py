@@ -39,6 +39,12 @@ from permissions import require_permission
 log = logging.getLogger("paneltec.payroll")
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
+from payroll_workbench import router as workbench_router
+router.include_router(workbench_router)
+from payroll_banking import router as banking_router
+router.include_router(banking_router)
+from payroll_employee_records import router as employee_records_router
+router.include_router(employee_records_router)
 me_router = APIRouter(prefix="/me/payroll", tags=["payroll-me"])
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]

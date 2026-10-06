@@ -2460,6 +2460,15 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 
         {tab === 'permissions' && perms && (
           <div className="mt-5" data-testid="user-permissions-modal">
+            <div className="border rounded-xl p-4 mb-4 bg-slate-50">
+              <h3 className="font-semibold">Payroll access</h3>
+              <p className="text-sm text-slate-600">Only the payroll owner can authorise access. Role presets and the general permissions matrix cannot grant it.</p>
+              <p className="text-sm mt-2">{perms.payroll_access?.is_owner ? 'Payroll owner — full access' : perms.payroll_access?.grants?.edit ? 'Authorised to view and edit' : perms.payroll_access?.grants?.view ? 'Authorised to view only' : 'No payroll access'}</p>
+              {perms.payroll_access?.can_manage && !perms.payroll_access?.is_owner && <div className="flex gap-2 mt-3">
+                {[['none','Remove access'],['view','Allow view only'],['edit','Allow view and edit']].map(([level,label]) => <button key={level} type="button" disabled={busy || (level !== 'none' && perms.role !== 'admin')} className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40" onClick={async()=>{setBusy(true);try{await api.put(`/users/${userRow.id}/payroll-access`,{level});toast.success('Payroll access updated');await load();onReload();}catch(e){toast.error('Could not update payroll access');}finally{setBusy(false);}}}>{label}</button>)}
+              </div>}
+            </div>
+
             <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
               <div className="text-sm text-slate-700"><ShieldCheck size={13} className="inline mr-1 text-brand-blue" /> Role default: <strong>{perms.role}</strong></div>
               {canEdit && <button onClick={resetPerms} data-testid="perm-reset-defaults" className="text-xs inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded hover:bg-slate-50"><RotateCcw size={11} /> Reset to defaults</button>}
@@ -2534,6 +2543,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
                 </thead>
                 <tbody>
                   {RESOURCES.filter((res) => {
+                    if (res === "payroll") return false;
                     if (!permSearch.trim()) return true;
                     const s = permSearch.trim().toLowerCase();
                     return res.toLowerCase().includes(s)
