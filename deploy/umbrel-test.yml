@@ -77,6 +77,12 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PANELTEC_VAULT_SECRET: ${PANELTEC_VAULT_SECRET}
       INTEGRATIONS_ENC_KEY: ${INTEGRATIONS_ENC_KEY}
+      # Payroll denies access until both immutable owner IDs are configured.
+      PAYROLL_OWNER_USER_ID: ${PAYROLL_OWNER_USER_ID:-}
+      PAYROLL_OWNER_ORG_ID: ${PAYROLL_OWNER_ORG_ID:-}
+      # Optional dedicated Fernet key; otherwise uses INTEGRATIONS_ENC_KEY.
+      PAYROLL_BANK_ENC_KEY: ${PAYROLL_BANK_ENC_KEY:-}
+      PAYROLL_ISSUING_ENABLED: ${PAYROLL_ISSUING_ENABLED:-false}
       BACKUP_DEST_ENC_KEY: ${BACKUP_DEST_ENC_KEY}
       BACKUPS_ENABLED: 'true'
     volumes:
