@@ -81,8 +81,8 @@
       },
       "env": {
         "EXPO_PUBLIC_IPHONE_READINESS": "true",
-        "EXPO_PUBLIC_BACKEND_URL": "",
-        "EXPO_PUBLIC_SENTRY_DSN": "",
+        "EXPO_PUBLIC_BACKEND_URL": "https://installation-test.invalid",
+        "EXPO_PUBLIC_SENTRY_DSN": "disabled",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD": "true"
       }
