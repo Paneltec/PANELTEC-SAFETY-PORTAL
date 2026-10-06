@@ -71,6 +71,7 @@ class LeaveAllocation(Strict):
 
 class Row(Strict):
     worker_id: str = Field(min_length=1, max_length=100)
+    timesheet_fingerprint: str = Field("", pattern=r"^(|[a-f0-9]{64})$")
     profile: Profile = Field(default_factory=Profile)
     entry: Entry = Field(default_factory=Entry)
     leave_sources: list[LeaveAllocation] = Field(default_factory=list, max_length=30)
@@ -142,9 +143,9 @@ def period(value):
         raise HTTPException(422, "Choose a Monday for the week starting date")
 
 async def workers(org):
-    return {w["id"]: (f"{w.get('first_name', '')} {w.get('last_name', '')}".strip() or w["id"])
-            async for w in db.workers.find({"org_id": org, "deleted_at": None, "active": {"$ne": False}},
-                {"id": 1, "first_name": 1, "last_name": 1})}
+    from payroll_roster import roster
+    return {w['id']: w['name'] for w in await roster(org)}
+
 
 def report(body, names):
     ids = [r.worker_id for r in body.rows]
@@ -214,7 +215,8 @@ async def check_leave_sources(body, org, week, calculated):
                 issues.append(f'{kind.title()} hours are less than the linked approved leave allocations')
         output['result']['review_ready']=not issues
     calculated['ready']=bool(calculated['rows']) and all(r['result']['review_ready'] for r in calculated['rows'])
-    return calculated
+    from payroll_submissions import check_submissions
+    return await check_submissions(body, org, week, calculated)
 
 @router.get('/{week}/approved-leave')
 async def leave_feed(week:str,user=Depends(require_permission('payroll','view'))):
@@ -226,6 +228,27 @@ async def history(week: str, user=Depends(require_permission('payroll','view')))
     saved=await db.pay_review_sheets.find_one({'_id':f"{user['org_id']}:{week}"})
     return {'revisions':list(reversed((saved or {}).get('history',[]))),
             'notice':'Recent worksheet revisions only; not an issued payslip or payment ledger.'}
+
+async def roster_public(org):
+    from payroll_roster import roster, public_roster
+    return public_roster(await roster(org))
+
+@router.get('/runs/list')
+async def runs(user=Depends(require_permission('payroll','view'))):
+    records=[]
+    async for doc in db.pay_review_sheets.find({'org_id':user['org_id']}):
+        sheet=doc['worksheet']
+        records.append({'week':doc['week'],'payday':sheet['payday'],'employees':len(sheet['rows']),
+            'revision':sheet['revision'],'state':doc.get('state','open'),'saved_at':doc.get('saved_at'),
+            'issued':bool(doc.get(f"issued_{sheet['revision']}"))})
+    return {'runs':sorted(records,key=lambda r:r['week'],reverse=True)}
+
+@router.get('/{week}/submissions')
+async def submitted_hours(week:str,user=Depends(require_permission('payroll','view'))):
+    period(week)
+    from payroll_submissions import submissions
+    allowed=await workers(user['org_id'])
+    return {'workers':{k:v for k,v in (await submissions(user['org_id'],week)).items() if k in allowed}}
 
 @router.get("/{week}")
 async def load(week: str, user=Depends(require_permission("payroll", "view"))):
@@ -239,13 +262,21 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
         if previous:
             template_week = previous["week"]
             body.rules = Rules(**previous["worksheet"]["rules"])
-            body.rows = [Row(worker_id=r["worker_id"], profile=Profile(**r["profile"]))
-                         for r in previous["worksheet"]["rows"] if r["worker_id"] in names]
+        previous_profiles = {r['worker_id']: r['profile'] for r in (previous or {}).get('worksheet', {}).get('rows', [])}
+        from payroll_submissions import submissions
+        from payroll_banking import decrypt
+        submitted = await submissions(user['org_id'], week)
+        body.rows = []
+        for worker_id in names:
+            defaults = await db.pay_employee_records.find_one({'_id': f"{user['org_id']}:{worker_id}"})
+            profile = decrypt(defaults)['profile'] if defaults else previous_profiles.get(worker_id, {})
+            source = submitted.get(worker_id, {})
+            body.rows.append(Row(worker_id=worker_id, profile=Profile(**profile), entry=Entry(**source.get('totals', {})), timesheet_fingerprint=source.get('fingerprint', '')))
     calculated=report(body,{**{r['worker_id']:r['name'] for r in (saved or {}).get('report',{}).get('rows',[])},**names})
     await check_leave_sources(body,user['org_id'],week,calculated)
     sealed=next((v for v in (saved or {}).get('finalizations',[]) if v['revision']==body.revision),None) if (saved or {}).get('state')=='finalized' else None
     if sealed:calculated=sealed['report']
-    return {"finalized_branding":sealed.get('branding') if sealed else None,"worksheet": body.model_dump(mode="json"), "workers": [{"id": k, "name": v} for k,v in sorted(names.items(), key=lambda kv: kv[1])],
+    return {"finalized_branding":sealed.get('branding') if sealed else None,"worksheet": body.model_dump(mode="json"), "workers": await roster_public(user["org_id"]),
             "report": calculated,
             "saved_at": saved.get("saved_at") if saved else None, "template_week": template_week,
             "sources": SOURCES, "rule_version": RULE_VERSION}
@@ -263,9 +294,8 @@ async def save(week: str, body: Worksheet, user=Depends(require_permission("payr
     if body.reviewed and not calculated["ready"]:
         raise HTTPException(422, "Resolve every worker's review items before marking this worksheet reviewed")
     key = f"{user['org_id']}:{week}"
-    branding_doc=await db.pay_branding.find_one({'_id':user['org_id']}) or {}
-    from payroll_branding import Branding
-    branding=Branding(**{k:v for k,v in branding_doc.items() if k in Branding.model_fields}).model_dump()
+    from payroll_branding import resolved_branding
+    branding=await resolved_branding(user['org_id'])
     old_revision = body.revision
     body.revision += 1
     record = {"worksheet": body.model_dump(mode="json"), "report": calculated, "saved_at": now_iso(),
@@ -313,3 +343,6 @@ router.include_router(lifecycle_router)
 
 from payroll_payslips import router as payslips_router
 router.include_router(payslips_router)
+
+from payroll_delivery import router as delivery_router
+router.include_router(delivery_router)

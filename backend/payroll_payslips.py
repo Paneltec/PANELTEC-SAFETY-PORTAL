@@ -22,12 +22,14 @@ class Issue(Strict):
 async def status(week:str,user=Depends(require_permission('payroll','view'))):
     period(week)
     doc=await db.pay_review_sheets.find_one({'_id':f"{user['org_id']}:{week}"}) or {}
-    return {'enabled':os.environ.get('PAYROLL_ISSUING_ENABLED')=='true',
+    from payroll_delivery import issuing_enabled
+    return {'enabled':await issuing_enabled(user['org_id']),
             'issues':[v for k,v in doc.items() if k.startswith('issued_')]}
 
 @router.post('/{week}/payslips/issue')
 async def issue(week:str,body:Issue,user=Depends(require_permission('payroll','edit'))):
-    if os.environ.get('PAYROLL_ISSUING_ENABLED')!='true':raise HTTPException(503,'Payslip issuing is disabled until payroll deployment and parallel-run validation are complete')
+    from payroll_delivery import issuing_enabled
+    if not await issuing_enabled(user['org_id']):raise HTTPException(503,'Payslip issuing is disabled until payroll deployment and parallel-run validation are complete')
     start=period(week)
     if not body.particulars_verified or not body.payment_reference.strip():raise HTTPException(422,'Confirm actual payment and verify payslip particulars first')
     if body.paid_date<start or body.paid_date>today():raise HTTPException(422,'Actual payment date must be within this pay period or later, and cannot be in the future')
@@ -59,7 +61,7 @@ def render(snapshot,worker,week,issued):
     totals=''.join(f'<tr><th>{label}</th><td>{money(r[key])}</td></tr>' for label,key in [('Gross earnings','gross'),('PAYG withheld','payg'),('Other deductions','deductions'),('Reimbursements','reimbursements'),('Net wages','net'),('Employer super contribution required','super')])
     # Only validated PNG/JPEG data URLs are used; no remote assets or scripts.
     logo=division.get('logo','');image=f'<img alt="Division logo" src="{h(logo)}">' if logo.startswith(('data:image/png;base64,','data:image/jpeg;base64,')) else ''
-    return f'''<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{{font:14px Arial;max-width:800px;margin:30px auto;color:#172033}}img{{max-height:70px;max-width:240px}}table{{width:100%;border-collapse:collapse;margin:20px 0}}td,th{{padding:8px;border-bottom:1px solid #ddd;text-align:left}}pre{{white-space:pre-wrap;font:inherit}}@page{{size:A4;margin:15mm}}</style><body>{image}<h1>{h(division.get('name') or b['employer_name'])}</h1><p>Employer: {h(b['employer_name'])} · ABN {h(b['employer_abn'])}</p><h2>Payslip — {h(row['name'])}</h2><p>Employee reference: {h(worker)}</p><p>Period: {h(week)} to {(date.fromisoformat(week)+timedelta(days=6)).isoformat()}<br>Payment date: {h(issued['paid_date'])}<br>Revision: {snapshot['revision']}</p><table><tr><th>Earnings</th><th>Hours</th><th>Rate</th><th>Amount</th></tr>{earnings}</table><table>{totals}</table><p>Super fund: {h(p.get('super_fund_name'))} · USI {h(p.get('super_fund_usi'))}</p><p>Allowance particulars:</p><pre>{h(e.get('allowance_details') or 'None')}</pre><p>Deduction particulars:</p><pre>{h(e.get('deduction_details') or 'None')}</pre><p>Recorded as issued: {h(issued['issued_at'])}. Delivery must be completed separately.</p></body></html>'''
+    return f'''<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{{font:14px Arial;max-width:800px;margin:30px auto;color:#172033}}img{{max-height:70px;max-width:240px}}table{{width:100%;border-collapse:collapse;margin:20px 0}}td,th{{padding:8px;border-bottom:1px solid #ddd;text-align:left}}pre{{white-space:pre-wrap;font:inherit}}@page{{size:A4;margin:15mm}}</style><body>{image}<h1>{h(division.get('name') or b['employer_name'])}</h1><p>Employer: {h(b['employer_name'])} · ABN {h(b['employer_abn'])}</p><h2>Payslip — {h(row['name'])}</h2><p>Employee reference: {h(worker)}</p><p>Period: {h(week)} to {(date.fromisoformat(week)+timedelta(days=6)).isoformat()}<br>Payment date: {h(issued['paid_date'])}<br>Revision: {snapshot['revision']}</p><table><tr><th>Earnings</th><th>Hours</th><th>Rate</th><th>Amount</th></tr>{earnings}</table><table>{totals}</table><p>Super fund: {h(p.get('super_fund_name'))} · USI {h(p.get('super_fund_usi'))}</p><p>Allowance particulars:</p><pre>{h(e.get('allowance_details') or 'None')}</pre><p>Deduction particulars:</p><pre>{h(e.get('deduction_details') or 'None')}</pre><p>Recorded as issued: {h(issued['issued_at'])}. Keep this payslip for your records.</p></body></html>'''
 
 @router.get('/{week}/payslips/{revision}/{worker_id}')
 async def download(week:str,revision:int,worker_id:str,user=Depends(require_permission('payroll','view'))):

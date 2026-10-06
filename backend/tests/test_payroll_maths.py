@@ -1,5 +1,7 @@
 """Pure-function tests for Paneltec Pay (no DB)."""
 import os, sys
+import pytest
+from fastapi import HTTPException
 from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
@@ -41,7 +43,8 @@ def test_hours_between():
     assert hours_between("07:00", "15:36", 0) == 8.6
     assert hours_between("22:00", "02:00", 0) == 4.0     # over midnight
     assert hours_between(None, "15:00", 30) == 0.0
-    assert hours_between("08:00", "08:10", 30) == 0.0    # never negative
+    with pytest.raises(HTTPException):
+        hours_between("08:00", "08:10", 30)  # impossible break must not become silent zero pay
 
 
 def test_overtime_split_weekday():

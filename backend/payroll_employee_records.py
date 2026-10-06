@@ -16,8 +16,9 @@ class EmployeeRecord(Strict):
     # None retains the encrypted member number, blank explicitly clears it.
 
 async def employee(user,worker_id):
-    worker=await db.workers.find_one({'org_id':user['org_id'],'id':worker_id})
-    if not worker:raise HTTPException(404,'Worker not found in this organisation')
+    from payroll_workbench import workers
+    if worker_id not in await workers(user['org_id']):raise HTTPException(404,'Current Simpro worker not found')
+
 
 def public(doc):
     if not doc:return {'configured':False,'revision':0,'profile':Profile().model_dump(),'member_number_masked':''}
