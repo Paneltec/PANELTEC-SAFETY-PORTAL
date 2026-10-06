@@ -102,7 +102,7 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     "hr_employees":    {"label": "HR Employees",           "email_supported": False, "delete_supported": True},
     # Paneltec Pay — timesheets, pay periods, export. Admin only by default;
     # grant view/edit to the pay officer via Users & Permissions.
-    "payroll":         {"label": "Paneltec Pay (timesheets)", "email_supported": False, "delete_supported": False},
+    "payroll":         {"label": "Paneltec Pay (named administrators only)", "email_supported": False, "delete_supported": False},
     # v58.13.90 — Comms Safe Mode toggle. Deliberately isolated from
     # the generic `admin` role auto-grant below (see the explicit
     # `ROLE_DEFAULTS["admin"]["comms_safe_mode"]` denial after the
@@ -497,12 +497,17 @@ async def _role_default(
 _role_permits = _role_default
 
 
+from payroll_access import payroll_allowed, payroll_grants
+
+
 async def can(user: dict, resource: str, action: str) -> bool:
     if resource not in PERMISSIONS_SCHEMA:
         return False
     if action == "email" and not PERMISSIONS_SCHEMA[resource]["email_supported"]:
         return False
     overrides = await _get_overrides(user["id"])
+    if resource == "payroll":
+        return payroll_allowed(user, await payroll_grants(user), action)
     res_over = overrides.get(resource) or {}
     if action in res_over:
         return bool(res_over[action])
@@ -556,10 +561,14 @@ async def effective_for(user: dict) -> Dict[str, Dict[str, bool]]:
     role_str = user.get("role")
     lookup_id = user.get("role_id") or role_str
     db_tokens = await _role_tokens(lookup_id)
+    pay_grants = await payroll_grants(user)
     out: Dict[str, Dict[str, bool]] = {}
     for resource in RESOURCES:
         out[resource] = {}
         for action in ACTIONS:
+            if resource == "payroll":
+                out[resource][action] = payroll_allowed(user, pay_grants, action)
+                continue
             if action == "email" and not PERMISSIONS_SCHEMA[resource]["email_supported"]:
                 out[resource][action] = False
                 continue
