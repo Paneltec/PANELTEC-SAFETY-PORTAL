@@ -70,6 +70,7 @@ class LeaveAllocation(Strict):
     hours: float = Field(gt=0, le=168, allow_inf_nan=False)
 
 class Row(Strict):
+    adjustment_reason: str = Field("", max_length=1000)
     worker_id: str = Field(min_length=1, max_length=100)
     timesheet_fingerprint: str = Field("", pattern=r"^(|[a-f0-9]{64})$")
     profile: Profile = Field(default_factory=Profile)
@@ -247,7 +248,7 @@ async def runs(user=Depends(require_permission('payroll','view'))):
         sheet=doc['worksheet']
         records.append({'week':doc['week'],'payday':sheet['payday'],'employees':len(sheet['rows']),
             'revision':sheet['revision'],'state':doc.get('state','open'),'saved_at':doc.get('saved_at'),
-            'issued':bool(doc.get(f"issued_{sheet['revision']}"))})
+            'closed':bool(doc.get(f"completion_{sheet['revision']}",{}).get('closed_at')),'issued':bool(doc.get(f"issued_{sheet['revision']}"))})
     return {'runs':sorted(records,key=lambda r:r['week'],reverse=True)}
 
 @router.get('/{week}/submissions')
@@ -284,7 +285,7 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
     await check_leave_sources(body,user['org_id'],week,calculated)
     sealed=next((v for v in (saved or {}).get('finalizations',[]) if v['revision']==body.revision),None) if (saved or {}).get('state')=='finalized' else None
     if sealed:calculated=sealed['report']
-    return {"finalized_branding":sealed.get('branding') if sealed else None,"worksheet": body.model_dump(mode="json"), "workers": await roster_public(user["org_id"]),
+    return {"state":(saved or {}).get("state","open"),"finalized_branding":sealed.get('branding') if sealed else None,"worksheet": body.model_dump(mode="json"), "workers": await roster_public(user["org_id"]),
             "report": calculated,
             "saved_at": saved.get("saved_at") if saved else None, "template_week": template_week,
             "sources": SOURCES, "rule_version": RULE_VERSION}
@@ -355,3 +356,6 @@ router.include_router(payslips_router)
 
 from payroll_delivery import router as delivery_router
 router.include_router(delivery_router)
+
+from payroll_completion import router as completion_router
+router.include_router(completion_router)

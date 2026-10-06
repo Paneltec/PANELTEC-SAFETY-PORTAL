@@ -1,0 +1,26 @@
+import React,{useEffect,useRef,useState} from 'react';
+import {View,Text,TouchableOpacity,StyleSheet,ScrollView} from 'react-native';
+import {Screen,BackHeader} from '../src/components/ui';
+import {listPayslips,getPayslip,downloadPayslip} from '../src/services/payslips';
+import {apiMessage,fromIso} from '../src/services/leave';
+const money=(n:number)=>n==null?'Not available':new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(n);
+const date=(v:string)=>fromIso(v).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
+export default function MyPayslips(){
+ const [list,setList]=useState<any[]>([]),[selected,setSelected]=useState<any>(null),[slip,setSlip]=useState<any>(null),[error,setError]=useState(''),[busy,setBusy]=useState(true);const request=useRef(0);
+ useEffect(()=>{let live=true;listPayslips().then(rows=>{if(live){setList(rows);setSelected(rows[0]||null);}}).catch(e=>{if(live)setError(String(apiMessage(e)));}).finally(()=>{if(live)setBusy(false);});return()=>{live=false;request.current++;};},[]);
+ useEffect(()=>{if(!selected)return;const id=++request.current;setBusy(true);setSlip(null);setError('');getPayslip(selected.week,selected.revision).then(data=>{if(id===request.current)setSlip(data);}).catch(e=>{if(id===request.current)setError(String(apiMessage(e)));}).finally(()=>{if(id===request.current)setBusy(false);});},[selected]);
+ const button=(text:string,action:()=>void)=><TouchableOpacity disabled={busy} accessibilityRole="button" onPress={action} style={[s.button,{opacity:busy?.5:1}]}><Text style={s.buttonText}>{text}</Text></TouchableOpacity>;
+ async function download(){setBusy(true);setError('');try{await downloadPayslip(selected.week,selected.revision);}catch(e){setError(String(apiMessage(e)));}finally{setBusy(false);}}
+ return <Screen testID="my-payslips"><BackHeader title="My Payslips"/>
+ {!!error&&<Text accessibilityRole="alert" style={s.message}>{error}</Text>}
+ <ScrollView horizontal style={{marginBottom:20}}>{list.map(item=><TouchableOpacity key={`${item.week}-${item.revision}`} accessibilityRole="button" onPress={()=>setSelected(item)} style={[s.chip,{backgroundColor:selected===item?'#ff790b':'#f4f6f9'}]}><Text style={s.label}>{date(item.paid_date)}</Text><Text style={s.small}>Revision {item.revision}</Text></TouchableOpacity>)}</ScrollView>
+ {busy&&<Text style={s.message}>Loading…</Text>}
+ {!busy&&!list.length&&!error&&<View style={s.card}><Text style={s.title}>No payslips yet</Text><Text style={s.small}>Your payslips will appear here when the pay officer issues them.</Text></View>}
+ {slip&&<><Text style={s.message}>{slip.brand} · {slip.name}</Text><View style={[s.card,{backgroundColor:'#19c45c'}]}><Text style={s.label}>NET PAYMENT</Text><Text style={s.net}>{money(slip.result.net)}</Text><Text style={s.small}>Paid {date(slip.paid_date)}</Text><Text style={s.small}>{date(slip.week)} – {date(slip.end)}</Text></View>
+ <View style={s.card}><Text style={s.title}>Earnings</Text>{slip.lines.map((line:any[],i:number)=><View key={i} style={s.row}><View style={{flex:1}}><Text style={s.label}>{line[0]}</Text>{line[1]!=null&&<Text style={s.small}>{line[1]} h × {money(line[2])}</Text>}</View><Text style={s.label}>{money(line[3])}</Text></View>)}<View style={s.row}><Text style={s.title}>Gross</Text><Text style={s.title}>{money(slip.result.gross)}</Text></View></View>
+ <View style={s.card}><Text style={s.title}>Tax, deductions & super</Text>{[['PAYG withheld','payg'],['Deductions','deductions'],['Reimbursements','reimbursements'],['Employer super required','super']].map(([label,key])=><View key={key} style={s.row}><Text style={[s.small,{flex:1}]}>{label}</Text><Text style={s.label}>{money(slip.result[key])}</Text></View>)}<Text style={s.small}>{slip.profile.super_fund_name} · Member {slip.masked.member_masked||'not captured'}</Text><Text style={s.small}>Super shown here is the contribution required, not confirmation of receipt by your fund.</Text></View>
+ <View style={s.card}><Text style={s.title}>Projected leave balances</Text><Text style={s.small}>Annual: {slip.result.annual_closing?.toFixed(2)??'Not available'} hours</Text><Text style={s.small}>Personal / carer’s: {slip.result.personal_closing?.toFixed(2)??'Not available'} hours</Text><Text style={s.small}>These balances have not been posted to a leave ledger. Year-to-date figures are not loaded.</Text></View>
+ {button('DOWNLOAD PAYSLIP PDF',download)}<Text style={s.message}>Questions about your pay? Contact your pay officer.</Text></>}
+ </Screen>;
+}
+const s=StyleSheet.create({card:{backgroundColor:'#f4f6f9',borderRadius:24,padding:22,marginBottom:18},chip:{padding:16,borderRadius:16,marginRight:10},title:{fontSize:21,fontWeight:'700',color:'#182a3b',marginBottom:8},label:{fontSize:16,fontWeight:'700',color:'#182a3b'},small:{fontSize:15,lineHeight:23,color:'#4a5c6c'},net:{fontSize:42,fontWeight:'800',color:'#14283a',marginVertical:10},row:{flexDirection:'row',justifyContent:'space-between',gap:12,paddingVertical:10,borderBottomWidth:1,borderBottomColor:'#dce2e9'},message:{color:'#c1d1e3',fontSize:16,lineHeight:24,marginBottom:20},button:{backgroundColor:'#ff790b',padding:23,borderRadius:23,alignItems:'center',marginBottom:20},buttonText:{fontSize:19,fontWeight:'800',color:'#172839'}});

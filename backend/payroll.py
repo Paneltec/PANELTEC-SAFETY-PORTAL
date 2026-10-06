@@ -731,3 +731,6 @@ async def ensure_payroll_indexes() -> None:
 from payroll_segments import phone as segments_phone, office as segments_office
 me_router.include_router(segments_phone)
 router.include_router(segments_office)
+
+from payroll_worker_payslips import router as worker_payslips_router
+me_router.include_router(worker_payslips_router)

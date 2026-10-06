@@ -5,6 +5,7 @@ import { useCan } from '../../lib/permissions';
 // know at a glance they're in the pay area: deep indigo band, gold
 // accent, its own wordmark and tabs. Same page layout underneath.
 import React from 'react';
+import './payrollTheme.css';
 import { NavLink, Outlet } from 'react-router-dom';
 import { Coins } from 'lucide-react';
 
@@ -81,9 +82,9 @@ export default function PayShell() {
   const can = useCan();
   if (!can('payroll', 'view')) return <div role="alert" className="p-6 rounded-xl border bg-white">Payroll access is restricted. Contact the payroll owner to request access.</div>;
   return (
-    <div className="-mx-4 -mt-6 sm:-mx-6 sm:-mt-8 lg:-mx-8 lg:-mt-10 min-h-full rounded-b-2xl" style={{ background: PAY.paper }} data-testid="pay-shell">
+    <div className="pay-theme -mx-4 -mt-6 sm:-mx-6 sm:-mt-8 lg:-mx-8 lg:-mt-10 min-h-full rounded-b-2xl" style={{ background: PAY.paper }} data-testid="pay-shell">
       <div className="px-4 sm:px-6 lg:px-8 pt-5 pb-0 text-white" style={{ background: `linear-gradient(135deg, ${PAY.ink} 0%, ${PAY.ink2} 100%)` }}>
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: PAY.gold, color: PAY.ink }}>
               <Coins size={22} />
@@ -106,7 +107,7 @@ export default function PayShell() {
         </div>
       </div>
       <div className="px-4 sm:px-6 lg:px-8 py-5">
-        <div className="max-w-6xl mx-auto"><Outlet /></div>
+        <div className="max-w-7xl mx-auto"><Outlet /></div>
       </div>
     </div>
   );
