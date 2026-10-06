@@ -113,14 +113,14 @@ async def dispatch(week: str, revision: int, worker_id: str, user=Depends(requir
     except DuplicateKeyError:
         old=await db.pay_payslip_delivery.find_one({'_id':sendkey})
         return {'status':old['status']}
-    from payroll_payslips import render
+    from payroll_payslip_document import render_pdf
     from integrations_m365 import graph_send_mail
     try:
         response=await graph_send_mail(user['org_id'],to=[person['email']],cc=[],
             subject=f'Your payslip — week commencing {week}',
             body_html='<p>Your individual payslip is attached. Please contact your pay officer if you have any questions.</p>',
-            attachments=[{'filename':f'payslip-{week}-r{revision}.html','content_type':'text/html',
-                'content_bytes':render(snapshot,worker_id,week,issued).encode('utf-8')}])
+            attachments=[{'filename':f'payslip-{week}-r{revision}.pdf','content_type':'application/pdf',
+                'content_bytes':render_pdf(snapshot,worker_id,week,issued)}])
         status='accepted' if response.get('ok') and not response.get('blocked') and not response.get('skipped') else 'needs_check'
     except Exception:
         status='needs_check'

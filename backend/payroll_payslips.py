@@ -45,23 +45,25 @@ async def issue(week:str,body:Issue,user=Depends(require_permission('payroll','e
     if not snapshot:raise HTTPException(409,'Finalised snapshot unavailable')
     if body.paid_date.isoformat()!=snapshot['worksheet']['payday']:raise HTTPException(422,'Actual payment date differs from the finalised payday; open a correction and review the correct date first')
     if any(r['result'].get('net') is None for r in snapshot['report']['rows']):raise HTTPException(422,'Unresolved net wages')
+    from payroll_banking import decrypt
+    particulars={}
+    for row in snapshot['report']['rows']:
+        wid=row['worker_id'];item={}
+        bank=await db.pay_bank_details.find_one({'_id':f"{user['org_id']}:worker:{wid}"})
+        if bank:
+            value=decrypt(bank);item.update(account_name=value.get('account_name',''),account_masked='****'+value.get('account_number','')[-4:])
+        employee=await db.pay_employee_records.find_one({'_id':f"{user['org_id']}:{wid}"})
+        if employee:
+            value=decrypt(employee);member=value.get('super_member_number','');item['member_masked']='****'+member[-4:] if member else ''
+        particulars[wid]=item
+    record['particulars']=particulars
     result=await db.pay_review_sheets.update_one({'_id':key,'worksheet.revision':body.revision,'state':'finalized',field:None},{'$set':{field:record}})
     if not result.matched_count:raise HTTPException(409,'Run changed; reload before issuing')
     return record
 
 def render(snapshot,worker,week,issued):
-    row=next((r for r in snapshot['report']['rows'] if r['worker_id']==worker),None)
-    if not row:raise HTTPException(404,'Employee not found in this finalised run')
-    b=snapshot['branding'];p=row['profile'];e=row['entry'];r=row['result'];rules=snapshot['worksheet']['rules']
-    division=b.get(b.get('assignments',{}).get(worker,''),{})
-    h=lambda v:escape(str(v or ''))
-    money=lambda v:f'${float(v):,.2f}' if v is not None else 'Not available'
-    lines=[('Ordinary hours',e['ordinary'],p['hourly_rate'],r['ordinary_pay']),('Overtime tier 1',e['ot1'],p['hourly_rate']*rules['ot1_multiplier'],r['ot1_pay']),('Overtime tier 2',e['ot2'],p['hourly_rate']*rules['ot2_multiplier'],r['ot2_pay']),('Annual leave',e['annual'],p['hourly_rate'],r['annual_pay']),('Personal/carer’s leave',e['personal'],p['hourly_rate'],r['personal_pay']),('Public holiday',e['public_holiday'],p['hourly_rate'],r['public_holiday_pay']),('Leave loading',None,None,r['leave_loading']),('Taxable allowances',None,None,r['taxable_allowances'])]
-    earnings=''.join(f'<tr><td>{h(label)}</td><td>{qty if qty is not None else "—"}</td><td>{money(rate) if rate is not None else "—"}</td><td>{money(amount)}</td></tr>' for label,qty,rate,amount in lines if qty or amount or label=='Ordinary hours')
-    totals=''.join(f'<tr><th>{label}</th><td>{money(r[key])}</td></tr>' for label,key in [('Gross earnings','gross'),('PAYG withheld','payg'),('Other deductions','deductions'),('Reimbursements','reimbursements'),('Net wages','net'),('Employer super contribution required','super')])
-    # Only validated PNG/JPEG data URLs are used; no remote assets or scripts.
-    logo=division.get('logo','');image=f'<img alt="Division logo" src="{h(logo)}">' if logo.startswith(('data:image/png;base64,','data:image/jpeg;base64,')) else ''
-    return f'''<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{{font:14px Arial;max-width:800px;margin:30px auto;color:#172033}}img{{max-height:70px;max-width:240px}}table{{width:100%;border-collapse:collapse;margin:20px 0}}td,th{{padding:8px;border-bottom:1px solid #ddd;text-align:left}}pre{{white-space:pre-wrap;font:inherit}}@page{{size:A4;margin:15mm}}</style><body>{image}<h1>{h(division.get('name') or b['employer_name'])}</h1><p>Employer: {h(b['employer_name'])} · ABN {h(b['employer_abn'])}</p><h2>Payslip — {h(row['name'])}</h2><p>Employee reference: {h(worker)}</p><p>Period: {h(week)} to {(date.fromisoformat(week)+timedelta(days=6)).isoformat()}<br>Payment date: {h(issued['paid_date'])}<br>Revision: {snapshot['revision']}</p><table><tr><th>Earnings</th><th>Hours</th><th>Rate</th><th>Amount</th></tr>{earnings}</table><table>{totals}</table><p>Super fund: {h(p.get('super_fund_name'))} · USI {h(p.get('super_fund_usi'))}</p><p>Allowance particulars:</p><pre>{h(e.get('allowance_details') or 'None')}</pre><p>Deduction particulars:</p><pre>{h(e.get('deduction_details') or 'None')}</pre><p>Recorded as issued: {h(issued['issued_at'])}. Keep this payslip for your records.</p></body></html>'''
+    from payroll_payslip_document import render_html
+    return render_html(snapshot,worker,week,issued)
 
 @router.get('/{week}/payslips/{revision}/{worker_id}')
 async def download(week:str,revision:int,worker_id:str,user=Depends(require_permission('payroll','view'))):
@@ -71,3 +73,12 @@ async def download(week:str,revision:int,worker_id:str,user=Depends(require_perm
     snapshot=next((s for s in doc.get('finalizations',[]) if s['revision']==revision),None)
     if not issued or not snapshot:raise HTTPException(404,'Issued payslip not found')
     return Response(render(snapshot,worker_id,week,issued),media_type='text/html',headers={'Content-Disposition':f'attachment; filename="payslip-{week}-r{revision}.html"','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; img-src data:; style-src 'unsafe-inline'"})
+
+@router.get('/{week}/payslips/{revision}/{worker_id}/pdf')
+async def download_pdf(week:str,revision:int,worker_id:str,user=Depends(require_permission('payroll','view'))):
+    from payroll_payslip_document import render_pdf
+    period(week)
+    doc=await db.pay_review_sheets.find_one({'_id':f"{user['org_id']}:{week}"}) or {}
+    issued=doc.get(f'issued_{revision}');snapshot=next((s for s in doc.get('finalizations',[]) if s['revision']==revision),None)
+    if not issued or not snapshot:raise HTTPException(404,'Issued payslip not found')
+    return Response(render_pdf(snapshot,worker_id,week,issued),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename="payslip-{week}-r{revision}.pdf"','Cache-Control':'no-store'})
