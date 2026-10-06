@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install isolated test dependencies
-        run: pip install fastapi==0.110.1 httpx==0.27.2 'pydantic>=2,<3' pymongo==4.5.0 cryptography tzdata motor==3.3.1 bcrypt PyJWT email-validator slowapi 'pytest>=9,<10'
+        run: pip install fastapi==0.110.1 httpx==0.27.2 'pydantic>=2,<3' pymongo==4.5.0 cryptography tzdata motor==3.3.1 bcrypt PyJWT email-validator slowapi 'pytest>=9,<10' reportlab==4.5.1
       - name: Isolated payroll HTTP tests
         run: python -m unittest discover -s backend/tests/payroll_isolated -p 'test_payroll_*.py'
       - name: Payroll calculation and access tests
