@@ -179,6 +179,7 @@ import AdminVisitors from '@/pages/AdminVisitors';
 import LeaveRequests from '@/pages/LeaveRequests';
 import PayShell from '@/pages/pay/PayShell';
 import PayOverview from '@/pages/pay/PayOverview';
+import PayWorkbench from '@/pages/pay/PayWorkbench';
 import PayTimesheets from '@/pages/pay/PayTimesheets';
 import PayPeriods from '@/pages/pay/PayPeriods';
 import PayPeople from '@/pages/pay/PayPeople';
@@ -361,6 +362,7 @@ function App() {
               <Route path="leave" element={<LeaveRequests />} />
               <Route path="pay" element={<PayShell />}>
                 <Route index element={<PayOverview />} />
+                <Route path="payroll" element={<PayWorkbench />} />
                 <Route path="timesheets" element={<PayTimesheets />} />
                 <Route path="periods" element={<PayPeriods />} />
                 <Route path="people" element={<PayPeople />} />
