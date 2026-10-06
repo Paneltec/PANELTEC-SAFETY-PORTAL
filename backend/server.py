@@ -828,6 +828,15 @@ install_backup(app, _mongo_db, require_roles("admin"))
 
 @app.on_event("startup")
 async def on_startup():
+    # Preserve the verified payroll owner's access across the normal Umbrel update.
+    # Missing/ambiguous accounts remain denied; never auto-enrol an arbitrary admin.
+    try:
+        import asyncio as _payroll_asyncio
+        from payroll_owner_bootstrap import configure_bundled_payroll_owner
+        from db import db as _payroll_db
+        await _payroll_asyncio.wait_for(configure_bundled_payroll_owner(_payroll_db), timeout=10)
+    except Exception:
+        log.warning("Payroll owner setup unavailable; explicit owner configuration required")
     # v58.13.132iw — Disk-panic startup guard. If /app free < 200 MB
     # at backend boot, fire the purge script BEFORE the rest of the
     # startup work touches the disk. Non-fatal on any failure — the
