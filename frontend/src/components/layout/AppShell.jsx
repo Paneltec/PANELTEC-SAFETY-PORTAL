@@ -285,7 +285,7 @@ const NAV = [
   // Paneltec Pay — timesheets → approval → export to the payroll provider.
   // Its own look (indigo/gold) so staff know they're in the pay area.
   { section: 'Pay', items: [
-    { to: '/app/pay', label: 'Paneltec Pay', icon: Money24Regular, iconActive: Money24Filled, testid: 'nav-pay', requiresCan: ['payroll', 'view'], pastel: 'lavender' },
+    { to: '/app/pay/payroll', label: 'Payroll', icon: Money24Regular, iconActive: Money24Filled, testid: 'nav-pay', requiresCan: ['payroll', 'view'], pastel: 'lavender' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },
