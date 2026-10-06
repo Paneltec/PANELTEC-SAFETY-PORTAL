@@ -180,9 +180,6 @@ import LeaveRequests from '@/pages/LeaveRequests';
 import PayShell from '@/pages/pay/PayShell';
 import PayOverview from '@/pages/pay/PayOverview';
 import PayWorkbench from '@/pages/pay/PayWorkbench';
-import PayTimesheets from '@/pages/pay/PayTimesheets';
-import PayPeriods from '@/pages/pay/PayPeriods';
-import PayPeople from '@/pages/pay/PayPeople';
 import PaySettings from '@/pages/pay/PaySettings';
 import SupplierScanResolver from '@/pages/SupplierScanResolver';
 import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
@@ -363,9 +360,9 @@ function App() {
               <Route path="pay" element={<PayShell />}>
                 <Route index element={<PayOverview />} />
                 <Route path="payroll" element={<PayWorkbench />} />
-                <Route path="timesheets" element={<PayTimesheets />} />
-                <Route path="periods" element={<PayPeriods />} />
-                <Route path="people" element={<PayPeople />} />
+                <Route path="timesheets" element={<Navigate to="/app/pay" replace />} />
+                <Route path="periods" element={<Navigate to="/app/pay" replace />} />
+                <Route path="people" element={<Navigate to="/app/pay" replace />} />
                 <Route path="settings" element={<PaySettings />} />
               </Route>
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
