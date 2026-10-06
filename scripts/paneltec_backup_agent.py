@@ -145,10 +145,11 @@ def _mdns_discover(timeout: float = 4.0) -> List[Dict[str, Any]]:
         return []
     found: List[Dict[str, Any]] = []
 
-    def _on_change(zc, service_type, name, state_change):
+    # ServiceBrowser dispatches handlers by keyword, including `zeroconf`.
+    def _on_change(zeroconf, service_type, name, state_change):
         if state_change is not ServiceStateChange.Added:
             return
-        info = zc.get_service_info(service_type, name, timeout=1500)
+        info = zeroconf.get_service_info(service_type, name, timeout=1500)
         if not info:
             return
         addrs = [socket.inet_ntoa(a) for a in (info.addresses or [])]
