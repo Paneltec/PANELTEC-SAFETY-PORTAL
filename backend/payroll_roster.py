@@ -23,9 +23,9 @@ async def roster(org):
             raise HTTPException(409, 'Duplicate Simpro employee links exist. Resolve the worker links before creating payroll; historical runs are retained.')
         identities.add(identity)
         # Existing People/Timesheet records display the imported Position field.
-        # Prefer an explicit department when supplied; match Traffic Control exactly.
-        department = label(snapshot.get('department') or worker.get('department') or snapshot.get('position') or worker.get('position')).strip()
-        division = 'viatec' if ' '.join(department.casefold().split()) == 'traffic control' else 'paneltec'
+        # Prefer an explicit department, then the position displayed by the worker list.
+        department = label(worker.get('department') or snapshot.get('department') or worker.get('position') or snapshot.get('position')).strip()
+        division = 'viatec' if ' '.join(department.casefold().split()) in {'traffic control', 'traffic controller'} else 'paneltec'
         result.append({**worker, 'name': f"{worker.get('first_name', '')} {worker.get('last_name', '')}".strip() or worker['id'],
                        'department': department, 'division': division, 'active': True, 'simpro_employee_id': str(employee)})
     return sorted(result, key=lambda w: (w['name'].casefold(), w['id']))
