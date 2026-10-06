@@ -30,6 +30,17 @@ class SimproFlowTests(unittest.TestCase):
         self.f.body['rows'][0]['worker_id']='manual'
         self.assertEqual(self.f.save().status_code,422)
 
+    def test_displayed_worker_position_wins_over_old_snapshot(self):
+        worker=api.db.workers.rows[0]
+        worker.update(position='Traffic Controller',simpro_sync_snapshot={'position':'Construction Worker L2'})
+        self.assertEqual(C.get(URL).json()['workers'][0]['division'],'viatec')
+        worker.update(position='ADMINISTRATION',simpro_sync_snapshot={'position':'Traffic Controller'})
+        data=C.get(URL).json()['workers'][0]
+        self.assertEqual(data['department'],'ADMINISTRATION')
+        self.assertEqual(data['division'],'paneltec')
+        worker.update(position='Traffic Controller',department='Administration')
+        self.assertEqual(C.get(URL).json()['workers'][0]['division'],'paneltec')
+
     def test_duplicate_simpro_identity_rejected_without_deleting_history(self):
         self.f.save()
         api.db.workers.rows.append({**api.db.workers.rows[0],'id':'duplicate'})
