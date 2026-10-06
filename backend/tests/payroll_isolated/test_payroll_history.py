@@ -5,11 +5,12 @@ class HistoryTests(unittest.TestCase):
     def setUp(self):
         self.fixture=api.PayrollAPITests();self.fixture.setUp()
     def test_snapshot_survives_branding_worker_and_rate_changes(self):
+        api.db.workers.rows[0]['position']='Traffic Control'
         api.client.put('/payroll/workbench/branding',json={'employer_name':'TEST COMPANY','assignments':{'w1':'viatec'}})
         self.fixture.body['rows'][0]['profile'].update(super_fund_name='TEST FUND',super_fund_usi='TESTUSI')
         self.assertEqual(self.fixture.save().status_code,200)
         first=copy.deepcopy(api.client.get('/payroll/workbench/2026-10-05/history').json()['revisions'][0])
-        api.db.workers.rows[0]['first_name']='RENAMED'
+        api.db.workers.rows[0].update(first_name='RENAMED',position='Administration')
         api.client.put('/payroll/workbench/branding',json={'employer_name':'CHANGED','assignments':{'w1':'paneltec'}})
         self.fixture.body['revision']=1
         self.fixture.body['rows'][0]['profile']['hourly_rate']=40

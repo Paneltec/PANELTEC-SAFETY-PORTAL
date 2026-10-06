@@ -14,6 +14,7 @@ def matches(row,q):
         for bit in k.split('.'): x=x.get(bit) if isinstance(x,dict) else None
         if isinstance(v,dict):
             for op,val in v.items():
+                if op=='$in' and x not in val:return False
                 if op=='$lt' and not (x is not None and x<val):return False
                 if op=='$lte' and not (x is not None and x<=val):return False
                 if op=='$gte' and not (x is not None and x>=val):return False
@@ -22,6 +23,9 @@ def matches(row,q):
     return True
 class Cursor:
     def __init__(self,rows):self.rows=copy.deepcopy(rows)
+    def sort(self,keys):
+        for key,direction in reversed(keys):self.rows.sort(key=lambda r:r.get(key,''),reverse=direction<0)
+        return self
     def __aiter__(self):self.it=iter(self.rows);return self
     async def __anext__(self):
         try:return next(self.it)
@@ -45,10 +49,20 @@ class Collection:
             if '$each' in v:row[k]=(row.get(k,[])+copy.deepcopy(v['$each']))[v['$slice']:]
             else:row.setdefault(k,[]).append(copy.deepcopy(v))
         return types.SimpleNamespace(matched_count=int(found),upserted_id=None if found else row['_id'])
-    async def insert_one(self,row):self.rows.append(copy.deepcopy(row))
+    async def replace_one(self,q,doc,upsert=False):
+        row=next((r for r in self.rows if matches(r,q)),None)
+        if row is not None:row.clear();row.update(copy.deepcopy(doc))
+        elif upsert:self.rows.append(copy.deepcopy(doc))
+    async def update_many(self,q,update):
+        rows=[r for r in self.rows if matches(r,q)]
+        for row in rows:row.update(copy.deepcopy(update.get('$set',{})))
+        return types.SimpleNamespace(modified_count=len(rows))
+    async def insert_one(self,row):
+        if '_id' in row and any(r.get('_id')==row['_id'] for r in self.rows):raise DuplicateKeyError('duplicate')
+        self.rows.append(copy.deepcopy(row))
 class DB:
     def __init__(self):
-        for k in ('workers','leave_requests','pay_review_sheets','pay_bank_details','pay_bank_exports','pay_branding','pay_employee_records','pay_run_archive','pay_connection_settings'):setattr(self,k,Collection())
+        for k in ('workers','leave_requests','pay_review_sheets','pay_bank_details','pay_bank_exports','pay_branding','pay_employee_records','pay_run_archive','pay_connection_settings','timesheet_entries','pay_delivery_settings','pay_payslip_batches','pay_payslip_delivery','integration_configs','pay_settings','pay_profiles','pay_periods'):setattr(self,k,Collection())
 db=DB()
 def require_permission(resource,action):
     async def guard(x_role:str=Header('editor'),x_org:str=Header('org-a')):
@@ -69,8 +83,8 @@ class PayrollAPITests(unittest.TestCase):
     def setUp(self):
         for col in db.__dict__.values():col.rows=[]
         os.environ['PAYROLL_BANK_ENC_KEY']=Fernet.generate_key().decode()
-        db.workers.rows=[{'id':'w1','org_id':'org-a','first_name':'TEST','last_name':'WORKER'},
-                         {'id':'w2','org_id':'org-b','first_name':'OTHER','last_name':'ORG'}]
+        db.workers.rows=[{'id':'w1','org_id':'org-a','first_name':'TEST','last_name':'WORKER','simpro_employee_id':'42'},
+                         {'id':'w2','org_id':'org-b','first_name':'OTHER','last_name':'ORG','simpro_employee_id':'43'}]
         self.body={'revision':0,'payday':'2026-10-15','rows':[{'worker_id':'w1',
             'profile':{'employment_type':'full_time','hourly_rate':35,'classification':'TEST ONLY',
                 'conditions_reviewed':True,'tax_mode':'resident_threshold','tax_declaration_reviewed':True},
