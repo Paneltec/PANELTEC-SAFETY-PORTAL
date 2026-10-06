@@ -1,0 +1,12 @@
+import React,{useEffect,useState} from 'react';
+import api from '../../lib/api';
+export default function PayrollEmployeeRecord({workerId,profile,onApply}) {
+ const [record,setRecord]=useState(null),[member,setMember]=useState(''),[replace,setReplace]=useState(false),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ useEffect(()=>{let active=true;api.get(`/payroll/employee-records/${workerId}`).then(({data})=>{if(active)setRecord(data);}).catch(()=>{if(active)setMessage('Employee setup unavailable. Check payroll encryption and permissions.');});return()=>{active=false;};},[workerId]);
+ async function save(){setBusy(true);try{const {data}=await api.put(`/payroll/employee-records/${workerId}`,{revision:record.revision,profile,super_member_number:replace?member:null});setRecord(data);setMember('');setReplace(false);setMessage('Employee defaults saved separately. Existing pay runs were not changed.');}catch(e){setMessage(typeof e.response?.data?.detail==='string'?e.response.data.detail:'Could not save employee defaults');}finally{setBusy(false);}}
+ return <details className="border rounded p-3"><summary>Employee payroll setup</summary><p className="text-sm my-2">Save this employee’s current employment, rate, tax settings and fund details as reusable defaults. Applying defaults replaces these fields in the working worksheet; hours and opening balances stay unchanged.</p>
+ <p className="text-sm">Super member number: {record?.member_number_masked||'Not recorded'}</p><label className="text-sm block my-2"><input type="checkbox" checked={replace} onChange={e=>setReplace(e.target.checked)}/> Replace or clear super member number</label>
+ {replace&&<label className="text-sm block">New super member number (blank clears it)<input type="password" autoComplete="off" maxLength={64} className="border rounded p-2 block" value={member} onChange={e=>setMember(e.target.value)}/></label>}
+ <div className="flex gap-2 my-2"><button type="button" disabled={busy||!record} className="border rounded p-2 disabled:opacity-40" onClick={save}>Save current settings as employee defaults</button><button type="button" disabled={busy||!record?.configured} className="border rounded p-2 disabled:opacity-40" onClick={()=>{onApply(record.profile);setMessage('Defaults applied to this worksheet. Review and save the worksheet.');}}>Apply saved defaults to worksheet</button></div>
+ {message&&<p role="status" className="text-sm">{message}</p>}</details>;
+}

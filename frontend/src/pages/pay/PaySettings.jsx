@@ -1,3 +1,4 @@
+import PayrollBranding from './PayrollBranding';
 // Paneltec Pay — Settings: pay period, defaults, allowances, overtime estimate rules.
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -47,6 +48,7 @@ export default function PaySettings() {
 
   return (
     <form onSubmit={save} className="space-y-4" data-testid="pay-settings">
+      <PayrollBranding/>
       <PayCard title="Pay period">
         <div className="grid sm:grid-cols-3 gap-3">
           <label className={lab} style={labSt}>Paid<select value={s.period_type} onChange={(e) => set('period_type', e.target.value)} className={inp} style={st}><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option></select></label>
