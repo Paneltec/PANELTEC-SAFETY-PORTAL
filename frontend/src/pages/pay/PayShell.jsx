@@ -19,12 +19,9 @@ export const PAY = {
 };
 
 const TABS = [
-  { to: '/app/pay/payroll', label: 'Payroll' },
-  { to: '/app/pay', label: 'Overview', end: true },
-  { to: '/app/pay/timesheets', label: 'Timesheets' },
-  { to: '/app/pay/periods', label: 'Pay periods' },
-  { to: '/app/pay/people', label: 'People' },
-  { to: '/app/pay/settings', label: 'Settings' },
+  {to:'/app/pay',label:'Start a pay run / history',end:true},
+  {to:'/app/pay/payroll',label:'Review pay run'},
+  {to:'/app/pay/settings',label:'Settings'},
 ];
 
 export function PayCard({ title, aside, children, className = '', testid }) {

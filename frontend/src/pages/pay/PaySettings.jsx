@@ -1,3 +1,5 @@
+import DateField from './DateField';
+import PayrollDeliverySettings from './PayrollDeliverySettings';
 import PayrollBranding from './PayrollBranding';
 // Paneltec Pay — Settings: pay period, defaults, allowances, overtime estimate rules.
 import React, { useCallback, useEffect, useState } from 'react';
@@ -48,13 +50,13 @@ export default function PaySettings() {
 
   return (
     <form onSubmit={save} className="space-y-4" data-testid="pay-settings">
-      <PayrollBranding/>
+      <PayrollDeliverySettings/><PayrollBranding/>
       <PayCard title="Pay period">
         <div className="grid sm:grid-cols-3 gap-3">
           <label className={lab} style={labSt}>Paid<select value={s.period_type} onChange={(e) => set('period_type', e.target.value)} className={inp} style={st}><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option></select></label>
           <label className={lab} style={labSt}>Week starts on<select value={s.week_starts} onChange={(e) => set('week_starts', e.target.value)} className={inp} style={st}>{DAYS.map((d) => <option key={d} value={d}>{d[0].toUpperCase() + d.slice(1)}</option>)}</select></label>
           {s.period_type === 'fortnightly' && (
-            <label className={lab} style={labSt}>A date one fortnight starts<input type="date" value={s.period_anchor || ''} onChange={(e) => set('period_anchor', e.target.value)} className={inp} style={st} /></label>
+            <label className={lab} style={labSt}>A date one fortnight starts<DateField value={s.period_anchor || ''} onChange={(e) => set('period_anchor', e.target.value)} className={inp} style={st} /></label>
           )}
         </div>
       </PayCard>
