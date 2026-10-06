@@ -514,6 +514,7 @@ async def _sync_jobs_for_company(c: httpx.AsyncClient, base: str, token: str, ci
             "stage": stage,
             "status_bucket": bucket,
             "site_name": (j.get("Site") or {}).get("Name") if isinstance(j.get("Site"), dict) else None,
+            "simpro_customer_id": str((j.get("Customer") or {}).get("ID") or "") if isinstance(j.get("Customer"), dict) else None,
             "customer_name": (j.get("Customer") or {}).get("CompanyName") if isinstance(j.get("Customer"), dict) else None,
             "date_modified": date_completed_raw,
             "synced_at": now_iso(),
