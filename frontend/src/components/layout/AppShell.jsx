@@ -89,14 +89,17 @@ function ApkVersionBlock() {
   const [meta, setMeta] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [syncing, setSyncing] = React.useState(false);
+  const [error, setError] = React.useState('');
 
   const loadMeta = React.useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const r = await api.get('/mobile/downloads/android/version');
       setMeta(r.data);
-    } catch (_) {
-      setMeta(null);
+    } catch (e) {
+      setMeta(e?.response?.data?.available === false ? e.response.data : null);
+      if (e?.response?.data?.available !== false) setError('Unable to check the download. Try again.');
     } finally {
       setLoading(false);
     }
@@ -106,6 +109,7 @@ function ApkVersionBlock() {
 
   const onSync = async () => {
     setSyncing(true);
+    setError('');
     try {
       const r = await api.post('/mobile/downloads/android/ingest-from-eas');
       const m = r.data?.manifest;
@@ -117,7 +121,11 @@ function ApkVersionBlock() {
       await loadMeta();
     } catch (e) {
       const msg = e?.response?.data?.detail || e?.message || 'EAS sync failed';
-      toast.error(msg);
+      const message = String(msg).includes('EXPO_TOKEN')
+        ? 'Android setup is incomplete. Connect this server to the Paneltec Expo account before syncing a build.'
+        : 'The Android build could not be synced. Check the Expo build status and try again.';
+      setError(message);
+      toast.error(message);
     } finally {
       setSyncing(false);
     }
@@ -127,11 +135,11 @@ function ApkVersionBlock() {
     <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5" data-testid="topbar-apk-version-block">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Published APK</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Android app</div>
           {loading ? (
             <div className="text-xs text-slate-400 mt-0.5">Checking…</div>
           ) : !meta || !meta.available ? (
-            <div className="text-xs text-slate-500 mt-0.5" data-testid="topbar-apk-version-none">None published yet</div>
+            <div className="text-xs text-slate-500 mt-0.5" data-testid="topbar-apk-version-none">No download available on this server</div>
           ) : (
             <div className="text-xs text-slate-800 mt-0.5" data-testid="topbar-apk-version-current">
               <span className="font-semibold">v{meta.version}</span>
@@ -147,7 +155,7 @@ function ApkVersionBlock() {
         <button
           type="button"
           onClick={onSync}
-          disabled={syncing}
+          disabled={syncing || loading}
           data-testid="topbar-apk-sync-eas"
           className="shrink-0 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
           title="Pull the latest FINISHED Android build from EAS and republish here."
@@ -155,6 +163,20 @@ function ApkVersionBlock() {
           {syncing ? '…syncing' : 'Sync latest from EAS'}
         </button>
       </div>
+      {error && <p role="alert" className="text-xs text-red-700 mb-2">{error}</p>}
+      {!loading && meta?.available ? (
+        <a href="/api/mobile/downloads/android/latest.apk" download
+          data-testid="topbar-download-app-android"
+          className="block w-full text-center rounded-xl px-3 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700">
+          Download Android app
+        </a>
+      ) : (
+        <button type="button" disabled className="block w-full rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-500">
+          {loading ? 'Checking download…' : 'Android download not ready'}
+        </button>
+      )}
+      <button type="button" onClick={loadMeta} disabled={loading || syncing}
+        className="mt-2 text-xs text-blue-700 disabled:opacity-50">Check availability again</button>
     </div>
   );
 }
@@ -629,7 +651,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
               Paneltec Civil · Mobile app
             </DropdownMenuLabel>
             <p className="mt-1 mb-3 text-xs text-slate-600 leading-relaxed">
-              Install the mobile app for field workers, admins doing role-simulator testing, or QR sign-on stations.
+              Download a published Android build here. Staff use away from the office also requires the public server connection to be ready.
             </p>
             {/* v58.13.132ix — Currently-published APK metadata + admin
                 "Sync latest from EAS" button. Reads manifest from
@@ -637,14 +659,6 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
                 POSTs to /mobile/downloads/android/ingest-from-eas
                 (admin-only) to refresh from EAS. */}
             <ApkVersionBlock />
-            <a
-              href="/api/mobile/downloads/android/latest.apk"
-              download
-              data-testid="topbar-download-app-android"
-              className="block w-full text-center rounded-xl px-3 py-2 text-sm font-medium bg-slate-900 text-white hover:bg-slate-700 transition mb-2"
-            >
-              ⬇ Download Android APK
-            </a>
             <button
               type="button"
               disabled
@@ -652,10 +666,10 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
               className="block w-full text-center rounded-xl px-3 py-2 text-sm font-medium bg-slate-100 text-slate-400 cursor-not-allowed mb-3"
               title="iOS TestFlight setup pending — reach out to admin for status."
             >
-              iOS install · Coming soon
+              iPhone download not ready
             </button>
             <p className="text-[10px] text-slate-500 leading-relaxed mb-2">
-              Android: sideload the APK · enable "Install from unknown sources" on first install.
+              iPhone: Apple signing and a TestFlight build are still required. Android: allow installation from your browser when prompted.
             </p>
             <DropdownMenuSeparator />
             <Link
