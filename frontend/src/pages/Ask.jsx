@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Check, FileSearch, Loader2, Pencil, Plus, Sparkles, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
@@ -171,6 +171,8 @@ function SuggestionChip({ s, canEdit, onAsk, onEdit, onDelete, confirmingDelete 
 }
 
 export default function Ask() {
+  const location=useLocation();
+  const handledSearch=useRef(null);
   const { workspaceId } = useWorkspace();
   const user = getUser();
   // v160.3.9.29-2c — Piggyback on users.edit per Phase 3c decision #2
@@ -228,6 +230,15 @@ export default function Ask() {
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
+
+  useEffect(()=>{
+    const question=location.state?.question;
+    if(typeof question!=='string'||!question.trim()||handledSearch.current===location.key)return;
+    handledSearch.current=location.key;
+    setQ(question);submit(question);
+    // A header submission is identified by its navigation key, including repeated questions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[location.key]);
 
   const askFromChip = (question) => { setQ(question); submit(question); };
 
