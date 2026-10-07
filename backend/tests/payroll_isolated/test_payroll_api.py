@@ -67,7 +67,7 @@ class Collection:
         self.rows.append(copy.deepcopy(row))
 class DB:
     def __init__(self):
-        for k in ('workers','leave_requests','pay_review_sheets','pay_bank_details','pay_bank_exports','pay_branding','pay_employee_records','pay_run_archive','pay_connection_settings','timesheet_entries','pay_delivery_settings','pay_payslip_batches','pay_payslip_delivery','integration_configs','pay_settings','pay_profiles','pay_periods','simpro_jobs'):setattr(self,k,Collection())
+        for k in ('pay_calculation_settings','workers','leave_requests','pay_review_sheets','pay_bank_details','pay_bank_exports','pay_branding','pay_employee_records','pay_run_archive','pay_connection_settings','timesheet_entries','pay_delivery_settings','pay_payslip_batches','pay_payslip_delivery','integration_configs','pay_settings','pay_profiles','pay_periods','simpro_jobs'):setattr(self,k,Collection())
 db=DB()
 def require_permission(resource,action):
     async def guard(x_role:str=Header('editor'),x_org:str=Header('org-a')):
