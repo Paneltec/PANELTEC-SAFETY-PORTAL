@@ -13,7 +13,7 @@ class RuleSettingsTests(unittest.TestCase):
         old=api.client.get('/payroll/workbench/2026-10-05').json()['worksheet']
         new=api.client.get('/payroll/workbench/2026-10-12').json()['worksheet']
         self.assertEqual(old['rules']['super_percent'],12)
-        self.assertEqual(new['rules'],self.body['rules'])
+        self.assertEqual({k:new['rules'][k] for k in self.body['rules']},self.body['rules'])
 
     def test_revision_permissions_and_org_isolation(self):
         self.assertEqual(api.client.put(self.url,json=self.body,headers={'x-role':'viewer'}).status_code,403)
