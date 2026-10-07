@@ -45,7 +45,22 @@ class Shift(Strict):
     public_holiday: bool = False
     replacement_day_shift: bool = False
 
+class CasualRates(Strict):
+    base_rate: Number = 0
+    loading_percent: float = Field(25,ge=0,le=100,allow_inf_nan=False)
+    ot1: Number | None = None
+    ot2: Number | None = None
+    night: Number | None = None
+    holiday_work: Number | None = None
+
+class AllowanceRate(Strict):
+    code: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,40}$")
+    name: str = Field(min_length=1,max_length=100)
+    rate: Number
+
 class Profile(Strict):
+    casual_rates: CasualRates | None = None
+    allowance_rates: list[AllowanceRate] = Field(default_factory=list,max_length=20)
     super_fund_name: str = Field('', max_length=160)
     super_fund_usi: str = Field('', max_length=32)
     employment_type: Literal["unconfirmed", "full_time", "part_time", "casual", "contractor"] = "unconfirmed"
@@ -63,6 +78,11 @@ class Profile(Strict):
 
     @model_validator(mode="after")
     def salary_rate(self):
+        codes=[a.code for a in self.allowance_rates]
+        if len(codes)!=len(set(codes)):raise ValueError("Allowance codes must be unique")
+        if self.employment_type == "casual" and self.casual_rates is not None:
+            if self.pay_basis != "hourly":raise ValueError("Casual rate table requires hourly pay basis")
+            self.hourly_rate=self.casual_rates.base_rate*(1+self.casual_rates.loading_percent/100)
         if self.pay_basis == "annual_salary":
             if self.annual_salary <= 0 or self.ordinary_weekly_hours <= 0:
                 raise ValueError("Annual salary and ordinary weekly hours must be positive")
@@ -70,6 +90,7 @@ class Profile(Strict):
         return self
 
 class Entry(Strict):
+    allowance_units: dict[str, Number] = Field(default_factory=dict,max_length=20)
     deduction_details: str = Field('', max_length=1000)
     allowance_details: str = Field('', max_length=1000)
     night: Hours = 0

@@ -61,6 +61,13 @@ def calculate_line(profile, entry, rules, payday):
         if salary <= 0 or weekly_hours <= 0:
             raise ValueError("Annual salary and ordinary weekly hours must be positive")
         rate = salary / 52 / weekly_hours
+    casual_rates=profile.get("casual_rates") if profile.get("employment_type")=="casual" else None
+    if casual_rates is not None:
+        rate=dec(casual_rates['base_rate'])*(1+dec(casual_rates['loading_percent'])/100)
+    rates={"ordinary":rate}
+    for key,multiplier in (("ot1","ot1_multiplier"),("ot2","ot2_multiplier"),("night","night_multiplier"),("holiday_work","holiday_work_multiplier")):
+        override=casual_rates.get(key) if casual_rates else None
+        rates[key]=dec(override) if override is not None else rate*dec(rules.get(multiplier,2.5 if key=="holiday_work" else 2))
     if rate <= 0:
         issues.append("Enter an hourly rate")
     if not profile.get("conditions_reviewed"):
@@ -87,20 +94,30 @@ def calculate_line(profile, entry, rules, payday):
         issues.append("Casual/contractor paid annual or personal leave requires review")
     earnings = {
         "ordinary_pay": rounded(h["ordinary"]*rate),
-        "ot1_pay": rounded(h["ot1"]*rate*dec(rules["ot1_multiplier"])),
-        "ot2_pay": rounded(h["ot2"]*rate*dec(rules["ot2_multiplier"])),
+        "ot1_pay": rounded(h["ot1"]*rates["ot1"]),
+        "ot2_pay": rounded(h["ot2"]*rates["ot2"]),
         "annual_pay": rounded(h["annual"]*rate),
         "personal_pay": rounded(h["personal"]*rate),
         "public_holiday_pay": rounded(h["public_holiday"]*rate),
         "leave_loading": rounded(h["annual"]*rate*dec(profile.get("leave_loading_percent", 0))/100),
         "taxable_allowances": rounded(entry.get("taxable_allowances", 0)),
     }
-    earnings["night_pay"]=rounded(h["night"]*rate*dec(rules.get("night_multiplier",2)))
-    earnings["holiday_work_pay"]=rounded(h["holiday_work"]*rate*dec(rules.get("holiday_work_multiplier",2.5)))
+    earnings["night_pay"]=rounded(h["night"]*rates["night"])
+    earnings["holiday_work_pay"]=rounded(h["holiday_work"]*rates["holiday_work"])
     meal_count=int(entry.get("meal_count",0))
     meal_rate=rules.get("meal_allowance")
     if meal_count and meal_rate is None:issues.append("Set the meal allowance amount in calculation settings")
     earnings["meal_allowance_pay"]=rounded(meal_count*dec(meal_rate or 0))
+    allowance_lines=[]
+    definitions={a['code']:a for a in profile.get('allowance_rates',[])}
+    for code,units in entry.get('allowance_units',{}).items():
+        if code not in definitions:
+            if dec(units):raise ValueError("Unknown allowance rate; refresh employee settings")
+            continue
+        if dec(units)<0:raise ValueError("Allowance units cannot be negative")
+        definition=definitions[code];amount=rounded(dec(units)*dec(definition['rate']))
+        allowance_lines.append({**definition,'units':float(units),'amount':float(amount)})
+    earnings['configured_allowances']=sum((dec(a['amount']) for a in allowance_lines),Decimal(0))
     gross = sum(earnings.values())
     meal_tax=rules.get("meal_tax_treatment","unconfirmed")
     if meal_count and meal_tax=="unconfirmed":issues.append("Confirm meal allowance tax treatment in calculation settings")
@@ -150,6 +167,7 @@ def calculate_line(profile, entry, rules, payday):
                 issues.append(f"{kind.title()} leave balance would be negative")
     annual_value = None if balances["annual_closing"] is None else rounded(dec(balances["annual_closing"])*rate)
     return {**{k:float(v) for k,v in earnings.items()}, **balances,
+            "applied_rates":{k:float(v) for k,v in rates.items()}, "allowance_lines":allowance_lines,
             "gross":float(rounded(gross)), "payg":None if tax is None else float(tax),
             "net":None if net is None else float(net), "super":None if super_amount is None else float(super_amount),
             "annual_accrued":float(annual_accrued), "personal_accrued":float(personal_accrued),
