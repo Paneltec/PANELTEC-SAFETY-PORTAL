@@ -7,7 +7,7 @@ async def leave_at(org, worker, week):
     doc=await db.pay_employee_records.find_one({'_id':f'{org}:{worker}'})
     opening=decrypt(doc).get('opening_balances') if doc else None
     if not opening: return {'available':False,'reason':'No dated opening balances saved'}
-    cursor=date.fromisoformat(opening['as_at']);target=date.fromisoformat(week)
+    cursor=date.fromisoformat(opening['as_at']);target=date.fromisoformat(week[:10])
     if cursor>target:return {'available':False,'reason':'Opening balance date is later than this pay week'}
     annual=opening['annual_hours'];personal=opening['personal_hours']
     while cursor<target:
@@ -21,6 +21,14 @@ async def leave_at(org, worker, week):
         result=row['result']
         annual+=result['annual_accrued']-entry.get('annual',0)
         personal+=result['personal_accrued']-entry.get('personal',0)
+        # Supplementary issued earnings accrue only their additional ordinary hours.
+        async for extra in db.pay_review_sheets.find({'org_id':org,'state':'finalized','worksheet.out_of_cycle':True}):
+            if extra['week'][:10]!=cursor.isoformat():continue
+            rev=extra.get('worksheet',{}).get('revision')
+            if not extra.get(f'issued_{rev}'):continue
+            line=next((r for r in extra.get('report',{}).get('rows',[]) if r['worker_id']==worker),None)
+            if line:
+                annual+=line['result']['annual_accrued'];personal+=line['result']['personal_accrued']
         cursor+=timedelta(days=7)
     if cursor!=target or annual<0 or personal<0:return {'available':False,'reason':'Reconcile the balance date and intervening pay runs'}
     return {'available':True,'as_at':week,'source_date':opening['as_at'],

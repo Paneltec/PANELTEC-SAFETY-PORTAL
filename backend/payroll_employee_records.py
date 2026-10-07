@@ -109,3 +109,16 @@ async def pay_context(worker_id:str,week:str,payday:date,user=Depends(require_pe
     return {'employer':await resolved_branding(org),'bank':masked(await db.pay_bank_details.find_one({'_id':f'{org}:worker:{worker_id}'})),
             'member_number_masked':details['member_number_masked'],'prior_ytd':{k:float(v) if v is not None else None for k,v in totals.items()},
             'ytd_note':'YTD includes dated opening totals and issued runs through this payday, excluding this run. Component-level opening figures are not available.'}
+
+from payroll_rate_import import router as rate_import_router
+router.include_router(rate_import_router, prefix='')
+
+from payroll_catalog_settings import router as catalog_settings_router
+
+router.include_router(catalog_settings_router)
+
+from payroll_work_types import router as work_types_router
+router.include_router(work_types_router)
+
+from payroll_fund_settings import router as fund_settings_router
+router.include_router(fund_settings_router)

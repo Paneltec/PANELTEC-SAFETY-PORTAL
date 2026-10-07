@@ -37,6 +37,7 @@ async def finalize(week:str,body:Transition,user=Depends(require_permission('pay
     start=period(week);end=start+timedelta(days=6)
     worker_ids={r['worker_id'] for r in doc['worksheet']['rows']}
     async for other in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized','week':{'$ne':week}}):
+        if '~' in week or '~' in other['week']:continue
         other_start=period(other['week'])
         if other_start<=end and other_start+timedelta(days=6)>=start and worker_ids.intersection(r['worker_id'] for r in other.get('worksheet',{}).get('rows',[])):
             raise HTTPException(409, 'This period overlaps an already finalized pay run. Resolve the calendar transition before paying these employees again.')

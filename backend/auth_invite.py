@@ -172,10 +172,16 @@ async def _send_invite_email(user: dict, link: str, org_name: str, kind: str, se
              if is_reset else
              f"You've been added to {brand}. Click the button below to set "
              "your own password and finish setting up your account.")
+    from html import escape
+    context=user.get('payroll_invite_context') if not is_reset else None
+    invitation_detail=''
+    if context:
+        invitation_detail=f"<p><strong>Payroll invitation</strong><br>Company: {escape(context.get('company',''))}<br>Contact: {escape(context.get('name',''))}</p><p>{escape(context.get('reason',''))}</p>"
     html = f"""
 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#0f172a;max-width:520px;margin:0 auto;padding:24px 8px;line-height:1.5">
   <p style="font-size:16px;margin:0 0 12px">Hi {greeting},</p>
   <p style="font-size:14px;margin:0 0 20px">{intro}</p>
+  {invitation_detail}
   <p style="text-align:center;margin:24px 0 20px">
     <a href="{link}"
        style="display:inline-block;background:#F97316;color:#ffffff;

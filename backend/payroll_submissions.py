@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from db import db
 
 async def submissions(org, week):
+    if '~' in week:return {}
     end = (date.fromisoformat(week) + timedelta(days=6)).isoformat()
     grouped = {}
     async for row in db.timesheet_entries.find({'org_id': org, 'date': {'$gte': week, '$lte': end}}):

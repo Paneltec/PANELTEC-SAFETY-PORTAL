@@ -7,6 +7,7 @@ from pymongo.errors import DuplicateKeyError
 from auth import get_current_user
 from db import db
 from models import now_iso
+from payroll_work_types import choices as work_type_choices
 from permissions import require_permission
 
 phone = APIRouter()
@@ -23,6 +24,7 @@ class Segment(BaseModel):
     finish: str = Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
     break_minutes: int = Field(0, ge=0, le=600)
     notes: str = Field('', max_length=1000)
+    work_type_id: str = Field('', max_length=80)
 
 class DaySegments(BaseModel):
     revision: int = Field(0, ge=0)
@@ -79,6 +81,7 @@ async def catalog(org):
 async def unlocked(org, day):
     d = date.fromisoformat(day)
     async for run in db.pay_review_sheets.find({'org_id': org, 'state': 'finalized'}):
+        if '~' in run['week']:continue
         start = date.fromisoformat(run['week'])
         if start <= d <= start+timedelta(days=6):
             raise HTTPException(409, 'Payroll is finalized. Ask the pay officer to open a correction.')
@@ -89,6 +92,8 @@ async def resolve(segments, org, old=()):
     out = []
     for model in segments:
         s = model.model_dump()
+        from payroll_work_types import resolve_type
+        s['work_type_name'] = await resolve_type(org,s['work_type_id'],old_by_id.get(s['id'],{}))
         s['job_ref'] = ''
         if s['category'] in CATEGORIES:
             s.update(client_name=CATEGORIES[s['category']], client_key='', job_id='')
@@ -122,7 +127,7 @@ async def my_catalog(user=Depends(get_current_user)):
             key = s.get('client_key')
             if key and key not in recent: recent.append(key)
         if len(recent) >= 8: break
-    return {'clients': await catalog(user['org_id']), 'recent': recent[:8], 'categories': CATEGORIES}
+    return {'clients': await catalog(user['org_id']), 'recent': recent[:8], 'categories': CATEGORIES, 'work_types': await work_type_choices(user['org_id'])}
 
 @phone.put('/timesheets/{day}/segments')
 async def save_segments(day: str, body: DaySegments, user=Depends(get_current_user)):
@@ -159,7 +164,7 @@ class MatchClient(BaseModel):
 
 @office.get('/time-catalog')
 async def office_catalog(user=Depends(require_permission('payroll', 'view'))):
-    return {'clients': await catalog(user['org_id'])}
+    return {'clients': await catalog(user['org_id']), 'work_types': await work_type_choices(user['org_id'])}
 
 @office.post('/timesheets/{entry_id}/segments/{segment_id}/match')
 async def match_client(entry_id: str, segment_id: str, body: MatchClient, user=Depends(require_permission('payroll', 'edit'))):
@@ -179,3 +184,41 @@ async def match_client(entry_id: str, segment_id: str, body: MatchClient, user=D
     result = await db.timesheet_entries.replace_one({'org_id': user['org_id'], 'id': entry_id, 'revision': body.revision, 'status': row['status']}, row)
     if not result.matched_count: raise HTTPException(409, 'Day changed while matching. Reload first.')
     return row
+
+class OfficeReview(BaseModel):
+    revision: int = Field(0, ge=0)
+    updated_at: str | None = None
+    action: str = Field('save', pattern='^(save|approve|reject)$')
+    segments: list[Segment] | None = Field(None, max_length=40)
+    hours: float | None = Field(None, ge=0, le=24, allow_inf_nan=False)
+    notes: str | None = Field(None, max_length=1000)
+    reason: str = Field('', max_length=500)
+
+@office.post('/timesheets/{entry_id}/review')
+async def review_day(entry_id: str, body: OfficeReview, user=Depends(require_permission('payroll','edit'))):
+    from payroll import _entry_or_404, _compute, get_settings
+    from copy import deepcopy
+    old=await _entry_or_404(user['org_id'],entry_id)
+    await unlocked(user['org_id'],old['date'])
+    if old.get('status') not in ('submitted','approved','rejected'):
+        raise HTTPException(409,'Only submitted, approved or returned timesheets can be reviewed')
+    if body.revision!=old.get('revision',0) or body.updated_at!=old.get('updated_at'):
+        raise HTTPException(409,'This timesheet changed. Refresh before reviewing it.')
+    if body.action in ('save','reject') and not body.reason.strip():
+        raise HTTPException(422,'Enter a reason for the adjustment or return')
+    row=deepcopy(old);row.pop('_id',None)
+    if body.segments is not None:
+        if old.get('kind','work')!='work' or not body.segments:raise HTTPException(422,'A work day must contain time entries')
+        row.update(aggregate(await resolve(body.segments,user['org_id'],old.get('segments',[]))))
+    if body.hours is not None:
+        if old.get('kind','work')=='work':raise HTTPException(422,'Work hours are calculated from time entries')
+        row['hours']=body.hours
+    if body.notes is not None:row['notes']=body.notes
+    _compute(row,await get_settings(user['org_id']))
+    now=now_iso()
+    row.update(revision=body.revision+1,updated_at=now,updated_by=user['id'],status={'save':'submitted','approve':'approved','reject':'rejected'}[body.action])
+    row['office_history']=[*old.get('office_history',[]),{'at':now,'by':user['id'],'action':body.action,'reason':body.reason,'before':{k:v for k,v in old.items() if k not in ('_id','office_history')}}]
+    row.update(approved_by=user['id'] if body.action=='approve' else None,approved_by_name=(user.get('name') or user.get('email')) if body.action=='approve' else None,approved_at=now if body.action=='approve' else None,rejected_reason=body.reason if body.action=='reject' else None)
+    result=await db.timesheet_entries.replace_one({'org_id':user['org_id'],'id':entry_id,'revision':old.get('revision'),'updated_at':old.get('updated_at'),'status':old['status']},row)
+    if not result.matched_count:raise HTTPException(409,'Timesheet changed while saving. Refresh first.')
+    return {k:v for k,v in row.items() if k!='office_history'}

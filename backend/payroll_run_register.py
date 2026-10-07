@@ -29,7 +29,7 @@ def register_row(doc):
         statuses['payslips'].update(status='issued', source='Payslips issued; delivery not confirmed')
     hours = sum(float(row.get('entry', {}).get(k) or 0) for row in sheet.get('rows', [])
                 for k in ('ordinary','ot1','ot2','night','holiday_work','annual','personal','public_holiday'))
-    return {'week': doc['week'], 'end': (date.fromisoformat(doc['week'])+timedelta(days=6)).isoformat(),
+    return {'week': doc['week'], 'schedule': 'Out of cycle' if '~' in doc['week'] else 'Weekly', 'end': (date.fromisoformat(doc['week'][:10])+timedelta(days=6)).isoformat(),
             'payday': sheet['payday'], 'revision': revision, 'employees': len(sheet.get('rows', [])),
             'hours': round(hours, 2), 'totals': doc.get('report', {}).get('totals', {}),
             'state': 'closed' if completion.get('closed_at') else doc.get('state','open'), 'portals': statuses}
@@ -105,13 +105,23 @@ async def access_list(user=Depends(require_permission('payroll','view'))):
     return {'users':result}
 
 
+class AccountantInvitation(BaseModel):
+    company: str = Field(min_length=1,max_length=160)
+    name: str = Field(min_length=1,max_length=160)
+    email: str = Field(min_length=3,max_length=254)
+    reason: str = Field(min_length=1,max_length=1000)
+
 @router.post('/access/{user_id}/invite')
-async def invite_access(user_id:str,request:Request,user=Depends(require_permission('payroll','view'))):
+async def invite_access(user_id:str,request:Request,body:AccountantInvitation|None=None,user=Depends(require_permission('payroll','view'))):
     if not is_payroll_owner(user):raise HTTPException(403,'Only the payroll owner can invite payroll users')
     person=await db.users.find_one({'id':user_id,'org_id':user['org_id'],'role':'admin'})
     if not person or person.get('status') not in ('invited','pending_invite','invited_pending_send'):
         raise HTTPException(400,'Select an approved administrator awaiting an invitation')
     grant=await db.payroll_access.find_one({'_id':f"{user['org_id']}:{user_id}"}) or {}
     if grant.get('level') not in ('view','edit'):raise HTTPException(400,'Authorise payroll access before inviting')
+    if body:
+        if body.email.strip().casefold()!=person.get('email','').strip().casefold():raise HTTPException(422,'Email must match the approved user record')
+        if not all(v.strip() for v in body.model_dump().values()):raise HTTPException(422,'Complete all invitation fields')
+        await db.users.update_one({'id':user_id,'org_id':user['org_id']},{'$set':{'payroll_invite_context':{**body.model_dump(),'invited_by':user['id'],'at':now_iso()}}})
     from auth_invite import send_invite,InviteIn
     return await send_invite(user_id,InviteIn(channel='email'),request,caller=user)

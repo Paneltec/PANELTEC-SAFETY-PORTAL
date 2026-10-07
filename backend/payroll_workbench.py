@@ -131,6 +131,9 @@ class Row(Strict):
     leave_sources: list[LeaveAllocation] = Field(default_factory=list, max_length=30)
 
 class Worksheet(Strict):
+    out_of_cycle: bool = False
+    run_reason: str = Field('',max_length=500)
+    payslip_message: str = Field('',max_length=500)
     revision: int = Field(0, ge=0)
     payday: date
     rules: Rules = Field(default_factory=Rules)
@@ -211,7 +214,9 @@ async def save_connections(body:Connections,user=Depends(require_permission('pay
 
 def period(value):
     try:
-        d = date.fromisoformat(value)
+        import re
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}(~[0-9a-f]{32})?',value):raise ValueError()
+        d = date.fromisoformat(value[:10])
         return d
     except ValueError:
         raise HTTPException(422, "Choose a valid ISO week starting date")
@@ -219,6 +224,7 @@ def period(value):
 async def validate_new_week(org, week):
     start = period(week)
     if await db.pay_review_sheets.find_one({'_id': f'{org}:{week}'}): return
+    if '~' in week:raise HTTPException(404,'Out-of-cycle pay run not found')
     settings = await db.pay_settings.find_one({'org_id': org}) or {}
     day = settings.get('week_starts', 'friday')
     weekdays = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
@@ -236,6 +242,9 @@ def report(body, names):
         raise HTTPException(422, "Each worker must belong to this organisation and appear only once")
     rows = []
     for r in body.rows:
+        if body.out_of_cycle:
+            if r.shifts or r.leave_sources or r.timesheet_fingerprint or r.entry.annual or r.entry.personal:raise HTTPException(422,'Out-of-cycle runs use extra amounts only; do not import timesheets or leave already allocated to the weekly run')
+            if r.profile.tax_mode!='manual':raise HTTPException(422,'Out-of-cycle payments require reviewed manual PAYG for the additional payment')
         shift_issue=None
         if r.shifts is not None:
             from payroll_shift_rules import calculate_shifts
@@ -283,6 +292,7 @@ async def approved_leave(org, week):
     return result
 
 async def check_leave_sources(body, org, week, calculated):
+    if body.out_of_cycle:return calculated
     available={r['id']:r for r in await approved_leave(org,week)}
     ids=[a.leave_id for r in body.rows for a in r.leave_sources]
     if len(ids)!=len(set(ids)):
@@ -326,6 +336,35 @@ async def roster_public(org):
     from payroll_roster import roster, public_roster
     return public_roster(await roster(org))
 
+class ExtraRun(Strict):
+    week: date
+    payday: date
+    workers: list[str] = Field(min_length=1,max_length=500)
+    reason: str = Field(min_length=1,max_length=500)
+    payslip_message: str = Field('',max_length=500)
+
+@router.post('/out-of-cycle/create')
+async def create_extra_run(body:ExtraRun,user=Depends(require_permission('payroll','edit'))):
+    from uuid import uuid4
+    from payroll_banking import decrypt
+    from payroll_opening_balances import leave_at
+    names=await workers(user['org_id'])
+    if len(set(body.workers))!=len(body.workers) or any(w not in names for w in body.workers):raise HTTPException(422,'Select current Simpro employees once only')
+    await validate_new_week(user['org_id'],body.week.isoformat())
+    if not body.reason.strip() or body.payday<body.week or body.payday>body.week+timedelta(days=3650):raise HTTPException(422,'Enter a payment reason and a valid payment date')
+    key=body.week.isoformat()+'~'+uuid4().hex
+    settings=await db.pay_calculation_settings.find_one({'_id':user['org_id']}) or {}
+    sheet=Worksheet(payday=body.payday,out_of_cycle=True,run_reason=body.reason.strip(),payslip_message=body.payslip_message,rules=Rules(**settings.get('rules',{})))
+    for wid in body.workers:
+        record=await db.pay_employee_records.find_one({'_id':f"{user['org_id']}:{wid}"})
+        profile=Profile(**(decrypt(record)['profile'] if record else {}));profile.tax_mode='manual'
+        opening=await leave_at(user['org_id'],wid,body.week.isoformat())
+        entry=Entry(opening_annual=opening.get('opening_annual'),opening_personal=opening.get('opening_personal'))
+        sheet.rows.append(Row(worker_id=wid,profile=profile,entry=entry))
+    sheet.revision=1
+    await db.pay_review_sheets.insert_one({'_id':f"{user['org_id']}:{key}",'org_id':user['org_id'],'week':key,'state':'open','worksheet':sheet.model_dump(mode='json'),'report':report(sheet,names),'saved_at':now_iso(),'saved_by':user['id'],'rule_version':RULE_VERSION})
+    return {'run_id':key}
+
 @router.get('/employees/list')
 async def employee_list(user=Depends(require_permission('payroll','view'))):
     return {'workers': await roster_public(user['org_id'])}
@@ -336,13 +375,14 @@ async def runs(user=Depends(require_permission('payroll','view'))):
     async for doc in db.pay_review_sheets.find({'org_id':user['org_id']}):
         sheet=doc['worksheet']
         records.append({'week':doc['week'],'payday':sheet['payday'],'employees':len(sheet['rows']),
-            'revision':sheet['revision'],'state':doc.get('state','open'),'saved_at':doc.get('saved_at'),
+            'out_of_cycle':sheet.get('out_of_cycle',False),'revision':sheet['revision'],'state':doc.get('state','open'),'saved_at':doc.get('saved_at'),
             'closed':bool(doc.get(f"completion_{sheet['revision']}",{}).get('closed_at')),'issued':bool(doc.get(f"issued_{sheet['revision']}"))})
     return {'runs':sorted(records,key=lambda r:r['week'],reverse=True)}
 
 @router.get('/{week}/submissions')
 async def submitted_hours(week:str,user=Depends(require_permission('payroll','view'))):
     period(week)
+    if '~' in week:return {'workers':{}}
     from payroll_submissions import submissions
     allowed=await workers(user['org_id'])
     return {'workers':{k:v for k,v in (await submissions(user['org_id'],week)).items() if k in allowed}}
@@ -355,8 +395,8 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
     saved = await db.pay_review_sheets.find_one({"_id": f"{user['org_id']}:{week}"}, {"_id": 0})
     body = Worksheet(**saved["worksheet"]) if saved else Worksheet(payday=next_payday(week))
     template_week = None
-    if not saved or (not body.rows and saved.get('state','open')=='open'):
-        previous = await db.pay_review_sheets.find_one({"org_id": user["org_id"], "week": {"$lt": week}}, sort=[("week", -1)])
+    if not saved or (not body.rows and not body.out_of_cycle and saved.get('state','open')=='open'):
+        previous = await db.pay_review_sheets.find_one({"org_id": user["org_id"], "week": {"$lt": week}, "worksheet.out_of_cycle":{"$ne":True}}, sort=[("week", -1)])
         if not saved:
             if previous:
                 template_week = previous["week"]
@@ -399,10 +439,12 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
 async def preview(week: str, body: Worksheet, user=Depends(require_permission("payroll", "view"))):
     await validate_new_week(user["org_id"], week)
     start = period(week)
+    if body.out_of_cycle != ('~' in week):raise HTTPException(422,'Pay run type cannot be changed')
+    if body.out_of_cycle and not body.run_reason.strip():raise HTTPException(422,'Enter the reason for the extra payment')
     for row in body.rows:
         if row.shifts is not None and any(not start<=s.date<=start+timedelta(days=6) for s in row.shifts):
             raise HTTPException(422,"Shift dates must be within this pay week")
-    if body.payday < start or body.payday > start + timedelta(days=35):
+    if body.payday < start or body.payday > start + timedelta(days=3650 if body.out_of_cycle else 35):
         raise HTTPException(422, "Payday must fall between the week starting date and 35 days later")
     return await check_leave_sources(body,user['org_id'],week,report(body, await workers(user["org_id"])))
 

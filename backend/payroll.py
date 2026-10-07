@@ -714,6 +714,7 @@ async def my_submit(period_id: Optional[str] = None, user: dict = Depends(get_cu
     wid = await _my_worker_id(user)
     p = period_for(_parse_date(period_id) if period_id else date.today(), settings)
     async for run in db.pay_review_sheets.find({'org_id':user['org_id'],'state':'finalized'}):
+        if '~' in run['week']:continue
         run_end=(_parse_date(run['week'])+timedelta(days=6)).isoformat()
         if run['week']<=p['end'] and run_end>=p['start']:raise HTTPException(409,'Payroll for this week is locked. Ask the pay officer to open a correction.')
     r = await db.timesheet_entries.update_many(
