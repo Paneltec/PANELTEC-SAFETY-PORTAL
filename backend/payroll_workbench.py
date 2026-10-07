@@ -426,12 +426,37 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
             if opening['available']:
                 source['totals']={**source.get('totals',{}),'opening_annual':opening['opening_annual'],'opening_personal':opening['opening_personal']}
             body.rows.append(Row(shifts=(shift_rows or None) if complete_times else None,worker_id=worker_id, profile=Profile(**profile), entry=Entry(**source.get('totals', {})), timesheet_fingerprint=source.get('fingerprint', '')))
+    # Recover drafts created before employee rates were imported. Do not change
+    # positive snapshot rates, reviewed worksheets, or any finalized payroll.
+    rates_loaded=[]
+    if saved and saved.get('state','open')=='open' and not body.reviewed:
+        from payroll_banking import decrypt
+        for row in body.rows:
+            p=row.profile
+            has_rate=(p.annual_salary>0 if p.pay_basis=='annual_salary' else
+                      (p.casual_rates.base_rate>0 if p.employment_type=='casual' and p.casual_rates else p.hourly_rate>0))
+            if has_rate or p.conditions_reviewed or row.worker_id not in names:continue
+            record=await db.pay_employee_records.find_one({'_id':f"{user['org_id']}:{row.worker_id}"})
+            if not record:continue
+            defaults=Profile(**decrypt(record)['profile'])
+            valid=(defaults.annual_salary>0 if defaults.pay_basis=='annual_salary' else
+                   (defaults.casual_rates.base_rate>0 if defaults.employment_type=='casual' and defaults.casual_rates else defaults.hourly_rate>0))
+            if not valid:continue
+            if p.employment_type not in ('unconfirmed',defaults.employment_type):continue
+            for key in ('pay_basis','hourly_rate','annual_salary','casual_rates'):
+                setattr(p,key,getattr(defaults,key))
+            if p.employment_type=='unconfirmed':p.employment_type=defaults.employment_type
+            if p.pay_basis=='annual_salary':p.ordinary_weekly_hours=defaults.ordinary_weekly_hours
+            row.entry.hours_reviewed=False
+            row.entry.super_reviewed=False
+            row.adjustment_reason=row.adjustment_reason or 'Loaded missing rate from saved employee settings'
+            rates_loaded.append(row.worker_id)
     calculated=report(body,{**{r['worker_id']:r['name'] for r in (saved or {}).get('report',{}).get('rows',[])},**names})
     await check_leave_sources(body,user['org_id'],week,calculated)
     sealed=next((v for v in (saved or {}).get('finalizations',[]) if v['revision']==body.revision),None) if (saved or {}).get('state')=='finalized' else None
     if sealed:calculated=sealed['report']
     return {"state":(saved or {}).get("state","open"),"finalized_branding":sealed.get('branding') if sealed else None,"worksheet": body.model_dump(mode="json"), "workers": await roster_public(user["org_id"]),
-            "report": calculated,
+            "report": calculated, "rates_loaded":rates_loaded,
             "saved_at": saved.get("saved_at") if saved else None, "template_week": template_week,
             "sources": SOURCES, "rule_version": RULE_VERSION}
 
