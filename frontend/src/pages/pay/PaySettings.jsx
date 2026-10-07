@@ -1,3 +1,6 @@
+import PayrollSuperFundSettings from './PayrollSuperFundSettings';
+import PayrollWorkTypes from './PayrollWorkTypes';
+import PayrollCatalogSettings from './PayrollCatalogSettings';
 import {Link} from 'react-router-dom';
 import PayrollRuleSettings from './PayrollRuleSettings';
 import DateField from './DateField';
@@ -52,7 +55,7 @@ export default function PaySettings() {
   const labSt = { color: PAY.muted };
 
   return (
-    <><PayCard title="Pay-run preparation"><p className="text-sm mb-3">Opening leave balances, super earnings, submitted time approvals and exceptional adjustments for a selected pay week.</p><label className="text-sm">Week starting Friday<DateField value={preparationWeek} onChange={e=>setPreparationWeek(e.target.value)} className="border rounded p-2 block"/></label>{preparationWeek&&<Link className="inline-block underline mt-3" to={`/app/pay/payroll?week=${preparationWeek}&setup=1`}>Open pay-run preparation</Link>}</PayCard><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
+    <><PayrollSuperFundSettings/><PayrollWorkTypes/><PayrollCatalogSettings/><PayCard title="Pay-run preparation"><p className="text-sm mb-3">Opening leave balances, super earnings, submitted time approvals and exceptional adjustments for a selected pay week.</p><label className="text-sm">Week starting Friday<DateField value={preparationWeek} onChange={e=>setPreparationWeek(e.target.value)} className="border rounded p-2 block"/></label>{preparationWeek&&<Link className="inline-block underline mt-3" to={`/app/pay/payroll?week=${preparationWeek}&setup=1`}>Open pay-run preparation</Link>}</PayCard><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
       <PayrollDeliverySettings/><PayrollBranding/>
       <PayCard title="Company work calendar">
         <div className="grid sm:grid-cols-3 gap-3">
