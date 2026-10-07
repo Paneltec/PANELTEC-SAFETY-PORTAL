@@ -484,6 +484,7 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
 };
 
 function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
+  const [globalQuestion,setGlobalQuestion]=useState('');
   // v160.3.0-adjust-19 — Drag-drop PDF import.
   const [importOpen, setImportOpen] = useState(false);
   // v160.3.9.29-2a — `canImport` now driven by the granular workers.edit
@@ -614,12 +615,13 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         </DropdownMenu>
       )}
 
-      {/* v58.13.132ak — Global search input removed. Was a placeholder
-          since v54 (see tooltip: "Full search UI queued for v54.") —
-          never wired to a real search endpoint. Restore JSX from the
-          .132aj revision if a real Ask-style global search lands
-          later. */}
-      <div className="flex-1" />
+      <form role="search" aria-label="Global AI search" className="flex-1 min-w-0 max-w-md mx-2" onSubmit={e=>{e.preventDefault();const question=globalQuestion.trim();if(!question)return;const guard=new Event('payroll:navigate',{cancelable:true});if(!window.dispatchEvent(guard))return;navigate('/app/ask',{state:{question}});setGlobalQuestion('');}}>
+        <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden">
+          <input aria-label="Ask AI about your records" placeholder="Ask AI about your records…" value={globalQuestion} onChange={e=>setGlobalQuestion(e.target.value)} maxLength={1000} className="w-full min-w-0 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-inset focus:ring-violet-300"/>
+          <button type="submit" aria-label="Search with AI" title="Search with AI" disabled={!globalQuestion.trim()} className="p-2 text-violet-700 hover:bg-violet-50 disabled:opacity-40"><Search size={18}/></button>
+        </div>
+      </form>
+      <div className="hidden xl:block flex-1" />
 
       <NotificationsBell />
       <OutboxBell />
