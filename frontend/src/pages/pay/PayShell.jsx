@@ -21,11 +21,13 @@ export const PAY = {
 
 const TABS = [
   {to:'/app/pay',label:'Pay runs'},
+  {to:'/app/pay/run-report',label:'Pay-run report'},
   {to:'/app/pay/reports',label:'Pay reports'},
   {to:'/app/pay/super',label:'Pay super'},
   {to:'/app/pay/employees',label:'Employee settings'},
   {to:'/app/pay/providers',label:'Provider connection settings'},
   {to:'/app/pay/settings',label:'Settings'},
+  {to:'/app/pay/access',label:'Manage access'},
 ];
 
 export function PayCard({ title, aside, children, className = '', testid }) {

@@ -54,9 +54,9 @@ export default function PaySettings() {
   return (
     <><PayCard title="Pay-run preparation"><p className="text-sm mb-3">Opening leave balances, super earnings, submitted time approvals and exceptional adjustments for a selected pay week.</p><label className="text-sm">Week starting Friday<DateField value={preparationWeek} onChange={e=>setPreparationWeek(e.target.value)} className="border rounded p-2 block"/></label>{preparationWeek&&<Link className="inline-block underline mt-3" to={`/app/pay/payroll?week=${preparationWeek}&setup=1`}>Open pay-run preparation</Link>}</PayCard><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
       <PayrollDeliverySettings/><PayrollBranding/>
-      <PayCard title="Pay period">
+      <PayCard title="Company work calendar">
         <div className="grid sm:grid-cols-3 gap-3">
-          <label className={lab} style={labSt}>Paid<select value={s.period_type} onChange={(e) => set('period_type', e.target.value)} className={inp} style={st}><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option></select></label>
+          <label className={lab} style={labSt}>Standard hours per day<input type="number" step="0.1" min="0" max="24" value={s.overtime.daily_ordinary_hours} onChange={e=>setOt('daily_ordinary_hours',e.target.value)} className={inp} style={st}/></label><label className={lab} style={labSt}>Paid<select value={s.period_type} onChange={(e) => set('period_type', e.target.value)} className={inp} style={st}><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option></select></label>
           <label className={lab} style={labSt}>Week starts on<select value={s.week_starts} onChange={(e) => set('week_starts', e.target.value)} className={inp} style={st}>{DAYS.map((d) => <option key={d} value={d}>{d[0].toUpperCase() + d.slice(1)}</option>)}</select></label>
           {s.period_type === 'fortnightly' && (
             <label className={lab} style={labSt}>A date one fortnight starts<DateField value={s.period_anchor || ''} onChange={(e) => set('period_anchor', e.target.value)} className={inp} style={st} /></label>
