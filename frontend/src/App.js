@@ -180,6 +180,9 @@ import LeaveRequests from '@/pages/LeaveRequests';
 import PayShell from '@/pages/pay/PayShell';
 import PayOverview from '@/pages/pay/PayOverview';
 import PayWorkbench from '@/pages/pay/PayWorkbench';
+import PayrollEmployeeSettings from '@/pages/pay/PayrollEmployeeSettings';
+import PayrollConnections from '@/pages/pay/PayrollConnections';
+import PayrollReportPage from '@/pages/pay/PayrollReportPage';
 import PaySettings from '@/pages/pay/PaySettings';
 import SupplierScanResolver from '@/pages/SupplierScanResolver';
 import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
@@ -360,6 +363,10 @@ function App() {
               <Route path="pay" element={<PayShell />}>
                 <Route index element={<PayOverview />} />
                 <Route path="payroll" element={<PayWorkbench />} />
+                <Route path="reports" element={<PayrollReportPage mode="reports" />} />
+                <Route path="super" element={<PayrollReportPage mode="super" />} />
+                <Route path="employees" element={<PayrollEmployeeSettings />} />
+                <Route path="providers" element={<PayrollConnections />} />
                 <Route path="timesheets" element={<Navigate to="/app/pay" replace />} />
                 <Route path="periods" element={<Navigate to="/app/pay" replace />} />
                 <Route path="people" element={<Navigate to="/app/pay" replace />} />
