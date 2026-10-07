@@ -7,7 +7,7 @@ import DateField from './DateField';
 import PayrollDeliverySettings from './PayrollDeliverySettings';
 import PayrollBranding from './PayrollBranding';
 // Paneltec Pay — Settings: pay period, defaults, allowances, overtime estimate rules.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Check, Loader2, Plus, X } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
@@ -17,6 +17,8 @@ const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
 
 export default function PaySettings() {
   const [preparationWeek,setPreparationWeek]=useState(()=>{const d=new Date();d.setDate(d.getDate()-(d.getDay()+2)%7);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;});
+  const brandingRef=useRef(null);
+  const [saveMessage,setSaveMessage]=useState('');
   const [s, setS] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
@@ -31,7 +33,7 @@ export default function PaySettings() {
 
   const save = async (e) => {
     e.preventDefault();
-    setBusy(true);
+    setBusy(true);setSaveMessage('');
     try {
       const body = {
         ...s,
@@ -42,9 +44,11 @@ export default function PaySettings() {
         allowance_types: s.allowance_types.filter((a) => a.code && a.label).map((a) => ({ ...a, code: a.code.trim().toLowerCase().replace(/\s+/g, '_') })),
       };
       delete body.org_id; delete body.updated_at; delete body.updated_by;
+      if(!brandingRef.current)throw new Error('Company settings are still loading.');
+      await brandingRef.current.save();
       setS((await api.put('/payroll/settings', body)).data);
-      toast.success('Settings saved');
-    } catch (err) { toast.error(apiError(err) || 'Could not save'); }
+      setSaveMessage('Company and calendar settings saved.');
+    } catch (err) { setSaveMessage('Save did not complete: '+(apiError(err) || err.message || 'Please try again.')+' Company and calendar settings save separately; check any company confirmation above before retrying.'); }
     finally { setBusy(false); }
   };
 
@@ -56,7 +60,7 @@ export default function PaySettings() {
 
   return (
     <><PayrollSuperFundSettings/><PayrollWorkTypes/><PayrollCatalogSettings/><PayCard title="Pay-run preparation"><p className="text-sm mb-3">Opening leave balances, super earnings, submitted time approvals and exceptional adjustments for a selected pay week.</p><label className="text-sm">Week starting Friday<DateField value={preparationWeek} onChange={e=>setPreparationWeek(e.target.value)} className="border rounded p-2 block"/></label>{preparationWeek&&<Link className="inline-block underline mt-3" to={`/app/pay/payroll?week=${preparationWeek}&setup=1`}>Open pay-run preparation</Link>}</PayCard><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
-      <PayrollDeliverySettings/><PayrollBranding/>
+      <PayrollDeliverySettings/><PayrollBranding ref={brandingRef} parentBusy={busy}/>
       <PayCard title="Company work calendar">
         <div className="grid sm:grid-cols-3 gap-3">
           <label className={lab} style={labSt}>Standard hours per day<input type="number" step="0.1" min="0" max="24" value={s.overtime.daily_ordinary_hours} onChange={e=>setOt('daily_ordinary_hours',e.target.value)} className={inp} style={st}/></label><label className={lab} style={labSt}>Paid<select value={s.period_type} onChange={(e) => set('period_type', e.target.value)} className={inp} style={st}><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option></select></label>
@@ -107,9 +111,10 @@ export default function PaySettings() {
         <div className="mt-2 text-xs" style={{ color: PAY.muted }}>These only shape the estimates on the Overview. Your payroll provider applies the award properly.</div>
       </PayCard>
 
+      {saveMessage&&<p role="status" className="text-sm">{saveMessage}</p>}
       <div className="flex justify-end">
         <button type="submit" disabled={busy} className={payBtn('primary')} style={payBtnStyle('primary')} data-testid="pay-settings-save">
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save settings
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save company and calendar settings
         </button>
       </div>
     </form></>
