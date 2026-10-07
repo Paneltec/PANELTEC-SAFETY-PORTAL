@@ -1,3 +1,4 @@
+import PayrollTimeApprovals from './pages/pay/PayrollTimeApprovals';
 import React, { useEffect } from 'react';
 import '@/App.css';
 import '@/lib/clipboard';   // v154.1 — arms the navigator.clipboard.writeText safety-net at app boot
@@ -371,7 +372,7 @@ function App() {
                 <Route path="super" element={<PayrollReportPage mode="super" />} />
                 <Route path="employees" element={<PayrollEmployeeSettings />} />
                 <Route path="providers" element={<PayrollConnections />} />
-                <Route path="timesheets" element={<Navigate to="/app/pay" replace />} />
+                <Route path="timesheets" element={<PayrollTimeApprovals />} />
                 <Route path="periods" element={<Navigate to="/app/pay" replace />} />
                 <Route path="people" element={<Navigate to="/app/pay" replace />} />
                 <Route path="settings" element={<PaySettings />} />
