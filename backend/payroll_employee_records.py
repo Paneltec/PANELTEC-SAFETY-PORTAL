@@ -80,3 +80,32 @@ async def opening_at(worker_id:str,week:str,user=Depends(require_permission('pay
     period(week)
     await employee(user,worker_id)
     return await leave_at(user['org_id'],worker_id,week)
+
+@router.get('/{worker_id}/pay-context/{week}')
+async def pay_context(worker_id:str,week:str,payday:date,user=Depends(require_permission('payroll','view'))):
+    from payroll_workbench import period
+    from payroll_banking import masked
+    from payroll_branding import resolved_branding
+    from decimal import Decimal
+    period(week)
+    await employee(user,worker_id)
+    org=user['org_id']
+    record=await db.pay_employee_records.find_one({'_id':f'{org}:{worker_id}'})
+    details=public(record)
+    opening=details.get('opening_balances') or {}
+    fy=date(payday.year if payday.month>=7 else payday.year-1,7,1).isoformat()
+    valid=fy<=opening.get('as_at','')<=payday.isoformat()
+    totals={k:Decimal(str(opening['ytd_'+k])) if valid and opening.get('ytd_'+k) is not None else None for k in ('gross','payg','super')}
+    start=opening['as_at'] if valid else fy
+    async for run in db.pay_review_sheets.find({'org_id':org}):
+        sheet=run.get('worksheet',{})
+        if run.get('week')==week or run.get('state')!='finalized' or not run.get(f"issued_{sheet.get('revision')}"):continue
+        if not start<=sheet.get('payday','')<=payday.isoformat():continue
+        result=next((r['result'] for r in run.get('report',{}).get('rows',[]) if r['worker_id']==worker_id),None)
+        if result:
+            for k in totals:
+                if totals[k] is not None:
+                    totals[k]=None if result.get(k) is None else totals[k]+Decimal(str(result[k]))
+    return {'employer':await resolved_branding(org),'bank':masked(await db.pay_bank_details.find_one({'_id':f'{org}:worker:{worker_id}'})),
+            'member_number_masked':details['member_number_masked'],'prior_ytd':{k:float(v) if v is not None else None for k,v in totals.items()},
+            'ytd_note':'YTD includes dated opening totals and issued runs through this payday, excluding this run. Component-level opening figures are not available.'}

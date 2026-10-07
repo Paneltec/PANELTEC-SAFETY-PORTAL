@@ -55,6 +55,12 @@ def calculate_line(profile, entry, rules, payday):
     """Explicit hours buckets; overtime classification stays subject to award review."""
     issues = []
     rate = dec(profile.get("hourly_rate", 0))
+    if profile.get("pay_basis") == "annual_salary":
+        salary = dec(profile.get("annual_salary", 0))
+        weekly_hours = dec(profile.get("ordinary_weekly_hours", 0))
+        if salary <= 0 or weekly_hours <= 0:
+            raise ValueError("Annual salary and ordinary weekly hours must be positive")
+        rate = salary / 52 / weekly_hours
     if rate <= 0:
         issues.append("Enter an hourly rate")
     if not profile.get("conditions_reviewed"):

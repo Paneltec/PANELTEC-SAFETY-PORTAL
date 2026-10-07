@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from pymongo.errors import DuplicateKeyError
 from db import db
 from models import now_iso
@@ -49,6 +49,8 @@ class Profile(Strict):
     super_fund_name: str = Field('', max_length=160)
     super_fund_usi: str = Field('', max_length=32)
     employment_type: Literal["unconfirmed", "full_time", "part_time", "casual", "contractor"] = "unconfirmed"
+    pay_basis: Literal["hourly", "annual_salary"] = "hourly"
+    annual_salary: Number = 0
     hourly_rate: Number = 0
     ordinary_weekly_hours: Hours = 38
     classification: str = Field("", max_length=200)
@@ -58,6 +60,14 @@ class Profile(Strict):
     annual_weeks: float = Field(4, ge=4, le=12, allow_inf_nan=False)
     personal_weeks: float = Field(2, ge=2, le=12, allow_inf_nan=False)
     leave_loading_percent: float = Field(0, ge=0, le=100, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def salary_rate(self):
+        if self.pay_basis == "annual_salary":
+            if self.annual_salary <= 0 or self.ordinary_weekly_hours <= 0:
+                raise ValueError("Annual salary and ordinary weekly hours must be positive")
+            self.hourly_rate = self.annual_salary / 52 / self.ordinary_weekly_hours
+        return self
 
 class Entry(Strict):
     deduction_details: str = Field('', max_length=1000)
