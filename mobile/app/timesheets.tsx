@@ -1,15 +1,16 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {View,Text,TouchableOpacity,Pressable,Modal,ScrollView,StyleSheet} from 'react-native';
+import {View,Text,TextInput,TouchableOpacity,Pressable,Modal,ScrollView,StyleSheet} from 'react-native';
 import {Screen,BackHeader,FieldLabel,Input} from '../src/components/ui';
 import {toIso,fromIso,apiMessage} from '../src/services/leave';
 import {loadWeek,loadCatalog,saveSegments,submitWeek,Week,TimeSegment,Client,Catalog,DayEntry} from '../src/services/timesheets';
 
 const orange='#ff790b',white='#f4f6f9',muted='#aec3da';
 const categories=[['yard','Yard / Workshop'],['travel','Travel'],['training','Training'],['office','Office']];
+const validTime=(v:string)=>/^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 const mins=(v:string)=>Number(v.split(':')[0])*60+Number(v.split(':')[1]);
 const hhmm=(n:number)=>`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
-const clock=(v:string)=>{const n=mins(v),h=Math.floor(n/60);return `${h%12||12}:${String(n%60).padStart(2,'0')} ${h>=12?'pm':'am'}`;};
-const hours=(s:TimeSegment)=>Math.max(0,(mins(s.finish)-mins(s.start)-s.break_minutes)/60);
+const clock=(v:string)=>{if(!validTime(v))return 'Enter HH:MM';const n=mins(v),h=Math.floor(n/60);return `${h%12||12}:${String(n%60).padStart(2,'0')} ${h>=12?'pm':'am'}`;};
+const hours=(s:TimeSegment)=>!validTime(s.start)||!validTime(s.finish)?0:Math.max(0,(mins(s.finish)-mins(s.start)-s.break_minutes)/60);
 const fmt=(v:number)=>Number(v.toFixed(2)).toString();
 const shift=(v:string,n:number)=>{const d=fromIso(v);d.setDate(d.getDate()+n);return toIso(d);};
 const label=(v:string,opts:any)=>fromIso(v).toLocaleDateString('en-AU',opts);
@@ -21,8 +22,8 @@ function segmentsOf(row?:DayEntry):TimeSegment[]{
 }
 function Stepper({title,value,onChange}:{title:string;value:string;onChange:(v:string)=>void}){
  const held=useRef(false);
- function move(n:number){onChange(hhmm(Math.max(0,Math.min(1439,mins(value)+n))));}
- return <View style={s.timeCard}><Text style={s.small}>{title}</Text><Text style={s.time}>{clock(value)}</Text><View style={s.row}>{[-1,1].map(sign=><Pressable key={sign} accessibilityRole="button" accessibilityLabel={`${title} ${sign<0?'earlier':'later'} 15 minutes; hold for one hour`} onPressIn={()=>{held.current=false;}} onLongPress={()=>{held.current=true;move(sign*60);}} delayLongPress={500} onPress={()=>{if(!held.current)move(sign*15);}} style={s.step}><Text style={s.stepText}>{sign<0?'−':'+'}</Text></Pressable>)}</View><Text style={s.hint}>hold for 1 hour</Text></View>;
+ function move(n:number){onChange(hhmm(Math.max(0,Math.min(1439,(validTime(value)?mins(value):420)+n))));}
+ return <View style={s.timeCard}><Text style={s.small}>{title}</Text><TextInput accessibilityLabel={`${title} time, 24 hour HHMM or HH:MM`} style={[s.time,{borderWidth:1,borderColor:muted,borderRadius:8,textAlign:'center'}]} value={value} keyboardType="numbers-and-punctuation" maxLength={5} selectTextOnFocus onChangeText={text=>{const raw=text.replace(/[^0-9:]/g,'');onChange(/^\d{4}$/.test(raw)?raw.slice(0,2)+':'+raw.slice(2):raw);}}/><Text style={s.hint}>{clock(value)} · type 24-hour time</Text><View style={s.row}>{[-1,1].map(sign=><Pressable key={sign} accessibilityRole="button" accessibilityLabel={`${title} ${sign<0?'earlier':'later'} 15 minutes; hold for one hour`} onPressIn={()=>{held.current=false;}} onLongPress={()=>{held.current=true;move(sign*60);}} delayLongPress={500} onPress={()=>{if(!held.current)move(sign*15);}} style={s.step}><Text style={s.stepText}>{sign<0?'−':'+'}</Text></Pressable>)}</View><Text style={s.hint}>hold for 1 hour</Text></View>;
 }
 export default function MyTimesheets(){
  const [day,setDay]=useState(toIso(new Date())),[week,setWeek]=useState<Week|null>(null),[catalog,setCatalog]=useState<Catalog>({clients:[],recent:[]}),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
@@ -40,7 +41,7 @@ export default function MyTimesheets(){
  function choose(c:Client){setClient(c);setDraft(d=>d?{...d,category:'client',client_key:c.key,client_name:c.name,job_id:'',job_ref:''}:d);setClientOpen(false);setStage(c.jobs.length?'job':'time');}
  function nonClient(category:string,name:string){setDraft(d=>d?{...d,category,client_key:'',client_name:name,job_id:'',job_ref:''}:d);setClientOpen(false);setStage('time');}
  async function persist(next:TimeSegment[]){if(saving.current)return;saving.current=true;setBusy(true);setMessage('');try{await saveSegments(day,next,current?.revision||0);setStage('week');setDraft(null);await load(day);loadCatalog().then(setCatalog).catch(()=>{});setMessage('Time saved. Send the week when it is complete.');}catch(e){setMessage(String(apiMessage(e)));}finally{setBusy(false);saving.current=false;}}
- function save(){if(!draft)return;if(!draft.client_name.trim()){setMessage('Choose a client or non-client time before saving.');return;}const start=mins(draft.start),end=mins(draft.finish);if(end<=start){setMessage('Finish must be later than start on the same day.');return;}if(end-start<=draft.break_minutes){setMessage('Break must be shorter than the time worked.');return;}if(entries.some(e=>e.id!==draft.id&&start<mins(e.finish)&&end>mins(e.start))){setMessage('Times overlap. Adjust the start or finish before saving.');return;}persist([...entries.filter(e=>e.id!==draft.id),draft]);}
+ function save(){if(!draft)return;if(!validTime(draft.start)||!validTime(draft.finish)){setMessage('Enter valid start and finish times, for example 0700 or 07:00.');return;}if(!draft.client_name.trim()){setMessage('Choose a client or non-client time before saving.');return;}const start=mins(draft.start),end=mins(draft.finish);if(end<=start){setMessage('Finish must be later than start on the same day.');return;}if(end-start<=draft.break_minutes){setMessage('Break must be shorter than the time worked.');return;}if(entries.some(e=>e.id!==draft.id&&start<mins(e.finish)&&end>mins(e.start))){setMessage('Times overlap. Adjust the start or finish before saving.');return;}persist([...entries.filter(e=>e.id!==draft.id),draft]);}
  async function send(){if(!week||saving.current)return;saving.current=true;setBusy(true);try{const result=await submitWeek(week.period.id);await load(day);setMessage(`${result.submitted} day(s) sent to the office. Sent days are now locked.`);}catch(e){setMessage(String(apiMessage(e)));}finally{setBusy(false);saving.current=false;}}
  function leaveEditor(){confirmAction('Discard this unsaved time entry?',()=>{setStage('week');setDraft(null);setMessage('');});}
  const button=(title:string,action:()=>void,color=orange,disabled=false)=><TouchableOpacity accessibilityRole="button" disabled={busy||disabled} onPress={action} style={[s.button,{backgroundColor:color,opacity:busy||disabled?0.45:1}]}><Text style={s.buttonText}>{title}</Text></TouchableOpacity>;
