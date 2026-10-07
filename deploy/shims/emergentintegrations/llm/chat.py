@@ -38,6 +38,8 @@ def _media_type(b64: str) -> str:
 
 
 class LlmChat:
+    DIRECT_ANTHROPIC = True
+
     def __init__(self, api_key: Optional[str] = None, session_id: str = "",
                  system_message: str = ""):
         # The app passes EMERGENT_LLM_KEY; when self-hosting that holds your
