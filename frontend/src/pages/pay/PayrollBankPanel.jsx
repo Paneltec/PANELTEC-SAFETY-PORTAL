@@ -6,8 +6,8 @@ const input='w-full border rounded-lg p-2 bg-white';
 const empty={revision:0,account_name:'',bsb:'',account_number:'',verified:false};
 const employerEmpty={...empty,user_name:'PANELTEC',remitter:'PANELTEC',direct_entry_id:'000000',description:'PAYROLL',reference:'PANELTEC WAGES',balancing_entry:false};
 const dollars=v=>new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(v);
-export default function PayrollBankPanel({week,workers,worksheetSaved}) {
-  const [kind,setKind]=useState('employer'),[worker,setWorker]=useState(''),[form,setForm]=useState(null),[saved,setSaved]=useState(null);
+export default function PayrollBankPanel({week,workers,worksheetSaved,mode="all",workerId=""}) {
+  const [kind,setKind]=useState(mode==='worker'?'worker':'employer'),[worker,setWorker]=useState(workerId),[form,setForm]=useState(null),[saved,setSaved]=useState(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[batch,setBatch]=useState(null),[checked,setChecked]=useState(false);
   const path=kind==='employer'?'/payroll/banking/employer':`/payroll/banking/workers/${worker}`;
   const button=(text,fn,disabled=false)=><button type="button" className={payBtn('ghost')} style={payBtnStyle('ghost')} disabled={busy||disabled} onClick={fn}>{text}</button>;
@@ -17,12 +17,12 @@ export default function PayrollBankPanel({week,workers,worksheetSaved}) {
   async function preview(){setBusy(true);setError('');setBatch(null);setChecked(false);try{const {data}=await api.get(`/payroll/banking/batch/${week}`);setBatch(data);}catch(e){fail(e);}finally{setBusy(false);}}
   async function download(){setBusy(true);setError('');try{const {data}=await api.post(`/payroll/banking/batch/${week}/download`,{fingerprint:batch.fingerprint,checked},{responseType:'blob'});const url=URL.createObjectURL(data);const a=document.createElement('a');a.href=url;a.download=`paneltec-wages-${week}-r${batch.revision}.aba`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);setChecked(false);setMessage('ABA file downloaded. This is not a payment receipt. Upload once in Westpac, check the recipients and total, then authorise there. Re-downloading can duplicate payments if you upload it again.');}catch(e){setError('Export blocked or failed. Review the batch again to check for changed payroll or bank details.');}finally{setBusy(false);}}
   function edit(k,v){setForm({...form,[k]:v,verified:k==='verified'?v:false});setBatch(null);setChecked(false);}
-  return <details className="border rounded-xl p-4 bg-slate-50">
-    <summary className="font-bold cursor-pointer">Westpac wage files and employee bank details</summary>
-    <p className="text-sm my-3">Payroll editors can save bank details here. They are encrypted in storage and account numbers are masked when read back. One destination account per worker is supported.</p>
+  return <details open className="border rounded-xl p-4 bg-slate-50">
+    <summary className="font-bold cursor-pointer">{mode==='batch'?'Westpac wage file':mode==='worker'?'Employee bank details':'Company bank settings'}</summary>
+    {mode!=='batch'&&<p className="text-sm my-3">Payroll editors can save bank details here. They are encrypted in storage and account numbers are masked when read back. One destination account per worker is supported.</p>}
     {error&&<p role="alert" className="text-red-800 bg-red-50 rounded p-3">{typeof error==='string'?error:JSON.stringify(error)}</p>}
     <fieldset disabled={busy} className="space-y-3 min-w-0">
-      <div className="flex flex-wrap gap-3 items-end"><label className="text-sm">Bank record<select className={input} value={kind} onChange={e=>{setKind(e.target.value);setForm(null);setSaved(null);}}><option value="employer">Company paying account</option><option value="worker">Employee account</option></select></label>{kind==='worker'&&<label className="text-sm">Employee<select className={input} value={worker} onChange={e=>{setWorker(e.target.value);setForm(null);setSaved(null);}}><option value="">Choose…</option>{workers.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}{button('Open bank record',load,kind==='worker'&&!worker)}</div>
+      {mode!=='batch'&&<><div className="flex flex-wrap gap-3 items-end">{mode==='all'&&<><label className="text-sm">Bank record<select className={input} value={kind} onChange={e=>{setKind(e.target.value);setForm(null);setSaved(null);}}><option value="employer">Company paying account</option><option value="worker">Employee account</option></select></label>{kind==='worker'&&<label className="text-sm">Employee<select className={input} value={worker} onChange={e=>{setWorker(e.target.value);setForm(null);setSaved(null);}}><option value="">Choose…</option>{workers.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}</>}{button('Open bank record',load,kind==='worker'&&!worker)}</div>
       {saved?.configured&&<div className="text-sm rounded bg-white p-3">Saved: <strong>{saved.account_name}</strong> · BSB {saved.bsb_masked} · account {saved.account_masked} · {saved.verified?'Verified':'Not verified'}<br/>Updated {new Date(saved.updated_at).toLocaleString('en-AU')}</div>}
       {form&&<div className="space-y-3 border rounded-lg p-3">
         <h4 className="font-semibold">{saved?.configured?'Replace bank instructions':'Add bank instructions'}</h4>
@@ -31,10 +31,10 @@ export default function PayrollBankPanel({week,workers,worksheetSaved}) {
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={form.verified} onChange={e=>edit('verified',e.target.checked)}/>I have independently checked these bank instructions with the employee or authorised company records.</label>
         {button('Save bank instructions',save,!form.account_name||!form.bsb||!form.account_number)}
       </div>}
-      <div className="border-t pt-3 space-y-3"><h4 className="font-semibold">Prepare this week’s wage file</h4><p className="text-sm">Save the worksheet as reviewed first. The file contains net wages only, excludes zero-pay workers, and does not pay super or PAYG to the ATO.</p>{button('Review bank batch',preview,!worksheetSaved)}
+      </>}{(mode==='all'||mode==='batch')&&<div className="border-t pt-3 space-y-3"><h4 className="font-semibold">Prepare this week’s wage file</h4><p className="text-sm">Save the worksheet as reviewed first. The file contains net wages only, excludes zero-pay workers, and does not pay super or PAYG to the ATO.</p>{button('Review bank batch',preview,!worksheetSaved)}
       {batch&&<div className="bg-white rounded-lg p-3 space-y-3"><p><strong>{batch.count} payments · {dollars(batch.total)}</strong> · payday {batch.payday} · worksheet revision {batch.revision}</p><p className="text-sm">From {batch.payer.account_name} · {batch.payer.bsb_masked} · {batch.payer.account_masked}</p><div className="max-h-72 overflow-auto"><table className="w-full text-sm text-left"><thead><tr><th>Employee</th><th>Account holder</th><th>Account ending</th><th>Net wages</th></tr></thead><tbody>{batch.payments.map((p,i)=><tr key={i} className="border-t"><td className="py-2">{p.name}</td><td>{p.account_name}</td><td>{p.account_masked}</td><td>{dollars(p.net)}</td></tr>)}</tbody></table></div><label className="flex gap-2 text-sm"><input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)}/>I checked the recipients, amounts, paying account and date. I will check for duplicate uploads before authorising payment in Westpac.</label>{button('Download Westpac ABA file',download,!checked||!worksheetSaved)}<p className="text-xs text-slate-600">Downloading does not authorise or confirm payment.</p></div>}
       </div>
-    </fieldset>
+    }</fieldset>
     {message&&<p role="status" className="text-sm bg-blue-50 p-3 mt-3 rounded">{message}</p>}
     <a className="text-sm text-blue-700 underline block mt-3" target="_blank" rel="noreferrer" href="https://www.westpac.com.au/business-banking/online-banking/support-faqs/import-files/">Westpac’s file import instructions</a>
   </details>;

@@ -19,12 +19,12 @@ export default function PayrollReports({report,sheet,week,dirty,busy,onCalculate
   const effectiveBranding=sealedBranding||branding;
   const rows=divisionRows(report?.rows||[],effectiveBranding?.assignments,division),row=rows.find(r=>r.worker_id===person)||rows[0];
   return <section className="border rounded-xl bg-white p-4 mb-5" aria-label="Payroll report centre">
-    <PayrollBranding onSaved={setBranding}/>
+
     <PayrollReadiness sheet={sheet} report={report} branding={effectiveBranding} dirty={dirty}/>
     <h3 className="text-lg font-bold">Reports and documents</h3>
     <p className="text-sm text-slate-600 mb-3">Choose an item to view this week’s figures. These documents use the current calculated worksheet.</p>
     <label className="block text-sm mb-3">Report division <select className="border rounded p-2 ml-2" value={division} onChange={e=>setDivision(e.target.value)}><option value="all">All divisions</option><option value="paneltec">{branding?.paneltec?.name||'Paneltec Civil'}</option><option value="viatec">{branding?.viatec?.name||'Viatec'}</option><option value="unassigned">Not assigned</option></select></label>
-    <p className="text-xs mb-3">{rows.length} workers shown · Division assignments use the current payroll settings.</p>
+    <p className="text-xs mb-3">{rows.length} workers shown · Divisions follow the Simpro department; locked runs retain their saved branding.</p>
     <div className="flex flex-wrap gap-2 mb-4">{items.map(([key,label])=><button type="button" key={key} aria-pressed={tab===key} onClick={()=>setTab(key)} className={`rounded-lg border px-3 py-2 text-sm ${tab===key?'bg-indigo-900 text-white':'bg-white text-slate-800'}`}>{label}</button>)}</div>
     <div role="region" aria-label={items.find(i=>i[0]===tab)[1]} className="border-t pt-4">
       <div className="flex flex-wrap justify-between gap-2 mb-3"><h4 className="font-bold">{items.find(i=>i[0]===tab)[1]}</h4><span className="text-xs bg-amber-50 px-2 py-1 rounded">{dirty?'UNSAVED PREVIEW':sheet?.reviewed&&report?.ready?'REVIEWED WORKSHEET — NOT PAID':'DRAFT — NOT PAID'}</span></div>

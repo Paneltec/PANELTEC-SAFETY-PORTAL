@@ -1,0 +1,9 @@
+import React,{useState,useEffect} from 'react';
+import api,{apiError} from '../../lib/api';
+import PayrollBankPanel from './PayrollBankPanel';
+export default function PayrollRuleSettings(){
+ const [data,setData]=useState(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ useEffect(()=>{api.get('/payroll/workbench/calculation/settings').then(r=>setData(r.data)).catch(()=>setMessage('Could not load pay calculation defaults'));},[]);
+ async function save(){setBusy(true);try{const r=await api.put('/payroll/workbench/calculation/settings',data);setData(r.data);setMessage('Calculation defaults saved for new pay runs. Saved runs keep their reviewed rules.');}catch(e){setMessage(apiError(e)||'Could not save defaults');}finally{setBusy(false);}}
+ return <div className="space-y-4 mb-5"><section className="pay-panel"><h3>New pay-run calculation defaults</h3><p>Set the reviewed multipliers here. Employee rates and employment types are under Employee settings.</p>{data&&<><div className="grid sm:grid-cols-3 gap-3 my-4">{[['ot1_multiplier','Overtime tier 1 multiplier',1],['ot2_multiplier','Overtime tier 2 multiplier',1],['super_percent','Super contribution %',12]].map(([k,l,min])=><label className="text-sm" key={k}>{l}<input type="number" step="any" min={min} className="border rounded p-2 block w-full" value={data.rules[k]} onChange={e=>setData({...data,rules:{...data.rules,[k]:Number(e.target.value)}})}/></label>)}</div><button type="button" className="pay-gold" disabled={busy} onClick={save}>Save calculation defaults</button></>}{message&&<p role="status" className="pay-notice">{typeof message==='string'?message:JSON.stringify(message)}</p>}</section><PayrollBankPanel mode="employer" workers={[]}/></div>;
+}

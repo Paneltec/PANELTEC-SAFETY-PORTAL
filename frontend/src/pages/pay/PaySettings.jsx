@@ -1,3 +1,4 @@
+import PayrollRuleSettings from './PayrollRuleSettings';
 import DateField from './DateField';
 import PayrollDeliverySettings from './PayrollDeliverySettings';
 import PayrollBranding from './PayrollBranding';
@@ -49,7 +50,7 @@ export default function PaySettings() {
   const labSt = { color: PAY.muted };
 
   return (
-    <form onSubmit={save} className="space-y-4" data-testid="pay-settings">
+    <><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
       <PayrollDeliverySettings/><PayrollBranding/>
       <PayCard title="Pay period">
         <div className="grid sm:grid-cols-3 gap-3">
@@ -106,6 +107,6 @@ export default function PaySettings() {
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save settings
         </button>
       </div>
-    </form>
+    </form></>
   );
 }

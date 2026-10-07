@@ -6,7 +6,7 @@ import { useCan } from '../../lib/permissions';
 // accent, its own wordmark and tabs. Same page layout underneath.
 import React from 'react';
 import './payrollTheme.css';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Coins } from 'lucide-react';
 
 export const PAY = {
@@ -20,8 +20,11 @@ export const PAY = {
 };
 
 const TABS = [
-  {to:'/app/pay',label:'Start a pay run / history',end:true},
-  {to:'/app/pay/payroll',label:'Review pay run'},
+  {to:'/app/pay',label:'Pay runs'},
+  {to:'/app/pay/reports',label:'Pay reports'},
+  {to:'/app/pay/super',label:'Pay super'},
+  {to:'/app/pay/employees',label:'Employee settings'},
+  {to:'/app/pay/providers',label:'Provider connection settings'},
   {to:'/app/pay/settings',label:'Settings'},
 ];
 
@@ -80,6 +83,8 @@ export function fmtRange(start, end) {
 
 export default function PayShell() {
   const can = useCan();
+  const location=useLocation();
+  const week=new URLSearchParams(location.search).get("week");
   if (!can('payroll', 'view')) return <div role="alert" className="p-6 rounded-xl border bg-white">Payroll access is restricted. Contact the payroll owner to request access.</div>;
   return (
     <div className="pay-theme -mx-4 -mt-6 sm:-mx-6 sm:-mt-8 lg:-mx-8 lg:-mt-10 min-h-full rounded-b-2xl" style={{ background: PAY.paper }} data-testid="pay-shell">
@@ -96,13 +101,13 @@ export default function PayShell() {
             <div className="ml-auto hidden sm:block text-xs text-indigo-200">Weekly pay · payslips · reports</div>
           </div>
           <nav className="mt-4 flex gap-1 overflow-x-auto" data-testid="pay-tabs">
-            {TABS.map((t) => (
-              <NavLink key={t.to} to={t.to} end={t.end}
-                className={({ isActive }) => `whitespace-nowrap rounded-t-lg px-4 py-2 text-sm font-semibold transition ${isActive ? 'bg-white' : 'text-indigo-100 hover:bg-white/10'}`}
-                style={({ isActive }) => (isActive ? { color: PAY.ink } : undefined)}>
+            {TABS.map((t) => {const active=t.to==='/app/pay'?['/app/pay','/app/pay/payroll'].includes(location.pathname):location.pathname===t.to;return (
+              <Link onClick={e=>{if(!window.dispatchEvent(new Event("payroll:navigate",{cancelable:true})))e.preventDefault();}} key={t.to} to={t.to+(['/app/pay/reports','/app/pay/super'].includes(t.to)&&week?`?week=${week}`:'')}
+                className={`whitespace-nowrap rounded-t-lg px-4 py-2 text-sm font-semibold transition ${active ? 'bg-white' : 'text-indigo-100 hover:bg-white/10'}`}
+                style={active ? { color: PAY.ink } : undefined}>
                 {t.label}
-              </NavLink>
-            ))}
+              </Link>
+            );})}
           </nav>
         </div>
       </div>
