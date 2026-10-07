@@ -1,3 +1,4 @@
+import {Link} from 'react-router-dom';
 import PayrollRuleSettings from './PayrollRuleSettings';
 import DateField from './DateField';
 import PayrollDeliverySettings from './PayrollDeliverySettings';
@@ -12,6 +13,7 @@ import { PAY, PayCard, payBtn, payBtnStyle } from './PayShell';
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 export default function PaySettings() {
+  const [preparationWeek,setPreparationWeek]=useState(()=>{const d=new Date();d.setDate(d.getDate()-(d.getDay()+2)%7);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;});
   const [s, setS] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
@@ -50,7 +52,7 @@ export default function PaySettings() {
   const labSt = { color: PAY.muted };
 
   return (
-    <><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
+    <><PayCard title="Pay-run preparation"><p className="text-sm mb-3">Opening leave balances, super earnings, submitted time approvals and exceptional adjustments for a selected pay week.</p><label className="text-sm">Week starting Friday<DateField value={preparationWeek} onChange={e=>setPreparationWeek(e.target.value)} className="border rounded p-2 block"/></label>{preparationWeek&&<Link className="inline-block underline mt-3" to={`/app/pay/payroll?week=${preparationWeek}&setup=1`}>Open pay-run preparation</Link>}</PayCard><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
       <PayrollDeliverySettings/><PayrollBranding/>
       <PayCard title="Pay period">
         <div className="grid sm:grid-cols-3 gap-3">

@@ -3,7 +3,7 @@ import {useSearchParams} from 'react-router-dom';
 import api,{apiError} from '../../lib/api';
 import PayrollBankPanel from './PayrollBankPanel';
 export const division=w=>w?.division==='viatec'?'Viatec Traffic':'Paneltec Civil';
-export const sortWorkers=list=>[...list].sort((a,b)=>division(a).localeCompare(division(b))||a.name.localeCompare(b.name));
+export const sortWorkers=(list,first='paneltec')=>[...list].sort((a,b)=>Number((b.division==='viatec'?'viatec':'paneltec')===first)-Number((a.division==='viatec'?'viatec':'paneltec')===first)||a.name.localeCompare(b.name));
 const input='block w-full border rounded-lg p-2 bg-white mt-1';
 export default function PayrollEmployeeSettings(){
  const [params,setParams]=useSearchParams(),[workers,setWorkers]=useState([]),[record,setRecord]=useState(null),[profile,setProfile]=useState(null),[member,setMember]=useState(''),[replace,setReplace]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
