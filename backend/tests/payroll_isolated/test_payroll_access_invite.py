@@ -23,3 +23,10 @@ class InviteTests(unittest.TestCase):
   with patch('payroll_run_register.is_payroll_owner',return_value=True),patch.dict(sys.modules,{'auth_invite':service}):
    self.assertEqual(f.client.post(self.url).status_code,200)
    self.assertEqual(service.send_invite.call_args.args[1],{'channel':'email'})
+ def test_invitation_context_matches_recipient(self):
+  service=types.SimpleNamespace(send_invite=AsyncMock(return_value={'ok':True}),InviteIn=lambda **kw:kw)
+  body={'company':'Example accountants','name':'Test accountant','email':'accountant@example.invalid','reason':'Review payroll reports'}
+  with patch('payroll_run_register.is_payroll_owner',return_value=True),patch.dict(sys.modules,{'auth_invite':service}):
+   self.assertEqual(f.client.post(self.url,json={**body,'email':'other@example.invalid'}).status_code,422)
+   self.assertEqual(f.client.post(self.url,json=body).status_code,200)
+   self.assertEqual(f.db.users.rows[0]['payroll_invite_context']['company'],body['company'])
