@@ -349,6 +349,10 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
                     if segment.get('start') and segment.get('finish'):
                         shift_rows.append(Shift(date=day['date'],start=segment['start'],finish=segment['finish'],break_minutes=segment.get('break_minutes') or 0,break_start=segment.get('break_start')))
                     else:complete_times=False
+            from payroll_opening_balances import leave_at
+            opening = await leave_at(user['org_id'],worker_id,week)
+            if opening['available']:
+                source['totals']={**source.get('totals',{}),'opening_annual':opening['opening_annual'],'opening_personal':opening['opening_personal']}
             body.rows.append(Row(shifts=(shift_rows or None) if complete_times else None,worker_id=worker_id, profile=Profile(**profile), entry=Entry(**source.get('totals', {})), timesheet_fingerprint=source.get('fingerprint', '')))
     calculated=report(body,{**{r['worker_id']:r['name'] for r in (saved or {}).get('report',{}).get('rows',[])},**names})
     await check_leave_sources(body,user['org_id'],week,calculated)

@@ -1,5 +1,6 @@
 """Encrypted employee payroll defaults, separate from simPRO worker records."""
 import json
+from datetime import date
 from fastapi import APIRouter,Depends,HTTPException
 from pydantic import Field
 from pymongo.errors import DuplicateKeyError
@@ -9,7 +10,18 @@ from permissions import require_permission
 from payroll_workbench import Strict,Profile
 from payroll_banking import cipher,decrypt
 router=APIRouter(prefix='/employee-records',tags=['payroll-employee-records'])
+class OpeningBalances(Strict):
+    as_at: date
+    annual_hours: float = Field(ge=0,le=100000,allow_inf_nan=False)
+    personal_hours: float = Field(ge=0,le=100000,allow_inf_nan=False)
+    ytd_gross: float | None = Field(None,ge=0,le=100000000,allow_inf_nan=False)
+    ytd_payg: float | None = Field(None,ge=0,le=100000000,allow_inf_nan=False)
+    ytd_super: float | None = Field(None,ge=0,le=100000000,allow_inf_nan=False)
+    source: str = Field('',max_length=200)
+    reason: str = Field(min_length=1,max_length=300)
+
 class EmployeeRecord(Strict):
+    opening_balances: OpeningBalances | None = None
     revision:int=Field(0,ge=0)
     profile:Profile
     super_member_number:str|None=Field(None,max_length=64)
@@ -21,10 +33,10 @@ async def employee(user,worker_id):
 
 
 def public(doc):
-    if not doc:return {'configured':False,'revision':0,'profile':Profile().model_dump(),'member_number_masked':''}
+    if not doc:return {'configured':False,'revision':0,'profile':Profile().model_dump(),'member_number_masked':'','opening_balances':None}
     data=decrypt(doc);number=data.get('super_member_number','')
     return {'configured':True,'revision':doc['revision'],'profile':data['profile'],
-        'member_number_masked':('••••'+number[-4:]) if number else '', 'updated_at':doc['updated_at']}
+        'opening_balances':data.get('opening_balances'), 'member_number_masked':('••••'+number[-4:]) if number else '', 'updated_at':doc['updated_at']}
 
 class FundCheck(Strict):
     usi:str=Field(min_length=1,max_length=32)
@@ -49,12 +61,22 @@ async def save(worker_id:str,body:EmployeeRecord,user=Depends(require_permission
     member=body.super_member_number if body.super_member_number is not None else previous.get('super_member_number','')
     if body.super_member_number is None and previous and (previous['profile'].get('super_fund_usi','')!=body.profile.super_fund_usi or previous['profile'].get('super_fund_name','')!=body.profile.super_fund_name):
         raise HTTPException(422,'When changing funds, replace or explicitly clear the member number')
-    data={'profile':body.profile.model_dump(),'super_member_number':member.strip()}
+    opening=body.opening_balances.model_dump(mode='json') if body.opening_balances is not None else previous.get('opening_balances')
+    if opening and not opening['reason'].strip():raise HTTPException(422,'Provide an opening balance source or correction reason')
+    data={'profile':body.profile.model_dump(),'super_member_number':member.strip(),'opening_balances':opening}
     record={'org_id':user['org_id'],'worker_id':worker_id,'revision':body.revision+1,'updated_at':now_iso(),
             'encrypted':cipher().encrypt(json.dumps(data).encode()).decode()}
     try:
         result=await db.pay_employee_records.update_one({'_id':key,'revision':body.revision},
-            {'$set':record,'$push':{'audit':{'at':record['updated_at'],'by':user['id'],'revision':record['revision']}}},upsert=body.revision==0)
+            {'$set':record,'$push':{'audit':{'at':record['updated_at'],'by':user['id'],'revision':record['revision'],'previous_encrypted':old.get('encrypted') if old and opening!=previous.get('opening_balances') else None}}},upsert=body.revision==0)
     except DuplicateKeyError:raise HTTPException(409,'Employee payroll settings changed; reload first')
     if not result.matched_count and not result.upserted_id:raise HTTPException(409,'Employee payroll settings changed; reload first')
     return public(record)
+
+@router.get('/{worker_id}/opening-balances/{week}')
+async def opening_at(worker_id:str,week:str,user=Depends(require_permission('payroll','view'))):
+    from payroll_workbench import period
+    from payroll_opening_balances import leave_at
+    period(week)
+    await employee(user,worker_id)
+    return await leave_at(user['org_id'],worker_id,week)
