@@ -35,12 +35,12 @@ export default function PayWorkbench({mode="run"}) {
   const [dirty,setDirty] = useState(false), [error,setError] = useState(''), [message,setMessage] = useState('');
   async function load(target) {
     setBusy(true); setError('');
-    try { const [loaded,feed]=await Promise.all([api.get(`/payroll/workbench/${target}`),api.get(`/payroll/workbench/${target}/submissions`)]);const data=loaded.data; const incoming={...data.worksheet};if(!data.saved_at&&searchParams.get('payday'))incoming.payday=searchParams.get('payday');setSheet(incoming);setLocked(data.state==='finalized');setStep(data.state==='finalized'?3:2); setSealedBranding(data.finalized_branding||null); setWorkers(data.workers); setReport(data.report); setSubmitted(feed.data.workers); setLoadedWeek(target); setSelected(sortWorkers(data.workers,firstDivision).find(w=>incoming.rows.some(r=>r.worker_id===w.id)&&!data.report.rows.find(r=>r.worker_id===w.id)?.result.review_ready)?.id || sortWorkers(data.workers,firstDivision).find(w=>incoming.rows.some(r=>r.worker_id===w.id))?.id || incoming.rows[0]?.worker_id || ''); setDirty(false); setMessage(data.saved_at ? `Saved ${new Date(data.saved_at).toLocaleString('en-AU')}` : 'Current Simpro employees loaded. Submitted hours are estimates for review; no missing days or balances are assumed.'); }
+    try { const [loaded,feed]=await Promise.all([api.get(`/payroll/workbench/${target}`),api.get(`/payroll/workbench/${target}/submissions`)]);const data=loaded.data; const incoming={...data.worksheet};if(!data.saved_at&&searchParams.get('payday'))incoming.payday=searchParams.get('payday');setSheet(incoming);setLocked(data.state==='finalized');setStep(data.state==='finalized'?3:2); setSealedBranding(data.finalized_branding||null); setWorkers(data.workers); setReport(data.report); setSubmitted(feed.data.workers); setLoadedWeek(target); setSelected(sortWorkers(data.workers,firstDivision).find(w=>incoming.rows.some(r=>r.worker_id===w.id)&&!data.report.rows.find(r=>r.worker_id===w.id)?.result.review_ready)?.id || sortWorkers(data.workers,firstDivision).find(w=>incoming.rows.some(r=>r.worker_id===w.id))?.id || incoming.rows[0]?.worker_id || ''); setDirty(Boolean(data.rates_loaded?.length)); setMessage(data.rates_loaded?.length ? `Loaded saved rates for ${data.rates_loaded.length} employees with missing draft rates. Check the figures and save the draft.` : data.saved_at ? `Saved ${new Date(data.saved_at).toLocaleString('en-AU')}` : 'Current Simpro employees loaded. Submitted hours are estimates for review; no missing days or balances are assumed.'); }
     catch(e) { setError(apiError(e) || 'Could not load payroll worksheet'); } finally { setBusy(false); }
   }
   useEffect(()=>{const target=searchParams.get('week');if(target){setWeek(target);load(target);}},[searchParams]);
   useEffect(()=>{ const f=e=>{if(dirty){e.preventDefault();e.returnValue='';}}; window.addEventListener('beforeunload',f); return()=>window.removeEventListener('beforeunload',f); },[dirty]);
-  function change(next) { setSheet({...next, rows:next.rows.map(r=>JSON.stringify(r)!==JSON.stringify(sheet?.rows.find(old=>old.worker_id===r.worker_id))?{...r,adjustment_reason:r.adjustment_reason||'Weekly payroll review'}:r), reviewed:false}); setDirty(true); setReport(null); setMessage('Unsaved changes — calculate and save to refresh reports.'); }
+  function change(next) { setSheet({...next, rows:next.rows.map(r=>JSON.stringify(r)!==JSON.stringify(sheet?.rows.find(old=>old.worker_id===r.worker_id))?{...r,adjustment_reason:r.adjustment_reason||'Weekly payroll review'}:r), reviewed:false}); setDirty(true); setReport(null); setMessage('Updating calculation… Save draft to keep your changes.'); }
   function patchRow(section,key,value) { change({...sheet, rows:sheet.rows.map(r=>r.worker_id===selected ? {...r,[section]:{...r[section],[key]:value,...(section==='entry'&&!['hours_reviewed','super_reviewed','payg_reference','deduction_details','allowance_details'].includes(key)?{hours_reviewed:false,super_reviewed:false}:{})}} : r)}); }
   async function calculate(save=false, reviewed=false) {
     setBusy(true); setError('');
@@ -48,6 +48,18 @@ export default function PayWorkbench({mode="run"}) {
       const calculated=save?data.report:data;setReport(calculated);setSheet({...body,revision:save?data.revision:body.revision,rows:body.rows.map(r=>({...r,entry:calculated.rows.find(v=>v.worker_id===r.worker_id)?.entry||r.entry}))});if(save){setDirty(false);} setMessage(save ? `${reviewed ? 'Reviewed' : 'Draft'} worksheet saved. No payments, STP or leave-ledger changes made.` : 'Calculated preview. Save before downloading reports.');return save?data.report:data;
     } catch(e){setError(apiError(e)||'Calculation failed');return false;}finally{setBusy(false);}
   }
+  // Preview only: edits never save, approve or issue payroll automatically.
+  useEffect(()=>{
+    if(!sheet||!loadedWeek||locked||busy||!dirty)return;
+    let cancelled=false;
+    const timer=setTimeout(async()=>{
+      try{
+        const {data}=await api.post(`/payroll/workbench/${loadedWeek}/preview`,{...sheet,reviewed:false});
+        if(!cancelled){setReport(data);setError('');setMessage('Calculation updated. Save draft to keep your changes.');}
+      }catch(e){if(!cancelled)setError(apiError(e)||'Automatic calculation failed. Check the entries and recalculate.');}
+    },400);
+    return()=>{cancelled=true;clearTimeout(timer);};
+  },[sheet,loadedWeek,locked,busy,dirty]);
   async function download(kind) {
     setBusy(true);setError('');
     try {const {data}=await api.get(`/payroll/workbench/${loadedWeek}/report/${kind}`,{responseType:'blob'});const url=URL.createObjectURL(data);const a=document.createElement('a');a.href=url;a.download=`paneltec-${kind}-${loadedWeek}.csv`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setError('Could not download the saved report.');}finally{setBusy(false);}
