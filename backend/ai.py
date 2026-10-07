@@ -74,9 +74,14 @@ JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
 def _emergent_key() -> str:
+    if getattr(LlmChat, "DIRECT_ANTHROPIC", False):
+        key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("EMERGENT_LLM_KEY")
+        if not key:
+            raise HTTPException(status_code=503, detail="AI connection is not configured. An administrator needs to set ANTHROPIC_API_KEY on the Paneltec server. Do not enter an API key in the search box.")
+        return key
     key = os.environ.get("EMERGENT_LLM_KEY")
     if not key:
-        raise HTTPException(status_code=503, detail="Emergent LLM key not configured")
+        raise HTTPException(status_code=503, detail="AI connection is not configured. An administrator needs to configure the AI provider on the server.")
     return key
 
 
