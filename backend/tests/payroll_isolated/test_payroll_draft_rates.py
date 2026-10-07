@@ -32,5 +32,13 @@ class DraftRateTests(unittest.TestCase):
   row=api.client.get(self.url).json()['worksheet']['rows'][0]
   self.assertEqual(row['profile']['annual_salary'],110000)
   self.assertEqual(row['profile']['pay_basis'],'annual_salary')
+ def test_casual_rate_and_loading_recovered(self):
+  api.db.pay_review_sheets.rows[0]['worksheet']['rows'][0]['profile']['employment_type']='unconfirmed'
+  self.defaults.update(employment_type='casual',hourly_rate=0,casual_rates={'base_rate':30.39,'loading_percent':25})
+  response=api.client.put('/payroll/employee-records/w1',json={'revision':1,'profile':self.defaults})
+  self.assertEqual(response.status_code,200,response.text)
+  data=api.client.get(self.url).json()
+  self.assertEqual(data['rates_loaded'],['w1'])
+  self.assertEqual(data['report']['rows'][0]['result']['ordinary_pay'],759.75)
 
 if __name__=='__main__':unittest.main()
