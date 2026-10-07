@@ -1,7 +1,7 @@
 """Pay-run register and provider integration requirements. No outbound submissions."""
 from datetime import date, timedelta
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, ConfigDict
 from db import db
 from models import now_iso
@@ -100,6 +100,18 @@ async def access_list(user=Depends(require_permission('payroll','view'))):
         grant=await db.payroll_access.find_one({'_id':f"{user['org_id']}:{person['id']}"}) or {}
         owner=is_payroll_owner(person)
         result.append({'id':person['id'],'name':person.get('name') or ' '.join(filter(None,[person.get('first_name'),person.get('last_name')])),
-                       'email':person.get('email',''),'owner':owner,'level':'owner' if owner else grant.get('level','none'),
+                       'status':person.get('status','active'),'last_invite_sent':person.get('last_invite_sent'),'email':person.get('email',''),'owner':owner,'level':'owner' if owner else grant.get('level','none'),
                        'updated_at':grant.get('updated_at')})
     return {'users':result}
+
+
+@router.post('/access/{user_id}/invite')
+async def invite_access(user_id:str,request:Request,user=Depends(require_permission('payroll','view'))):
+    if not is_payroll_owner(user):raise HTTPException(403,'Only the payroll owner can invite payroll users')
+    person=await db.users.find_one({'id':user_id,'org_id':user['org_id'],'role':'admin'})
+    if not person or person.get('status') not in ('invited','pending_invite','invited_pending_send'):
+        raise HTTPException(400,'Select an approved administrator awaiting an invitation')
+    grant=await db.payroll_access.find_one({'_id':f"{user['org_id']}:{user_id}"}) or {}
+    if grant.get('level') not in ('view','edit'):raise HTTPException(400,'Authorise payroll access before inviting')
+    from auth_invite import send_invite,InviteIn
+    return await send_invite(user_id,InviteIn(channel='email'),request,caller=user)
