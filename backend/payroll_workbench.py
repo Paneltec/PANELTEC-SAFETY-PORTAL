@@ -124,6 +124,25 @@ async def archive_run(week: str, body: ArchiveRequest, user=Depends(require_perm
     except DuplicateKeyError:return {'revision':body.revision,'already_archived':True}
     return {'revision':body.revision,'already_archived':False}
 
+class CalculationSettings(Strict):
+    revision: int = Field(0, ge=0)
+    rules: Rules = Field(default_factory=Rules)
+
+@router.get('/calculation/settings')
+async def calculation_settings(user=Depends(require_permission('payroll','view'))):
+    saved=await db.pay_calculation_settings.find_one({'_id':user['org_id']})
+    return {'revision':saved['revision'],'rules':saved['rules']} if saved else CalculationSettings().model_dump()
+
+@router.put('/calculation/settings')
+async def save_calculation_settings(body:CalculationSettings,user=Depends(require_permission('payroll','edit'))):
+    record={'revision':body.revision+1,'rules':body.rules.model_dump(),'updated_at':now_iso(),'updated_by':user['id']}
+    try:
+        result=await db.pay_calculation_settings.update_one({'_id':user['org_id'],'revision':body.revision},{'$set':record},upsert=body.revision==0)
+    except DuplicateKeyError:
+        raise HTTPException(409,'Calculation settings changed; reload first')
+    if not result.matched_count and not result.upserted_id:raise HTTPException(409,'Calculation settings changed; reload first')
+    return {'revision':record['revision'],'rules':record['rules']}
+
 @router.get('/connections/settings')
 async def connections(user=Depends(require_permission('payroll','view'))):
     saved=await db.pay_connection_settings.find_one({'_id':user['org_id']},{'_id':0})
@@ -241,6 +260,10 @@ async def roster_public(org):
     from payroll_roster import roster, public_roster
     return public_roster(await roster(org))
 
+@router.get('/employees/list')
+async def employee_list(user=Depends(require_permission('payroll','view'))):
+    return {'workers': await roster_public(user['org_id'])}
+
 @router.get('/runs/list')
 async def runs(user=Depends(require_permission('payroll','view'))):
     records=[]
@@ -271,6 +294,8 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
         if previous:
             template_week = previous["week"]
             body.rules = Rules(**previous["worksheet"]["rules"])
+        defaults_rules=await db.pay_calculation_settings.find_one({'_id':user['org_id']})
+        if defaults_rules:body.rules=Rules(**defaults_rules['rules'])
         previous_profiles = {r['worker_id']: r['profile'] for r in (previous or {}).get('worksheet', {}).get('rows', [])}
         from payroll_submissions import submissions
         from payroll_banking import decrypt
