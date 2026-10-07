@@ -37,7 +37,8 @@ def calculate_shifts(shifts,rules):
         meals+=int(worked>=600)+int(worked>=840)
         for index,(m,shift) in enumerate(minutes):
             actual=day+timedelta(days=m//1440);clock=m%1440
-            ordinary=index<456
+            ordinary_limit=round(float(rules.get('daily_ordinary_hours',7.6))*60)
+            ordinary=index<ordinary_limit
             # Highest applicable rate wins; public holiday is explicitly rostered.
             if shift.get('public_holiday'):
                 bucket='holiday_work'
@@ -47,6 +48,6 @@ def calculate_shifts(shifts,rules):
                 if ordinary and shift.get('replacement_day_shift'):buckets['penalty_ordinary']+=1
             elif actual.weekday()==6:bucket='ot2'
             elif actual.weekday()==5:bucket='ot1' # existing Saturday rule retained
-            else:bucket='ordinary' if ordinary else 'ot1' if index<576 else 'ot2'
+            else:bucket='ordinary' if ordinary else 'ot1' if index<ordinary_limit+120 else 'ot2'
             buckets[bucket]+=1
     return {**{k:float(Decimal(v)/60) for k,v in buckets.items()},'meal_count':meals}

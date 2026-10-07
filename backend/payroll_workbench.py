@@ -17,6 +17,8 @@ from payroll_engine import calculate_line, next_payday, RULE_VERSION, SOURCES, r
 router = APIRouter(prefix="/workbench", tags=["payroll-review"])
 from payroll_branding import router as branding_router
 router.include_router(branding_router)
+from payroll_run_register import router as register_router
+router.include_router(register_router)
 Number = Annotated[float, Field(ge=0, le=10000000, allow_inf_nan=False)]
 Hours = Annotated[float, Field(ge=0, le=168, allow_inf_nan=False)]
 
@@ -24,6 +26,7 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 class Rules(Strict):
+    daily_ordinary_hours: float = Field(7.6,ge=0,le=24,allow_inf_nan=False)
     meal_allowance: Number | None = None
     meal_tax_treatment: Literal["unconfirmed","taxable","exempt"] = "unconfirmed"
     night_multiplier: float = Field(2,ge=2,le=5,allow_inf_nan=False)
@@ -150,7 +153,10 @@ class CalculationSettings(Strict):
 @router.get('/calculation/settings')
 async def calculation_settings(user=Depends(require_permission('payroll','view'))):
     saved=await db.pay_calculation_settings.find_one({'_id':user['org_id']})
-    return {'revision':saved['revision'],'rules':saved['rules']} if saved else CalculationSettings().model_dump()
+    result = {'revision':saved['revision'],'rules':Rules(**saved['rules']).model_dump()} if saved else CalculationSettings().model_dump()
+    calendar = await db.pay_settings.find_one({'org_id':user['org_id']}) or {}
+    result['rules']['daily_ordinary_hours'] = (calendar.get('overtime') or {}).get('daily_ordinary_hours',7.6)
+    return result
 
 @router.put('/calculation/settings')
 async def save_calculation_settings(body:CalculationSettings,user=Depends(require_permission('payroll','edit'))):
@@ -325,6 +331,8 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
             body.rules = Rules(**previous["worksheet"]["rules"])
         defaults_rules=await db.pay_calculation_settings.find_one({'_id':user['org_id']})
         if defaults_rules:body.rules=Rules(**defaults_rules['rules'])
+        calendar = await db.pay_settings.find_one({'org_id':user['org_id']}) or {}
+        body.rules.daily_ordinary_hours = (calendar.get('overtime') or {}).get('daily_ordinary_hours',7.6)
         previous_profiles = {r['worker_id']: r['profile'] for r in (previous or {}).get('worksheet', {}).get('rows', [])}
         from payroll_submissions import submissions
         from payroll_banking import decrypt

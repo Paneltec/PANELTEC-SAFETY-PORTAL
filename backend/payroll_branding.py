@@ -26,6 +26,20 @@ class Branding(BaseModel):
     model_config=ConfigDict(extra='forbid')
     employer_name:str=Field('',max_length=160)
     employer_abn:str=Field('',pattern=r'^(|[0-9]{11})$')
+    overseas_entity: bool = False
+    address_line1: str = Field('',max_length=200)
+    address_line2: str = Field('',max_length=200)
+    suburb: str = Field('',max_length=100)
+    state: str = Field('',max_length=80)
+    postcode: str = Field('',max_length=20)
+    country: str = Field('Australia',max_length=80)
+    contact_name: str = Field('',max_length=160)
+    contact_email: str = Field('',max_length=254)
+    contact_phone: str = Field('',max_length=40)
+    contact_fax: str = Field('',max_length=40)
+    external_id: str = Field('',max_length=100)
+    sms_requested: bool = False
+    automatic_super_updates_requested: bool = False
     paneltec:Division=Field(default_factory=lambda:Division(name='Paneltec Civil'))
     viatec:Division=Field(default_factory=lambda:Division(name='Viatec'))
     assignments:dict[str,Literal['paneltec','viatec']]=Field(default_factory=dict,max_length=1000)
