@@ -281,6 +281,7 @@ const NAV = [
     { to: '/app/mobile/issue-job', label: "Issue Today's Job", icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-issue-job', requiresCan: ['users', 'edit'], pastel: 'coral' },
     // Leave Requests — payroll leave emails, approve/reject → Pay Officer.
     { to: '/app/leave', label: 'Leave Requests', icon: CalendarLtr24Regular, iconActive: CalendarLtr24Filled, testid: 'nav-leave', requiresCan: ['workers', 'view'], pastel: 'sky', badgeKey: 'leavePending' },
+    { to: '/app/pay/timesheets', label: 'Timesheet approvals', icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-timesheet-approvals', requiresCan: ['payroll', 'view'], pastel: 'sky' },
   ]},
   // Paneltec Pay — timesheets → approval → export to the payroll provider.
   // Its own look (indigo/gold) so staff know they're in the pay area.
