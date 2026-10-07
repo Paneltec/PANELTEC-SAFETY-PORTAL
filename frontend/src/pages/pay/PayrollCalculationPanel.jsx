@@ -6,7 +6,7 @@ const date=v=>v?new Date(v.slice(0,10)+'T12:00:00').toLocaleDateString('en-AU'):
 export default function PayrollCalculationPanel({row,result,sheet,week,name,sealedBranding}){
  const [context,setContext]=useState(null),[error,setError]=useState('');
  useEffect(()=>{let active=true;setContext(null);setError('');api.get(`/payroll/employee-records/${encodeURIComponent(row.worker_id)}/pay-context/${week}`,{params:{payday:sheet.payday}}).then(r=>{if(active)setContext(r.data);}).catch(()=>{if(active)setError('Employee payment details and YTD are unavailable.');});return()=>{active=false;};},[row.worker_id,week,sheet.payday]);
- const p=row.profile,e=row.entry,r=sheet.rules,rate=p.pay_basis==='annual_salary'?p.annual_salary/52/p.ordinary_weekly_hours:p.hourly_rate;
+ const p=row.profile,e=row.entry,r=sheet.rules,rate=p.pay_basis==='annual_salary'?p.annual_salary/52/p.ordinary_weekly_hours:p.employment_type==='casual'&&p.casual_rates?p.casual_rates.base_rate*(1+p.casual_rates.loading_percent/100):p.hourly_rate;
  const applied=result?.applied_rates||{};
  const employer=sealedBranding||context?.employer;
  const end=new Date(week.slice(0,10)+'T12:00:00');end.setDate(end.getDate()+6);
