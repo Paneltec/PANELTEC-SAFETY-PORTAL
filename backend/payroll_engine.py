@@ -65,11 +65,15 @@ def calculate_line(profile, entry, rules, payday):
         issues.append("Contractor tax and super require separate assessment")
     if not entry.get("hours_reviewed"):
         issues.append("Review hours, allowances and leave for this week")
-    h = {k: dec(entry.get(k, 0)) for k in ("ordinary", "ot1", "ot2", "annual", "personal", "public_holiday")}
+    h = {k: dec(entry.get(k, 0)) for k in ("ordinary", "ot1", "ot2", "annual", "personal", "public_holiday", "night", "holiday_work")}
     if any(v < 0 for v in h.values()) or sum(h.values()) > 168:
         raise ValueError("Hours must be non-negative and cannot exceed 168 in one week")
     ordinary_cap = dec(profile.get("ordinary_weekly_hours", 38))
     paid_ordinary = sum(h[k] for k in ("ordinary", "annual", "personal", "public_holiday"))
+    penalty_ordinary=dec(entry.get("penalty_ordinary",0))
+    if penalty_ordinary<0 or penalty_ordinary>h["night"]+h["holiday_work"]:
+        raise ValueError("Leave-accruing penalty hours must be within night/public-holiday worked hours")
+    paid_ordinary+=penalty_ordinary
     if paid_ordinary > ordinary_cap:
         issues.append("Ordinary and paid-leave hours exceed the employee's weekly ordinary hours")
     casual = profile.get("employment_type") in ("casual", "contractor")
@@ -85,7 +89,16 @@ def calculate_line(profile, entry, rules, payday):
         "leave_loading": rounded(h["annual"]*rate*dec(profile.get("leave_loading_percent", 0))/100),
         "taxable_allowances": rounded(entry.get("taxable_allowances", 0)),
     }
+    earnings["night_pay"]=rounded(h["night"]*rate*dec(rules.get("night_multiplier",2)))
+    earnings["holiday_work_pay"]=rounded(h["holiday_work"]*rate*dec(rules.get("holiday_work_multiplier",2.5)))
+    meal_count=int(entry.get("meal_count",0))
+    meal_rate=rules.get("meal_allowance")
+    if meal_count and meal_rate is None:issues.append("Set the meal allowance amount in calculation settings")
+    earnings["meal_allowance_pay"]=rounded(meal_count*dec(meal_rate or 0))
     gross = sum(earnings.values())
+    meal_tax=rules.get("meal_tax_treatment","unconfirmed")
+    if meal_count and meal_tax=="unconfirmed":issues.append("Confirm meal allowance tax treatment in calculation settings")
+    taxable_gross=gross-(earnings["meal_allowance_pay"] if meal_tax=="exempt" else 0)
     deductions = rounded(entry.get("post_tax_deductions", 0))
     reimbursements = rounded(entry.get("reimbursements", 0))
     tax = None
@@ -98,7 +111,7 @@ def calculate_line(profile, entry, rules, payday):
         issues.append("Confirm tax declaration; HELP, variations and special payments use manual PAYG")
     else:
         try:
-            tax = weekly_tax(gross, profile.get("tax_mode"), payday)
+            tax = weekly_tax(taxable_gross, profile.get("tax_mode"), payday)
         except ValueError as exc:
             issues.append(str(exc))
     if tax is not None:

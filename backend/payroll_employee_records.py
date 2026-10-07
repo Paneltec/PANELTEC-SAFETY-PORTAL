@@ -26,6 +26,15 @@ def public(doc):
     return {'configured':True,'revision':doc['revision'],'profile':data['profile'],
         'member_number_masked':('••••'+number[-4:]) if number else '', 'updated_at':doc['updated_at']}
 
+class FundCheck(Strict):
+    usi:str=Field(min_length=1,max_length=32)
+    fund_name:str=Field('',max_length=160)
+
+@router.post('/fund/check')
+async def check_fund(body:FundCheck,user=Depends(require_permission('payroll','view'))):
+    from payroll_fund_lookup import lookup
+    return await lookup(body.usi,body.fund_name)
+
 @router.get('/{worker_id}')
 async def load(worker_id:str,user=Depends(require_permission('payroll','view'))):
     await employee(user,worker_id)

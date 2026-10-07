@@ -24,9 +24,23 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 class Rules(Strict):
+    meal_allowance: Number | None = None
+    meal_tax_treatment: Literal["unconfirmed","taxable","exempt"] = "unconfirmed"
+    night_multiplier: float = Field(2,ge=2,le=5,allow_inf_nan=False)
+    holiday_work_multiplier: float = Field(2.5,ge=2.5,le=5,allow_inf_nan=False)
     ot1_multiplier: float = Field(1.5, ge=1, le=5, allow_inf_nan=False)
     ot2_multiplier: float = Field(2, ge=1, le=5, allow_inf_nan=False)
     super_percent: float = Field(12, ge=12, le=100, allow_inf_nan=False)
+
+class Shift(Strict):
+    date: date
+    start: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    finish: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    next_day: bool = False
+    break_minutes: int = Field(0,ge=0,le=600)
+    break_start: str | None = Field(None,pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    public_holiday: bool = False
+    replacement_day_shift: bool = False
 
 class Profile(Strict):
     super_fund_name: str = Field('', max_length=160)
@@ -45,6 +59,10 @@ class Profile(Strict):
 class Entry(Strict):
     deduction_details: str = Field('', max_length=1000)
     allowance_details: str = Field('', max_length=1000)
+    night: Hours = 0
+    holiday_work: Hours = 0
+    penalty_ordinary: Hours = 0
+    meal_count: int = Field(0,ge=0,le=14)
     ordinary: Hours = 0
     ot1: Hours = 0
     ot2: Hours = 0
@@ -70,6 +88,7 @@ class LeaveAllocation(Strict):
     hours: float = Field(gt=0, le=168, allow_inf_nan=False)
 
 class Row(Strict):
+    shifts: list[Shift] | None = Field(None,max_length=40)
     adjustment_reason: str = Field("", max_length=1000)
     worker_id: str = Field(min_length=1, max_length=100)
     timesheet_fingerprint: str = Field("", pattern=r"^(|[a-f0-9]{64})$")
@@ -180,10 +199,20 @@ def report(body, names):
         raise HTTPException(422, "Each worker must belong to this organisation and appear only once")
     rows = []
     for r in body.rows:
+        shift_issue=None
+        if r.shifts is not None:
+            from payroll_shift_rules import calculate_shifts
+            try:
+                totals=calculate_shifts([v.model_dump(mode="json") for v in r.shifts],body.rules.model_dump())
+                r.entry=Entry(**{**r.entry.model_dump(),**totals})
+            except ValueError as exc:shift_issue=str(exc)
         try:
             result = calculate_line(r.profile.model_dump(), r.entry.model_dump(), body.rules.model_dump(), body.payday)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
+        if shift_issue:
+            result["issues"].append(shift_issue)
+            result["review_ready"]=False
         if not r.profile.classification.strip():
             result["issues"].append("Record award/classification or confirmed award-free basis")
             result["review_ready"] = False
@@ -305,7 +334,14 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
             defaults = await db.pay_employee_records.find_one({'_id': f"{user['org_id']}:{worker_id}"})
             profile = decrypt(defaults)['profile'] if defaults else previous_profiles.get(worker_id, {})
             source = submitted.get(worker_id, {})
-            body.rows.append(Row(worker_id=worker_id, profile=Profile(**profile), entry=Entry(**source.get('totals', {})), timesheet_fingerprint=source.get('fingerprint', '')))
+            shift_rows=[];complete_times=True
+            for day in source.get('days',[]):
+                if day.get('kind')!='work':continue
+                for segment in day.get('segments') or [day]:
+                    if segment.get('start') and segment.get('finish'):
+                        shift_rows.append(Shift(date=day['date'],start=segment['start'],finish=segment['finish'],break_minutes=segment.get('break_minutes') or 0,break_start=segment.get('break_start')))
+                    else:complete_times=False
+            body.rows.append(Row(shifts=(shift_rows or None) if complete_times else None,worker_id=worker_id, profile=Profile(**profile), entry=Entry(**source.get('totals', {})), timesheet_fingerprint=source.get('fingerprint', '')))
     calculated=report(body,{**{r['worker_id']:r['name'] for r in (saved or {}).get('report',{}).get('rows',[])},**names})
     await check_leave_sources(body,user['org_id'],week,calculated)
     sealed=next((v for v in (saved or {}).get('finalizations',[]) if v['revision']==body.revision),None) if (saved or {}).get('state')=='finalized' else None
@@ -319,6 +355,9 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
 async def preview(week: str, body: Worksheet, user=Depends(require_permission("payroll", "view"))):
     await validate_new_week(user["org_id"], week)
     start = period(week)
+    for row in body.rows:
+        if row.shifts is not None and any(not start<=s.date<=start+timedelta(days=6) for s in row.shifts):
+            raise HTTPException(422,"Shift dates must be within this pay week")
     if body.payday < start or body.payday > start + timedelta(days=35):
         raise HTTPException(422, "Payday must fall between the week starting date and 35 days later")
     return await check_leave_sources(body,user['org_id'],week,report(body, await workers(user["org_id"])))
