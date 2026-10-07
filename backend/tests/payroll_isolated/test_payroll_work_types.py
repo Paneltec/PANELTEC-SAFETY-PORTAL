@@ -17,3 +17,16 @@ class WorkTypeTests(PayrollAPITests):
         for identity in ['missing','annual-leave']:
             with self.assertRaises(HTTPException):asyncio.run(resolve_type('org1',identity,{}))
         self.assertEqual(asyncio.run(resolve_type('org1','archived',{'work_type_id':'archived','work_type_name':'Previous name'})),'Previous name')
+
+    def test_global_mapping_changes_new_timesheet_choices_only_in_this_company(self):
+        from payroll_work_types import choices,resolve_type
+        data=client.get(self.url).json()
+        traffic=next(i for i in data['items'] if i['id']=='traffic-control')
+        traffic['action']='annual'
+        saved=client.put(self.url,json=data)
+        self.assertEqual(saved.status_code,200,saved.text)
+        self.assertEqual(next(i for i in client.get(self.url).json()['items'] if i['id']=='traffic-control')['action'],'annual')
+        self.assertFalse(any(i['id']=='traffic-control' for i in asyncio.run(choices('org-a'))))
+        self.assertTrue(any(i['id']=='traffic-control' for i in asyncio.run(choices('org-b'))))
+        with self.assertRaises(HTTPException):asyncio.run(resolve_type('org-a','traffic-control',{}))
+        self.assertEqual(asyncio.run(resolve_type('org-a','traffic-control',{'work_type_id':'traffic-control','work_type_name':'Traffic Control'})),'Traffic Control')
