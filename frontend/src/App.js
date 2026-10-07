@@ -178,6 +178,8 @@ import VisitorSignIn from '@/pages/VisitorSignIn';
 import AdminVisitors from '@/pages/AdminVisitors';
 import LeaveRequests from '@/pages/LeaveRequests';
 import PayShell from '@/pages/pay/PayShell';
+import PayrollRunRegister from '@/pages/pay/PayrollRunRegister';
+import PayrollAccess from '@/pages/pay/PayrollAccess';
 import PayOverview from '@/pages/pay/PayOverview';
 import PayWorkbench from '@/pages/pay/PayWorkbench';
 import PayrollEmployeeSettings from '@/pages/pay/PayrollEmployeeSettings';
@@ -362,6 +364,8 @@ function App() {
               <Route path="leave" element={<LeaveRequests />} />
               <Route path="pay" element={<PayShell />}>
                 <Route index element={<PayOverview />} />
+                <Route path="access" element={<PayrollAccess />} />
+                <Route path="run-report" element={<PayrollRunRegister />} />
                 <Route path="payroll" element={<PayWorkbench />} />
                 <Route path="reports" element={<PayrollReportPage mode="reports" />} />
                 <Route path="super" element={<PayrollReportPage mode="super" />} />
