@@ -355,15 +355,16 @@ async def load(week: str, user=Depends(require_permission("payroll", "view"))):
     saved = await db.pay_review_sheets.find_one({"_id": f"{user['org_id']}:{week}"}, {"_id": 0})
     body = Worksheet(**saved["worksheet"]) if saved else Worksheet(payday=next_payday(week))
     template_week = None
-    if not saved:
+    if not saved or (not body.rows and saved.get('state','open')=='open'):
         previous = await db.pay_review_sheets.find_one({"org_id": user["org_id"], "week": {"$lt": week}}, sort=[("week", -1)])
-        if previous:
-            template_week = previous["week"]
-            body.rules = Rules(**previous["worksheet"]["rules"])
-        defaults_rules=await db.pay_calculation_settings.find_one({'_id':user['org_id']})
-        if defaults_rules:body.rules=Rules(**defaults_rules['rules'])
-        calendar = await db.pay_settings.find_one({'org_id':user['org_id']}) or {}
-        body.rules.daily_ordinary_hours = (calendar.get('overtime') or {}).get('daily_ordinary_hours',7.6)
+        if not saved:
+            if previous:
+                template_week = previous["week"]
+                body.rules = Rules(**previous["worksheet"]["rules"])
+            defaults_rules=await db.pay_calculation_settings.find_one({'_id':user['org_id']})
+            if defaults_rules:body.rules=Rules(**defaults_rules['rules'])
+            calendar = await db.pay_settings.find_one({'org_id':user['org_id']}) or {}
+            body.rules.daily_ordinary_hours = (calendar.get('overtime') or {}).get('daily_ordinary_hours',7.6)
         previous_profiles = {r['worker_id']: r['profile'] for r in (previous or {}).get('worksheet', {}).get('rows', [])}
         from payroll_submissions import submissions
         from payroll_banking import decrypt
