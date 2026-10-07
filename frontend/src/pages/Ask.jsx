@@ -185,6 +185,7 @@ export default function Ask() {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState(null);
+  const [askError, setAskError] = useState('');
   // v58.13.115a — Recent-questions history removed from the UI at
   // the user's request ("no good need to keep the search data").
   // Backend still auto-clears the caller's ask_history on every new
@@ -222,12 +223,12 @@ export default function Ask() {
   const submit = async (question) => {
     const ask = question || q;
     if (!ask.trim()) return;
-    setBusy(true); setAnswer(null);
+    setBusy(true); setAnswer(null); setAskError('');
     try {
       const { data } = await api.post('/ask', { question: ask, ...wsParams(workspaceId) });
       setAnswer(data);
       loadHistory();
-    } catch (e) { toast.error(apiError(e)); }
+    } catch (e) { setAskError(apiError(e) || 'The AI service could not answer. Please try again.'); }
     finally { setBusy(false); }
   };
 
@@ -333,6 +334,11 @@ export default function Ask() {
         </div>
       </div>
 
+      {askError && <div role="alert" data-testid="ask-error" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+        <p className="font-semibold">Ask Intelligence could not answer</p>
+        <p className="mt-1 whitespace-pre-wrap break-words">{askError}</p>
+        {/emergent/i.test(askError) && <p className="mt-2">This message uses a legacy AI provider label. It is a service error inside Paneltec. Your question is still above; an administrator needs to check the server's AI connection before you retry.</p>}
+      </div>}
       {answer && <div className="mt-6"><Answer a={answer} /></div>}
 
       {/* v58.13.115a — Recent-questions panel intentionally removed.
