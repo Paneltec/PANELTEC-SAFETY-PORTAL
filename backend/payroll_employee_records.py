@@ -122,3 +122,6 @@ router.include_router(work_types_router)
 
 from payroll_fund_settings import router as fund_settings_router
 router.include_router(fund_settings_router)
+
+from payroll_balance_import import router as balance_import_router
+router.include_router(balance_import_router)
