@@ -47,6 +47,52 @@ from permissions import require_permission
 
 router = APIRouter(tags=["program-schematic"])
 
+# A separate organisation-wide planning document; never changes payroll data.
+from typing import Literal
+from pymongo.errors import DuplicateKeyError
+
+class PayrollFlowStep(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=160)
+    area: Literal['Phone app', 'Office portal', 'Global settings', 'External providers']
+    status: Literal['Not checked', 'Working', 'Needs attention', 'Not connected', 'Not required'] = 'Not checked'
+    notes: str = Field(default='', max_length=4000)
+    link: str = Field(default='', max_length=200)
+
+class PayrollFlowSave(BaseModel):
+    revision: int = Field(ge=0)
+    steps: list[PayrollFlowStep] = Field(max_length=150)
+
+def _flow_admin(actor):
+    if actor.get('role') != 'admin':
+        raise HTTPException(403, 'Admin access required')
+
+@router.get('/payroll-flow')
+async def get_payroll_flow(actor=Depends(require_permission('users', 'view'))):
+    _flow_admin(actor)
+    doc = await db.payroll_flow_documents.find_one({'_id': actor['org_id']}, {'_id': 0})
+    return doc or {'revision': 0, 'steps': None}
+
+@router.put('/payroll-flow')
+async def save_payroll_flow(body: PayrollFlowSave, actor=Depends(require_permission('users', 'edit'))):
+    _flow_admin(actor)
+    if len({s.id for s in body.steps}) != len(body.steps):
+        raise HTTPException(422, 'Step IDs must be unique')
+    if any(s.link and (not s.link.startswith('/app/') or any(c in s.link for c in ('\\', '\n', '\r', '?', '#'))) for s in body.steps):
+        raise HTTPException(422, 'Links must be internal app paths without query strings')
+    doc = {'revision': body.revision + 1, 'steps': [s.model_dump() for s in body.steps],
+           'updated_at': datetime.now(timezone.utc).isoformat(), 'updated_by': actor['id']}
+    try:
+        if body.revision == 0:
+            await db.payroll_flow_documents.insert_one({'_id': actor['org_id'], **doc})
+        else:
+            result = await db.payroll_flow_documents.update_one({'_id': actor['org_id'], 'revision': body.revision}, {'$set': doc})
+            if not result.matched_count:
+                raise HTTPException(409, 'Another admin saved changes. Export your draft, then reload before editing again.')
+    except DuplicateKeyError:
+        raise HTTPException(409, 'Another admin saved changes. Export your draft, then reload before editing again.')
+    return doc
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
