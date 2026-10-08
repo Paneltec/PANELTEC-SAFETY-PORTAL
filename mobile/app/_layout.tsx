@@ -122,32 +122,6 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 2, staleTime: 60_000 } },
 });
 
-// Preview banner (web-only)
-function PreviewBanner() {
-  const [role, setRole] = React.useState<string | null>(null);
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const check = () => {
-      try {
-        const raw = sessionStorage.getItem('paneltec_preview_user');
-        if (raw) { setRole(JSON.parse(raw)?.role_id || 'role'); }
-        else { setRole(null); }
-      } catch { setRole(null); }
-    };
-    check();
-    const id = setInterval(check, 1500);
-    return () => clearInterval(id);
-  }, []);
-  if (!role) return null;
-  return (
-    <View style={s.banner} pointerEvents="none">
-      <Text style={s.bannerText} numberOfLines={1}>
-        PREVIEW · {String(role).toUpperCase()} · READ-ONLY
-      </Text>
-    </View>
-  );
-}
-
 // Simulate-role banner (all platforms, admin-only)
 function SimulateBanner() {
   const [role, setRole] = React.useState<SimulateRoleId>('');
@@ -196,7 +170,7 @@ function ConnectedRootLayout() {
       <CrashRecoveryGate>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
-          <PreviewBanner />
+
           <SimulateBanner />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
