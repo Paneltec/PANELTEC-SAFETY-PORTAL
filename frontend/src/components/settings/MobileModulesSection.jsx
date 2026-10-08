@@ -438,9 +438,9 @@ export function PhonePreview({ canEdit, canOpenPreview = true }) {
       window.sessionStorage.removeItem('paneltec_preview_user');
       window.sessionStorage.removeItem('paneltec_preview_jwt');
     } catch (_) { /* private-mode fallback */ }
-    setPreviewWorkerId('');
-    setRole('worker');
-    setSrc(computeExpoResetUrl());
+    // Leave the preview host so its labels and reload cannot restart preview.
+    // The reset route clears preview credentials and uses normal authentication.
+    window.location.assign(computeExpoResetUrl());
   };
   const onOpen = () => {
     if (src) window.open(src, '_blank', 'noopener,noreferrer');
