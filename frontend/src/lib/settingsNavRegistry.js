@@ -93,7 +93,7 @@ export const SETTINGS_NAV_REGISTRY = [
   // the cell hide the sidebar entry (SettingsNav filters via
   // `requiresCan`); direct navigation to `/app/phone-preview` shows
   // an Access-denied card (`PhonePreviewPage.jsx`).
-  { key: 'phone_preview',      label: 'Phone Preview',       route: '/app/phone-preview',               icon: Phone24Regular,           iconActive: Phone24Filled,           testid: 'nav-phone-preview',               requiresCan: ['mobile_preview', 'view'],      description: 'Live preview of the mobile app as any role or specific worker' },
+  { key: 'phone_preview',      label: 'Phone App',       route: '/app/phone-preview',               icon: Phone24Regular,           iconActive: Phone24Filled,           testid: 'nav-phone-preview',               requiresCan: ['mobile_preview', 'view'],      description: 'Open the phone app using your own mobile sign-in' },
   // v58.13.132n0 — External bookmark to the Paneltec Dropbox team
   // folder. RENDERS AS AN INTERNAL NAVLINK IN .132n2 — the
   // external-tab launcher is superseded by the in-app file browser
