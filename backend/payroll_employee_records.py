@@ -134,3 +134,6 @@ router.include_router(balance_import_router)
 
 from payroll_award_settings import router as award_settings_router
 router.include_router(award_settings_router)
+
+from payroll_stp_readiness import router as stp_readiness_router
+router.include_router(stp_readiness_router)
