@@ -388,7 +388,10 @@ async def list_timesheets(period_id: Optional[str] = None, start: Optional[str] 
     return {"period": {**p, "status": (stored or {}).get("status", "open")},
             "days": [(_parse_date(p["start"]) + timedelta(days=i)).isoformat()
                      for i in range((_parse_date(p["end"]) - _parse_date(p["start"])).days + 1)],
-            "workers": [w for w in workers if w.get("active", True) or any(e["worker_id"] == w["id"] for e in entries)],
+            # Roster records contain Mongo ObjectIds and private employee fields.
+            # Return only the fields used by the timesheet list and grid.
+            "workers": [{k: w.get(k) for k in ("id", "name", "position", "department", "division", "active", "employment_type")}
+                        for w in workers if w.get("active", True) or any(e["worker_id"] == w["id"] for e in entries)],
             "entries": entries, "settings": settings}
 
 
