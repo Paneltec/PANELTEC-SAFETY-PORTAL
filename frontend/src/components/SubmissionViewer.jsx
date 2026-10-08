@@ -128,6 +128,7 @@ function FieldValue({ field, submissionId }) {
     case 'worker_picker':
     case 'site_picker':
     case 'job_picker':
+    case 'company_selector':
     case 'customer_picker': {
       const items = Array.isArray(value) ? value : [value];
       return (
