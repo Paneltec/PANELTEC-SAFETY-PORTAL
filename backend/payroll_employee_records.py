@@ -2,7 +2,7 @@
 import json
 from datetime import date
 from fastapi import APIRouter,Depends,HTTPException
-from pydantic import Field
+from pydantic import Field,SecretStr
 from pymongo.errors import DuplicateKeyError
 from db import db
 from models import now_iso
@@ -25,6 +25,7 @@ class EmployeeRecord(Strict):
     revision:int=Field(0,ge=0)
     profile:Profile
     super_member_number:str|None=Field(None,max_length=64)
+    tax_file_number:SecretStr|None=None
     # None retains the encrypted member number, blank explicitly clears it.
 
 async def employee(user,worker_id):
@@ -33,10 +34,10 @@ async def employee(user,worker_id):
 
 
 def public(doc):
-    if not doc:return {'configured':False,'revision':0,'profile':Profile().model_dump(),'member_number_masked':'','opening_balances':None}
+    if not doc:return {'configured':False,'revision':0,'profile':Profile().model_dump(),'member_number_masked':'','tax_file_number_recorded':False,'opening_balances':None}
     data=decrypt(doc);number=data.get('super_member_number','')
     return {'configured':True,'revision':doc['revision'],'profile':data['profile'],
-        'opening_balances':data.get('opening_balances'), 'member_number_masked':('••••'+number[-4:]) if number else '', 'updated_at':doc['updated_at']}
+        'tax_file_number_recorded':bool(data.get('tax_file_number')), 'opening_balances':data.get('opening_balances'), 'member_number_masked':('••••'+number[-4:]) if number else '', 'updated_at':doc['updated_at']}
 
 class FundCheck(Strict):
     usi:str=Field(min_length=1,max_length=32)
@@ -58,12 +59,17 @@ async def save(worker_id:str,body:EmployeeRecord,user=Depends(require_permission
     old=await db.pay_employee_records.find_one({'_id':key})
     if (old or {}).get('revision',0)!=body.revision:raise HTTPException(409,'Employee payroll settings changed; reload first')
     previous=decrypt(old) if old else {}
+    tfn=previous.get('tax_file_number','')
+    if body.tax_file_number is not None:
+        tfn=''.join(body.tax_file_number.get_secret_value().split())
+        if tfn and (len(tfn)!=9 or not tfn.isascii() or not tfn.isdigit()):
+            raise HTTPException(422,'Enter a 9-digit tax file number, or leave it blank to clear it. This checks format only, not ATO registration.')
     member=body.super_member_number if body.super_member_number is not None else previous.get('super_member_number','')
     if body.super_member_number is None and previous and (previous['profile'].get('super_fund_usi','')!=body.profile.super_fund_usi or previous['profile'].get('super_fund_name','')!=body.profile.super_fund_name):
         raise HTTPException(422,'When changing funds, replace or explicitly clear the member number')
     opening=body.opening_balances.model_dump(mode='json') if body.opening_balances is not None else previous.get('opening_balances')
     if opening and not opening['reason'].strip():raise HTTPException(422,'Provide an opening balance source or correction reason')
-    data={'profile':body.profile.model_dump(),'super_member_number':member.strip(),'opening_balances':opening}
+    data={'profile':body.profile.model_dump(),'super_member_number':member.strip(),'opening_balances':opening,'tax_file_number':tfn}
     record={'org_id':user['org_id'],'worker_id':worker_id,'revision':body.revision+1,'updated_at':now_iso(),
             'encrypted':cipher().encrypt(json.dumps(data).encode()).decode()}
     try:
