@@ -424,6 +424,7 @@ export function CustomerPicker({ field, value, onChange }: PickerProps) {
         visible={modalOpen}
         onClose={() => setModalOpen(false)}
         title={field.label || 'Select Customer'}
+        keyExtractor={(c: CustomerItem) => `${c.simpro_company_id}:${c.simpro_customer_id}`}
         fetchItems={fetchFn}
         renderRow={renderRow}
         onPick={handlePick}
