@@ -379,26 +379,35 @@ export function VehicleNavixyPicker({ field, value, onChange }: PickerProps) {
 // ═══════════════════════════════════════════════════
 export function CustomerPicker({ field, value, onChange }: PickerProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [companyChoices, setCompanyChoices] = useState<CustomerItem[]>([]);
+  type CustomerChoice = CustomerItem & { choices?: CustomerItem[] };
   const testId = `customer-picker-${field.id}`;
 
   const fetchFn = useCallback(async (q: string) => {
-    return fetchCustomers(q || undefined);
-  }, []);
+    if (companyChoices.length) return companyChoices.filter(c => `${c.company_label} ${c.simpro_customer_id}`.toLowerCase().includes(q.toLowerCase()));
+    const customers = await fetchCustomers(q || undefined);
+    const groups = new Map<string, CustomerItem[]>();
+    customers.forEach(c => { const key = c.name.trim().replace(/\s+/g, ' ').toLowerCase(); groups.set(key, [...(groups.get(key) || []), c]); });
+    return Array.from(groups.values()).map(choices => ({ ...choices[0], choices }));
+  }, [companyChoices]);
 
-  const handlePick = useCallback((c: CustomerItem) => {
-    onChange(c);
+  const handlePick = useCallback((c: CustomerChoice) => {
+    if (c.choices && c.choices.length > 1) { setCompanyChoices(c.choices); return; }
+    const { choices, ...selected } = c;
+    onChange(selected);
+    setCompanyChoices([]);
     setModalOpen(false);
   }, [onChange]);
 
-  const renderRow = useCallback((c: CustomerItem) => (
+  const renderRow = useCallback((c: CustomerChoice) => (
     <>
       <IconAvatar icon="business" bg="#EDE9FE" fg="#7C3AED" />
       <View style={cs.rowBody}>
-        <Text style={cs.rowPrimary} numberOfLines={1}>{c.name}</Text>
-        <Text style={cs.rowSecondary} numberOfLines={1}>{c.company_label || 'Simpro'}</Text>
+        <Text style={cs.rowPrimary} numberOfLines={1}>{companyChoices.length ? c.company_label || 'Simpro' : c.name}</Text>
+        <Text style={cs.rowSecondary} numberOfLines={1}>{companyChoices.length ? `Client ${c.simpro_customer_id}` : c.choices && c.choices.length > 1 ? 'Choose company' : c.company_label || 'Simpro'}</Text>
       </View>
     </>
-  ), []);
+  ), [companyChoices]);
 
   if (value && typeof value === 'object' && value.id) {
     return (
@@ -417,13 +426,15 @@ export function CustomerPicker({ field, value, onChange }: PickerProps) {
       <PickerTrigger
         icon="business"
         placeholder={`Search ${field.label || 'customers'}…`}
-        onPress={() => setModalOpen(true)}
+        onPress={() => { setCompanyChoices([]); setModalOpen(true); }}
         testId={`${testId}-toggle`}
       />
       <PickerModal
+        key={companyChoices.length ? "company" : "client"}
         visible={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={field.label || 'Select Customer'}
+        title={companyChoices.length ? `${companyChoices[0].name} — choose company` : field.label || 'Select Customer'}
+        topSlot={companyChoices.length ? <TouchableOpacity onPress={() => setCompanyChoices([])} style={cs.companyChip}><Text>‹ All clients</Text></TouchableOpacity> : undefined}
         keyExtractor={(c: CustomerItem) => `${c.simpro_company_id}:${c.simpro_customer_id}`}
         fetchItems={fetchFn}
         renderRow={renderRow}
