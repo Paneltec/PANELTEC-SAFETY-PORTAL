@@ -131,3 +131,6 @@ router.include_router(fund_settings_router)
 
 from payroll_balance_import import router as balance_import_router
 router.include_router(balance_import_router)
+
+from payroll_award_settings import router as award_settings_router
+router.include_router(award_settings_router)
