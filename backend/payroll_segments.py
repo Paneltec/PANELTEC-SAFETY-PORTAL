@@ -105,8 +105,21 @@ async def resolve(segments, org, old=()):
             # Keep historical client/job labels if the same selection is now archived.
             if prior.get('category') == 'client' and prior.get('client_key') == s['client_key'] and prior.get('job_id', '') == s['job_id']:
                 s.update(client_name=prior['client_name'], job_ref=prior.get('job_ref', ''))
+                if prior.get('simpro_client_keys'): s['simpro_client_keys'] = prior['simpro_client_keys']
             else:
                 c = clients.get(s['client_key'])
+                if s['client_key'].startswith('group:'):
+                    base = clients.get(s['client_key'][6:])
+                    if base:
+                        norm = lambda value: ' '.join(value.split()).casefold()
+                        matches = [item for item in clients.values() if norm(item['name']) == norm(base['name'])]
+                        c = {**base, 'jobs': [job for item in matches for job in item['jobs']]}
+                        s['simpro_client_keys'] = [item['key'] for item in matches]
+                        # The client is one user-facing business; a chosen job resolves its source record.
+                        if s['job_id']:
+                            source = next((item for item in matches if any(job['id'] == s['job_id'] for job in item['jobs'])), None)
+                            if source:
+                                s['client_key'] = source['key']
                 if not c: raise HTTPException(422, 'Client is no longer available. Select a client again.')
                 s['client_name'] = c['name']
                 if s['job_id']:
