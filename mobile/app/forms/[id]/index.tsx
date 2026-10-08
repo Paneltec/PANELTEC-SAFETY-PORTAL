@@ -780,6 +780,7 @@ function ReviewField({ field, value }: { field: FormField; value: unknown }) {
         }
         return { text: 'No vehicle', empty: true };
 
+      case 'company_selector':
       case 'customer_picker':
         if (typeof value === 'object' && value !== null && (value as any).name) {
           return { text: (value as any).name, empty: false };
@@ -1175,7 +1176,7 @@ function FieldRenderer({
       )}
 
       {!['text', 'textarea', 'number', 'date', 'time', 'select', 'radio', 'photo', 'signature', 'gps', 'compliance',
-          'worker_picker', 'vehicle_navixy', 'customer_picker', 'site_picker', 'job_picker', 'asset_scan', 'contact_picker',
+          'worker_picker', 'vehicle_navixy', 'company_selector', 'customer_picker', 'site_picker', 'job_picker', 'asset_scan', 'contact_picker',
         ].includes(field.type) && (
         <View style={s.unsupported}>
           <Ionicons name="information-circle-outline" size={16} color={Colors.textTertiary} />
@@ -1193,7 +1194,7 @@ function FieldRenderer({
           <VehicleNavixyPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
         </View>
       )}
-      {field.type === 'customer_picker' && (
+      {['customer_picker', 'company_selector'].includes(field.type) && (
         <CustomerPicker field={field} value={value} onChange={effectiveOnChange} allValues={allValues} allFields={allFields} />
       )}
       {field.type === 'site_picker' && (
