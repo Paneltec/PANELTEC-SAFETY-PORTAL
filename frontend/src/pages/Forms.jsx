@@ -1114,7 +1114,7 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
   if (field.type === 'site_picker')
     return <SitePicker field={field} value={value} onChange={onChange} readOnly={readOnly}
       allFields={allFields} allValues={allValues} />;
-  if (field.type === 'customer_picker')
+  if (['customer_picker', 'company_selector'].includes(field.type))
     return <CustomerPicker field={field} value={value} onChange={onChange} readOnly={readOnly}
       allFields={allFields} allValues={allValues} />;
   if (field.type === 'asset_scan')
