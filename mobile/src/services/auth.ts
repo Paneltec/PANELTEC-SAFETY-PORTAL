@@ -230,30 +230,12 @@ export async function pinLogin(
 }
 
 // ── Session Accessors ────────────────────────────────────────────
+// Preview credentials are retired. Only the authenticated mobile session may write.
 export async function getStoredJwt(): Promise<string | null> {
-  // Preview session takes precedence on web
-  if (Platform.OS === 'web') {
-    try {
-      const preview = sessionStorage.getItem('paneltec_preview_jwt');
-      if (preview) return preview;
-    } catch { /* noop */ }
-  }
   return Storage.getItem(KEYS.sessionToken);
 }
-
-export function isPreviewSession(): boolean {
-  if (Platform.OS !== 'web') return false;
-  try { return !!sessionStorage.getItem('paneltec_preview_jwt'); }
-  catch { return false; }
-}
-
+export function isPreviewSession(): boolean { return false; }
 export async function getStoredUser(): Promise<any | null> {
-  if (Platform.OS === 'web') {
-    try {
-      const raw = sessionStorage.getItem('paneltec_preview_user');
-      if (raw) return JSON.parse(raw);
-    } catch { /* noop */ }
-  }
   const raw = await Storage.getItem(KEYS.user);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
