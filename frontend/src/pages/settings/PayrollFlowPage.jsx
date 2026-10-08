@@ -51,7 +51,7 @@ export default function PayrollFlowPage() {
     {!loaded?<p>Loading flow chart…</p>:<>
     <div className="flex flex-wrap items-center gap-3 sticky top-0 z-10 bg-white border rounded-xl p-3 mb-4">
       <button className="bg-orange-500 text-white font-semibold rounded-lg px-4 py-2" disabled={busy} onClick={save}>{busy?'Saving…':'Save flow chart'}</button>
-      <button className="border rounded-lg px-3 py-2" disabled={busy||steps.length>=150} onClick={()=>{const s={id:crypto.randomUUID(),title:'New step',area:'Office portal',status:'Not checked',notes:'',link:''};change([...steps,s]);setEditing(s.id);}}>Add step</button>
+      <button className="border rounded-lg px-3 py-2" disabled={busy||steps.length>=150} onClick={()=>{const s={id:`flow-${Date.now()}-${Math.random().toString(36).slice(2,10)}`,title:'New step',area:'Office portal',status:'Not checked',notes:'',link:''};change([...steps,s]);setEditing(s.id);}}>Add step</button>
       <button className="border rounded-lg px-3 py-2" disabled={busy||!history.length} onClick={()=>{setSteps(history[history.length-1]);setHistory(history.slice(0,-1));setDirty(true);}}>Undo</button>
       <button className="border rounded-lg px-3 py-2" onClick={download}>Export chart</button>
       <span className="text-sm text-slate-500">{dirty?'Unsaved changes':revision?'Saved':'Starter chart — save to keep it'} · {steps.filter(s=>s.status==='Working').length}/{steps.length} working</span>
