@@ -30,7 +30,6 @@ export default function MyTimesheets(){
  const [day,setDay]=useState(toIso(new Date())),[week,setWeek]=useState<Week|null>(null),[catalog,setCatalog]=useState<Catalog>({clients:[],recent:[]}),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const [stage,setStage]=useState<'week'|'client'|'job'|'time'>('week'),[draft,setDraft]=useState<TimeSegment|null>(null),[client,setClient]=useState<Client|null>(null),[search,setSearch]=useState(''),[unknown,setUnknown]=useState(''),[limit,setLimit]=useState(40);
  const [clientOpen,setClientOpen]=useState(false),[workTypeOpen,setWorkTypeOpen]=useState(false);
- const [clientChoices,setClientChoices]=useState<Client[]>([]);
  const [confirmation,setConfirmation]=useState<{message:string;action:()=>void}|null>(null);
  function confirmAction(message:string,action:()=>void){setConfirmation({message,action});}
  const request=useRef(0),saving=useRef(false);
@@ -39,9 +38,9 @@ export default function MyTimesheets(){
  useEffect(()=>{loadCatalog().then(setCatalog).catch(()=>setMessage('Client list is unavailable. You can still record a client name for the office to match.'));},[]);
  const current=week?.entries.find(r=>r.date===day),entries=segmentsOf(current),locked=!!current&&!['draft','rejected'].includes(current.status),legacyBlocked=!!current&&!current.segments&&(!current.start||!current.finish||current.kind!=='work');
  function navigate(date:string){setMessage('');setDay(date);}
- function begin(){const last=entries.length?entries.reduce((n,e)=>Math.max(n,mins(e.finish)),0):420;setDraft({id:`time-${Date.now()}-${Math.random().toString(36).slice(2,10)}`,category:'client',client_key:'',client_name:'',job_id:'',start:hhmm(last),finish:hhmm(Math.min(1439,last+60)),break_minutes:0,notes:''});setSearch('');setUnknown('');setClientChoices([]);setClient(null);setStage('time');setClientOpen(false);setMessage('');}
- function choose(c:Client){setClientChoices([]);setClient(c);setDraft(d=>d?{...d,category:'client',client_key:c.key,client_name:c.name,job_id:'',job_ref:''}:d);setClientOpen(false);setStage(c.jobs.length?'job':'time');}
- function nonClient(category:string,name:string){setClientChoices([]);setDraft(d=>d?{...d,category,client_key:'',client_name:name,job_id:'',job_ref:''}:d);setClientOpen(false);setStage('time');}
+ function begin(){const last=entries.length?entries.reduce((n,e)=>Math.max(n,mins(e.finish)),0):420;setDraft({id:`time-${Date.now()}-${Math.random().toString(36).slice(2,10)}`,category:'client',client_key:'',client_name:'',job_id:'',start:hhmm(last),finish:hhmm(Math.min(1439,last+60)),break_minutes:0,notes:''});setSearch('');setUnknown('');setClient(null);setStage('time');setClientOpen(false);setMessage('');}
+ function choose(c:Client){setClient(c);setDraft(d=>d?{...d,category:'client',client_key:c.key,client_name:c.name,job_id:'',job_ref:''}:d);setClientOpen(false);setStage(c.jobs.length?'job':'time');}
+ function nonClient(category:string,name:string){setDraft(d=>d?{...d,category,client_key:'',client_name:name,job_id:'',job_ref:''}:d);setClientOpen(false);setStage('time');}
  async function persist(next:TimeSegment[]){if(saving.current)return;saving.current=true;setBusy(true);setMessage('');try{await saveSegments(day,next,current?.revision||0);setStage('week');setDraft(null);await load(day);loadCatalog().then(setCatalog).catch(()=>{});setMessage('Time saved. Send the week when it is complete.');}catch(e){setMessage(String(apiMessage(e)));}finally{setBusy(false);saving.current=false;}}
  function save(){if(!draft)return;if(!validTime(draft.start)||!validTime(draft.finish)){setMessage('Enter valid start and finish times, for example 0700 or 07:00.');return;}if(!draft.client_name.trim()){setMessage('Choose a client or non-client time before saving.');return;}const start=mins(draft.start),end=mins(draft.finish);if(end<=start){setMessage('Finish must be later than start on the same day.');return;}if(end-start<=draft.break_minutes){setMessage('Break must be shorter than the time worked.');return;}if(entries.some(e=>e.id!==draft.id&&start<mins(e.finish)&&end>mins(e.start))){setMessage('Times overlap. Adjust the start or finish before saving.');return;}persist([...entries.filter(e=>e.id!==draft.id),draft]);}
  async function send(){if(!week||saving.current)return;saving.current=true;setBusy(true);try{const result=await submitWeek(week.period.id);await load(day);setMessage(`${result.submitted} day(s) sent to the office. Sent days are now locked.`);}catch(e){setMessage(String(apiMessage(e)));}finally{setBusy(false);saving.current=false;}}
@@ -52,8 +51,8 @@ export default function MyTimesheets(){
  const filtered=catalog.clients.filter(c=>!query||c.name.toLowerCase().includes(query)||c.jobs.some(j=>`${j.number} ${j.name} ${j.site}`.toLowerCase().includes(query)));
  const groups=Array.from(filtered.reduce((map,c)=>{const key=c.name.trim().replace(/\s+/g,' ').toLowerCase();map.set(key,[...(map.get(key)||[]),c]);return map;},new Map<string,Client[]>()).values());
  const recent=groups.filter(cs=>cs.some(c=>catalog.recent.includes(c.key)));
- function chooseGroup(cs:Client[]){if(cs.length===1){choose(cs[0]);return;}setClientChoices(cs);setClientOpen(false);setStage('time');setDraft(d=>d?{...d,client_key:'',client_name:'',job_id:'',job_ref:''}:d);}
- const clientTile=(cs:Client[])=>tile(cs[0].name,cs.length>1?'Choose company / job':clientDetail(cs[0]),()=>chooseGroup(cs),cs[0].name.trim().toLowerCase());
+ function chooseGroup(cs:Client[]){const first=cs[0];choose({...first,key:cs.length>1?`group:${first.key}`:first.key,jobs:Array.from(new Map(cs.flatMap(c=>c.jobs).map(j=>[j.id,j])).values())});}
+ const clientTile=(cs:Client[])=>tile(cs[0].name,cs.some(c=>c.jobs.length)?'Choose a job (optional)':'',()=>chooseGroup(cs),cs[0].name.trim().toLowerCase());
  const pending=week?.entries.filter(r=>['draft','rejected'].includes(r.status)&&r.hours>0).length||0;
  return <Screen testID="my-timesheets">
  {stage==='week'?<BackHeader title="My Timesheet"/>:<View style={[s.row,{marginBottom:10}]}><TouchableOpacity accessibilityLabel="Cancel time entry" onPress={leaveEditor} style={s.nav}><Text style={s.navText}>‹</Text></TouchableOpacity><Text style={s.heading}>{stage==='time'?'Add time':'Select client'}</Text></View>}
@@ -72,7 +71,7 @@ export default function MyTimesheets(){
  </>:<>
  {draft&&<>
  <FieldLabel>Client / activity</FieldLabel>
- <TouchableOpacity accessibilityRole="button" accessibilityLabel="Select Simpro client" accessibilityState={{expanded:clientOpen}} onPress={()=>{setClientOpen(!clientOpen);setClientChoices([]);setSearch('');setLimit(40);setStage('time');}} style={s.select}>
+ <TouchableOpacity accessibilityRole="button" accessibilityLabel="Select Simpro client" accessibilityState={{expanded:clientOpen}} onPress={()=>{setClientOpen(!clientOpen);setSearch('');setLimit(40);setStage('time');}} style={s.select}>
  <Text style={[s.tileTitle,{flex:1}]}>{draft.client_name||'Choose a client…'}</Text><Text style={s.chevron}>{clientOpen?'⌃':'⌄'}</Text>
  </TouchableOpacity>
  {clientOpen&&<View style={s.dropdown}>
@@ -88,9 +87,8 @@ export default function MyTimesheets(){
  <Input style={[s.search,{marginTop:8}]} accessibilityLabel="Unlisted client name" placeholder="Client not listed? Enter name" maxLength={160} value={unknown} onChangeText={setUnknown}/>
  {!!unknown.trim()&&button('Use name · office to match',()=>nonClient('unmatched',unknown.trim()))}
  </View>}
- {!!clientChoices.length&&<View style={s.dropdown}><Text style={s.group}>{clientChoices[0].name} — choose company</Text>{clientChoices.map(c=>tile(clientDetail(c),`Client ${c.key.split(':').slice(-1)[0]}`,()=>choose(c),c.key))}</View>}
  {stage==='job'&&<View style={s.dropdown}><Text style={s.group}>Choose a job (optional)</Text>{tile('No particular job','',()=>setStage('time'),'none')}{client?.jobs.map(j=>tile(`Job ${j.number} · ${j.name}`,j.site,()=>{setDraft({...draft,job_id:j.id,job_ref:j.number});setStage('time');},j.id))}</View>}
- {!!draft.job_ref&&<TouchableOpacity accessibilityRole="button" onPress={()=>{setClient(catalog.clients.find(c=>c.key===draft.client_key)||null);setStage('job');}}><Text style={s.light}>Job {draft.job_ref} · Change</Text></TouchableOpacity>}
+ {!!draft.job_ref&&<TouchableOpacity accessibilityRole="button" onPress={()=>{const base=catalog.clients.find(c=>c.key===draft.client_key.replace(/^group:/,''));const matches=base?catalog.clients.filter(c=>c.name.trim().replace(/\s+/g,' ').toLowerCase()===base.name.trim().replace(/\s+/g,' ').toLowerCase()):[];setClient(base?{...base,jobs:matches.flatMap(c=>c.jobs)}:null);setStage('job');}}><Text style={s.light}>Job {draft.job_ref} · Change</Text></TouchableOpacity>}
  <FieldLabel>Work type</FieldLabel><TouchableOpacity accessibilityRole="button" accessibilityLabel="Select work type" accessibilityState={{expanded:workTypeOpen}} style={s.select} onPress={()=>setWorkTypeOpen(!workTypeOpen)}><Text style={[s.tileTitle,{flex:1}]}>{catalog.work_types?.find(t=>t.id===draft.work_type_id)?.name||draft.work_type_name||'Ordinary work'}</Text><Text style={s.chevron}>⌄</Text></TouchableOpacity>{workTypeOpen&&<ScrollView style={[s.dropdown,{maxHeight:220}]}>{[{id:'',name:'Ordinary work'},...(catalog.work_types||[])].map(t=>tile(t.name,'',()=>{setDraft({...draft,work_type_id:t.id,work_type_name:t.name});setWorkTypeOpen(false);},t.id||'ordinary'))}</ScrollView>}
  <FieldLabel>Day</FieldLabel><View style={s.tile}><Text style={[s.tileTitle,{textAlign:'center',flex:1}]}>{label(day,{weekday:'long',day:'numeric',month:'long'})}</Text></View>
  <View style={[s.row,{alignItems:'stretch',gap:10}]}><Stepper title="Start" value={draft.start} onChange={start=>setDraft({...draft,start})}/><Stepper title="Finish" value={draft.finish} onChange={finish=>setDraft({...draft,finish})}/></View>
