@@ -19,6 +19,7 @@ import { Lock, Unlock, X as XIcon, Loader2, ShieldCheck } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
 import { getUser } from '../../lib/auth';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 
 const SS_KEY = 'admin_console_unlocked_until';
 const HARD_CAP_MIN = 60;
@@ -100,6 +101,7 @@ export default function AdminPillsLock({ children }) {
   if (unlocked) {
     return (
       <>
+        <Link to="/app/settings/payroll-flow" className="text-sm font-semibold text-blue-800 border rounded-lg px-3 py-1">Payroll flow chart</Link>
         {children}
         <button
           onClick={handleLock}
