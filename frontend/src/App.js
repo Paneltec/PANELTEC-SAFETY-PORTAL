@@ -207,6 +207,7 @@ import CacheBusterBanner from '@/components/CacheBusterBanner';
 import SimproImportGuidePage from '@/pages/help/SimproImportGuidePage';
 // v160.3.7q — Program-wide visual schematic
 import ProgramSchematicPage from '@/pages/settings/ProgramSchematicPage';
+import PayrollFlowPage from '@/pages/settings/PayrollFlowPage';
 // v160.3.9.48 — HR Employees register.
 // v58.13.57 — `HrEmployeesPage` import retired. Route below redirects
 // `/app/settings/hr-employees` → `/app` for a 90-day grace window.
@@ -463,6 +464,7 @@ function App() {
               <Route path="settings/help/simpro-import" element={<SimproImportGuidePage />} />
               {/* v160.3.7q — Program-wide visual schematic diagram. */}
               <Route path="settings/schematic" element={<ProgramSchematicPage />} />
+              <Route path="settings/payroll-flow" element={<PayrollFlowPage />} />
               {/* v160.3.9.47 — Legacy redirect for the pre-rewrite URL. */}
               <Route path="settings/program-schematic" element={<Navigate to="/app/settings/schematic" replace />} />
               <Route path="settings/my-apps" element={<MyApps />} />
