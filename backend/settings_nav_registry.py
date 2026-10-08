@@ -48,7 +48,7 @@ SETTINGS_NAV_ITEMS: list[dict[str, Any]] = [
     # Settings sub-nav via `default_layout()`; existing per-org
     # layouts persist unchanged and will surface the entry only
     # after an admin explicitly adds it via the drag/drop tray.
-    {"key": "phone_preview",      "label": "Phone Preview",        "route": "/app/phone-preview",                 "admin_only": False, "resource": "mobile_preview"},
+    {"key": "phone_preview",      "label": "Phone App",        "route": "/app/phone-preview",                 "admin_only": False, "resource": "mobile_preview"},
     # v58.13.132n0 — Dropbox launcher key. Frontend registry sets
     # `externalUrl` (dormant now — see below).
     # v58.13.132n2 — Now points at the internal `/app/dropbox`
