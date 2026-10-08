@@ -19,7 +19,16 @@ function currentFriday() { const d = new Date(); d.setDate(d.getDate() - (d.getD
 const profile = { employment_type:'unconfirmed', hourly_rate:0, ordinary_weekly_hours:38, classification:'', conditions_reviewed:false, tax_mode:'unconfirmed', tax_declaration_reviewed:false, annual_weeks:4, personal_weeks:2, leave_loading_percent:0 };
 const entry = { ordinary:0, ot1:0, ot2:0, annual:0, personal:0, public_holiday:0, taxable_allowances:0, post_tax_deductions:0, reimbursements:0, extra_withholding:0, manual_payg:null, payg_reference:'', qualifying_earnings:null, super_reviewed:false, hours_reviewed:false, opening_annual:null, opening_personal:null };
 const inputClass = 'w-full border rounded-lg px-3 py-2 bg-white text-slate-900';
-function NumberField({ label, value, onChange, nullable=false, min=0, disabled=false }) { return <label className="text-sm block">{label}<input className={inputClass} type="number" disabled={disabled} min={min} step="any" value={value ?? ''} onChange={e => onChange(e.target.value === '' && nullable ? null : Number(e.target.value))} /></label>; }
+function NumberField({ label, value, onChange, nullable=false, min=0, disabled=false }) {
+  const [editing,setEditing]=useState(false);
+  const [draft,setDraft]=useState('');
+  const displayed=value === 0 && !nullable ? '' : (value ?? '');
+  return <label className="text-sm block">{label}<input className={inputClass} type="number" disabled={disabled} min={min} step="any"
+    value={editing ? draft : displayed}
+    onFocus={() => {setDraft(value === 0 ? '' : String(value ?? ''));setEditing(true);}}
+    onBlur={() => setEditing(false)}
+    onChange={e => {const text=e.target.value;setDraft(text);onChange(text === '' && nullable ? null : Number(text));}} /></label>;
+}
 function Check({children, checked, onChange}) { return <label className="flex gap-2 text-sm items-start py-2"><input type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)} className="mt-1"/>{children}</label>; }
 
 export default function PayWorkbench({mode="run"}) {
