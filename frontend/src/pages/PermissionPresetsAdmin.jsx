@@ -136,7 +136,7 @@ export default function PermissionPresetsAdmin() {
   return (
     <div className="max-w-7xl mx-auto" data-testid="presets-admin-page">
       <PageHeader crumb="Settings / Permissions Matrix" title="Permissions Matrix"
-        subtitle="Curate role presets, choose which mobile-app modules each role sees, and grant phone-preview access via the mobile_preview.view cell."
+        subtitle="Curate role presets, choose which mobile-app modules each role sees, and grant Phone App menu access via the mobile_preview.view cell."
         action={canEdit && tab === 'presets' && (
           <button onClick={() => setCreateOpen(true)} data-testid="preset-create-btn"
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
