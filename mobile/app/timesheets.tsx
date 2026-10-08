@@ -5,7 +5,6 @@ import {toIso,fromIso,apiMessage} from '../src/services/leave';
 import {loadWeek,loadCatalog,saveSegments,submitWeek,Week,TimeSegment,Client,Catalog,DayEntry} from '../src/services/timesheets';
 
 const orange='#ff790b',white='#f4f6f9',muted='#aec3da';
-const clientDetail=(c:Client)=>{const company=c.key.split(':')[0];return [company==='2'?'Paneltec':company==='3'?'Viatec':`Simpro company ${company}`,c.jobs.length?`${c.jobs.length} open jobs`:''].filter(Boolean).join(' · ');};
 const categories=[['yard','Yard / Workshop'],['travel','Travel'],['training','Training'],['office','Office']];
 const validTime=(v:string)=>/^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 const mins=(v:string)=>Number(v.split(':')[0])*60+Number(v.split(':')[1]);
@@ -50,7 +49,7 @@ export default function MyTimesheets(){
  const query=search.trim().toLowerCase();
  const filtered=catalog.clients.filter(c=>!query||c.name.toLowerCase().includes(query)||c.jobs.some(j=>`${j.number} ${j.name} ${j.site}`.toLowerCase().includes(query)));
  const groups=Array.from(filtered.reduce((map,c)=>{const key=c.name.trim().replace(/\s+/g,' ').toLowerCase();map.set(key,[...(map.get(key)||[]),c]);return map;},new Map<string,Client[]>()).values());
- const recent=groups.filter(cs=>cs.some(c=>catalog.recent.includes(c.key)));
+ const recent=groups.filter(cs=>cs.some(c=>catalog.recent.some(key=>key.replace(/^group:/,'')===c.key)));
  function chooseGroup(cs:Client[]){const first=cs[0];choose({...first,key:cs.length>1?`group:${first.key}`:first.key,jobs:Array.from(new Map(cs.flatMap(c=>c.jobs).map(j=>[j.id,j])).values())});}
  const clientTile=(cs:Client[])=>tile(cs[0].name,cs.some(c=>c.jobs.length)?'Choose a job (optional)':'',()=>chooseGroup(cs),cs[0].name.trim().toLowerCase());
  const pending=week?.entries.filter(r=>['draft','rejected'].includes(r.status)&&r.hours>0).length||0;
