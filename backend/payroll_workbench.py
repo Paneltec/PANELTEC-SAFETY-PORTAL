@@ -25,7 +25,24 @@ Hours = Annotated[float, Field(ge=0, le=168, allow_inf_nan=False)]
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+class EarningRule(Strict):
+    code: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,40}$")
+    name: str = Field(min_length=1,max_length=100)
+    basis: Literal["fixed_rate","base_rate"] = "fixed_rate"
+    rate: Number = 0
+    multiplier: float = Field(1,ge=0,le=100,allow_inf_nan=False)
+    taxable: bool | None = None
+    superable: bool | None = None
+
 class Rules(Strict):
+    earning_rules: list[EarningRule] = Field(default_factory=list,max_length=100)
+
+    @model_validator(mode="after")
+    def unique_earning_codes(self):
+        codes=[r.code for r in self.earning_rules]
+        if len(codes)!=len(set(codes)):raise ValueError("Earning rule codes must be unique")
+        return self
+
     daily_ordinary_hours: float = Field(7.6,ge=0,le=24,allow_inf_nan=False)
     meal_allowance: Number | None = None
     meal_tax_treatment: Literal["unconfirmed","taxable","exempt"] = "unconfirmed"
@@ -90,6 +107,7 @@ class Profile(Strict):
         return self
 
 class Entry(Strict):
+    earning_units: dict[str, Number] = Field(default_factory=dict,max_length=100)
     allowance_units: dict[str, Number] = Field(default_factory=dict,max_length=20)
     deduction_details: str = Field('', max_length=1000)
     allowance_details: str = Field('', max_length=1000)
@@ -121,7 +139,25 @@ class LeaveAllocation(Strict):
     category: Literal['annual', 'personal']
     hours: float = Field(gt=0, le=168, allow_inf_nan=False)
 
+class DayHours(Strict):
+    ordinary: Hours = 0
+    ot1: Hours = 0
+    ot2: Hours = 0
+    night: Hours = 0
+    holiday_work: Hours = 0
+    penalty_ordinary: Hours = 0
+    meal_count: int = Field(0,ge=0,le=14)
+
+    @model_validator(mode="after")
+    def valid_day(self):
+        if sum(getattr(self,k) for k in ('ordinary','ot1','ot2','night','holiday_work'))>24:
+            raise ValueError("Daily hours cannot exceed 24")
+        if self.penalty_ordinary>self.night+self.holiday_work:
+            raise ValueError("Ordinary penalty hours exceed penalty hours")
+        return self
+
 class Row(Strict):
+    daily_hours: dict[date, DayHours] | None = Field(None,max_length=7)
     worked_hours_override: bool = False
     shifts: list[Shift] | None = Field(None,max_length=40)
     adjustment_reason: str = Field("", max_length=1000)
@@ -244,14 +280,23 @@ def report(body, names):
     rows = []
     for r in body.rows:
         if body.out_of_cycle:
-            if r.shifts or r.leave_sources or r.timesheet_fingerprint or r.entry.annual or r.entry.personal:raise HTTPException(422,'Out-of-cycle runs use extra amounts only; do not import timesheets or leave already allocated to the weekly run')
+            if r.daily_hours or r.shifts or r.leave_sources or r.timesheet_fingerprint or r.entry.annual or r.entry.personal:raise HTTPException(422,'Out-of-cycle runs use extra amounts only; do not import timesheets or leave already allocated to the weekly run')
             if r.profile.tax_mode!='manual':raise HTTPException(422,'Out-of-cycle payments require reviewed manual PAYG for the additional payment')
         shift_issue=None
-        if r.shifts is not None and not r.worked_hours_override:
+        daily_totals={}
+        if r.shifts is not None or r.daily_hours is not None:
             from payroll_shift_rules import calculate_shifts
             try:
-                totals=calculate_shifts([v.model_dump(mode="json") for v in r.shifts],body.rules.model_dump())
-                r.entry=Entry(**{**r.entry.model_dump(),**totals})
+                shifts=[v.model_dump(mode="json") for v in (r.shifts or [])]
+                # Validate the full source set, including cross-date overlaps.
+                calculate_shifts(shifts,body.rules.model_dump())
+                for day in sorted({v['date'] for v in shifts}):
+                    daily_totals[day]=calculate_shifts([v for v in shifts if v['date']==day],body.rules.model_dump())
+                if r.daily_hours is not None:
+                    daily_totals={str(k):v.model_dump() for k,v in r.daily_hours.items()}
+                if not r.worked_hours_override:
+                    totals={k:sum(v.get(k,0) for v in daily_totals.values()) for k in DayHours.model_fields}
+                    r.entry=Entry(**{**r.entry.model_dump(),**totals})
             except ValueError as exc:shift_issue=str(exc)
         try:
             result = calculate_line(r.profile.model_dump(), r.entry.model_dump(), body.rules.model_dump(), body.payday)
@@ -269,7 +314,7 @@ def report(body, names):
         if r.entry.taxable_allowances and not r.entry.allowance_details.strip():
             result['issues'].append('Record each allowance description and amount')
             result['review_ready']=False
-        rows.append({**r.model_dump(), "name": names[r.worker_id], "result": result})
+        rows.append({**r.model_dump(), "name": names[r.worker_id], "daily_totals":daily_totals, "result": result})
     totals = {}
     for key in ("gross", "payg", "net", "super", "annual_base_value"):
         values = [r["result"][key] for r in rows]
@@ -468,6 +513,8 @@ async def preview(week: str, body: Worksheet, user=Depends(require_permission("p
     if body.out_of_cycle != ('~' in week):raise HTTPException(422,'Pay run type cannot be changed')
     if body.out_of_cycle and not body.run_reason.strip():raise HTTPException(422,'Enter the reason for the extra payment')
     for row in body.rows:
+        if row.daily_hours is not None and any(not start<=d<=start+timedelta(days=6) for d in row.daily_hours):
+            raise HTTPException(422,"Daily entries must be within this pay week")
         if row.shifts is not None and any(not start<=s.date<=start+timedelta(days=6) for s in row.shifts):
             raise HTTPException(422,"Shift dates must be within this pay week")
     if body.payday < start or body.payday > start + timedelta(days=3650 if body.out_of_cycle else 35):

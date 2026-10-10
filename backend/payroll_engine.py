@@ -7,7 +7,7 @@ require a reviewed manual withholding amount; never approximate annual tax.
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
 
-RULE_VERSION = "AU-weekly-2026-07-01-v2"
+RULE_VERSION = "AU-weekly-2026-07-01-v3"
 TAX_SOURCE = "https://www.legislation.gov.au/F2026L00716/asmade/text"
 SOURCES = [
     {"label": "ATO weekly PAYG formulas (Schedule 1)", "url": TAX_SOURCE},
@@ -118,10 +118,26 @@ def calculate_line(profile, entry, rules, payday):
         definition=definitions[code];amount=rounded(dec(units)*dec(definition['rate']))
         allowance_lines.append({**definition,'units':float(units),'amount':float(amount)})
     earnings['configured_allowances']=sum((dec(a['amount']) for a in allowance_lines),Decimal(0))
+    earning_lines=[]
+    earning_rules={r['code']:r for r in rules.get('earning_rules',[])}
+    for code,units in entry.get('earning_units',{}).items():
+        if code not in earning_rules:
+            if dec(units):raise ValueError("Configure the earning category before entering units")
+            continue
+        if dec(units)<0:raise ValueError("Earning units cannot be negative")
+        definition=earning_rules[code]
+        if definition.get('taxable') is None or definition.get('superable') is None:
+            if dec(units):raise ValueError("Choose tax and super treatment for the earning category in Pay settings")
+            continue
+        unit_rate=(rate if definition['basis']=='base_rate' else dec(definition['rate']))*dec(definition['multiplier'])
+        amount=rounded(dec(units)*unit_rate)
+        earning_lines.append({**definition,'units':float(units),'unit_rate':float(unit_rate),'amount':float(amount)})
+    earnings['other_earnings']=sum((dec(v['amount']) for v in earning_lines),Decimal(0))
     gross = sum(earnings.values())
     meal_tax=rules.get("meal_tax_treatment","unconfirmed")
     if meal_count and meal_tax=="unconfirmed":issues.append("Confirm meal allowance tax treatment in calculation settings")
     taxable_gross=gross-(earnings["meal_allowance_pay"] if meal_tax=="exempt" else 0)
+    taxable_gross-=sum((dec(v['amount']) for v in earning_lines if not v['taxable']),Decimal(0))
     deductions = rounded(entry.get("post_tax_deductions", 0))
     reimbursements = rounded(entry.get("reimbursements", 0))
     tax = None
@@ -149,6 +165,7 @@ def calculate_line(profile, entry, rules, payday):
     super_issues = []
     if qe is None:
         qe = sum(earnings[k] for k in ("ordinary_pay", "annual_pay", "personal_pay", "public_holiday_pay", "leave_loading"))
+        qe+=sum((dec(v['amount']) for v in earning_lines if v['superable']),Decimal(0))
         penalty_hours = h["night"] + h["holiday_work"]
         if penalty_ordinary == penalty_hours:
             qe += earnings["night_pay"] + earnings["holiday_work_pay"]
@@ -181,7 +198,7 @@ def calculate_line(profile, entry, rules, payday):
                 issues.append(f"{kind.title()} leave balance would be negative")
     annual_value = None if balances["annual_closing"] is None else rounded(dec(balances["annual_closing"])*rate)
     return {**{k:float(v) for k,v in earnings.items()}, **balances,
-            "applied_rates":{k:float(v) for k,v in rates.items()}, "allowance_lines":allowance_lines,
+            "applied_rates":{k:float(v) for k,v in rates.items()}, "allowance_lines":allowance_lines, "earning_lines":earning_lines,
             "gross":float(rounded(gross)), "payg":None if tax is None else float(tax),
             "net":None if net is None else float(net), "super":None if super_amount is None else float(super_amount),
             "super_mode":super_mode, "super_issues":super_issues, "qualifying_earnings":None if super_issues else float(rounded(qe)),

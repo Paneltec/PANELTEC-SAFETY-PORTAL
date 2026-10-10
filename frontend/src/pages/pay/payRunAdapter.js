@@ -11,7 +11,7 @@ export const sortPayRunEmployees=list=>[...list].sort((a,b)=>String(a.name||'').
 // Preserve source shifts; only pay-run totals are overridden by a direct edit.
 export function editPayRunEntry(row,key,value,calculatedEntry){
  const worked=['ordinary','ot1','ot2','night','holiday_work','meal_count'];
- const override=worked.includes(key)&&row.shifts!=null;
+ const override=worked.includes(key)&&(row.shifts!=null||row.daily_hours!=null);
  const source=override&&!row.worked_hours_override?(calculatedEntry||row.entry):row.entry;
  const entry={...row.entry,...(override?Object.fromEntries([...worked,'penalty_ordinary'].map(k=>[k,source[k]??0])):{}),[key]:value};
  if(key==='hours_reviewed')entry.super_reviewed=value;

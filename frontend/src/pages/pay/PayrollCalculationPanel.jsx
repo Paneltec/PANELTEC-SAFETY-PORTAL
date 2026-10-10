@@ -12,7 +12,7 @@ export default function PayrollCalculationPanel({row,result,sheet,week,sealedBra
  <p className="pay-slip-employer">{employer?.employer_name||'Pending'} · ABN {employer?.employer_abn||'Pending'}</p>
  <h3>Pay slip preview</h3><p>Draft</p>
  <h4 className="pay-slip-heading">Earnings</h4><dl>
- {line('Ordinary pay',result?.ordinary_pay)}
+ {line('Ordinary pay',result?.ordinary_pay)}{line('Other earnings',result?.other_earnings??0)}
  {line('Overtime & penalties',total(['ot1_pay','ot2_pay','night_pay','holiday_work_pay']))}
  {line('Leave + loading',total(['annual_pay','personal_pay','public_holiday_pay','leave_loading']))}
  {line('Allowances',total(['taxable_allowances','meal_allowance_pay','configured_allowances']))}

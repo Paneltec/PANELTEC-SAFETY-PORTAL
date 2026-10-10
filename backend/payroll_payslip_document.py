@@ -15,6 +15,7 @@ def statement(snapshot,worker,week,issued):
     keys={'Ordinary hours':'ordinary','Overtime - tier 1':'ot1','Overtime - tier 2':'ot2','Night shift':'night','Public holiday worked':'holiday_work'}
     lines=[(name,units,applied.get(keys.get(name),rate),amount) for name,units,rate,amount in lines]
     lines.extend((a['name'],a['units'],a['rate'],a['amount']) for a in r.get('allowance_lines',[]))
+    lines.extend((a['name'],a['units'],a['unit_rate'],a['amount']) for a in r.get('earning_lines',[]))
     return {'message':snapshot['worksheet'].get('payslip_message',''),'name':row['name'],'worker_id':worker,'brand':division.get('name') or 'Paneltec Pay','logo':division.get('logo',''),'employer':b['employer_name'],'abn':b['employer_abn'],'week':week,'end':(date.fromisoformat(week)+timedelta(days=6)).isoformat(),'paid_date':issued['paid_date'],'revision':snapshot['revision'],'profile':p,'entry':e,'result':r,'hours':sum(e.get(k,0) for k in ('ordinary','ot1','ot2','annual','personal','public_holiday','night','holiday_work')),'lines':[l for l in lines if l[1] or l[3] or l[0]=='Ordinary hours'],'masked':issued.get('particulars',{}).get(worker,{}),'issued_at':issued['issued_at']}
 
 def money(v):return f'${float(v):,.2f}' if v is not None else 'Not available'

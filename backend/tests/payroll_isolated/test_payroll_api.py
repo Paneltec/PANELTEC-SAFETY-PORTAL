@@ -117,6 +117,36 @@ class PayrollAPITests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         self.assertNotEqual(response.json()['report']['rows'][0]['entry']['ordinary'],6)
 
+    def test_daily_entries_aggregate_and_persist(self):
+        row=self.body['rows'][0]
+        row.update(daily_hours={'2026-10-05':{'ordinary':6},'2026-10-06':{'ordinary':8,'ot1':2}})
+        row['entry']['qualifying_earnings']=None
+        response=self.save()
+        self.assertEqual(response.status_code,200,response.text)
+        r=response.json()['report']['rows'][0]
+        self.assertEqual(r['entry']['ordinary'],14)
+        self.assertEqual(r['entry']['ot1'],2)
+        self.assertEqual(r['result']['super'],58.8)
+        loaded=client.get('/payroll/workbench/2026-10-05').json()
+        self.assertEqual(loaded['worksheet']['rows'][0]['daily_hours']['2026-10-06']['ordinary'],8)
+        self.body=loaded['worksheet']
+        self.body['rows'][0]['daily_hours']['2026-10-06']['ordinary']=4
+        self.assertEqual(self.save().json()['report']['rows'][0]['entry']['ordinary'],10)
+
+    def test_daily_dates_and_hours_validate(self):
+        self.body['rows'][0]['daily_hours']={'2026-10-20':{'ordinary':8}}
+        self.assertEqual(self.save().status_code,422)
+        self.body['rows'][0]['daily_hours']={'2026-10-05':{'ordinary':20,'ot1':5}}
+        self.assertEqual(self.save().status_code,422)
+
+    def test_rule_snapshot_survives_global_settings_change(self):
+        self.body['rules']={'earning_rules':[dict(code='extra',name='Extra',basis='fixed_rate',rate=15,multiplier=1,taxable=True,superable=True)]}
+        self.body['rows'][0]['entry'].update(earning_units={'extra':2},qualifying_earnings=None)
+        self.assertEqual(self.save().json()['report']['rows'][0]['result']['other_earnings'],30)
+        db.pay_calculation_settings.rows=[{'_id':'org-a','revision':1,'rules':{'earning_rules':[dict(code='extra',name='Extra',basis='fixed_rate',rate=99,multiplier=1,taxable=True,superable=True)]}}]
+        loaded=client.get('/payroll/workbench/2026-10-05').json()
+        self.assertEqual(loaded['report']['rows'][0]['result']['other_earnings'],30)
+
     def test_worker_import_preserves_payroll(self):
         self.assertEqual(self.save(True).status_code,200)
         db.workers.rows[0].update(first_name='RENAMED',source='simpro',simpro_employee_id='42')

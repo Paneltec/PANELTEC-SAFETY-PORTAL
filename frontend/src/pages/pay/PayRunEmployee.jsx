@@ -3,13 +3,18 @@ import {Link} from 'react-router-dom';
 import api from '../../lib/api';
 import './payrun.css';
 import {payRunSummary,money} from './payRunAdapter';
-export default function PayRunEmployee({companyLabel,periodEnding,employees,row,calculation,sheet,week,employer:sealedEmployer,checkedCount,busy,locked,onSelect,onPatch,onSaveDraft,onMarkChecked,preparationUrl}) {
+export default function PayRunEmployee({companyLabel,periodEnding,employees,row,calculation,sheet,week,employer:sealedEmployer,checkedCount,busy,locked,onSelect,onPatch,onDayPatch,onEarnings,dailyTotals,onSaveDraft,onMarkChecked,preparationUrl}) {
  const [search,setSearch]=useState('');
+ const [day,setDay]=useState('');
+ const days=Array.from({length:7},(_,i)=>{const d=new Date(week+'T12:00:00');d.setDate(d.getDate()+i);return {date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,label:d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})};});
+ const workedKeys=['ordinary','ot1','ot2','night','holiday_work','meal_count'];
+ const [earningRules,setEarningRules]=useState([]);
  const [catalog,setCatalog]=useState([]),[catalogError,setCatalogError]=useState('');
  const [context,setContext]=useState(null);
- const [extraCodes,setExtraCodes]=useState(Object.keys(row.entry.allowance_units||{}));
+ const [extraCodes,setExtraCodes]=useState([...Object.keys(row.entry.allowance_units||{}),...Object.keys(row.entry.earning_units||{}).map(k=>'rule:'+k)]);
  useEffect(()=>{let active=true;api.get(`/payroll/employee-records/${encodeURIComponent(row.worker_id)}/pay-context/${week}`,{params:{payday:sheet.payday}}).then(({data})=>{if(active)setContext(data);}).catch(()=>{});return()=>{active=false;};},[row.worker_id,week,sheet.payday]);
  useEffect(()=>{if(!extraCodes.length)return;let active=true;api.get('/payroll/employee-records/configuration/catalog/pay-categories').then(({data})=>{if(active){setCatalog(data.tables?.Export||[]);setCatalogError('');}}).catch(()=>{if(active)setCatalogError('Categories could not be loaded. Open Pay settings.');});return()=>{active=false;};},[extraCodes.length]);
+ useEffect(()=>{if(!extraCodes.length)return;api.get('/payroll/workbench/calculation/settings').then(({data})=>setEarningRules(data.rules?.earning_rules||[])).catch(()=>{});},[extraCodes.length]);
  const list=employees,idx=list.findIndex(e=>e.id===row.worker_id),emp={...list[idx],baseRate:calculation?.applied_rates?.ordinary??row.profile.hourly_rate,award:row.profile.classification||'—'};
  const employer={name:sealedEmployer?.employer_name||context?.employer?.employer_name||'—',abn:sealedEmployer?.employer_abn||context?.employer?.employer_abn||'—'};
  const result=payRunSummary(row,calculation),confirmed=row.entry.hours_reviewed&&row.entry.super_reviewed;
@@ -18,10 +23,11 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
  const onSearch=e=>setSearch(e.target.value);
  const matches=search.trim()?list.filter(p=>p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())):[];
  const fields={ordinaryHours:'ordinary',ot1Hours:'ot1',ot2Hours:'ot2',nightHours:'night',phWorkedHours:'holiday_work',annualLeaveHours:'annual',personalLeaveHours:'personal',paidPublicHolidayHours:'public_holiday',reimbursements:'reimbursements',meals:'meal_count'};
- const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null);return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':row.entry[k]??''} disabled={busy||locked||pending} onChange={e=>onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
- const categories=(row.profile.allowance_rates||[]).map(a=>({id:a.code,label:`${a.name} (${money(a.rate)} / unit)`}));
- const inputs={otherEarnings:extraCodes.map((code,i)=>({key:i,categoryId:code,value:row.entry.allowance_units?.[code]??0}))};
- const setExtras=fn=>{const updated=fn(inputs.otherEarnings);setExtraCodes(updated.map(x=>x.categoryId));onPatch('allowance_units',Object.fromEntries(updated.filter(x=>x.categoryId).map(x=>[x.categoryId,Number(x.value)||0])));};
+ const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null),daily=day&&workedKeys.includes(k),value=daily?dailyTotals?.[day]?.[k]:row.entry[k];return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':value??''} disabled={busy||locked||pending} onChange={e=>daily?onDayPatch(day,k,e.target.value===''?0:Number(e.target.value)):onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
+ const rules=[...(sheet.rules.earning_rules||[]),...earningRules.filter(r=>!sheet.rules.earning_rules?.some(saved=>saved.code===r.code))];
+ const categories=[...(row.profile.allowance_rates||[]).map(a=>({id:a.code,label:`${a.name} (${money(a.rate)} / unit)`})),...rules.map(r=>({id:'rule:'+r.code,label:r.name}))];
+ const inputs={otherEarnings:extraCodes.map((code,i)=>({key:i,categoryId:code,value:code.startsWith('rule:')?row.entry.earning_units?.[code.slice(5)]??0:row.entry.allowance_units?.[code]??0}))};
+ const setExtras=fn=>{const updated=fn(inputs.otherEarnings);setExtraCodes(updated.map(x=>x.categoryId));const allowance_units=Object.fromEntries(updated.filter(x=>x.categoryId&&!x.categoryId.startsWith('rule:')&&!x.categoryId.startsWith('catalog:')).map(x=>[x.categoryId,Number(x.value)||0]));const earning_units=Object.fromEntries(updated.filter(x=>x.categoryId.startsWith('rule:')).map(x=>[x.categoryId.slice(5),Number(x.value)||0]));if(onEarnings)onEarnings({allowance_units,earning_units},rules.filter(r=>Object.hasOwn(earning_units,r.code)));else onPatch('allowance_units',allowance_units);};
  const canFinalise=!busy&&!locked&&confirmed&&calculation?.review_ready===true;
   return (
     <div className="pr-root">
@@ -54,7 +60,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
 
               <section className="pr-card" aria-labelledby="hr">
                 <h2 id="hr" className="pr-sec">1 · Hours worked</h2>
-                <p className="pr-sub">Leave blank boxes as 0.</p>
+                <div className="pr-day-picker"><label>Review<select aria-label="Review pay day" value={day} onChange={e=>setDay(e.target.value)}><option value="">Whole week</option>{days.map(d=><option key={d.date} value={d.date}>{d.label}</option>)}</select></label><span>{day?'Day hours · payslip shows weekly total':'Weekly totals'}{day&&!dailyTotals?.[day]?' · No dated hours':''}</span></div>{day&&row.worked_hours_override&&<p className="pr-sub">Weekly override active. Editing a day will ask to replace it with dated totals.</p>}
                 <div className="pr-grid">
                   {field('h1', 'Ordinary hours', 'ordinaryHours')}
                   {field('h2', `Overtime ${sheet.rules.ot1_multiplier}×`, 'ot1Hours')}
@@ -73,12 +79,13 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
                         onChange={(e) => setExtras((l) => l.map((y) => (y.key === x.key ? { ...y, categoryId: e.target.value } : y)))}>
                         <option value="">Choose from payroll settings…</option>
                         {categories.map((c) => <option disabled={extraCodes.includes(c.id)&&c.id!==x.categoryId} key={c.id} value={c.id}>{c.label}</option>)}
-                        <optgroup label="Imported categories · rate setup required">{catalog.filter(c=>!row.profile.allowance_rates?.some(a=>a.name===c.PayCategoryName)).map((c,i)=><option disabled key={String(c.Id??i)}>{c.PayCategoryName}</option>)}</optgroup>
+                        <optgroup label="Categories to configure">{catalog.filter(c=>!row.profile.allowance_rates?.some(a=>a.name===c.PayCategoryName)&&!rules.some(r=>r.name===c.PayCategoryName)).map((c,i)=><option value={`catalog:${c.Id??i}:${c.PayCategoryName}`} key={String(c.Id??i)}>{c.PayCategoryName}</option>)}</optgroup>
                       </select>
+                      {(x.categoryId.startsWith('catalog:')||rules.some(r=>'rule:'+r.code===x.categoryId&&(r.taxable==null||r.superable==null)))&&<Link target="_blank" rel="noopener noreferrer" to="/app/pay/settings#earning-rules">Configure rate and treatment</Link>}
                     </div>
                     <div className="pr-f" style={{ flex: '1 1 140px' }}>
                       <label htmlFor={`eh${x.key}`}>Units</label>
-                      <input disabled={busy||locked||!x.categoryId} type="number" min="0" step="any" id={`eh${x.key}`} inputMode="decimal" value={x.value}
+                      <input disabled={busy||locked||!categories.some(c=>c.id===x.categoryId)||Boolean(x.categoryId.startsWith('rule:')&&rules.some(r=>'rule:'+r.code===x.categoryId&&(r.taxable==null||r.superable==null)))} type="number" min="0" step="any" id={`eh${x.key}`} inputMode="decimal" value={x.value}
                         onChange={(e) => setExtras((l) => l.map((y) => (y.key === x.key ? { ...y, value: e.target.value } : y)))} />
                     </div>
                     <button type="button" disabled={busy||locked} className="pr-remove" aria-label="Remove this earning"
@@ -92,11 +99,11 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
                   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9A3412" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                   Add another earning
                 </button>
-                {extraCodes.length>0&&<div className="pr-category-links"><Link to="/app/pay/settings#pay-category-definitions">Browse pay categories</Link><Link to={`/app/pay/employees?worker=${encodeURIComponent(row.worker_id)}`}>Set employee earning rates</Link>{!categories.length&&<span>No earning rates linked to this employee yet.</span>}{catalogError&&<span role="alert">{catalogError}</span>}</div>}
+                {extraCodes.length>0&&<div className="pr-category-links"><button type="button" disabled={busy} onClick={()=>api.get('/payroll/workbench/calculation/settings').then(({data})=>{setEarningRules(data.rules?.earning_rules||[]);setExtraCodes(codes=>codes.map(code=>{if(!code.startsWith('catalog:'))return code;const rule=data.rules?.earning_rules?.find(r=>r.name===code.split(':').slice(2).join(':'));return rule?'rule:'+rule.code:code;}));setCatalogError('');}).catch(()=>setCatalogError('Rules could not be refreshed.'))}>Refresh category rules</button><Link to="/app/pay/settings#pay-category-definitions">Browse pay categories</Link><Link target="_blank" rel="noopener noreferrer" to="/app/pay/settings#earning-rules">Configure category rates and rules</Link><Link to={`/app/pay/employees?worker=${encodeURIComponent(row.worker_id)}`}>Set employee earning rates</Link>{(!categories.length||extraCodes.some(c=>c.startsWith('catalog:')))&&<span>Select a category and configure its rate and rule in Pay settings.</span>}{catalogError&&<span role="alert">{catalogError}</span>}</div>}
               </section>
 
               <section className="pr-card" aria-labelledby="lt">
-                <h2 id="lt" className="pr-sec">2 · Leave taken</h2>
+                <h2 id="lt" className="pr-sec">2 · Leave taken (week)</h2>
                 <p className="pr-sub">Annual leave loading: {row.profile.leave_loading_percent||0}%.</p>
                 <div className="pr-grid">
                   {field('l1', 'Annual leave', 'annualLeaveHours')}
@@ -125,6 +132,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
               <div className="pr-row"><span>Overtime</span><span>{money(result.overtime)}</span></div>
               <div className="pr-row"><span>Leave + loading</span><span>{money(result.leaveAndLoading)}</span></div>
               <div className="pr-row"><span>Allowances</span><span>{money(result.allowances)}</span></div>
+              <div className="pr-row"><span>Other earnings</span><span>{money(calculation?.other_earnings??(calculation?0:null))}</span></div>
               <div className="pr-row"><span>Super ({sheet.rules.super_percent}%)</span><span>{money(result.super)}</span></div>
               <details className="pr-super-adjust"><summary>Adjust super</summary><label>Qualifying earnings $<input aria-label="Super qualifying earnings override" type="number" min="0" step="0.01" disabled={busy||locked} placeholder={calculation?.qualifying_earnings==null?'Automatic':String(calculation.qualifying_earnings)} value={row.entry.qualifying_earnings??''} onChange={e=>onPatch('qualifying_earnings',e.target.value===''?null:Number(e.target.value))}/></label><button type="button" disabled={busy||locked||row.entry.qualifying_earnings==null} onClick={()=>onPatch('qualifying_earnings',null)}>Use automatic</button><small>Override for eligibility, allowance treatment, leave loading or contribution cap.</small></details>
               {calculation?.super_issues?.length>0&&<small>Super adjustment required</small>}

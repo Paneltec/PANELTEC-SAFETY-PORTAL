@@ -62,6 +62,22 @@ class PayrollEngineTests(unittest.TestCase):
         self.entry.update(qualifying_earnings=None,night=4,holiday_work=4,penalty_ordinary=4)
         self.assertIsNone(self.line()['super'])
 
+    def test_earning_rules_use_rate_multiplier_and_treatment(self):
+        self.entry.update(qualifying_earnings=None,earning_units={'bonus':2,'extra':3})
+        self.rules['earning_rules']=[dict(code='bonus',name='Bonus',basis='fixed_rate',rate=10,multiplier=1,taxable=False,superable=False),dict(code='extra',name='Extra',basis='base_rate',rate=0,multiplier=2,taxable=True,superable=True)]
+        r=self.line()
+        self.assertEqual(r['other_earnings'],230)
+        self.assertEqual(r['gross'],1735)
+        self.assertEqual(r['super'],184.8)
+        self.assertEqual(r['payg'],float(weekly_tax(1715,'resident_threshold','2026-10-15')))
+        self.assertEqual(r['earning_lines'][1]['unit_rate'],70)
+
+    def test_unconfigured_earning_treatment_rejected(self):
+        self.entry['earning_units']={'extra':1}
+        with self.assertRaises(ValueError):self.line()
+        self.rules['earning_rules']=[dict(code='extra',name='Extra',basis='fixed_rate',rate=10,multiplier=1,taxable=None,superable=None)]
+        with self.assertRaises(ValueError):self.line()
+
     def test_manual_needs_evidence(self):
         self.profile['tax_mode']='manual';self.entry['manual_payg']=300
         self.assertIsNone(self.line()['payg'])
