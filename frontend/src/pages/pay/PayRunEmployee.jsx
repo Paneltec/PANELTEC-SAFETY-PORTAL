@@ -7,7 +7,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
  const [search,setSearch]=useState('');
  const [day,setDay]=useState('');
  const days=Array.from({length:7},(_,i)=>{const d=new Date(week+'T12:00:00');d.setDate(d.getDate()+i);return {date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,label:d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})};});
- const workedKeys=['ordinary','ot1','ot2','night','holiday_work','meal_count'];
+ const workedKeys=['ordinary','ot1','ot2','saturday','sunday','night','holiday_work','meal_count'];
  const [earningRules,setEarningRules]=useState([]);
  const [catalog,setCatalog]=useState([]),[catalogError,setCatalogError]=useState('');
  const [context,setContext]=useState(null);
@@ -22,8 +22,8 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
  const goTo=i=>{if(!busy&&list[i])onSelect(list[i].id);};
  const onSearch=e=>setSearch(e.target.value);
  const matches=search.trim()?list.filter(p=>p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())):[];
- const fields={ordinaryHours:'ordinary',ot1Hours:'ot1',ot2Hours:'ot2',nightHours:'night',phWorkedHours:'holiday_work',annualLeaveHours:'annual',personalLeaveHours:'personal',paidPublicHolidayHours:'public_holiday',reimbursements:'reimbursements',meals:'meal_count'};
- const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null),daily=day&&workedKeys.includes(k),value=daily?dailyTotals?.[day]?.[k]:row.entry[k];return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':value??''} disabled={busy||locked||pending} onChange={e=>daily?onDayPatch(day,k,e.target.value===''?0:Number(e.target.value)):onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
+ const fields={ordinaryHours:'ordinary',ot1Hours:'ot1',ot2Hours:'ot2',saturdayHours:'saturday',sundayHours:'sunday',lafha:'lafha',nightHours:'night',phWorkedHours:'holiday_work',annualLeaveHours:'annual',personalLeaveHours:'personal',paidPublicHolidayHours:'public_holiday',reimbursements:'reimbursements',meals:'meal_count'};
+ const field=(id,label,key)=>{const k=fields[key],pending=!k,daily=day&&workedKeys.includes(k),value=daily?dailyTotals?.[day]?.[k]:row.entry[k];return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':value??''} disabled={busy||locked||pending} onChange={e=>daily?onDayPatch(day,k,e.target.value===''?0:Number(e.target.value)):onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
  const rules=[...(sheet.rules.earning_rules||[]),...earningRules.filter(r=>!sheet.rules.earning_rules?.some(saved=>saved.code===r.code))];
  const categories=[...(row.profile.allowance_rates||[]).map(a=>({id:a.code,label:`${a.name} (${money(a.rate)} / unit)`})),...rules.map(r=>({id:'rule:'+r.code,label:r.name}))];
  const inputs={otherEarnings:extraCodes.map((code,i)=>({key:i,categoryId:code,value:code.startsWith('rule:')?row.entry.earning_units?.[code.slice(5)]??0:row.entry.allowance_units?.[code]??0}))};
@@ -65,8 +65,8 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
                   {field('h1', 'Ordinary hours', 'ordinaryHours')}
                   {field('h2', `Overtime ${sheet.rules.ot1_multiplier}×`, 'ot1Hours')}
                   {field('h3', `Overtime ${sheet.rules.ot2_multiplier}×`, 'ot2Hours')}
-                  {field('h4', 'Saturday OT', 'saturdayHours')}
-                  {field('h5', 'Sunday OT', 'sundayHours')}
+                  {field('h4', 'Saturday O/T', 'saturdayHours')}
+                  {field('h5', 'Sunday O/T', 'sundayHours')}
                   {field('h6', `Weekday night (${sheet.rules.night_multiplier}×)`, 'nightHours')}
                   {field('h7', `Public holiday worked (${sheet.rules.holiday_work_multiplier}×)`, 'phWorkedHours')}
                 </div>
@@ -116,9 +116,10 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
                 <h2 id="mn" className="pr-sec">3 · Allowances &amp; reimbursements ($)</h2>
                 <p className="pr-sub">Configured allowance rates are available under Other earnings.</p>
                 <div className="pr-grid">
-                  {field('a2', 'Living away from home allowance (LAFHA)', 'lafha')}
+                  {field('a2', 'Living away from home allowance (LAFHA) $', 'lafha')}
                   {field('a4', sheet.rules.meal_allowance==null?'Meals':`Meals · count (${money(sheet.rules.meal_allowance)} each)`, 'meals')}
                   {field('d3', 'Expense reimbursements', 'reimbursements')}
+                  {Number(row.entry.lafha)>0&&<><div className="pr-f"><label htmlFor="lafha-tax">LAFHA · PAYG</label><select id="lafha-tax" disabled={busy||locked} value={row.entry.lafha_taxable==null?'':String(row.entry.lafha_taxable)} onChange={e=>onPatch('lafha_taxable',e.target.value===''?null:e.target.value==='true')}><option value="">Select treatment</option><option value="true">Include</option><option value="false">Exclude</option></select></div><div className="pr-f"><label htmlFor="lafha-super">LAFHA · Super</label><select id="lafha-super" disabled={busy||locked} value={row.entry.lafha_superable==null?'':String(row.entry.lafha_superable)} onChange={e=>onPatch('lafha_superable',e.target.value===''?null:e.target.value==='true')}><option value="">Select treatment</option><option value="true">Include</option><option value="false">Exclude</option></select></div></>}
                 </div>
               </section>
             </main>

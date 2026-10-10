@@ -111,3 +111,20 @@ class PayrollEngineTests(unittest.TestCase):
         self.assertEqual(sum(Decimal(str(r['super'])) for r in rows),11172)
 
 if __name__ == '__main__': unittest.main()
+
+class WeekendAllowanceTests(unittest.TestCase):
+    def test_weekend_and_lafha_calculate_without_double_counting(self):
+        profile=dict(hourly_rate=40,employment_type='full_time',tax_mode='resident_threshold',tax_declaration_reviewed=True)
+        entry=dict(ordinary=8,ot1=1,saturday=4,sunday=3,lafha=100,lafha_taxable=False,lafha_superable=False)
+        rules=dict(ot1_multiplier=1.5,ot2_multiplier=2,super_percent=12)
+        r=calculate_line(profile,entry,rules,'2026-10-15')
+        self.assertEqual(r['gross'],960)
+        self.assertEqual(r['saturday_pay'],240)
+        self.assertEqual(r['sunday_pay'],240)
+        self.assertEqual(r['super'],38.4)
+        self.assertEqual(r['payg'],float(weekly_tax(860,'resident_threshold','2026-10-15')))
+        entry.update(lafha_taxable=None,lafha_superable=None)
+        r=calculate_line(profile,entry,rules,'2026-10-15')
+        self.assertIsNone(r['payg']);self.assertIsNone(r['net']);self.assertIsNone(r['super'])
+    def test_weekend_counts_towards_weekly_limit(self):
+        with self.assertRaises(ValueError):calculate_line({'hourly_rate':40},{'ordinary':168,'saturday':1},{'super_percent':12},'2026-10-15')

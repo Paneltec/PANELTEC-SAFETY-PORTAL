@@ -137,6 +137,26 @@ class PayrollAPITests(unittest.TestCase):
         self.body['rows'][0]['daily_hours']['2026-10-06']['ordinary']=4
         self.assertEqual(self.save().json()['report']['rows'][0]['entry']['ordinary'],10)
 
+    def test_weekend_and_allowance_entries_persist(self):
+        row=self.body['rows'][0]
+        row.update(daily_hours={'2026-10-10':{'saturday':4},'2026-10-11':{'sunday':3}})
+        row['entry'].update(lafha=120,lafha_taxable=False,lafha_superable=False,qualifying_earnings=None)
+        response=self.save()
+        self.assertEqual(response.status_code,200,response.text)
+        r=response.json()['report']['rows'][0]
+        self.assertEqual(r['entry']['saturday'],4)
+        self.assertEqual(r['entry']['sunday'],3)
+        self.assertEqual(r['result']['saturday_pay'],210)
+        self.assertEqual(r['result']['sunday_pay'],210)
+        self.assertEqual(r['result']['lafha_pay'],120)
+        self.assertEqual(r['result']['gross'],540)
+        self.assertEqual(r['result']['super'],0)
+        loaded=client.get('/payroll/workbench/2026-10-05').json()
+        self.assertEqual(loaded['worksheet']['rows'][0]['entry']['lafha'],120)
+        self.body=loaded['worksheet']
+        self.body['rows'][0]['daily_hours']={'2026-10-10':{'ordinary':20,'saturday':5}}
+        self.assertEqual(self.save().status_code,422)
+
     def test_daily_dates_and_hours_validate(self):
         self.body['rows'][0]['daily_hours']={'2026-10-20':{'ordinary':8}}
         self.assertEqual(self.save().status_code,422)

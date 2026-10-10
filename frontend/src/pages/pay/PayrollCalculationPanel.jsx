@@ -13,9 +13,9 @@ export default function PayrollCalculationPanel({row,result,sheet,week,sealedBra
  <h3>Pay slip preview</h3><p>Draft</p>
  <h4 className="pay-slip-heading">Earnings</h4><dl>
  {line('Ordinary pay',result?.ordinary_pay)}{line('Other earnings',result?.other_earnings??0)}
- {line('Overtime & penalties',total(['ot1_pay','ot2_pay','night_pay','holiday_work_pay']))}
+ {line('Overtime & penalties',(result?total(['ot1_pay','ot2_pay','night_pay','holiday_work_pay'])+Number(result.saturday_pay||0)+Number(result.sunday_pay||0):null))}
  {line('Leave + loading',total(['annual_pay','personal_pay','public_holiday_pay','leave_loading']))}
- {line('Allowances',total(['taxable_allowances','meal_allowance_pay','configured_allowances']))}
+ {line('Allowances',(result?total(['taxable_allowances','meal_allowance_pay','configured_allowances'])+Number(result.lafha_pay||0):null))}
  {line('Gross',result?.gross,true)}
  </dl><h4 className="pay-slip-heading">Tax & deductions</h4><dl>
  {line('PAYG withholding',result?.payg)}

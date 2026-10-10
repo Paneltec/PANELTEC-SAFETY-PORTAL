@@ -118,9 +118,14 @@ class Entry(Strict):
     ordinary: Hours = 0
     ot1: Hours = 0
     ot2: Hours = 0
+    saturday: Hours = 0
+    sunday: Hours = 0
     annual: Hours = 0
     personal: Hours = 0
     public_holiday: Hours = 0
+    lafha: Number = 0
+    lafha_taxable: bool | None = None
+    lafha_superable: bool | None = None
     taxable_allowances: Number = 0
     post_tax_deductions: Number = 0
     reimbursements: Number = 0
@@ -143,6 +148,8 @@ class DayHours(Strict):
     ordinary: Hours = 0
     ot1: Hours = 0
     ot2: Hours = 0
+    saturday: Hours = 0
+    sunday: Hours = 0
     night: Hours = 0
     holiday_work: Hours = 0
     penalty_ordinary: Hours = 0
@@ -150,7 +157,7 @@ class DayHours(Strict):
 
     @model_validator(mode="after")
     def valid_day(self):
-        if sum(getattr(self,k) for k in ('ordinary','ot1','ot2','night','holiday_work'))>24:
+        if sum(getattr(self,k) for k in ('ordinary','ot1','ot2','saturday','sunday','night','holiday_work'))>24:
             raise ValueError("Daily hours cannot exceed 24")
         if self.penalty_ordinary>self.night+self.holiday_work:
             raise ValueError("Ordinary penalty hours exceed penalty hours")

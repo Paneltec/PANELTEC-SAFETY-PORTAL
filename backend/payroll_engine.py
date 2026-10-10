@@ -7,7 +7,7 @@ require a reviewed manual withholding amount; never approximate annual tax.
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
 
-RULE_VERSION = "AU-weekly-2026-07-01-v3"
+RULE_VERSION = "AU-weekly-2026-07-01-v4"
 TAX_SOURCE = "https://www.legislation.gov.au/F2026L00716/asmade/text"
 SOURCES = [
     {"label": "ATO weekly PAYG formulas (Schedule 1)", "url": TAX_SOURCE},
@@ -68,6 +68,8 @@ def calculate_line(profile, entry, rules, payday):
     for key,multiplier in (("ot1","ot1_multiplier"),("ot2","ot2_multiplier"),("night","night_multiplier"),("holiday_work","holiday_work_multiplier")):
         override=casual_rates.get(key) if casual_rates else None
         rates[key]=dec(override) if override is not None else rate*dec(rules.get(multiplier,2.5 if key=="holiday_work" else 2))
+    rates["saturday"]=rates["ot1"]
+    rates["sunday"]=rates["ot2"]
     if rate <= 0:
         issues.append("Enter an hourly rate")
     if not profile.get("conditions_reviewed"):
@@ -78,7 +80,7 @@ def calculate_line(profile, entry, rules, payday):
         issues.append("Contractor tax and super require separate assessment")
     if not entry.get("hours_reviewed"):
         issues.append("Review hours, allowances and leave for this week")
-    h = {k: dec(entry.get(k, 0)) for k in ("ordinary", "ot1", "ot2", "annual", "personal", "public_holiday", "night", "holiday_work")}
+    h = {k: dec(entry.get(k, 0)) for k in ("ordinary", "ot1", "ot2", "saturday", "sunday", "annual", "personal", "public_holiday", "night", "holiday_work")}
     if any(v < 0 for v in h.values()) or sum(h.values()) > 168:
         raise ValueError("Hours must be non-negative and cannot exceed 168 in one week")
     ordinary_cap = dec(profile.get("ordinary_weekly_hours", 38))
@@ -96,6 +98,9 @@ def calculate_line(profile, entry, rules, payday):
         "ordinary_pay": rounded(h["ordinary"]*rate),
         "ot1_pay": rounded(h["ot1"]*rates["ot1"]),
         "ot2_pay": rounded(h["ot2"]*rates["ot2"]),
+        "saturday_pay": rounded(h["saturday"]*rates["saturday"]),
+        "sunday_pay": rounded(h["sunday"]*rates["sunday"]),
+        "lafha_pay": rounded(entry.get("lafha",0)),
         "annual_pay": rounded(h["annual"]*rate),
         "personal_pay": rounded(h["personal"]*rate),
         "public_holiday_pay": rounded(h["public_holiday"]*rate),
@@ -138,6 +143,7 @@ def calculate_line(profile, entry, rules, payday):
     if meal_count and meal_tax=="unconfirmed":issues.append("Confirm meal allowance tax treatment in calculation settings")
     taxable_gross=gross-(earnings["meal_allowance_pay"] if meal_tax=="exempt" else 0)
     taxable_gross-=sum((dec(v['amount']) for v in earning_lines if not v['taxable']),Decimal(0))
+    if entry.get("lafha_taxable") is False:taxable_gross-=earnings["lafha_pay"]
     deductions = rounded(entry.get("post_tax_deductions", 0))
     reimbursements = rounded(entry.get("reimbursements", 0))
     tax = None
@@ -157,6 +163,10 @@ def calculate_line(profile, entry, rules, payday):
         tax += rounded(entry.get("extra_withholding", 0))
         if tax > gross or tax + deductions > gross + reimbursements:
             issues.append("Withholding and deductions exceed available pay")
+    if earnings["lafha_pay"] and entry.get("lafha_taxable") is None:
+        issues.append("Confirm LAFHA tax treatment")
+        tax=None
+    if meal_count and (meal_rate is None or meal_tax=="unconfirmed"):tax=None
     net = None if tax is None else rounded(gross-tax-deductions+reimbursements)
     # A stored amount remains an explicit override. Otherwise derive QE from
     # supported ordinary earnings, never from gross (which includes overtime).
@@ -166,6 +176,8 @@ def calculate_line(profile, entry, rules, payday):
     if qe is None:
         qe = sum(earnings[k] for k in ("ordinary_pay", "annual_pay", "personal_pay", "public_holiday_pay", "leave_loading"))
         qe+=sum((dec(v['amount']) for v in earning_lines if v['superable']),Decimal(0))
+        if entry.get("lafha_superable") is True:qe+=earnings["lafha_pay"]
+        if earnings["lafha_pay"] and entry.get("lafha_superable") is None:super_issues.append("Confirm LAFHA super treatment")
         penalty_hours = h["night"] + h["holiday_work"]
         if penalty_ordinary == penalty_hours:
             qe += earnings["night_pay"] + earnings["holiday_work_pay"]
