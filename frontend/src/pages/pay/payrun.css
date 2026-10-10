@@ -104,3 +104,5 @@
 .pr-btn-go:disabled { opacity: .5; cursor: default; }
 
 .pr-root button:disabled{opacity:.45;cursor:not-allowed}.pr-f input:disabled{color:#9a3412}.pr-preparation{font-size:13px;text-decoration:underline;color:var(--pr-text)}.pr-bar{z-index:25}.pr-root input,.pr-root button{scroll-margin-bottom:160px}@media(max-width:700px){.pr-aside{position:static}.pr-nav{min-width:0}.pr-cols{grid-template-columns:1fr}.pr-grid{grid-template-columns:1fr}.pr-wrap{padding-bottom:24px}.pr-bar{position:static}}
+
+.pr-root .pr-btn-go,.pr-root .pr-btn-go:disabled{background:#39f56a;color:#062b12;opacity:1;box-shadow:0 0 0 1px #69ff91}.pr-root .pr-btn-go:disabled{cursor:not-allowed}.pr-root .pr-btn-go:not(:disabled):hover{background:#69ff91}.pr-category-links{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:12px;margin-top:12px;color:var(--pr-on-card-muted)}.pr-category-links a{text-decoration:underline;color:#5b21b6}

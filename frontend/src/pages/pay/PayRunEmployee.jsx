@@ -5,17 +5,19 @@ import './payrun.css';
 import {payRunSummary,money,hours} from './payRunAdapter';
 export default function PayRunEmployee({companyLabel,periodEnding,employees,row,calculation,sheet,week,employer:sealedEmployer,checkedCount,busy,locked,onSelect,onPatch,onSaveDraft,onMarkChecked,preparationUrl}) {
  const [search,setSearch]=useState('');
+ const [catalog,setCatalog]=useState([]),[catalogError,setCatalogError]=useState('');
  const [context,setContext]=useState(null);
  const [extraCodes,setExtraCodes]=useState(Object.keys(row.entry.allowance_units||{}));
  useEffect(()=>{let active=true;api.get(`/payroll/employee-records/${encodeURIComponent(row.worker_id)}/pay-context/${week}`,{params:{payday:sheet.payday}}).then(({data})=>{if(active)setContext(data);}).catch(()=>{});return()=>{active=false;};},[row.worker_id,week,sheet.payday]);
- const list=employees,idx=list.findIndex(e=>e.id===row.worker_id),emp={...list[idx],baseRate:calculation?.applied_rates?.ordinary??row.profile.hourly_rate,award:row.profile.classification||'Pending'};
- const employer={name:sealedEmployer?.employer_name||context?.employer?.employer_name||'Pending',abn:sealedEmployer?.employer_abn||context?.employer?.employer_abn||'Pending'};
+ useEffect(()=>{if(!extraCodes.length)return;let active=true;api.get('/payroll/employee-records/configuration/catalog/pay-categories').then(({data})=>{if(active){setCatalog(data.tables?.Export||[]);setCatalogError('');}}).catch(()=>{if(active)setCatalogError('Categories could not be loaded. Open Pay settings.');});return()=>{active=false;};},[extraCodes.length]);
+ const list=employees,idx=list.findIndex(e=>e.id===row.worker_id),emp={...list[idx],baseRate:calculation?.applied_rates?.ordinary??row.profile.hourly_rate,award:row.profile.classification||'—'};
+ const employer={name:sealedEmployer?.employer_name||context?.employer?.employer_name||'—',abn:sealedEmployer?.employer_abn||context?.employer?.employer_abn||'—'};
  const result=payRunSummary(row,calculation),confirmed=row.entry.hours_reviewed;
  const pct=list.length?Math.round(checkedCount/list.length*100):0;
  const goTo=i=>{if(!busy&&list[i])onSelect(list[i].id);};
  const onSearch=e=>{const q=e.target.value;setSearch(q);if(q.trim()){const i=list.findIndex(p=>p.name.toLowerCase().includes(q.trim().toLowerCase()));if(i>=0)goTo(i);}};
  const fields={ordinaryHours:'ordinary',ot1Hours:'ot1',ot2Hours:'ot2',nightHours:'night',phWorkedHours:'holiday_work',annualLeaveHours:'annual',personalLeaveHours:'personal',paidPublicHolidayHours:'public_holiday',reimbursements:'reimbursements',meals:'meal_count'};
- const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null);const shiftLocked=row.shifts!=null&&['ordinary','ot1','ot2','night','holiday_work','meal_count'].includes(k);return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'Pending':row.entry[k]??''} disabled={busy||locked||pending||shiftLocked} onChange={e=>onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
+ const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null);const shiftLocked=row.shifts!=null&&['ordinary','ot1','ot2','night','holiday_work','meal_count'].includes(k);return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':row.entry[k]??''} disabled={busy||locked||pending||shiftLocked} onChange={e=>onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
  const categories=(row.profile.allowance_rates||[]).map(a=>({id:a.code,label:`${a.name} (${money(a.rate)} / unit)`}));
  const inputs={otherEarnings:extraCodes.map((code,i)=>({key:i,categoryId:code,value:row.entry.allowance_units?.[code]??0}))};
  const setExtras=fn=>{const updated=fn(inputs.otherEarnings);setExtraCodes(updated.map(x=>x.categoryId));onPatch('allowance_units',Object.fromEntries(updated.filter(x=>x.categoryId).map(x=>[x.categoryId,Number(x.value)||0])));};
@@ -69,6 +71,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
                         onChange={(e) => setExtras((l) => l.map((y) => (y.key === x.key ? { ...y, categoryId: e.target.value } : y)))}>
                         <option value="">Choose from payroll settings…</option>
                         {categories.map((c) => <option disabled={extraCodes.includes(c.id)&&c.id!==x.categoryId} key={c.id} value={c.id}>{c.label}</option>)}
+                        <optgroup label="Imported categories · rate setup required">{catalog.filter(c=>!row.profile.allowance_rates?.some(a=>a.name===c.PayCategoryName)).map((c,i)=><option disabled key={String(c.Id??i)}>{c.PayCategoryName}</option>)}</optgroup>
                       </select>
                     </div>
                     <div className="pr-f" style={{ flex: '1 1 140px' }}>
@@ -82,11 +85,12 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
                     </button>
                   </div>
                 ))}
-                <button type="button" disabled={busy||locked||!categories.length||extraCodes.length>=categories.length} className="pr-add"
+                <button type="button" disabled={busy||locked||extraCodes.length>=20} className="pr-add"
                   onClick={() => setExtraCodes(codes=>[...codes,''])}>
                   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9A3412" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                   Add another earning
                 </button>
+                {extraCodes.length>0&&<div className="pr-category-links"><Link to="/app/pay/settings#pay-category-definitions">Browse pay categories</Link><Link to={`/app/pay/employees?worker=${encodeURIComponent(row.worker_id)}`}>Set employee earning rates</Link>{!categories.length&&<span>No earning rates linked to this employee yet.</span>}{catalogError&&<span role="alert">{catalogError}</span>}</div>}
               </section>
 
               <section className="pr-card" aria-labelledby="lt">
@@ -130,7 +134,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
               <div className="pr-row bold last"><span>Gross</span><span>{money(result.gross)}</span></div>
             </aside>
           </div>
-          <Link className="pr-preparation" to={preparationUrl}>Pay-run preparation{calculation?.issues?.length?' · Pending':''}</Link>
+          <Link className="pr-preparation" to={preparationUrl}>Pay-run preparation</Link>
         </div>
 
         <div className="pr-bar">
