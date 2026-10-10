@@ -1,3 +1,4 @@
+import PayrollCoverage from './PayrollCoverage';
 import PayrollAwardSettings from './PayrollAwardSettings';
 import PayrollOpeningImport from './PayrollOpeningImport';
 import PayrollSuperFundSettings from './PayrollSuperFundSettings';
@@ -61,7 +62,7 @@ export default function PaySettings() {
   const labSt = { color: PAY.muted };
 
   return (
-    <><PayrollAwardSettings/><PayrollOpeningImport/><PayrollSuperFundSettings/><PayrollWorkTypes/><PayrollCatalogSettings/><PayCard title="Pay-run preparation"><p className="text-sm mb-3">Opening leave balances, super earnings, submitted time approvals and exceptional adjustments for a selected pay week.</p><label className="text-sm">Week starting Friday<DateField value={preparationWeek} onChange={e=>setPreparationWeek(e.target.value)} className="border rounded p-2 block"/></label>{preparationWeek&&<Link className="inline-block underline mt-3" to={`/app/pay/payroll?week=${preparationWeek}&setup=1`}>Open pay-run preparation</Link>}</PayCard><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
+    <><PayrollCoverage/><PayrollAwardSettings/><PayrollOpeningImport/><PayrollSuperFundSettings/><PayrollWorkTypes/><PayrollCatalogSettings/><PayCard title="Pay-run preparation"><p className="text-sm mb-3">Opening leave balances, super earnings, submitted time approvals and exceptional adjustments for a selected pay week.</p><label className="text-sm">Week starting Friday<DateField value={preparationWeek} onChange={e=>setPreparationWeek(e.target.value)} className="border rounded p-2 block"/></label>{preparationWeek&&<Link className="inline-block underline mt-3" to={`/app/pay/payroll?week=${preparationWeek}&setup=1`}>Open pay-run preparation</Link>}</PayCard><PayrollRuleSettings/><form onSubmit={save} className="space-y-4" data-testid="pay-settings">
       <PayrollDeliverySettings/><PayrollBranding ref={brandingRef} parentBusy={busy}/>
       <PayCard title="Company work calendar">
         <div className="grid sm:grid-cols-3 gap-3">

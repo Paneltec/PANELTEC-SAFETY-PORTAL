@@ -13,6 +13,7 @@ class FundSettingsTests(unittest.TestCase):
         self.assertEqual(data['items'],[{'name':'TEST FUND','usi':'TESTUSI','active':True}])
         self.assertNotIn('PRIVATE1234',str(data))
         data['items'][0]['name']='RENAMED FUND'
+        data={key:data[key] for key in ('revision','items')}
         self.assertEqual(client.put(self.url,json=data).status_code,200)
         self.assertEqual(db.pay_employee_records.rows[0],original)
         self.assertEqual(client.get(self.url,headers={'x-org':'org-b'}).json()['items'],[])

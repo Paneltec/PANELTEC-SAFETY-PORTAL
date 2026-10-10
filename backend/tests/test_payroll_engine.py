@@ -43,6 +43,19 @@ class PayrollEngineTests(unittest.TestCase):
         self.assertIsNone(self.line()['payg'])
         self.entry['payg_reference']='Reviewed external calculation'
         self.assertEqual(self.line()['payg'],300)
+    def test_manual_tax_still_requires_reviewed_declaration(self):
+        self.profile.update(tax_mode='manual', tax_declaration_reviewed=False)
+        self.entry.update(manual_payg=300, payg_reference='Reviewed external calculation')
+        result=self.line()
+        self.assertIsNone(result['payg'])
+        self.assertIsNone(result['net'])
+        self.assertFalse(result['review_ready'])
+
+    def test_configured_leave_loading_is_paid(self):
+        self.profile['leave_loading_percent']=17.5
+        self.entry.update(ordinary=30.4, annual=7.6, ot1=0, ot2=0)
+        self.assertEqual(self.line()['leave_loading'],46.55)
+
     def test_invalid_year(self):
         with self.assertRaises(ValueError): weekly_tax(1000,'resident_threshold','2027-07-01')
     def test_excess_hours(self):

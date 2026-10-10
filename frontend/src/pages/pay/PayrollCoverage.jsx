@@ -1,0 +1,20 @@
+import React from 'react';
+import {Link} from 'react-router-dom';
+const checks=[
+ ['Opening leave balances','Available; employee data required','Enter or import verified annual and personal leave hours and the balance date. Missing balances are not assumed to be zero.'],
+ ['Annual leave loading','Available; award review required','Employee settings includes Leave loading %. The engine calculates annual leave hours × employee rate × loading %. Confirm the correct rate basis and any higher shift-loading entitlement; do not assume 17.5% fits every employee.'],
+ ['Weekend work','Partial','Shift calculations currently allocate all Saturday hours to overtime tier 1 and Sunday hours to tier 2. Award-specific Saturday thresholds, minimum engagements and different company agreements need implementation and verification.'],
+ ['RDO accrual and taken','Timesheet reporting only','RDO settings and timesheet summaries exist, but the weekly pay worksheet has no RDO earnings or balance ledger. Reconcile RDOs externally until connected.'],
+ ['Allowances and STP','Partial','Employee allowance rates and quantities are itemised in calculations; meals have separate tax treatment. Other configured allowances are currently taxable. Full STP Phase 2 classifications, category mapping and lodgement are not implemented.'],
+ ['Salary sacrifice / pre-tax deductions','Not implemented','Only post-tax deductions are calculated. Salary sacrifice needs separate taxable-pay, super, payslip and reporting treatment; do not enter it as a post-tax deduction.'],
+ ['Other leave and TasBuild','Partial','Annual and personal leave are calculated; unpaid requests do not add earnings. Compassionate leave, confidential family and domestic violence leave, and portable long service leave need dedicated treatment. TasBuild reporting is not connected.'],
+ ['PAYG and HELP','Partial','Resident weekly tables with and without the tax-free threshold are supported for 2026–27. HELP/STSL, variations and other special cases require a reviewed external calculation and reference. A reviewed tax declaration is required for every mode.'],
+ ['Termination payments','Not implemented','Unused leave payouts, ETPs, termination tax and final reporting need a dedicated workflow. Do not use the projected annual leave value as a final-pay calculation.'],
+ ['Payday Super','Calculation and receipt recording only','From 1 July 2026, pay super on payday; funds generally must receive it within 7 business days, with some extended timeframes. Qualifying earnings require review. Payment submission and deadline tracking are not automated.'],
+];
+export default function PayrollCoverage(){return <section className="pay-panel mb-5" id="payroll-coverage">
+ <h3>Payroll support and setup checks</h3>
+ <p className="text-sm my-3">Confirm the applicable award or enterprise agreement separately for Paneltec Civil and Viatec Traffic, including each employee’s classification. The list below describes software capability, not confirmation that an employee is configured correctly.</p>
+ <details><summary className="font-semibold cursor-pointer">Review all 10 payroll checks</summary><ul className="space-y-4 mt-4">{checks.map(([name,status,detail])=><li key={name}><h4 className="font-semibold">{name} · {status}</h4><p className="text-sm">{detail}</p></li>)}</ul></details>
+ <div className="flex flex-wrap gap-3 mt-4 text-sm underline"><Link to="/app/pay/employees">Employee settings</Link><a href="#pay-category-definitions">Category definitions</a><a href="https://awards.fairwork.gov.au/MA000020.html" target="_blank" rel="noopener noreferrer">Building and Construction Award — check coverage</a><a href="https://softwaredevelopers.ato.gov.au/PaydaySuper" target="_blank" rel="noopener noreferrer">ATO Payday Super</a><a href="https://tasbuild.com.au/employers-information/" target="_blank" rel="noopener noreferrer">TasBuild employer information</a><a href="https://www.fairwork.gov.au/pay-and-wages/paying-wages/pay-slips" target="_blank" rel="noopener noreferrer">Payslip and confidential leave requirements</a></div>
+ </section>;}

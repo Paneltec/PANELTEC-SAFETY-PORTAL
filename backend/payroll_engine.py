@@ -125,13 +125,13 @@ def calculate_line(profile, entry, rules, payday):
     deductions = rounded(entry.get("post_tax_deductions", 0))
     reimbursements = rounded(entry.get("reimbursements", 0))
     tax = None
-    if profile.get("tax_mode") == "manual":
+    if not profile.get("tax_declaration_reviewed"):
+        issues.append("Confirm tax declaration; HELP, variations and special payments use manual PAYG")
+    elif profile.get("tax_mode") == "manual":
         if entry.get("manual_payg") is None or not entry.get("payg_reference", "").strip():
             issues.append("Enter reviewed PAYG and its calculation reference")
         else:
             tax = rounded(entry["manual_payg"])
-    elif not profile.get("tax_declaration_reviewed"):
-        issues.append("Confirm tax declaration; HELP, variations and special payments use manual PAYG")
     else:
         try:
             tax = weekly_tax(taxable_gross, profile.get("tax_mode"), payday)
