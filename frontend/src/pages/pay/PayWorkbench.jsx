@@ -42,6 +42,7 @@ export default function PayWorkbench({mode="run"}) {
   const [week,setWeek] = useState(currentFriday), [loadedWeek,setLoadedWeek] = useState('');
   const [sheet,setSheet] = useState(null), [workers,setWorkers] = useState([]), [report,setReport] = useState(null);
   const [selected,setSelected] = useState(''), [busy,setBusy] = useState(false);
+  const [employeeSearch,setEmployeeSearch] = useState('');
   const [dirty,setDirty] = useState(false), [error,setError] = useState(''), [message,setMessage] = useState('');
   async function load(target) {
     setBusy(true); setError('');
@@ -84,6 +85,8 @@ export default function PayWorkbench({mode="run"}) {
   const worker=id=>workers.find(w=>w.id===id)||{name:report?.rows.find(r=>r.worker_id===id)?.name||id};
 
   const ordered=sortWorkers(sheet?.rows.map(r=>({...worker(r.worker_id),id:r.worker_id}))||[],firstDivision);
+  const employeeQuery=employeeSearch.trim().toLocaleLowerCase();
+  const matchingEmployees=ordered.filter(w=>String(w.name||'').toLocaleLowerCase().includes(employeeQuery));
   const index=ordered.findIndex(w=>w.id===selected);
   const checked=report?.rows.filter(r=>r.result.review_ready).length||0;
   async function refreshTax(){
@@ -104,7 +107,14 @@ export default function PayWorkbench({mode="run"}) {
       <PayrollCompletion mode={mode} week={loadedWeek} sheet={sheet} report={report} workers={workers} dirty={dirty} locked={locked} onDownload={download}/>
     </>:<>
       {step===2&&<>
-        <section className="pay-panel mb-4"><div className="flex justify-between flex-wrap gap-3"><div><p className="pay-eyebrow">{division(worker(selected))}</p><h3>{worker(selected).name}</h3><p>Employee {index+1} of {ordered.length} · {checked} checked</p></div><label className="text-sm">Go to employee<select aria-label="Go to employee" className={inputClass} value={selected} disabled={busy||!ordered.length} onChange={e=>setSelected(e.target.value)}>{!ordered.length&&<option value="">No employees in this pay run</option>}{['Paneltec Civil','Viatec Traffic'].map(d=><optgroup key={d} label={d}>{ordered.filter(w=>division(w)===d).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</optgroup>)}</select></label></div>{preparation&&<div className="flex gap-3 flex-wrap mt-4 text-sm"><span>{row?.profile.employment_type.replaceAll('_',' ')} · {cash(row?.profile.hourly_rate)} / hour</span><Link className="underline" onClick={e=>{if(dirty&&!window.confirm('Save draft first to keep your changes. Leave without saving?'))e.preventDefault();}} to={`/app/pay/employees?worker=${encodeURIComponent(selected)}`}>Employee settings and bank details</Link>{!locked&&<button disabled={busy} className="underline" onClick={defaults}>Refresh employee settings</button>}</div>}</section>
+        <section className="pay-panel mb-4"><div className="flex justify-between flex-wrap gap-3"><div><p className="pay-eyebrow">{division(worker(selected))}</p><h3>{worker(selected).name}</h3><p>Employee {index+1} of {ordered.length} · {checked} checked</p></div><div className="w-full sm:w-72 space-y-2">
+            <label className="text-sm block">Search employee<input type="search" className={inputClass} placeholder="Type an employee name" value={employeeSearch} disabled={busy||!ordered.length} onChange={e=>setEmployeeSearch(e.target.value)} /></label>
+            <label className="text-sm block">Go to employee<select aria-label="Go to employee" className={inputClass} value={matchingEmployees.some(w=>w.id===selected)?selected:''} disabled={busy||!matchingEmployees.length} onChange={e=>{if(e.target.value){setSelected(e.target.value);setEmployeeSearch('');}}}>
+              {!ordered.length?<option value="">No employees in this pay run</option>:!matchingEmployees.length?<option value="">No matching employees</option>:!matchingEmployees.some(w=>w.id===selected)&&<option value="">Select an employee</option>}
+              {['Paneltec Civil','Viatec Traffic'].map(d=>{const matches=matchingEmployees.filter(w=>division(w)===d);return matches.length>0&&<optgroup key={d} label={d}>{matches.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</optgroup>;})}
+            </select></label>
+            {employeeQuery&&<p role="status" className="text-xs">{matchingEmployees.length} matching {matchingEmployees.length===1?'employee':'employees'}</p>}
+          </div></div>{preparation&&<div className="flex gap-3 flex-wrap mt-4 text-sm"><span>{row?.profile.employment_type.replaceAll('_',' ')} · {cash(row?.profile.hourly_rate)} / hour</span><Link className="underline" onClick={e=>{if(dirty&&!window.confirm('Save draft first to keep your changes. Leave without saving?'))e.preventDefault();}} to={`/app/pay/employees?worker=${encodeURIComponent(selected)}`}>Employee settings and bank details</Link>{!locked&&<button disabled={busy} className="underline" onClick={defaults}>Refresh employee settings</button>}</div>}</section>
         {preparation&&<button className="pay-outline mb-4" disabled={busy} onClick={async()=>{if(dirty&&!await calculate(true))return;const params=new URLSearchParams(searchParams);params.delete("setup");setSearchParams(params);}}>Return to pay check</button>}{row&&<div className={preparation?'':'pay-check-layout'}><section className="pay-panel"><fieldset disabled={busy||locked} className="space-y-4">
           {preparation&&!sheet.out_of_cycle&&<><PayrollShiftInputs row={row} source={submitted[selected]} week={loadedWeek} onChange={updated=>change({...sheet,rows:sheet.rows.map(r=>r.worker_id===selected?updated:r)})}/><button type="button" className="pay-outline" onClick={async()=>{try{const {data}=await api.get("/payroll/workbench/calculation/settings");change({...sheet,rules:data.rules,rows:sheet.rows.map(r=>({...r,entry:{...r.entry,hours_reviewed:false,super_reviewed:false}}))});}catch(e){setError(apiError(e));}}}>Use current calculation settings for this draft</button><PayrollTimesheetDays key={selected+loadedWeek} source={submitted[selected]} onRefresh={refreshHours} onChanged={async()=>{const {data}=await api.get(`/payroll/workbench/${loadedWeek}/submissions`);setSubmitted(data.workers);change({...sheet,rows:sheet.rows.map(r=>r.worker_id===selected?{...r,entry:{...r.entry,hours_reviewed:false,super_reviewed:false}}:r)});}}/>
           <PayrollLeavePanel key={row.worker_id} week={loadedWeek} row={row} onChange={updated=>change({...sheet,rows:sheet.rows.map(r=>r.worker_id===selected?updated:r)})}/>
