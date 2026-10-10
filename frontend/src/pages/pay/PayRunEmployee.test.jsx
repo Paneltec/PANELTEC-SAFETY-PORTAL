@@ -29,3 +29,14 @@ test('weekly editing of daily totals activates override without deleting days',(
 
 test('weekend and allowance entries edit while meal rate is unconfigured',()=>{const p=props();render(<PayRunEmployee {...p}/>);for(const [label,key,value] of [['Saturday O/T','saturday','4'],['Sunday O/T','sunday','3'],['Living away from home allowance (LAFHA) $','lafha','100'],['Meals','meal_count','2']]){const input=screen.getByLabelText(label);expect(input.disabled).toBe(false);fireEvent.change(input,{target:{value}});expect(p.onPatch).toHaveBeenCalledWith(key,Number(value));}});
 test('weekend daily entry uses the selected date',()=>{const onDayPatch=jest.fn();render(<PayRunEmployee {...props({onDayPatch,dailyTotals:{'2026-10-10':{saturday:4}}})}/>);fireEvent.change(screen.getByLabelText('Review pay day'),{target:{value:'2026-10-10'}});expect(screen.getByLabelText('Saturday O/T').value).toBe('4');fireEvent.change(screen.getByLabelText('Saturday O/T'),{target:{value:'5'}});expect(onDayPatch).toHaveBeenCalledWith('2026-10-10','saturday',5);});
+
+
+test('zero pay entries are blank, decimals remain editable and clearing sends zero',()=>{
+ const p=props({row:{...row,entry:{...row.entry,ordinary:0,annual:0,allowance_units:{travel:0}}}});
+ render(<PayRunEmployee {...p}/>);
+ const input=screen.getByLabelText('Ordinary hours');
+ expect(input.value).toBe('');expect(screen.getByLabelText('Annual leave').value).toBe('');expect(screen.getByLabelText('Units').value).toBe('');
+ fireEvent.focus(input);fireEvent.change(input,{target:{value:'0'}});expect(input.value).toBe('0');
+ fireEvent.change(input,{target:{value:'0.5'}});expect(input.value).toBe('0.5');expect(p.onPatch).toHaveBeenLastCalledWith('ordinary',0.5);
+ fireEvent.change(input,{target:{value:''}});expect(p.onPatch).toHaveBeenLastCalledWith('ordinary',0);fireEvent.blur(input);expect(input.value).toBe('');
+});

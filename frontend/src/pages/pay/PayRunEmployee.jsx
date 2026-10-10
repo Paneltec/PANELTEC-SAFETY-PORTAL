@@ -3,6 +3,14 @@ import {Link} from 'react-router-dom';
 import api from '../../lib/api';
 import './payrun.css';
 import {payRunSummary,money} from './payRunAdapter';
+// Keep zero entries quiet while preserving decimal input during editing.
+function PayEntryInput({value,onChange,...props}) {
+ const [editing,setEditing]=useState(false),[draft,setDraft]=useState('');
+ return <input {...props} value={editing?draft:(Number(value)===0?'':value??'')}
+   onFocus={()=>{setDraft(Number(value)===0?'':String(value??''));setEditing(true);}}
+   onBlur={()=>setEditing(false)}
+   onChange={e=>{setDraft(e.target.value);onChange(e);}}/>;
+}
 export default function PayRunEmployee({companySelector,companyLabel,periodEnding,employees,row,calculation,sheet,week,employer:sealedEmployer,checkedCount,busy,locked,onSelect,onPatch,onDayPatch,onEarnings,dailyTotals,onSaveDraft,onMarkChecked,preparationUrl}) {
  const [search,setSearch]=useState('');
  const [day,setDay]=useState('');
@@ -23,7 +31,7 @@ export default function PayRunEmployee({companySelector,companyLabel,periodEndin
  const onSearch=e=>setSearch(e.target.value);
  const matches=search.trim()?list.filter(p=>p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())):[];
  const fields={ordinaryHours:'ordinary',ot1Hours:'ot1',ot2Hours:'ot2',saturdayHours:'saturday',sundayHours:'sunday',lafha:'lafha',nightHours:'night',phWorkedHours:'holiday_work',annualLeaveHours:'annual',personalLeaveHours:'personal',paidPublicHolidayHours:'public_holiday',reimbursements:'reimbursements',meals:'meal_count'};
- const field=(id,label,key)=>{const k=fields[key],pending=!k,daily=day&&workedKeys.includes(k),value=daily?dailyTotals?.[day]?.[k]:row.entry[k];return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':value??''} disabled={busy||locked||pending} onChange={e=>daily?onDayPatch(day,k,e.target.value===''?0:Number(e.target.value)):onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
+ const field=(id,label,key)=>{const k=fields[key],pending=!k,daily=day&&workedKeys.includes(k),value=daily?dailyTotals?.[day]?.[k]:row.entry[k];return <div className="pr-f"><label htmlFor={id}>{label}</label><PayEntryInput id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':value??''} disabled={busy||locked||pending} onChange={e=>daily?onDayPatch(day,k,e.target.value===''?0:Number(e.target.value)):onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
  const rules=[...(sheet.rules.earning_rules||[]),...earningRules.filter(r=>!sheet.rules.earning_rules?.some(saved=>saved.code===r.code))];
  const categories=[...(row.profile.allowance_rates||[]).map(a=>({id:a.code,label:`${a.name} (${money(a.rate)} / unit)`})),...rules.map(r=>({id:'rule:'+r.code,label:r.name}))];
  const inputs={otherEarnings:extraCodes.map((code,i)=>({key:i,categoryId:code,value:code.startsWith('rule:')?row.entry.earning_units?.[code.slice(5)]??0:row.entry.allowance_units?.[code]??0}))};
@@ -86,7 +94,7 @@ export default function PayRunEmployee({companySelector,companyLabel,periodEndin
                     </div>
                     <div className="pr-f" style={{ flex: '1 1 140px' }}>
                       <label htmlFor={`eh${x.key}`}>Units</label>
-                      <input disabled={busy||locked||!categories.some(c=>c.id===x.categoryId)||Boolean(x.categoryId.startsWith('rule:')&&rules.some(r=>'rule:'+r.code===x.categoryId&&(r.taxable==null||r.superable==null)))} type="number" min="0" step="any" id={`eh${x.key}`} inputMode="decimal" value={x.value}
+                      <PayEntryInput disabled={busy||locked||!categories.some(c=>c.id===x.categoryId)||Boolean(x.categoryId.startsWith('rule:')&&rules.some(r=>'rule:'+r.code===x.categoryId&&(r.taxable==null||r.superable==null)))} type="number" min="0" step="any" id={`eh${x.key}`} inputMode="decimal" value={x.value}
                         onChange={(e) => setExtras((l) => l.map((y) => (y.key === x.key ? { ...y, value: e.target.value } : y)))} />
                     </div>
                     <button type="button" disabled={busy||locked} className="pr-remove" aria-label="Remove this earning"
