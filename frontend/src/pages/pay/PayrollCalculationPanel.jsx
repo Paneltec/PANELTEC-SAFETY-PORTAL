@@ -1,29 +1,29 @@
 import React,{useEffect,useState} from 'react';
 import api from '../../lib/api';
 import {Link} from 'react-router-dom';
-const money=v=>v==null?'—':new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(v);
-const hours=v=>v==null?'—':Number(v).toFixed(2);
-const date=v=>v?new Date(v.slice(0,10)+'T12:00:00').toLocaleDateString('en-AU'):'—';
-export default function PayrollCalculationPanel({row,result,sheet,week,name,sealedBranding,onRefreshTax,busy=false}){
- const [context,setContext]=useState(null),[error,setError]=useState('');
- useEffect(()=>{let active=true;setContext(null);setError('');api.get(`/payroll/employee-records/${encodeURIComponent(row.worker_id)}/pay-context/${week}`,{params:{payday:sheet.payday}}).then(r=>{if(active)setContext(r.data);}).catch(()=>{if(active)setError('Employee payment details and YTD are unavailable.');});return()=>{active=false;};},[row.worker_id,week,sheet.payday]);
- const p=row.profile,e=row.entry,r=sheet.rules,rate=p.pay_basis==='annual_salary'?p.annual_salary/52/p.ordinary_weekly_hours:p.employment_type==='casual'&&p.casual_rates?p.casual_rates.base_rate*(1+p.casual_rates.loading_percent/100):p.hourly_rate;
- const applied=result?.applied_rates||{};
+const money=v=>v==null?'Pending':new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(v);
+export default function PayrollCalculationPanel({row,result,sheet,week,sealedBranding,onRefreshTax,busy=false}){
+ const [context,setContext]=useState(null);
+ useEffect(()=>{let active=true;setContext(null);api.get(`/payroll/employee-records/${encodeURIComponent(row.worker_id)}/pay-context/${week}`,{params:{payday:sheet.payday}}).then(r=>{if(active)setContext(r.data);}).catch(()=>{});return()=>{active=false;};},[row.worker_id,week,sheet.payday]);
  const employer=sealedBranding||context?.employer;
- const end=new Date(week.slice(0,10)+'T12:00:00');end.setDate(end.getDate()+6);
- const ytd=k=>result&&context?.prior_ytd?.[k]!=null&&result[k]!=null?context.prior_ytd[k]+result[k]:null;
- const lines=[['ordinary',p.pay_basis==='annual_salary'?'Salary':'Ordinary pay','ordinary_pay',rate],['ot1','Overtime 1','ot1_pay',rate*r.ot1_multiplier],['ot2','Overtime 2','ot2_pay',rate*r.ot2_multiplier],['night','Night work','night_pay',rate*r.night_multiplier],['holiday_work','Public holiday worked','holiday_work_pay',rate*r.holiday_work_multiplier],['annual','Annual leave','annual_pay',rate],['personal','Sick / carer’s leave','personal_pay',rate],['public_holiday','Paid public holiday','public_holiday_pay',rate],['meal_count','Meal allowances','meal_allowance_pay',r.meal_allowance],[null,'Leave loading','leave_loading',null],[null,'Other taxable allowances','taxable_allowances',null]];
- const taxReason=p.tax_mode==='unconfirmed'?'Select the employee’s tax calculation from their declaration.':p.tax_mode==='manual'?'Enter reviewed manual PAYG and its calculation reference.':!p.tax_declaration_reviewed?'Confirm the employee’s tax declaration and selected calculation.':(result?.issues||[]).find(i=>/tax|PAYG|withholding/i.test(i))||'Review the tax calculation settings.';
- const superDisplay=result?.super!=null?money(result.super):!result?'Calculating…':e.qualifying_earnings==null?'Earnings setup needed':'Super review needed';
- const taxDisplay=result?.payg!=null?money(result.payg):result?'Tax setup needed':'Calculating…';
- const totalHours=['ordinary','ot1','ot2','night','holiday_work','annual','personal','public_holiday'].reduce((n,k)=>n+Number(e[k]||0),0);
- return <aside className="pay-panel pay-calculation-panel" aria-label="Employee pay breakdown"><h3>{employer?.employer_name||'Employer details not configured'}</h3><p className="text-xs">ABN: {employer?.employer_abn||'Not recorded'}</p><h4 className="font-semibold mt-3">{name} — pay breakdown</h4><dl className="pay-breakdown-meta"><dt>Period starting</dt><dd>{date(week)}</dd><dt>Period ending</dt><dd>{end.toLocaleDateString('en-AU')}</dd><dt>Payment date</dt><dd>{date(sheet.payday)}</dd><dt>Base pay rate</dt><dd>{p.pay_basis==='annual_salary'?`${money(p.annual_salary)} per annum`:`${money(rate)} per hour`}</dd><dt>Hours paid</dt><dd>{hours(totalHours)}</dd></dl><p className="text-xs mb-3">Calculated preview · payment is not confirmed by this panel.</p>{!result&&<p role="status" className="pay-notice">Recalculate pay and leave to update these amounts.</p>}{error&&<p role="status">{error}</p>}
- <div className="overflow-x-auto"><table className="pay-breakdown-table"><thead><tr><th>Pay slip components</th><th>Hours / units</th><th>Rate</th><th>This pay</th><th>Year to date</th></tr></thead><tbody><tr><th colSpan="5">Wages and earnings</th></tr>{lines.filter(([key,,value])=>key==='ordinary'||Number(e[key]||0)!==0||Number(result?.[value]||0)!==0).map(([key,label,value,lineRate])=><tr key={value}><td>{label}</td><td>{key?hours(e[key]||0):'—'}</td><td>{money(applied[key]??lineRate)}</td><td>{money(result?.[value])}</td><td>—</td></tr>)}{result?.allowance_lines?.filter(a=>a.units).map(a=><tr key={a.code}><td>{a.name}</td><td>{hours(a.units)}</td><td>{money(a.rate)}</td><td>{money(a.amount)}</td><td>—</td></tr>)}<tr className="font-semibold"><td colSpan="3">Gross earnings</td><td>{money(result?.gross)}</td><td>{money(ytd('gross'))}</td></tr><tr><th colSpan="5">Taxes</th></tr><tr><td colSpan="3">PAYG withholding</td><td>{taxDisplay}</td><td>{money(ytd('payg'))}</td></tr><tr className="font-semibold"><td colSpan="3">Total tax</td><td>{taxDisplay}</td><td>{money(ytd('payg'))}</td></tr><tr><th colSpan="5">Net pay adjustments</th></tr><tr><td colSpan="3">Other deductions</td><td>{money(result?.deductions)}</td><td>—</td></tr><tr><td colSpan="3">Reimbursements</td><td>{money(result?.reimbursements)}</td><td>—</td></tr><tr className="font-semibold"><td colSpan="3">Net payment</td><td>{money(result?.net)}</td><td>—</td></tr></tbody></table></div>
- <h4 className="font-semibold mt-5">Employer super — separate from wages</h4><p className="text-xs my-2">Qualifying earnings {money(e.qualifying_earnings)} × {r.super_percent}%. Super is not added to gross earnings or deducted from net wages.</p>
- <table className="pay-breakdown-table" aria-label="Employer super totals"><thead><tr><th>Superannuation</th><th>This pay</th><th>Year to date</th></tr></thead><tbody><tr><td>Super guarantee (SG)</td><td>{superDisplay}</td><td>{money(ytd('super'))}</td></tr><tr className="font-semibold"><td>Total employer super</td><td>{superDisplay}</td><td>{money(ytd('super'))}</td></tr></tbody></table>
- {result?.payg==null&&<p className="text-xs my-2" role="status">{taxReason} <Link className="underline" to={`/app/pay/employees?worker=${encodeURIComponent(row.worker_id)}`} target="_blank" rel="noopener noreferrer">Open employee tax settings</Link>{onRefreshTax&&<button type="button" className="pay-outline block mt-2" disabled={busy} onClick={onRefreshTax}>Load saved tax setup and recalculate</button>}</p>}
- {result?.super==null&&<p className="text-xs my-2" role="status">Super is pending: identify which earnings qualify, enter their total in Super qualifying earnings, and check the calculation. Changes then recalculate automatically. The global category-to-super calculation connection is not configured yet.</p>}
- <p className="text-xs my-3">YTD totals include opening balances plus issued pays and this calculation. Missing opening totals show —. Historical component breakdowns are not available.</p>
- <h4 className="font-semibold">Bank payment</h4><p className="text-sm">{context?.bank?.configured?`${context.bank.account_name} · ${context.bank.bsb_masked} · ${context.bank.account_masked}`:'Bank details not available'} · {money(result?.net)}</p><h4 className="font-semibold mt-3">Super contribution</h4><p className="text-sm">{p.super_fund_name||'Fund not recorded'} · {context?.member_number_masked||'Member not recorded'} · {money(result?.super)}</p>
- <table className="pay-breakdown-table mt-3"><thead><tr><th>Leave details</th><th>Accrued</th><th>Taken</th><th>Remaining</th></tr></thead><tbody>{[['annual','Annual leave'],['personal','Sick / carer’s leave']].map(([key,label])=><tr key={key}><td>{label}</td><td>{hours(result?.[key+'_accrued'])} h</td><td>{hours(e[key])} h</td><td>{hours(result?.[key+'_closing'])} h</td></tr>)}<tr><td>Long service leave</td><td colSpan="3">Not configured</td></tr></tbody></table><p className="text-xs mt-2">Remaining leave is projected until the pay run is issued.</p></aside>;
+ const total=keys=>!result||keys.some(k=>result[k]==null)?null:keys.reduce((n,k)=>n+Number(result[k]),0);
+ const line=(label,value,strong=false)=><div className={strong?'pay-slip-row pay-slip-total':'pay-slip-row'} key={label}><dt>{label}</dt><dd>{value==null?<span className="pay-status-chip">Pending</span>:money(value)}</dd></div>;
+ return <aside className="pay-panel pay-calculation-panel" aria-label="Employee pay breakdown">
+ <p className="pay-slip-employer">{employer?.employer_name||'Pending'} · ABN {employer?.employer_abn||'Pending'}</p>
+ <h3>Pay slip preview</h3><p>Draft</p>
+ <h4 className="pay-slip-heading">Earnings</h4><dl>
+ {line('Ordinary pay',result?.ordinary_pay)}
+ {line('Overtime & penalties',total(['ot1_pay','ot2_pay','night_pay','holiday_work_pay']))}
+ {line('Leave + loading',total(['annual_pay','personal_pay','public_holiday_pay','leave_loading']))}
+ {line('Allowances',total(['taxable_allowances','meal_allowance_pay','configured_allowances']))}
+ {line('Gross',result?.gross,true)}
+ </dl><h4 className="pay-slip-heading">Tax & deductions</h4><dl>
+ {line('PAYG withholding',result?.payg)}
+ {line('Salary sacrifice',null)}
+ {line('Other deductions',result?.deductions)}
+ {line('Reimbursements',result?.reimbursements)}
+ {line('Net pay',result?.net,true)}
+ </dl><dl className="pay-slip-super-line">{line('Super',result?.super)}</dl>
+ {result?.payg==null&&<div className="pay-slip-links"><Link to={`/app/pay/employees?worker=${encodeURIComponent(row.worker_id)}`} target="_blank" rel="noopener noreferrer">Tax settings</Link>{onRefreshTax&&<button type="button" disabled={busy} onClick={onRefreshTax}>Refresh tax</button>}</div>}
+ </aside>;
 }

@@ -27,10 +27,10 @@ export default function PayrollRunCategories({profile,rules,result,hoursFromShif
   {!rows&&!error&&<p className="text-sm my-2">Loading categories…</p>}
   {rows&&<>
    {applicable.length>0?<ul className="space-y-2 my-2">{applicable.map(({category,linked},i)=><li key={String(category.Id??i)} className="text-sm flex justify-between flex-wrap gap-2">
-    <span><strong>{category.PayCategoryName}</strong> · {linked.rate>0?`${cash(linked.rate)} / hour`:'Employee rate needs setup'}</span>
+    <span><strong>{category.PayCategoryName}</strong> · {linked.rate>0?`${cash(linked.rate)} / hour`:'Pending'}</span>
     <button type="button" disabled={hoursFromShifts} className="underline text-left disabled:no-underline" onClick={()=>document.getElementById(`pay-entry-${linked.key}`)?.focus()}>{hoursFromShifts?'Calculated from shift times':`Go to ${linked.label.toLowerCase()}`}</button>
-   </li>)}</ul>:<p className="text-sm my-2">No imported categories are linked to this employee’s current setup. Review Employee settings and Pay settings.</p>}
+   </li>)}</ul>:<p className="text-sm my-2">Pending</p>}
   </>}
-  <Link className="inline-block underline mt-2 text-sm" to="/app/pay/settings#pay-category-definitions">Manage pay categories in Pay settings</Link>
+  <Link className="inline-block underline mt-2 text-sm" to="/app/pay/settings#pay-category-definitions">Pay settings</Link>
  </section>;
 }

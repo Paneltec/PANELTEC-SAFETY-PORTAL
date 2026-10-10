@@ -1,0 +1,106 @@
+/* ============================================================
+   Paneltec Pay Run – employee check screen
+   Colours and sizes match the approved mockup exactly.
+   To change the background, edit the two lines marked ★ below.
+   ============================================================ */
+
+.pr-root {
+  /* ★ BACKGROUND COLOUR – the purple, as R,G,B numbers (hex #3B1773) */
+  --pr-bg-rgb: 59, 23, 115;
+  /* ★ BACKGROUND STRENGTH – 0.8 = 80 %. Lower = lighter, higher = stronger (0.3 – 1.0) */
+  --pr-bg-strength: 0.8;
+
+  --pr-base: #140A24;          /* dark colour behind the purple */
+  --pr-bar: #200D3F;           /* bottom bar = background colour × 55 % (update if you change ★) */
+
+  --pr-text: #F2F5F9;          /* main text on purple */
+  --pr-text-muted: #B4BFCE;    /* secondary text on purple */
+  --pr-line-on-bg: rgba(255,255,255,0.25);
+  --pr-button-on-bg: rgba(0,0,0,0.25);
+
+  --pr-card: #F4F6F9;          /* off-white cards – never pure white */
+  --pr-card-border: #B9C6D6;
+  --pr-field: #FFFFFF;         /* input boxes inside cards */
+  --pr-on-card: #1A1A1A;
+  --pr-on-card-muted: #4B4B4B;
+  --pr-divider: #DCE3EC;
+
+  --pr-orange: #F97316;        /* brand orange: overline, focus ring, add button border */
+  --pr-orange-soft: #FFF7ED;
+  --pr-orange-text: #9A3412;
+  --pr-green: #22C55E;         /* go / done: progress bar, Mark checked button */
+  --pr-on-green: #062B12;
+
+  --pr-radius-field: 10px;
+  --pr-radius-card: 14px;
+  --pr-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Segoe UI", system-ui, sans-serif;
+
+  font-family: var(--pr-font);
+  color: var(--pr-text);
+  background: var(--pr-base);
+  min-height: 100vh;
+}
+/* Rounded ("oval") corners on the purple background: 12px gap from the window edge, 28px corner radius */
+.pr-bg { background: rgba(var(--pr-bg-rgb), var(--pr-bg-strength)); min-height: calc(100vh - 24px); margin: 12px; border-radius: 28px; overflow: clip; }
+.pr-wrap { max-width: 1360px; margin: 0 auto; padding: 24px 16px 120px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px; }
+
+/* Header */
+.pr-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.pr-overline { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--pr-orange); }
+.pr-name { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: .5px; color: var(--pr-text); }
+.pr-meta { font-size: 14px; color: var(--pr-text-muted); }
+.pr-nav { display: flex; flex-direction: column; gap: 8px; min-width: 280px; flex: 0 1 560px; }
+.pr-progress-label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
+.pr-progress { height: 10px; border-radius: 6px; background: var(--pr-button-on-bg); border: 1px solid var(--pr-line-on-bg); overflow: hidden; }
+.pr-progress > div { height: 100%; background: var(--pr-green); }
+.pr-nav-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pr-search { flex: 1 1 160px; position: relative; display: flex; align-items: center; }
+.pr-search svg { position: absolute; left: 12px; pointer-events: none; }
+.pr-search input { width: 100%; height: 44px; box-sizing: border-box; border: 1px solid var(--pr-card-border); border-radius: var(--pr-radius-field); background: var(--pr-card); padding: 0 12px 0 38px; font: inherit; font-size: 14px; color: var(--pr-on-card); }
+.pr-navbtn { flex: 1 1 160px; height: 44px; border-radius: var(--pr-radius-field); border: 1px solid var(--pr-line-on-bg); background: var(--pr-button-on-bg); color: var(--pr-text); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.pr-navbtn:disabled { opacity: .5; cursor: default; }
+
+/* Layout */
+.pr-cols { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.pr-main { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.pr-aside { flex: 1 1 340px; min-width: 0; position: sticky; top: 16px; }
+
+/* Cards and fields */
+.pr-card { background: var(--pr-card); border: 1px solid var(--pr-card-border); border-radius: var(--pr-radius-card); padding: 20px; box-sizing: border-box; color: var(--pr-on-card); }
+.pr-sec { margin: 0 0 4px; font-size: 13px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--pr-on-card); }
+.pr-sub { margin: 0 0 16px; font-size: 13px; color: var(--pr-on-card-muted); }
+.pr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px 16px; align-items: end; }
+.pr-f { display: flex; flex-direction: column; gap: 6px; }
+.pr-f label { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--pr-on-card-muted); }
+.pr-f input, .pr-f select { height: 48px; box-sizing: border-box; border: 1px solid var(--pr-card-border); border-radius: var(--pr-radius-field); background: var(--pr-field); padding: 0 12px; font: inherit; font-size: 15px; color: var(--pr-on-card); }
+.pr-f input { text-align: right; }
+.pr-f input:focus, .pr-f select:focus, .pr-search input:focus { outline: 3px solid var(--pr-orange); outline-offset: 1px; }
+.pr-grp { padding: 12px 0 4px; font-size: 11px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--pr-on-card-muted); }
+
+/* Other earnings */
+.pr-extra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 10px 0; border-bottom: 1px solid var(--pr-divider); }
+.pr-remove { width: 48px; height: 48px; border-radius: var(--pr-radius-field); border: 1px solid var(--pr-card-border); background: var(--pr-field); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.pr-add { margin-top: 14px; height: 48px; padding: 0 18px; border-radius: var(--pr-radius-field); border: 1px dashed var(--pr-orange); background: var(--pr-orange-soft); color: var(--pr-orange-text); font: inherit; font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+
+/* Pay slip */
+.pr-employer { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--pr-on-card-muted); }
+.pr-slip-title { margin: 4px 0 2px; font-size: 20px; font-weight: 800; color: var(--pr-on-card); }
+.pr-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--pr-divider); font-size: 14px; color: var(--pr-on-card); }
+.pr-row span:last-child { font-variant-numeric: tabular-nums; }
+.pr-row.bold { font-weight: 800; }
+.pr-row.big { font-size: 16px; }
+.pr-row.last { border-bottom: 0; }
+.pr-row.boxed { margin-top: 8px; padding: 12px; border: 1px solid var(--pr-card-border); border-radius: var(--pr-radius-field); background: var(--pr-field); }
+
+/* Bottom bar */
+.pr-bar { position: sticky; bottom: 0; background: var(--pr-bar); border-top: 1px solid rgba(255,255,255,0.2); }
+.pr-bar-inner { max-width: 1360px; margin: 0 auto; padding: 12px 16px; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.pr-totals { display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; color: var(--pr-text-muted); }
+.pr-totals strong { color: var(--pr-text); font-size: 18px; }
+.pr-confirm { display: flex; align-items: center; gap: 10px; flex: 1 1 320px; font-size: 13px; color: var(--pr-text); min-height: 44px; }
+.pr-confirm input { width: 22px; height: 22px; accent-color: var(--pr-green); }
+.pr-btn-ghost { height: 48px; padding: 0 20px; border-radius: var(--pr-radius-card); border: 1px solid var(--pr-text-muted); background: transparent; color: var(--pr-text); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.pr-btn-go { height: 48px; padding: 0 20px; border-radius: var(--pr-radius-card); border: 0; background: var(--pr-green); color: var(--pr-on-green); font: inherit; font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; cursor: pointer; }
+.pr-btn-go:disabled { opacity: .5; cursor: default; }
+
+.pr-root button:disabled{opacity:.45;cursor:not-allowed}.pr-f input:disabled{color:#9a3412}.pr-preparation{font-size:13px;text-decoration:underline;color:var(--pr-text)}.pr-bar{z-index:25}.pr-root input,.pr-root button{scroll-margin-bottom:160px}@media(max-width:700px){.pr-aside{position:static}.pr-nav{min-width:0}.pr-cols{grid-template-columns:1fr}.pr-grid{grid-template-columns:1fr}.pr-wrap{padding-bottom:24px}.pr-bar{position:static}}
