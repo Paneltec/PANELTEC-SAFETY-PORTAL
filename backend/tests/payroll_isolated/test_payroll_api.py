@@ -103,6 +103,8 @@ class PayrollAPITests(unittest.TestCase):
         row['entry'].update(ordinary=6,ot1=2,qualifying_earnings=None)
         response=self.save()
         self.assertEqual(response.status_code,200,response.text)
+        from bson import BSON
+        BSON.encode(db.pay_review_sheets.rows[0])
         calculated=response.json()['report']['rows'][0]
         self.assertEqual(calculated['entry']['ordinary'],6)
         self.assertEqual(calculated['result']['super'],25.2)
@@ -127,6 +129,8 @@ class PayrollAPITests(unittest.TestCase):
         self.assertEqual(r['entry']['ordinary'],14)
         self.assertEqual(r['entry']['ot1'],2)
         self.assertEqual(r['result']['super'],58.8)
+        from bson import BSON
+        BSON.encode(db.pay_review_sheets.rows[0])
         loaded=client.get('/payroll/workbench/2026-10-05').json()
         self.assertEqual(loaded['worksheet']['rows'][0]['daily_hours']['2026-10-06']['ordinary'],8)
         self.body=loaded['worksheet']

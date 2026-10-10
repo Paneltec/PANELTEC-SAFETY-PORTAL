@@ -314,7 +314,7 @@ def report(body, names):
         if r.entry.taxable_allowances and not r.entry.allowance_details.strip():
             result['issues'].append('Record each allowance description and amount')
             result['review_ready']=False
-        rows.append({**r.model_dump(), "name": names[r.worker_id], "daily_totals":daily_totals, "result": result})
+        rows.append({**r.model_dump(mode="json"), "name": names[r.worker_id], "daily_totals":daily_totals, "result": result})
     totals = {}
     for key in ("gross", "payg", "net", "super", "annual_base_value"):
         values = [r["result"][key] for r in rows]

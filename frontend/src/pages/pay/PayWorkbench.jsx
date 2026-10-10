@@ -77,7 +77,7 @@ export default function PayWorkbench({mode="run"}) {
     const timer=setTimeout(async()=>{
       try{
         const {data}=await api.post(`/payroll/workbench/${loadedWeek}/preview`,{...sheet,reviewed:false});
-        if(!cancelled){setReport(data);setError('');setMessage('Calculation updated. Save draft to keep your changes.');}
+        if(!cancelled){setReport(data);setMessage('Calculation updated. Save draft to keep your changes.');}
       }catch(e){if(!cancelled)setError(apiError(e)||'Automatic calculation failed. Check the entries and recalculate.');}
     },400);
     return()=>{cancelled=true;clearTimeout(timer);};
