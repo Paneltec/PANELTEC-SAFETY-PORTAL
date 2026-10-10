@@ -2,7 +2,7 @@ import React,{useState,useEffect} from 'react';
 import {Link} from 'react-router-dom';
 import api from '../../lib/api';
 import './payrun.css';
-import {payRunSummary,money,hours} from './payRunAdapter';
+import {payRunSummary,money} from './payRunAdapter';
 export default function PayRunEmployee({companyLabel,periodEnding,employees,row,calculation,sheet,week,employer:sealedEmployer,checkedCount,busy,locked,onSelect,onPatch,onSaveDraft,onMarkChecked,preparationUrl}) {
  const [search,setSearch]=useState('');
  const [catalog,setCatalog]=useState([]),[catalogError,setCatalogError]=useState('');
@@ -15,7 +15,8 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
  const result=payRunSummary(row,calculation),confirmed=row.entry.hours_reviewed;
  const pct=list.length?Math.round(checkedCount/list.length*100):0;
  const goTo=i=>{if(!busy&&list[i])onSelect(list[i].id);};
- const onSearch=e=>{const q=e.target.value;setSearch(q);if(q.trim()){const i=list.findIndex(p=>p.name.toLowerCase().includes(q.trim().toLowerCase()));if(i>=0)goTo(i);}};
+ const onSearch=e=>setSearch(e.target.value);
+ const matches=search.trim()?list.filter(p=>p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())):[];
  const fields={ordinaryHours:'ordinary',ot1Hours:'ot1',ot2Hours:'ot2',nightHours:'night',phWorkedHours:'holiday_work',annualLeaveHours:'annual',personalLeaveHours:'personal',paidPublicHolidayHours:'public_holiday',reimbursements:'reimbursements',meals:'meal_count'};
  const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null);const shiftLocked=row.shifts!=null&&['ordinary','ot1','ot2','night','holiday_work','meal_count'].includes(k);return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':row.entry[k]??''} disabled={busy||locked||pending||shiftLocked} onChange={e=>onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
  const categories=(row.profile.allowance_rates||[]).map(a=>({id:a.code,label:`${a.name} (${money(a.rate)} / unit)`}));
@@ -39,7 +40,8 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
               <div className="pr-nav-row">
                 <div className="pr-search">
                   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4B4B4B" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
-                  <input type="search" aria-label="Search employee" placeholder="Search employee…" value={search} onChange={onSearch} />
+                  <input type="search" aria-label="Search employee" placeholder="Search employee…" value={search} onChange={onSearch} autoComplete="off" aria-expanded={Boolean(search.trim())} aria-controls="pr-search-results" onKeyDown={e=>{if(e.key==='Escape')setSearch('');}} />
+                  {search.trim()&&<div className="pr-search-results" id="pr-search-results"><ul aria-label="Matching employees">{matches.map(p=><li key={p.id}><button type="button" disabled={busy} onClick={()=>{onSelect(p.id);setSearch('');}}>{p.name}{p.division&&<small> · {p.division}</small>}</button></li>)}</ul>{!matches.length&&<p>No matching employees</p>}</div>}
                 </div>
                 <button type="button" className="pr-navbtn" onClick={() => goTo(idx - 1)} disabled={busy||idx <= 0}>‹ Previous</button>
                 <button type="button" className="pr-navbtn" onClick={() => goTo(idx + 1)} disabled={busy||idx === list.length - 1}>Next ›</button>
@@ -129,7 +131,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
               <div className="pr-row"><span>Reimbursements</span><span>{money(result.reimbursements)}</span></div>
               {Number(calculation?.deductions)>0&&<div className="pr-row"><span>Other deductions</span><span>{money(calculation.deductions)}</span></div>}
               <div className="pr-grp">Annual leave</div>
-              <div className="pr-row"><span>Taken this pay</span><span>{hours(result.annualLeaveTakenHours)}</span></div>
+              <div className="pr-row"><span>Taken this pay</span><span>{money(result.annualLeaveTakenPay)}</span></div>
               <div className="pr-row bold big"><span>Net pay (take home)</span><span>{money(result.net)}</span></div>
               <div className="pr-row bold last"><span>Gross</span><span>{money(result.gross)}</span></div>
             </aside>
