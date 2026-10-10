@@ -34,3 +34,18 @@ async def save(body:Awards,user=Depends(require_permission('payroll','edit'))):
     except DuplicateKeyError:raise HTTPException(409,'Award settings changed; reload before saving')
     if not result.matched_count and not result.upserted_id:raise HTTPException(409,'Award settings changed; reload before saving')
     return {'revision':doc['revision'],'items':items}
+
+
+@router.get('/employee-summary')
+async def employee_summary(user=Depends(require_permission('payroll','view'))):
+    from payroll_roster import roster, public_roster
+    from payroll_banking import decrypt
+    profiles = {}
+    async for record in db.pay_employee_records.find({'org_id': user['org_id']}):
+        profiles[record['worker_id']] = decrypt(record).get('profile', {})
+    result = []
+    for worker in public_roster(await roster(user['org_id'])):
+        profile = profiles.get(worker['id'], {})
+        result.append({**worker, 'classification': profile.get('classification', ''),
+                       'conditions_reviewed': bool(profile.get('conditions_reviewed', False))})
+    return {'workers': result}

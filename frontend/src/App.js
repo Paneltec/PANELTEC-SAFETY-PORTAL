@@ -187,6 +187,7 @@ import PayrollEmployeeSettings from '@/pages/pay/PayrollEmployeeSettings';
 import PayrollConnections from '@/pages/pay/PayrollConnections';
 import PayrollReportPage from '@/pages/pay/PayrollReportPage';
 import PaySettings from '@/pages/pay/PaySettings';
+import PayAwardRates from '@/pages/pay/PayAwardRates';
 import SupplierScanResolver from '@/pages/SupplierScanResolver';
 import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
 import SystemSettings from '@/pages/SystemSettings';
@@ -377,6 +378,7 @@ function App() {
                 <Route path="periods" element={<Navigate to="/app/pay" replace />} />
                 <Route path="people" element={<Navigate to="/app/pay" replace />} />
                 <Route path="settings" element={<PaySettings />} />
+                <Route path="award-rates" element={<PayAwardRates />} />
               </Route>
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />

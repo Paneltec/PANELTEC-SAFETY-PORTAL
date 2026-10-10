@@ -27,6 +27,7 @@ const TABS = [
   {to:'/app/pay/employees',label:'Employee settings'},
   {to:'/app/pay/providers',label:'Provider connection settings'},
   {to:'/app/pay/settings',label:'Settings'},
+  {to:'/app/pay/award-rates',label:'Award rates'},
   {to:'/app/pay/access',label:'Manage access'},
 ];
 
