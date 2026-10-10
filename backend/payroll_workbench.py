@@ -46,7 +46,17 @@ class Rules(Strict):
     daily_ordinary_hours: float = Field(7.6,ge=0,le=24,allow_inf_nan=False)
     meal_allowance: Number | None = None
     meal_tax_treatment: Literal["unconfirmed","taxable","exempt"] = "unconfirmed"
-    night_multiplier: float = Field(2,ge=2,le=5,allow_inf_nan=False)
+    night_start: str = Field("18:00",pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    night_end: str = Field("06:00",pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    saturday_multiplier: float | None = Field(None,ge=1,le=10,allow_inf_nan=False)
+    sunday_multiplier: float | None = Field(None,ge=1,le=10,allow_inf_nan=False)
+    ot1_hours: float = Field(2,ge=0,le=24,allow_inf_nan=False)
+    night_multiplier: float = Field(2,ge=1,le=10,allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def different_night_times(self):
+        if self.night_start==self.night_end:raise ValueError("Night start and end must differ")
+        return self
     holiday_work_multiplier: float = Field(2.5,ge=2.5,le=5,allow_inf_nan=False)
     ot1_multiplier: float = Field(1.5, ge=1, le=5, allow_inf_nan=False)
     ot2_multiplier: float = Field(2, ge=1, le=5, allow_inf_nan=False)

@@ -10,6 +10,9 @@ def minute(value):
 def calculate_shifts(shifts,rules,*,separate_weekends=False):
     buckets={k:0 for k in ('ordinary','ot1','ot2','night','holiday_work','penalty_ordinary')}
     if separate_weekends:buckets.update(saturday=0,sunday=0)
+    night_start=minute(rules.get('night_start','18:00'));night_end=minute(rules.get('night_end','06:00'))
+    if night_start==night_end:raise ValueError('Night start and end must differ')
+    def night_time(clock):return (clock>=night_start or clock<night_end) if night_start>night_end else night_start<=clock<night_end
     meals=0;days={};occupied=set()
     for shift in shifts:
         d=date.fromisoformat(str(shift['date']));start=minute(shift['start']);end=minute(shift['finish'])
@@ -21,7 +24,7 @@ def calculate_shifts(shifts,rules,*,separate_weekends=False):
             zones=set()
             for m in range(start,end):
                 actual=d+timedelta(days=m//1440);clock=m%1440
-                zones.add('holiday' if shift.get('public_holiday') else 'night' if (actual.weekday()<5 or (d.weekday()<5 and m>=1440)) and (clock>=1080 or clock<360) else 'weekend'+str(actual.weekday()) if actual.weekday()>=5 else 'day')
+                zones.add('holiday' if shift.get('public_holiday') else 'night' if (actual.weekday()<5 or (d.weekday()<5 and m>=1440)) and night_time(clock) else 'weekend'+str(actual.weekday()) if actual.weekday()>=5 else 'day')
             if len(zones)>1:raise ValueError('Enter the unpaid break start so day/night rates can be allocated correctly')
             break_start=end-unpaid
         else:break_start=minute(bs) if bs else end
@@ -44,11 +47,11 @@ def calculate_shifts(shifts,rules,*,separate_weekends=False):
             if shift.get('public_holiday'):
                 bucket='holiday_work'
                 if ordinary:buckets['penalty_ordinary']+=1
-            elif (actual.weekday()<5 or (day.weekday()<5 and m>=1440)) and (clock>=1080 or clock<360):
+            elif (actual.weekday()<5 or (day.weekday()<5 and m>=1440)) and night_time(clock):
                 bucket='night'
                 if ordinary and shift.get('replacement_day_shift'):buckets['penalty_ordinary']+=1
             elif actual.weekday()==6:bucket='sunday' if separate_weekends else 'ot2'
             elif actual.weekday()==5:bucket='saturday' if separate_weekends else 'ot1' # existing Saturday rule retained
-            else:bucket='ordinary' if ordinary else 'ot1' if index<ordinary_limit+120 else 'ot2'
+            else:bucket='ordinary' if ordinary else 'ot1' if index<ordinary_limit+round(float(rules.get("ot1_hours",2))*60) else 'ot2'
             buckets[bucket]+=1
     return {**{k:float(Decimal(v)/60) for k,v in buckets.items()},'meal_count':meals}

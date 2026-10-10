@@ -8,6 +8,22 @@ from payroll_fund_lookup import parse_register,match
 def shift(start='07:00',finish='17:00',**kw):return {**dict(date='2026-10-05',start=start,finish=finish,break_minutes=0),**kw}
 class ShiftRulesTests(unittest.TestCase):
  def calc(self,*s):return calculate_shifts(s,{})
+ def test_custom_time_window_and_weekend_rates(self):
+  rules=Rules(night_start='19:00',night_end='05:00',night_multiplier=1.75,saturday_multiplier=1.8,sunday_multiplier=2.5).model_dump()
+  r=calculate_shifts([shift('18:00','20:00')],rules,separate_weekends=True)
+  self.assertEqual(r['ordinary'],1);self.assertEqual(r['night'],1)
+  profile=Profile(hourly_rate=40).model_dump()
+  result=calculate_line(profile,Entry(**r).model_dump(),rules,'2026-10-08')
+  self.assertEqual(result['night_pay'],70)
+  r=calculate_shifts([shift('08:00','10:00',date='2026-10-11')],rules,separate_weekends=True)
+  result=calculate_line(profile,Entry(**r).model_dump(),rules,'2026-10-15')
+  self.assertEqual(result['sunday_pay'],200);self.assertEqual(result['ot2_pay'],0)
+ def test_custom_overtime_duration_and_invalid_window(self):
+  r=calculate_shifts([shift('07:00','17:00')],Rules(daily_ordinary_hours=8,ot1_hours=1).model_dump())
+  self.assertEqual(r['ordinary'],8);self.assertEqual(r['ot1'],1);self.assertEqual(r['ot2'],1)
+  with self.assertRaises(ValueError):Rules(night_start='18:00',night_end='18:00')
+  r=calculate_shifts([shift('17:00','19:00')],Rules(night_start='17:30',night_end='19:00').model_dump())
+  self.assertEqual(r['night'],1.5)
  def test_daily_tiers(self):
   r=self.calc(shift());self.assertAlmostEqual(r['ordinary'],7.6);self.assertAlmostEqual(r['ot1'],2);self.assertAlmostEqual(r['ot2'],.4);self.assertEqual(r['meal_count'],1)
  def test_meal_boundaries(self):

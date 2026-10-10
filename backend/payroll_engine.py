@@ -68,8 +68,8 @@ def calculate_line(profile, entry, rules, payday):
     for key,multiplier in (("ot1","ot1_multiplier"),("ot2","ot2_multiplier"),("night","night_multiplier"),("holiday_work","holiday_work_multiplier")):
         override=casual_rates.get(key) if casual_rates else None
         rates[key]=dec(override) if override is not None else rate*dec(rules.get(multiplier,2.5 if key=="holiday_work" else 2))
-    rates["saturday"]=rates["ot1"]
-    rates["sunday"]=rates["ot2"]
+    rates["saturday"]=rate*dec(rules["saturday_multiplier"]) if rules.get("saturday_multiplier") is not None else rates["ot1"]
+    rates["sunday"]=rate*dec(rules["sunday_multiplier"]) if rules.get("sunday_multiplier") is not None else rates["ot2"]
     if rate <= 0:
         issues.append("Enter an hourly rate")
     if not profile.get("conditions_reviewed"):
