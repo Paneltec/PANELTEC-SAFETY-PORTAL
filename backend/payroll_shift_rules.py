@@ -7,8 +7,9 @@ def minute(value):
     if not 0<=h<24 or not 0<=m<60:raise ValueError('Invalid shift time')
     return h*60+m
 
-def calculate_shifts(shifts,rules):
+def calculate_shifts(shifts,rules,*,separate_weekends=False):
     buckets={k:0 for k in ('ordinary','ot1','ot2','night','holiday_work','penalty_ordinary')}
+    if separate_weekends:buckets.update(saturday=0,sunday=0)
     meals=0;days={};occupied=set()
     for shift in shifts:
         d=date.fromisoformat(str(shift['date']));start=minute(shift['start']);end=minute(shift['finish'])
@@ -46,8 +47,8 @@ def calculate_shifts(shifts,rules):
             elif (actual.weekday()<5 or (day.weekday()<5 and m>=1440)) and (clock>=1080 or clock<360):
                 bucket='night'
                 if ordinary and shift.get('replacement_day_shift'):buckets['penalty_ordinary']+=1
-            elif actual.weekday()==6:bucket='ot2'
-            elif actual.weekday()==5:bucket='ot1' # existing Saturday rule retained
+            elif actual.weekday()==6:bucket='sunday' if separate_weekends else 'ot2'
+            elif actual.weekday()==5:bucket='saturday' if separate_weekends else 'ot1' # existing Saturday rule retained
             else:bucket='ordinary' if ordinary else 'ot1' if index<ordinary_limit+120 else 'ot2'
             buckets[bucket]+=1
     return {**{k:float(Decimal(v)/60) for k,v in buckets.items()},'meal_count':meals}

@@ -298,7 +298,7 @@ def report(body, names):
                 # Validate the full source set, including cross-date overlaps.
                 calculate_shifts(shifts,body.rules.model_dump())
                 for day in sorted({v['date'] for v in shifts}):
-                    daily_totals[day]=calculate_shifts([v for v in shifts if v['date']==day],body.rules.model_dump())
+                    daily_totals[day]=calculate_shifts([v for v in shifts if v['date']==day],body.rules.model_dump(),separate_weekends=True)
                 if r.daily_hours is not None:
                     daily_totals={str(k):v.model_dump() for k,v in r.daily_hours.items()}
                 if not r.worked_hours_override:

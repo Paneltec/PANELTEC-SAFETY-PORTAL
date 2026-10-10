@@ -137,6 +137,18 @@ class PayrollAPITests(unittest.TestCase):
         self.body['rows'][0]['daily_hours']['2026-10-06']['ordinary']=4
         self.assertEqual(self.save().json()['report']['rows'][0]['entry']['ordinary'],10)
 
+    def test_imported_weekend_hours_are_not_counted_twice(self):
+        row=self.body['rows'][0]
+        row['shifts']=[dict(date='2026-10-10',start='08:00',finish='12:00',break_minutes=0),dict(date='2026-10-11',start='08:00',finish='11:00',break_minutes=0)]
+        response=self.save()
+        self.assertEqual(response.status_code,200,response.text)
+        r=response.json()['report']['rows'][0]
+        self.assertEqual(r['entry']['saturday'],4)
+        self.assertEqual(r['entry']['sunday'],3)
+        self.assertEqual(r['entry']['ot1'],0)
+        self.assertEqual(r['entry']['ot2'],0)
+        self.assertEqual(r['result']['gross'],420)
+
     def test_weekend_and_allowance_entries_persist(self):
         row=self.body['rows'][0]
         row.update(daily_hours={'2026-10-10':{'saturday':4},'2026-10-11':{'sunday':3}})
