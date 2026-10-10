@@ -3,7 +3,7 @@ import {Link} from 'react-router-dom';
 import api from '../../lib/api';
 import './payrun.css';
 import {payRunSummary,money} from './payRunAdapter';
-export default function PayRunEmployee({companyLabel,periodEnding,employees,row,calculation,sheet,week,employer:sealedEmployer,checkedCount,busy,locked,onSelect,onPatch,onDayPatch,onEarnings,dailyTotals,onSaveDraft,onMarkChecked,preparationUrl}) {
+export default function PayRunEmployee({companySelector,companyLabel,periodEnding,employees,row,calculation,sheet,week,employer:sealedEmployer,checkedCount,busy,locked,onSelect,onPatch,onDayPatch,onEarnings,dailyTotals,onSaveDraft,onMarkChecked,preparationUrl}) {
  const [search,setSearch]=useState('');
  const [day,setDay]=useState('');
  const days=Array.from({length:7},(_,i)=>{const d=new Date(week+'T12:00:00');d.setDate(d.getDate()+i);return {date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,label:d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})};});
@@ -36,6 +36,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
 
           <header className="pr-header">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {companySelector}
               <div className="pr-overline">{companyLabel} · Week ending {periodEnding}</div>
               <h1 className="pr-name">{emp.name}</h1>
               <div className="pr-meta">Employee {idx + 1} of {list.length} · Base rate {money(emp.baseRate)}/h · Award: {emp.award}</div>
