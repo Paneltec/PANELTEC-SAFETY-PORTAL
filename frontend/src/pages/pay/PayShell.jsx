@@ -25,9 +25,9 @@ const TABS = [
   {to:'/app/pay/reports',label:'Pay reports'},
   {to:'/app/pay/super',label:'Pay super'},
   {to:'/app/pay/employees',label:'Employee settings'},
+  {to:'/app/pay/award-rates',label:'Award rates'},
   {to:'/app/pay/providers',label:'Provider connection settings'},
   {to:'/app/pay/settings',label:'Settings'},
-  {to:'/app/pay/award-rates',label:'Award rates'},
   {to:'/app/pay/access',label:'Manage access'},
 ];
 
@@ -103,7 +103,7 @@ export default function PayShell() {
             </div>
             <div className="ml-auto hidden sm:block text-xs text-indigo-200">Weekly pay · payslips · reports</div>
           </div>
-          <nav className="mt-4 flex gap-1 overflow-x-auto" data-testid="pay-tabs">
+          <nav className="mt-4 flex flex-wrap gap-1" data-testid="pay-tabs">
             {TABS.map((t) => {const active=t.to==='/app/pay'?['/app/pay','/app/pay/payroll'].includes(location.pathname):location.pathname===t.to;return (
               <Link onClick={e=>{if(!window.dispatchEvent(new Event("payroll:navigate",{cancelable:true})))e.preventDefault();}} key={t.to} to={t.to+(['/app/pay/reports','/app/pay/super'].includes(t.to)&&week?`?week=${week}`:'')}
                 className={`whitespace-nowrap rounded-t-lg px-4 py-2 text-sm font-semibold transition ${active ? 'bg-white' : 'text-indigo-100 hover:bg-white/10'}`}
