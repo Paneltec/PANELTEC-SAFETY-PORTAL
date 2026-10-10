@@ -7,7 +7,7 @@ require a reviewed manual withholding amount; never approximate annual tax.
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
 
-RULE_VERSION = "AU-weekly-2026-07-01-v1"
+RULE_VERSION = "AU-weekly-2026-07-01-v2"
 TAX_SOURCE = "https://www.legislation.gov.au/F2026L00716/asmade/text"
 SOURCES = [
     {"label": "ATO weekly PAYG formulas (Schedule 1)", "url": TAX_SOURCE},
@@ -142,14 +142,28 @@ def calculate_line(profile, entry, rules, payday):
         if tax > gross or tax + deductions > gross + reimbursements:
             issues.append("Withholding and deductions exceed available pay")
     net = None if tax is None else rounded(gross-tax-deductions+reimbursements)
-    # QE must be reviewed explicitly: eligibility, salary sacrifice, loading,
-    # allowances and the annual contribution base cannot be inferred from hours.
+    # A stored amount remains an explicit override. Otherwise derive QE from
+    # supported ordinary earnings, never from gross (which includes overtime).
     qe = entry.get("qualifying_earnings")
-    super_amount = None
-    if qe is None or not entry.get("super_reviewed"):
+    super_mode = "manual" if qe is not None else "automatic"
+    super_issues = []
+    if qe is None:
+        qe = sum(earnings[k] for k in ("ordinary_pay", "annual_pay", "personal_pay", "public_holiday_pay", "leave_loading"))
+        penalty_hours = h["night"] + h["holiday_work"]
+        if penalty_ordinary == penalty_hours:
+            qe += earnings["night_pay"] + earnings["holiday_work_pay"]
+        elif penalty_ordinary:
+            super_issues.append("Confirm qualifying earnings for mixed ordinary and overtime penalty hours")
+        if earnings["taxable_allowances"] or earnings["configured_allowances"] or earnings["meal_allowance_pay"]:
+            super_issues.append("Confirm qualifying earnings including the super treatment of allowances")
+        if profile.get("employment_type", "unconfirmed") in ("contractor", "unconfirmed"):
+            super_issues.append("Confirm super eligibility and qualifying earnings")
+    # Display the calculated amount while reviewing, without silently approving
+    # eligibility, leave-loading exceptions or the contribution cap.
+    super_amount = None if super_issues else rounded(dec(qe)*dec(rules["super_percent"])/100)
+    issues.extend(super_issues)
+    if not entry.get("super_reviewed"):
         issues.append("Review super eligibility, qualifying earnings and contribution cap")
-    else:
-        super_amount = rounded(dec(qe)*dec(rules["super_percent"])/100)
     accrue = paid_ordinary if not casual else Decimal(0)
     annual_accrued = rounded(accrue*dec(profile.get("annual_weeks", 4))/52, "0.000001")
     personal_accrued = rounded(accrue*dec(profile.get("personal_weeks", 2))/52, "0.000001")
@@ -170,6 +184,7 @@ def calculate_line(profile, entry, rules, payday):
             "applied_rates":{k:float(v) for k,v in rates.items()}, "allowance_lines":allowance_lines,
             "gross":float(rounded(gross)), "payg":None if tax is None else float(tax),
             "net":None if net is None else float(net), "super":None if super_amount is None else float(super_amount),
+            "super_mode":super_mode, "super_issues":super_issues, "qualifying_earnings":None if super_issues else float(rounded(qe)),
             "annual_accrued":float(annual_accrued), "personal_accrued":float(personal_accrued),
             "annual_base_value":None if annual_value is None else float(annual_value),
             "reimbursements":float(reimbursements), "deductions":float(deductions),

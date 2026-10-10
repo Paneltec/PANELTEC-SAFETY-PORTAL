@@ -36,8 +36,32 @@ class PayrollEngineTests(unittest.TestCase):
         self.profile['tax_declaration_reviewed']=False
         self.entry.update(qualifying_earnings=None,opening_annual=None)
         r=self.line()
-        self.assertIsNone(r['payg']); self.assertIsNone(r['net']); self.assertIsNone(r['super'])
+        self.assertIsNone(r['payg']); self.assertIsNone(r['net']); self.assertEqual(r['super'],159.6)
         self.assertIsNone(r['annual_closing']);self.assertFalse(r['review_ready'])
+    def test_automatic_super_updates_without_including_overtime(self):
+        self.entry.update(qualifying_earnings=None,super_reviewed=False)
+        self.assertEqual(self.line()['super'],159.6)
+        self.assertFalse(self.line()['review_ready'])
+        self.entry.update(ordinary=30,annual=8,ot1=20)
+        self.assertEqual(self.line()['super'],159.6)
+        self.entry.update(ordinary=20)
+        self.assertEqual(self.line()['super'],117.6)
+
+    def test_allowances_need_super_treatment(self):
+        self.entry.update(qualifying_earnings=None,taxable_allowances=25)
+        self.assertIsNone(self.line()['super'])
+        self.entry['qualifying_earnings']=1355
+        self.assertEqual(self.line()['super'],162.6)
+
+    def test_zero_override_preserved(self):
+        self.entry.update(ordinary=10,qualifying_earnings=0)
+        self.assertEqual(self.line()['super'],0)
+        self.assertEqual(self.line()['super_mode'],'manual')
+
+    def test_mixed_penalty_hours_not_guessed(self):
+        self.entry.update(qualifying_earnings=None,night=4,holiday_work=4,penalty_ordinary=4)
+        self.assertIsNone(self.line()['super'])
+
     def test_manual_needs_evidence(self):
         self.profile['tax_mode']='manual';self.entry['manual_payg']=300
         self.assertIsNone(self.line()['payg'])

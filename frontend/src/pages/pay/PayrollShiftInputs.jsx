@@ -3,7 +3,7 @@ import React from 'react';
 import DateField from './DateField';
 const input='border rounded p-2 w-full';
 export default function PayrollShiftInputs({row,source,week,onChange}){
- const change=shifts=>onChange({...row,shifts,entry:{...row.entry,hours_reviewed:false,super_reviewed:false}});
+ const change=shifts=>onChange({...row,shifts,worked_hours_override:false,entry:{...row.entry,hours_reviewed:false,super_reviewed:false}});
  const patch=(i,k,v)=>change(row.shifts.map((s,n)=>n===i?{...s,[k]:v}:s));
  const add=()=>change([...(row.shifts||[]),{date:week,start:'07:00',finish:'15:06',break_minutes:30,break_start:'12:00',next_day:false,public_holiday:false,replacement_day_shift:false}]);
  const load=()=>{if(row.shifts?.length&&!window.confirm('Replace these shift entries with submitted phone times?'))return;change((source?.days||[]).filter(d=>d.kind==='work').flatMap(d=>(d.segments?.length?d.segments:[d]).map(s=>({date:d.date,start:s.start||'',finish:s.finish||'',break_minutes:s.break_minutes||0,break_start:s.break_start||null,next_day:false,public_holiday:false,replacement_day_shift:false}))));};

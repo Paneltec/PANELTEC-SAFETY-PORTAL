@@ -96,6 +96,27 @@ class PayrollAPITests(unittest.TestCase):
                 'conditions_reviewed':True,'tax_mode':'resident_threshold','tax_declaration_reviewed':True},
             'entry':{'ordinary':38,'qualifying_earnings':1330,'super_reviewed':True,'hours_reviewed':True,'opening_annual':152,'opening_personal':76}}]}
     def save(self,reviewed=False):return client.put('/payroll/workbench/2026-10-05',json={**self.body,'reviewed':reviewed})
+    def test_direct_pay_adjustments_survive_save_and_reload(self):
+        row=self.body['rows'][0]
+        row['shifts']=[{'date':'2026-10-05','start':'07:00','finish':'15:00','break_minutes':0}]
+        row['worked_hours_override']=True
+        row['entry'].update(ordinary=6,ot1=2,qualifying_earnings=None)
+        response=self.save()
+        self.assertEqual(response.status_code,200,response.text)
+        calculated=response.json()['report']['rows'][0]
+        self.assertEqual(calculated['entry']['ordinary'],6)
+        self.assertEqual(calculated['result']['super'],25.2)
+        loaded=client.get('/payroll/workbench/2026-10-05').json()
+        saved=loaded['worksheet']['rows'][0]
+        self.assertEqual(saved['shifts'][0]['start'],'07:00')
+        self.assertTrue(saved['worked_hours_override'])
+        self.assertEqual(loaded['report']['rows'][0]['result']['super'],25.2)
+        self.body=loaded['worksheet']
+        self.body['rows'][0]['worked_hours_override']=False
+        response=self.save()
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertNotEqual(response.json()['report']['rows'][0]['entry']['ordinary'],6)
+
     def test_worker_import_preserves_payroll(self):
         self.assertEqual(self.save(True).status_code,200)
         db.workers.rows[0].update(first_name='RENAMED',source='simpro',simpro_employee_id='42')

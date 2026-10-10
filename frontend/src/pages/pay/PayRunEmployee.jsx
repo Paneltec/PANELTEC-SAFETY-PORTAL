@@ -12,13 +12,13 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
  useEffect(()=>{if(!extraCodes.length)return;let active=true;api.get('/payroll/employee-records/configuration/catalog/pay-categories').then(({data})=>{if(active){setCatalog(data.tables?.Export||[]);setCatalogError('');}}).catch(()=>{if(active)setCatalogError('Categories could not be loaded. Open Pay settings.');});return()=>{active=false;};},[extraCodes.length]);
  const list=employees,idx=list.findIndex(e=>e.id===row.worker_id),emp={...list[idx],baseRate:calculation?.applied_rates?.ordinary??row.profile.hourly_rate,award:row.profile.classification||'—'};
  const employer={name:sealedEmployer?.employer_name||context?.employer?.employer_name||'—',abn:sealedEmployer?.employer_abn||context?.employer?.employer_abn||'—'};
- const result=payRunSummary(row,calculation),confirmed=row.entry.hours_reviewed;
+ const result=payRunSummary(row,calculation),confirmed=row.entry.hours_reviewed&&row.entry.super_reviewed;
  const pct=list.length?Math.round(checkedCount/list.length*100):0;
  const goTo=i=>{if(!busy&&list[i])onSelect(list[i].id);};
  const onSearch=e=>setSearch(e.target.value);
  const matches=search.trim()?list.filter(p=>p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())):[];
  const fields={ordinaryHours:'ordinary',ot1Hours:'ot1',ot2Hours:'ot2',nightHours:'night',phWorkedHours:'holiday_work',annualLeaveHours:'annual',personalLeaveHours:'personal',paidPublicHolidayHours:'public_holiday',reimbursements:'reimbursements',meals:'meal_count'};
- const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null);const shiftLocked=row.shifts!=null&&['ordinary','ot1','ot2','night','holiday_work','meal_count'].includes(k);return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':row.entry[k]??''} disabled={busy||locked||pending||shiftLocked} onChange={e=>onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
+ const field=(id,label,key)=>{const k=fields[key],pending=!k||(key==='meals'&&sheet.rules.meal_allowance==null);return <div className="pr-f"><label htmlFor={id}>{label}</label><input id={id} type={pending?'text':'number'} min="0" step={key==='meals'?'1':'any'} value={pending?'':row.entry[k]??''} disabled={busy||locked||pending} onChange={e=>onPatch(k,e.target.value===''?0:Number(e.target.value))}/></div>;};
  const categories=(row.profile.allowance_rates||[]).map(a=>({id:a.code,label:`${a.name} (${money(a.rate)} / unit)`}));
  const inputs={otherEarnings:extraCodes.map((code,i)=>({key:i,categoryId:code,value:row.entry.allowance_units?.[code]??0}))};
  const setExtras=fn=>{const updated=fn(inputs.otherEarnings);setExtraCodes(updated.map(x=>x.categoryId));onPatch('allowance_units',Object.fromEntries(updated.filter(x=>x.categoryId).map(x=>[x.categoryId,Number(x.value)||0])));};
@@ -126,6 +126,8 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
               <div className="pr-row"><span>Leave + loading</span><span>{money(result.leaveAndLoading)}</span></div>
               <div className="pr-row"><span>Allowances</span><span>{money(result.allowances)}</span></div>
               <div className="pr-row"><span>Super ({sheet.rules.super_percent}%)</span><span>{money(result.super)}</span></div>
+              <details className="pr-super-adjust"><summary>Adjust super</summary><label>Qualifying earnings $<input aria-label="Super qualifying earnings override" type="number" min="0" step="0.01" disabled={busy||locked} placeholder={calculation?.qualifying_earnings==null?'Automatic':String(calculation.qualifying_earnings)} value={row.entry.qualifying_earnings??''} onChange={e=>onPatch('qualifying_earnings',e.target.value===''?null:Number(e.target.value))}/></label><button type="button" disabled={busy||locked||row.entry.qualifying_earnings==null} onClick={()=>onPatch('qualifying_earnings',null)}>Use automatic</button><small>Override for eligibility, allowance treatment, leave loading or contribution cap.</small></details>
+              {calculation?.super_issues?.length>0&&<small>Super adjustment required</small>}
               <div className="pr-grp">Tax &amp; reimbursements</div>
               <div className="pr-row"><span>PAYG withholding</span><span>{money(result.payg)}</span></div>
               <div className="pr-row"><span>Reimbursements</span><span>{money(result.reimbursements)}</span></div>
@@ -148,7 +150,7 @@ export default function PayRunEmployee({companyLabel,periodEnding,employees,row,
             </div>
             <label className="pr-confirm">
               <input type="checkbox" disabled={busy||locked} checked={confirmed} onChange={(e) => onPatch('hours_reviewed',e.target.checked)} />
-              Hours, leave and allowances match approved timesheets
+              Pay and super checked
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" className="pr-btn-ghost" disabled={busy||locked} onClick={onSaveDraft}>Save draft</button>

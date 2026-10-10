@@ -122,6 +122,7 @@ class LeaveAllocation(Strict):
     hours: float = Field(gt=0, le=168, allow_inf_nan=False)
 
 class Row(Strict):
+    worked_hours_override: bool = False
     shifts: list[Shift] | None = Field(None,max_length=40)
     adjustment_reason: str = Field("", max_length=1000)
     worker_id: str = Field(min_length=1, max_length=100)
@@ -246,7 +247,7 @@ def report(body, names):
             if r.shifts or r.leave_sources or r.timesheet_fingerprint or r.entry.annual or r.entry.personal:raise HTTPException(422,'Out-of-cycle runs use extra amounts only; do not import timesheets or leave already allocated to the weekly run')
             if r.profile.tax_mode!='manual':raise HTTPException(422,'Out-of-cycle payments require reviewed manual PAYG for the additional payment')
         shift_issue=None
-        if r.shifts is not None:
+        if r.shifts is not None and not r.worked_hours_override:
             from payroll_shift_rules import calculate_shifts
             try:
                 totals=calculate_shifts([v.model_dump(mode="json") for v in r.shifts],body.rules.model_dump())
