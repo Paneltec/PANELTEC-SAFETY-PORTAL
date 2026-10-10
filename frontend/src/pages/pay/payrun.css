@@ -52,7 +52,7 @@
 .pr-nav { display: flex; flex-direction: column; gap: 8px; min-width: 280px; flex: 0 1 560px; }
 .pr-progress-label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
 .pr-progress { height: 10px; border-radius: 6px; background: var(--pr-button-on-bg); border: 1px solid var(--pr-line-on-bg); overflow: hidden; }
-.pr-progress > div { height: 100%; background: var(--pr-green); }
+.pr-progress > div { height: 100%; min-width: 8px; background: var(--pr-green); }
 .pr-nav-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .pr-search { flex: 1 1 160px; position: relative; display: flex; align-items: center; }
 .pr-search svg { position: absolute; left: 12px; pointer-events: none; }
