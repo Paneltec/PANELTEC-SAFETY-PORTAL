@@ -59,22 +59,6 @@ const CLUSTER_ORDER = [
   'settings',
 ];
 
-// v58.13.132dd — Mobile App section. 10 sub-clusters rebuilt from
-// the read-only audit of `mobile/app/**/*.tsx` after `.132cz` replaced
-// the 26-screen legacy UI with the new 8-screen mockup + 7-tab bar.
-const MOBILE_SUB_CLUSTER_ORDER = [
-  'mobile_auth',
-  'mobile_tabs',
-  'mobile_home',
-  'mobile_job',
-  'mobile_prestart',
-  'mobile_records',
-  'mobile_profile',
-  'mobile_askai',
-  'mobile_stub',
-  'mobile_visitor',
-];
-
 // v58.13.132bj — Cluster → Tailwind accent hue (locked per Stephen's
 // palette). Class names are written out in full so the JIT scanner
 // picks them up (dynamic template strings would be stripped in
@@ -559,66 +543,11 @@ export default function ProgramSchematicPage() {
             );
           })}
 
-          {/* v58.13.132cx — Mobile App section header + 20 mobile
-              sub-cluster cards. Rendered as a group under a bold
-              divider so the mobile band reads as its own subsystem
-              rather than an extension of the top-level clusters. */}
-          <div
-            className="mt-10 mb-4 flex items-center gap-3"
-            data-testid="schematic-mobile-section"
-          >
-            {(() => {
-              const Smart = LucideIcons.Smartphone || LucideIcons.Circle;
-              return (
-                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center ring-1 ring-teal-200">
-                  <Smart size={20} className="text-teal-700" strokeWidth={2.25} />
-                </div>
-              );
-            })()}
-            <div>
-              <h2
-                className="text-xl font-bold text-slate-900"
-                data-testid="schematic-mobile-section-title"
-              >
-                Mobile App
-              </h2>
-              <p
-                className="text-xs text-slate-500 mt-0.5"
-                data-testid="schematic-mobile-section-subtitle"
-              >
-                {MOBILE_SUB_CLUSTER_ORDER.length} sub-clusters · every
-                mobile screen grouped by navigation tab.
-              </p>
-            </div>
-          </div>
-
-          {MOBILE_SUB_CLUSTER_ORDER.map((subKey) => {
-            const cluster = clusterByKey[subKey];
-            if (!cluster) return null;
-            const clusterNodes = SCHEMATIC_NODES.filter(
-              (n) => n.cluster === subKey,
-            );
-            if (!clusterNodes.length) return null;
-            const accent = CLUSTER_ACCENT[subKey] || 'teal';
-            return (
-              <ClusterCard
-                key={cluster.key}
-                cluster={cluster}
-                accent={accent}
-                nodes={clusterNodes}
-                overlays={overlays}
-                editMode={editMode}
-                onSetStatus={onSetStatus}
-                onNavigate={onNavigate}
-              />
-            );
-          })}
         </div>
 
         <p className="text-xs text-slate-500 mt-8 mb-2">
-          {SCHEMATIC_NODES.length} modules across {CLUSTER_ORDER.length}{' '}
-          top-level clusters + {MOBILE_SUB_CLUSTER_ORDER.length} Mobile
-          sub-clusters. Grid adapts 1→2→3→4 columns from mobile to desktop.
+          {SCHEMATIC_NODES.filter((node) => CLUSTER_ORDER.includes(node.cluster)).length} modules across {CLUSTER_ORDER.length}{' '}
+          clusters. Grid adapts 1→2→3→4 columns from mobile to desktop.
         </p>
       </div>
     </div>
