@@ -14,9 +14,10 @@ Zero DB touch, zero HTTP calls — pure regex over source files.
 """
 from __future__ import annotations
 import re
+from urllib.parse import urlsplit
 from pathlib import Path
 
-_FRONTEND = Path("/app/frontend/src")
+_FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
 _SCHEMATIC = _FRONTEND / "lib" / "programSchematic.js"
 _APP_JS = _FRONTEND / "App.js"
 
@@ -38,54 +39,23 @@ def _extract_schematic_routes() -> list[str]:
 
 
 def _extract_app_routes() -> set[str]:
-    """Enumerate every fully-qualified path served by App.js.
-
-    Handles two shapes:
-      * Top-level  <Route path="/login" ...> → returned verbatim.
-      * Nested     <Route path="settings/x" ...> under the
-        `<Route path="/app" ...>` layout → returned as `/app/settings/x`.
-
-    Wildcard `*` and index routes are ignored — a node can't legitimately
-    point at those.
-    """
-    src = _APP_JS.read_text(encoding="utf-8")
-
-    routes: set[str] = set()
-
-    # Find every `<Route path="..."` occurrence and its position, then
-    # split into "top-level" vs "nested under /app" using the position
-    # of the `<Route path="/app"` mount and its closing `</Route>` /
-    # self-close boundary.
-    layout_mount = re.search(r'<Route\s+path="/app"[^>]*>', src)
-    if not layout_mount:
-        raise AssertionError("Could not locate the `/app` layout mount in App.js")
-    layout_start = layout_mount.end()
-    # The layout block closes at the FIRST `</Route>` following the
-    # mount that is NOT inside a nested `<Route>` — App.js is flat
-    # (no grand-children), so a simple search suffices.
-    layout_close = src.find("</Route>", layout_start)
-    if layout_close == -1:
-        raise AssertionError("Could not locate the closing `</Route>` for `/app`")
-
-    nested_block = src[layout_start:layout_close]
-    outside_block = src[:layout_mount.start()] + src[layout_close:]
-
-    route_re = re.compile(r'<Route\s+path="([^"]+)"')
-
-    for m in route_re.finditer(outside_block):
-        p = m.group(1)
-        if p == "*" or p == "/app":
+    """Collect nested routes, excluding commented JSX routes."""
+    src = re.sub(r"\{/\*.*?\*/\}", "", _APP_JS.read_text(encoding="utf-8"), flags=re.S)
+    routes, parents = set(), []
+    tags = re.finditer(r'<Route\b.*?element=\{.*?\}\s*/?>|<Route\b[^>]*>|</Route\s*>', src, re.S)
+    for match in tags:
+        tag = match.group()
+        if tag.startswith("</"):
+            parents.pop()
             continue
-        routes.add(p)
-
-    for m in route_re.finditer(nested_block):
-        p = m.group(1)
-        if p == "*":
-            continue
-        # Nested paths are relative — strip any leading slash defensively.
-        p = p.lstrip("/")
-        routes.add(f"{_APP_LAYOUT_MOUNT}/{p}")
-
+        path = re.search(r'\bpath="([^"]+)"', tag)
+        parent = parents[-1] if parents else ""
+        part = path.group(1) if path else ""
+        full = part if part.startswith("/") else parent.rstrip("/") + "/" + part
+        if path and "*" not in full:
+            routes.add(full)
+        if not tag.endswith("/>"):
+            parents.append(full.rstrip("/"))
     return routes
 
 
@@ -98,6 +68,7 @@ def _pattern_matches(route: str, patterns: set[str]) -> bool:
     concrete `/app/contractors/abc123` — implemented for defensive
     completeness even though no current node needs it.
     """
+    route = urlsplit(route).path
     if route in patterns:
         return True
     for pat in patterns:

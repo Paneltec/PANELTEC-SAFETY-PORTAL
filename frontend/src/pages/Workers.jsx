@@ -2122,7 +2122,7 @@ export default function Workers() {
   const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState(new Set());
   // Phase 3.11 — Directory + Inductions Matrix tabs.
-  const [tab, setTab] = useState('directory');
+  const [tab, setTab] = useState(sp.get('view') === 'inductions' ? 'matrix' : 'directory');
   // Per-worker induction-status chip map (loaded once with the matrix call).
   const [chipByWorker, setChipByWorker] = useState({});
   // v160.3.6 — Per-worker Simpro-ZIP application status. Powers the

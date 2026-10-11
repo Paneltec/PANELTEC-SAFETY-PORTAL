@@ -53,35 +53,35 @@ export const SCHEMATIC_NODES = [
   // ── OVERVIEW ──
   { id: 'overview-dash', cluster: 'overview', label: 'Dashboard',       icon: 'LayoutDashboard', route: '/app/dashboard',              x: 810,  y: 355 },
   { id: 'overview-ai',   cluster: 'overview', label: 'Ask Intelligence',icon: 'Sparkles',        route: '/app/ask',                    x: 940,  y: 355 },
-  { id: 'overview-docs', cluster: 'overview', label: 'Document Library',icon: 'FolderOpen',      route: '/app/documents',              x: 1070, y: 355 },
+  { id: 'overview-docs', cluster: 'overview', label: 'Document Library',icon: 'FolderOpen',      route: '/app/document-library',              x: 1070, y: 355 },
   { id: 'overview-out',  cluster: 'overview', label: 'Outbox',          icon: 'Mail',            route: '/app/outbox',                 x: 1195, y: 355 },
 
   // ── CAPTURE ──
-  { id: 'capture-ai-swms',    cluster: 'capture', label: 'AI SWMS',     icon: 'FileText',       route: '/app/capture/ai-swms',           x: 1400, y: 575 },
-  { id: 'capture-prestarts',  cluster: 'capture', label: 'Pre-Starts',  icon: 'CheckSquare',    route: '/app/capture/pre-starts',        x: 1400, y: 645 },
-  { id: 'capture-site-diary', cluster: 'capture', label: 'Site Diary',  icon: 'BookOpen',       route: '/app/capture/site-diary',        x: 1400, y: 715 },
-  { id: 'capture-hazards',    cluster: 'capture', label: 'Hazards',     icon: 'AlertTriangle',  route: '/app/capture/hazards',           x: 1400, y: 785 },
-  { id: 'capture-incidents',  cluster: 'capture', label: 'Incidents',   icon: 'Siren',          route: '/app/capture/incidents',         x: 1400, y: 855 },
-  { id: 'capture-inspections',cluster: 'capture', label: 'Inspections', icon: 'ClipboardList',  route: '/app/capture/inspections',       x: 1400, y: 925 },
+  { id: 'capture-ai-swms',    cluster: 'capture', label: 'AI SWMS',     icon: 'FileText',       route: '/app/swms',           x: 1400, y: 575 },
+  { id: 'capture-prestarts',  cluster: 'capture', label: 'Pre-Starts',  icon: 'CheckSquare',    route: '/app/pre-starts',        x: 1400, y: 645 },
+  { id: 'capture-site-diary', cluster: 'capture', label: 'Site Diary',  icon: 'BookOpen',       route: '/app/site-diary',        x: 1400, y: 715 },
+  { id: 'capture-hazards',    cluster: 'capture', label: 'Hazards',     icon: 'AlertTriangle',  route: '/app/incidents?type=hazard',           x: 1400, y: 785 },
+  { id: 'capture-incidents',  cluster: 'capture', label: 'Incidents',   icon: 'Siren',          route: '/app/incidents',         x: 1400, y: 855 },
+  { id: 'capture-inspections',cluster: 'capture', label: 'Inspections', icon: 'ClipboardList',  route: '/app/inspections',       x: 1400, y: 925 },
 
   // ── COMPLIANCE ──
-  { id: 'compliance-suppliers', cluster: 'compliance', label: 'Suppliers',       icon: 'Users',       route: '/app/compliance/suppliers',        x: 1400, y: 1050 },
-  { id: 'compliance-renewals',  cluster: 'compliance', label: 'Renewal Links',   icon: 'Link2',       route: '/app/compliance/renewals',         x: 1400, y: 1120 },
-  { id: 'compliance-library',   cluster: 'compliance', label: 'Document Library',icon: 'FolderOpen',  route: '/app/compliance/library',          x: 1400, y: 1190 },
-  { id: 'compliance-audits',    cluster: 'compliance', label: 'Audit Exports',   icon: 'FileDown',    route: '/app/compliance/audits',           x: 1400, y: 1260 },
-  { id: 'compliance-inductions',cluster: 'compliance', label: 'Inductions',      icon: 'GraduationCap',route: '/app/compliance/inductions',      x: 1400, y: 1330 },
+  { id: 'compliance-suppliers', cluster: 'compliance', label: 'Suppliers',       icon: 'Users',       route: '/app/suppliers',        x: 1400, y: 1050 },
+  { id: 'compliance-renewals',  cluster: 'compliance', label: 'Renewal Links',   icon: 'Link2',       route: '/app/renewals',         x: 1400, y: 1120 },
+  { id: 'compliance-library',   cluster: 'compliance', label: 'Document Library',icon: 'FolderOpen',  route: '/app/document-library',          x: 1400, y: 1190 },
+  { id: 'compliance-audits',    cluster: 'compliance', label: 'Audit Exports',   icon: 'FileDown',    route: '/app/audit-exports',           x: 1400, y: 1260 },
+  { id: 'compliance-inductions',cluster: 'compliance', label: 'Inductions',      icon: 'GraduationCap',route: '/app/settings/workers?view=inductions',      x: 1400, y: 1330 },
 
   // ── REGISTER ──
-  { id: 'register-workers',  cluster: 'register', label: 'Workers',   icon: 'Users',      route: '/app/register/workers',   x: 810,  y: 1360 },
-  { id: 'register-vehicles', cluster: 'register', label: 'Vehicles',  icon: 'Truck',      route: '/app/register/vehicles',  x: 940,  y: 1360 },
-  { id: 'register-sites',    cluster: 'register', label: 'Sites',     icon: 'MapPin',     route: '/app/register/sites',     x: 1070, y: 1360 },
-  { id: 'register-forms',    cluster: 'register', label: 'Forms',     icon: 'FileText',   route: '/app/register/forms',     x: 1195, y: 1360 },
+  { id: 'register-workers',  cluster: 'register', label: 'Workers',   icon: 'Users',      route: '/app/settings/workers',   x: 810,  y: 1360 },
+  { id: 'register-vehicles', cluster: 'register', label: 'Vehicles',  icon: 'Truck',      route: '/app/fleet',  x: 940,  y: 1360 },
+  { id: 'register-sites',    cluster: 'register', label: 'Sites',     icon: 'MapPin',     route: '/app/sites',     x: 1070, y: 1360 },
+  { id: 'register-forms',    cluster: 'register', label: 'Forms',     icon: 'FileText',   route: '/app/forms',     x: 1195, y: 1360 },
 
   // ── SETTINGS · ACCESS ──
   { id: 'settings-org',     cluster: 'settings', sub: 'settings-access', label: 'Organisation',    icon: 'Building2',   route: '/app/settings/org',              x: 130, y: 640 },
-  { id: 'settings-ws',      cluster: 'settings', sub: 'settings-access', label: 'Workspaces',      icon: 'Layers',      route: '/app/settings/workspaces',       x: 380, y: 640 },
+  { id: 'settings-ws',      cluster: 'settings', sub: 'settings-access', label: 'Workspaces',      icon: 'Layers',      route: '/app/sites',       x: 380, y: 640 },
   { id: 'settings-users',   cluster: 'settings', sub: 'settings-access', label: 'Users & Perms',   icon: 'UserCog',     route: '/app/settings/users',            x: 630, y: 640 },
-  { id: 'settings-roles',   cluster: 'settings', sub: 'settings-access', label: 'Roles Admin',     icon: 'ShieldCog',   route: '/app/settings/roles',            x: 880, y: 640 },
+  { id: 'settings-roles',   cluster: 'settings', sub: 'settings-access', label: 'Roles Admin',     icon: 'ShieldCog',   route: '/app/settings/users?tab=roles',            x: 880, y: 640 },
   { id: 'settings-presets', cluster: 'settings', sub: 'settings-access', label: 'Perm Presets',    icon: 'KeyRound',    route: '/app/settings/permission-presets', x: 255, y: 820 },
   { id: 'settings-system',  cluster: 'settings', sub: 'settings-access', label: 'System',          icon: 'Server',      route: '/app/settings/system',           x: 505, y: 820 },
 
