@@ -4,7 +4,7 @@
 
 ## What changed
 
-Two small backend changes preserve the encrypted previous version when payroll employee settings or bank instructions change. This makes future changes traceable without putting the old values on screen. Existing missing history cannot be reconstructed by this fix. No pay calculations, rates, employee classifications or approved screens were changed. No payroll data or live phone/web payroll screens were read. Nothing deployed or merged.
+Two small backend changes preserve the encrypted previous version when payroll employee settings or bank instructions change. This makes future changes traceable without putting the old values on screen. Existing missing history cannot be reconstructed by this fix. No pay calculations, rates, employee classifications or approved screens were changed. No payroll data or live phone/web payroll screens were read. Stephen authorised release on 12 October after a verified restore point. Release status is recorded in the PR.
 
 ## What is supported — and what is not yet confirmed
 
@@ -31,10 +31,10 @@ The phone app has timesheet and payslip screens. It needs retry handling and a d
 
 ## Validation and next round
 
-272 baseline and 274 post-change synthetic backend tests passed; 21 web payroll tests passed. Full live-dependent backend suite was deliberately not run. Lint/audit toolchain and native phone dependencies remain blocked; see AUDIT_LOG.md. Stop after Round 1 until isolated validation can be completed. The remaining High findings are still open.
+272 baseline and 274 post-change synthetic backend tests passed; 21 web payroll tests passed. Full live-dependent backend suite was deliberately not run. Payroll lint now passes (one unused-disable warning); isolated GitHub payroll checks pass after restoring omitted test dependencies. Dependency vulnerability scans, the full live-dependent suite and native phone validation remain incomplete; see AUDIT_LOG.md. The remaining High findings are still open.
 
 Files: [Map](PAYROLL_MAP.md), [Audit](AUDIT_LOG.md), [Checklist additions](CHECKLIST_ADDITIONS.md). Pull-request link added after creation.
 
 Web production build attempted with dotenv loading disabled and test.invalid backend: failed because existing local dependencies cannot resolve react-pdf (Dropbox viewer import). No package installation attempted. This is unrelated to the two backend changes.
 
-Round 1 draft PR: https://github.com/Paneltec/PANELTEC-SAFETY-PORTAL/pull/10
+Round 1 PR: https://github.com/Paneltec/PANELTEC-SAFETY-PORTAL/pull/10
