@@ -36,3 +36,5 @@ The phone app has timesheet and payslip screens. It needs retry handling and a d
 Files: [Map](PAYROLL_MAP.md), [Audit](AUDIT_LOG.md), [Checklist additions](CHECKLIST_ADDITIONS.md). Pull-request link added after creation.
 
 Web production build attempted with dotenv loading disabled and test.invalid backend: failed because existing local dependencies cannot resolve react-pdf (Dropbox viewer import). No package installation attempted. This is unrelated to the two backend changes.
+
+Round 1 draft PR: https://github.com/Paneltec/PANELTEC-SAFETY-PORTAL/pull/10
