@@ -76,9 +76,10 @@ def masked(doc):
         **{k:value[k] for k in ('user_name','remitter','direct_entry_id','description','reference','balancing_entry') if k in value}}
 
 async def put_bank(key,body,user):
+    previous=await db.pay_bank_details.find_one({'_id':key,'revision':body.revision})
     value=body.model_dump(exclude={'revision'})
     encrypted=cipher().encrypt(json.dumps(value).encode()).decode()
-    audit={'at':now_iso(),'by':user['id'],'revision':body.revision+1,'action':'bank-details-replaced'}
+    audit={'at':now_iso(),'by':user['id'],'revision':body.revision+1,'action':'bank-details-replaced','previous_encrypted':previous.get('encrypted') if previous else None}
     try:
         r=await db.pay_bank_details.update_one({'_id':key,'revision':body.revision},
             {'$set':{'encrypted':encrypted,'revision':body.revision+1,'updated_at':audit['at'],'org_id':user['org_id']},

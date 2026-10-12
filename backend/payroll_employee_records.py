@@ -74,7 +74,7 @@ async def save(worker_id:str,body:EmployeeRecord,user=Depends(require_permission
             'encrypted':cipher().encrypt(json.dumps(data).encode()).decode()}
     try:
         result=await db.pay_employee_records.update_one({'_id':key,'revision':body.revision},
-            {'$set':record,'$push':{'audit':{'at':record['updated_at'],'by':user['id'],'revision':record['revision'],'previous_encrypted':old.get('encrypted') if old and opening!=previous.get('opening_balances') else None}}},upsert=body.revision==0)
+            {'$set':record,'$push':{'audit':{'at':record['updated_at'],'by':user['id'],'revision':record['revision'],'previous_encrypted':old.get('encrypted') if old else None}}},upsert=body.revision==0)
     except DuplicateKeyError:raise HTTPException(409,'Employee payroll settings changed; reload first')
     if not result.matched_count and not result.upserted_id:raise HTTPException(409,'Employee payroll settings changed; reload first')
     return public(record)
