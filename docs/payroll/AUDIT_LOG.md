@@ -110,3 +110,5 @@ Web production build attempted with dotenv loading disabled and test.invalid bac
 ## Authorised continuation — 12 October 2026
 
 Stephen authorised a restore point and continuation. Pre-change code tagged restore/payroll-audit-2026-10-12-before at ef5c3652; a fresh Umbrel backup was created at 11:45 Hobart (NAS delivery separately verified). CI failed because python-multipart, already pinned in backend requirements, was omitted from the isolated CI dependency list. Added that same pin; no runtime dependency upgrade. Registered the existing react-hooks plugin in the standalone lint config to resolve its missing-rule failure. No maths or payroll data changes.
+
+Restore verification: backup UI confirms 793.3 MB created on Umbrel at 11:45 and successfully copied to Office UGREEN tower at 11:46 on 12 October 2026. No backup contents opened. Payroll lint now exits 0 (one pre-existing unused-disable warning). CI also needed the existing openpyxl==3.1.5 requirement for synthetic spreadsheet import tests; added its matching pin.
