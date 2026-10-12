@@ -106,3 +106,7 @@ Pick two safe fixes only: R1-SEC-01 and R1-SEC-02, each with synthetic regressio
 - Full backend test requirement cannot be satisfied without an isolated disposable environment. Stop after Round 1 under section 6: safe validation is blocked by the test-only hard rule. High findings remain; this is NOT a clean audit or production approval. Request a disposable test environment before Round 2. No deployment or merge authorised by this audit brief; submit PR for approval.
 
 Web production build attempted with dotenv loading disabled and test.invalid backend: failed because existing local dependencies cannot resolve react-pdf (Dropbox viewer import). No package installation attempted. This is unrelated to the two backend changes.
+
+## Authorised continuation — 12 October 2026
+
+Stephen authorised a restore point and continuation. Pre-change code tagged restore/payroll-audit-2026-10-12-before at ef5c3652; a fresh Umbrel backup was created at 11:45 Hobart (NAS delivery separately verified). CI failed because python-multipart, already pinned in backend requirements, was omitted from the isolated CI dependency list. Added that same pin; no runtime dependency upgrade. Registered the existing react-hooks plugin in the standalone lint config to resolve its missing-rule failure. No maths or payroll data changes.

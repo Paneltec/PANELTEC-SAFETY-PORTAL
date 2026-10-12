@@ -3,6 +3,7 @@
 // wired through webpack). Keeps our audit out of the app entrypoint.
 import globals from "globals";
 import reactPlugin from "eslint-plugin-react";
+import hooksPlugin from "eslint-plugin-react-hooks";
 export default [
   {
     files: ["src/**/*.{js,jsx}"],
@@ -17,7 +18,7 @@ export default [
         process: "readonly",
       },
     },
-    plugins: { react: reactPlugin },
+    plugins: { react: reactPlugin, "react-hooks": hooksPlugin },
     rules: {
       "no-undef": "error",
       "react/jsx-uses-vars": "error",
