@@ -419,6 +419,7 @@ export default function FormAssignmentsAdmin() {
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">Form Assignments</h1>
           <p className="text-[12px] text-slate-500">Workers see these forms when they scan a matching asset&apos;s QR code.</p>
         </div>
+        <Link to="/app/settings/workers?view=inductions" className="px-3 py-2 border border-slate-300 rounded-xl text-sm font-semibold">Inductions Matrix</Link>
         <div className="flex rounded-2xl border border-slate-300 overflow-hidden" data-testid="assignments-view-toggle">
           <button onClick={() => setView('pane')}
             className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold ${view === 'pane' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}

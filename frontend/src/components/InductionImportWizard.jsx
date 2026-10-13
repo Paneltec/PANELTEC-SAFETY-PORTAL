@@ -29,16 +29,21 @@ export default function InductionImportWizard({ onClose, onCommitted }) {
   useLockBodyScroll();
   const [step, setStep] = useState(1);
   const [url, setUrl] = useState('');
+  const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);
   const [rowSel, setRowSel] = useState({});   // {worker_id: true}
   const [accSel, setAccSel] = useState({});
 
   const fetchPreview = async () => {
-    if (!url.trim()) { toast.error('Paste an .xlsx URL first'); return; }
+    if (!file && !url.trim()) { toast.error('Choose an Excel file or paste its URL'); return; }
     setBusy(true);
     try {
-      const { data } = await api.post('/workers/inductions/import-xlsx', { url: url.trim() });
+      const form = new FormData();
+      if (file) form.append('file', file);
+      const { data } = file
+        ? await api.post('/workers/inductions/import-xlsx/upload', form)
+        : await api.post('/workers/inductions/import-xlsx', { url: url.trim() });
       setPreview(data);
       // Default-select every matched worker row + every matched access row.
       const r = {}; (data.inductions?.matched_rows || []).forEach((row) => { if (row.worker_id) r[row.worker_id] = true; });
@@ -71,8 +76,8 @@ export default function InductionImportWizard({ onClose, onCommitted }) {
         .filter((r) => accSel[r.worker_id])
         .map((r) => ({ worker_id: r.worker_id, vehicle: !!r.vehicle,
           building_key: !!r.building_key, gate_key: !!r.gate_key, extras: r.extras || '' }));
-      const { data } = await api.post('/workers/inductions/import-xlsx/commit', { inductions, access });
-      toast.success(`Imported · ${data.certifications.inserted} new · ${data.certifications.updated} updated · ${data.access.upserted} access rows`);
+      const { data } = await api.post('/workers/inductions/import-xlsx/commit', { inductions, access, columns: preview.inductions.columns });
+      toast.success(`Imported · ${data.certifications.inserted} new · ${data.certifications.updated} updated · ${data.certifications.newer_preserved || 0} newer records kept · ${data.access.upserted} access rows`);
       onCommitted?.();
       onClose?.();
     } catch (e) { toast.error(apiError(e)); }
@@ -86,10 +91,10 @@ export default function InductionImportWizard({ onClose, onCommitted }) {
         {/* header */}
         <div className="px-6 py-4 border-b border-slate-200 bg-[#f5f3ff] flex items-center justify-between">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#5b21b6]">Phase 3.11 · Import wizard</div>
+            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#5b21b6]">Import wizard</div>
             <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">Import inductions matrix</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Step {step} of 3 · {step === 1 ? 'Paste .xlsx URL' : step === 2 ? 'Review matches' : 'Commit'}
+              Step {step} of 3 · {step === 1 ? 'Choose Excel file' : step === 2 ? 'Review matches' : 'Commit'}
             </p>
           </div>
           <button onClick={onClose} data-testid="wizard-close"
@@ -101,12 +106,14 @@ export default function InductionImportWizard({ onClose, onCommitted }) {
           {step === 1 && (
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                Paste a public URL to your Excel inductions tracker (.xlsx). The first sheet should be
-                an inductions table with worker names in column A and certification columns across the top.
+                Upload your Excel induction matrix, or paste its URL. Names may be in one column or separate First name and Last name columns. Dates are imported as expiry dates. Blank cells leave existing records unchanged. Later expiry dates already in the app are kept.
                 A second sheet named &ldquo;Accessibilities&rdquo; with vehicle/key columns is optional.
               </p>
+              <label className="block text-sm font-medium">Excel file
+                <input type="file" accept=".xlsx" aria-label="Excel file" onChange={e => setFile(e.target.files?.[0] || null)} className="block mt-2" />
+              </label>
               <label className="block">
-                <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500">.xlsx URL</span>
+                <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Or .xlsx URL</span>
                 <input value={url} onChange={(e) => setUrl(e.target.value)}
                   data-testid="wizard-url-input" autoFocus
                   placeholder="https://…/Employee-Inductions.xlsx"
@@ -277,7 +284,7 @@ export default function InductionImportWizard({ onClose, onCommitted }) {
         <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
           <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-900">Cancel</button>
           {step === 1 && (
-            <button onClick={fetchPreview} disabled={busy || !url.trim()}
+            <button onClick={fetchPreview} disabled={busy || (!file && !url.trim())}
               data-testid="wizard-fetch"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-semibold hover:bg-blue-600 disabled:opacity-60">
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Fetch & preview
