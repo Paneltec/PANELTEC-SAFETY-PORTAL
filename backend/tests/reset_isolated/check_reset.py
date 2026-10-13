@@ -64,6 +64,13 @@ class Tests(unittest.IsolatedAsyncioTestCase):
   reset.db.pre_starts.rows.append({'_id':'new','org_id':'org-a'})
   await reset.run_reset(self.app,self.user,'job',ids)
   self.assertIn('new',[r['_id'] for r in reset.db.pre_starts.rows])
+ async def test_authorised_pay_run_archives_are_cleared_but_audit_stays(self):
+  reset.db.pay_run_archive.rows=[{'_id':'run-a','org_id':'org-a'},{'_id':'run-b','org_id':'org-b'}]
+  reset.db.audit_log.rows=[{'_id':'audit-a','org_id':'org-a'}]
+  await reset.run_reset(self.app,self.user,'job')
+  self.assertEqual([r['_id'] for r in reset.db.pay_run_archive.rows],['run-b'])
+  self.assertTrue(any(r.get('_id')=='audit-a' for r in reset.db.audit_log.rows))
+  self.assertTrue(any(r['collection']=='pay_run_archive' for r in reset.db.test_reset_archive.rows))
  async def test_missing_org_denied(self):
   with self.assertRaises(HTTPException):await reset.preview({'id':'admin'})
  async def test_wrong_confirmation_before_pin(self):

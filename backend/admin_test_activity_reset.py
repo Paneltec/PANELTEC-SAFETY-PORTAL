@@ -10,7 +10,7 @@ from admin_console_pin import _require_admin, unlock, UnlockIn
 router = APIRouter(prefix='/admin/test-activity-reset', tags=['test-activity-reset'])
 # Master data, credentials, audit trails, files, schedules and integrations are never targets.
 TARGETS = {
- 'pay_review_sheets':'Pay run worksheets', 'pay_periods':'Pay periods',
+ 'pay_run_archive':'Saved pay-run archives', 'pay_review_sheets':'Pay run worksheets', 'pay_periods':'Pay periods',
  'pay_payslip_batches':'Payslip batches', 'pay_payslip_delivery':'Payslip delivery activity',
  'pay_bank_exports':'Bank export activity', 'timesheet_entries':'Time entries',
  'leave_requests':'Leave requests', 'pre_starts':'Pre-starts',
@@ -19,7 +19,7 @@ TARGETS = {
  'daily_job_assignments':'Daily job assignments', 'site_visitors':'Site visitor activity',
  'asset_service_records':'Fleet service activity',
 }
-KEEP = 'Users, employees, access, settings, rates, integrations, sites, fleet assets, templates, SWMS, schedules, files, backups and audit/archive history'
+KEEP = 'Users, employees, access, settings, rates, integrations, sites, fleet assets, templates, SWMS, schedules, files, backups and audit history'
 def now(): return datetime.now(timezone.utc)
 def iso(): return now().isoformat()
 def scope(user):
@@ -43,7 +43,7 @@ async def preview(user:dict=Depends(_require_admin)):
  await db.test_reset_plans.insert_one(plan)
  return {'plan_id':plan['id'],'items':[{'collection':n,'label':TARGETS[n],'count':v} for n,v in amounts.items()],
          'total':sum(amounts.values()),'keeps':KEEP,
-         'warning':'Clears ALL listed activity for this organisation, across both companies, not only records named test. Archived history and stored files remain. Pause all data entry and integration imports first.'}
+         'warning':'Clears ALL listed activity for this organisation, across both companies, not only records named test. Audit history and stored files remain; saved pay-run archives are included in this reset. Pause all data entry and integration imports first.'}
 
 @router.get('/status')
 async def status(user:dict=Depends(_require_admin)):
