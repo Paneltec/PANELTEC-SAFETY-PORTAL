@@ -36,7 +36,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from db import db
@@ -193,12 +193,35 @@ async def import_xlsx_preview(body: ImportIn, user: dict = Depends(get_current_u
             raise HTTPException(400, f"Could not fetch xlsx ({r.status_code})")
         content = r.content
 
+    return await preview_workbook(content, user)
+
+
+@router.post("/import-xlsx/upload")
+async def import_xlsx_upload(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+        raise HTTPException(403, "Only admin/manager/HSEQ can import inductions")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Choose an .xlsx workbook")
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Workbook must be smaller than 10 MB")
+    return await preview_workbook(content, user)
+
+
+async def preview_workbook(content, user):
     try:
         import openpyxl
     except Exception:
         raise HTTPException(500, "openpyxl not installed")
 
-    wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    try:
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            if sum(i.file_size for i in archive.infolist()) > 50 * 1024 * 1024:
+                raise ValueError("Workbook is too large")
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception:
+        raise HTTPException(400, "Workbook could not be read or is too large")
     # Load workers once and build a fuzzy-name index.
     workers_idx: dict[str, dict] = {}
     async for w in db.workers.find(
@@ -207,22 +230,17 @@ async def import_xlsx_preview(body: ImportIn, user: dict = Depends(get_current_u
     ):
         full = w.get("name") or " ".join(filter(None, [w.get("first_name"), w.get("last_name")])).strip()
         if full:
-            workers_idx[_norm_name(full)] = w
+            workers_idx.setdefault(_norm_name(full), {})[w["id"]] = w
             # Also index "Last, First" and "First Last" rearrangements.
             last_first = f"{w.get('last_name','')} {w.get('first_name','')}".strip()
-            workers_idx[_norm_name(last_first)] = w
+            workers_idx.setdefault(_norm_name(last_first), {})[w["id"]] = w
 
     def match_worker(name_raw: str) -> Optional[dict]:
         k = _norm_name(name_raw)
         if not k: return None
-        if k in workers_idx: return workers_idx[k]
-        # Loose fuzzy: any worker whose full name shares ≥2 tokens with the input.
-        tokens = set(k.split())
-        if len(tokens) < 2: return None
-        for ik, w in workers_idx.items():
-            if len(set(ik.split()) & tokens) >= 2:
-                return w
-        return None
+        matches = workers_idx.get(k, {})
+        # Never guess between employees sharing parts of a name.
+        return next(iter(matches.values())) if len(matches) == 1 else None
 
     out: dict = {
         "sheets_present": wb.sheetnames,
@@ -238,22 +256,27 @@ async def import_xlsx_preview(body: ImportIn, user: dict = Depends(get_current_u
     if not rows:
         return out
 
-    # Find header row: pick the first row containing >= 3 non-empty cells.
-    header_i = next((i for i, r in enumerate(rows) if sum(1 for c in r if c) >= 3), 0)
+    # Prefer explicit name headings; title and legend rows are not headers.
+    name_headers = {"name", "worker", "worker name", "employee", "employee name", "first name"}
+    header_i = next((i for i, r in enumerate(rows) if r and _norm_name(str(r[0] or "")) in name_headers), None)
+    if header_i is None:
+        raise HTTPException(400, "No worker-name header found in the workbook")
     headers = [str(c).strip() if c is not None else "" for c in rows[header_i]]
+    split_names = len(headers) > 1 and _norm_name(headers[0]) == "first name" and _norm_name(headers[1]) in {"last name", "surname"}
+    first_data_column = 2 if split_names else 1
     cols = []
-    for i, h in enumerate(headers[1:], start=1):
+    for i, h in enumerate(headers[first_data_column:], start=first_data_column):
         if not h:
             continue
         cols.append({
             "index": i, "header": h,
             "column_key": _column_key(h),
-            "category": _category_for_header(h),
+            "category": "site_induction" if split_names else _category_for_header(h),
         })
     out["inductions"]["columns"] = cols
 
     for r_i, row in enumerate(rows[header_i + 1:], start=header_i + 2):
-        worker_name = (row[0] or "")
+        worker_name = " ".join(str(v).strip() for v in row[:first_data_column] if v is not None)
         if not str(worker_name).strip():
             continue
         worker = match_worker(str(worker_name))
@@ -346,7 +369,14 @@ class CommitAccessRow(BaseModel):
     extras: str = ""
 
 
+class ImportColumn(BaseModel):
+    column_key: str
+    header: str
+    category: str
+
+
 class CommitIn(BaseModel):
+    columns: list[ImportColumn] = []
     inductions: list[CommitRow] = []
     access: list[CommitAccessRow] = []
 
@@ -367,21 +397,43 @@ async def import_xlsx_commit(body: CommitIn, user: dict = Depends(get_current_us
     if user.get("role") not in {"admin", "manager", "hseq_lead"}:
         raise HTTPException(403, "Only admin/manager/HSEQ can commit inductions")
 
-    inserted = 0; updated = 0; skipped = 0
+    inserted = 0; updated = 0; skipped = 0; newer_preserved = 0
     access_upserts = 0
     org = user["org_id"]
+
+    # Validate every worker before the first write, including access rows.
+    for worker_id in {r.worker_id for r in [*body.inductions, *body.access]}:
+        if not await db.workers.find_one({"id": worker_id, "org_id": org, "deleted_at": None}):
+            raise HTTPException(400, "A selected worker no longer belongs to this organisation")
+    for row in body.inductions:
+        for cell in row.cells:
+            if cell.category not in {"site_induction", "competency", "license"}:
+                raise HTTPException(400, "Invalid induction category")
+            if cell.date:
+                try: date.fromisoformat(cell.date)
+                except ValueError: raise HTTPException(400, "Invalid expiry date")
+    for column in body.columns:
+        if column.category not in {"site_induction", "competency", "license"}:
+            raise HTTPException(400, "Invalid induction category")
+    for column in body.columns:
+        await db.induction_matrix_columns.update_one(
+            {"org_id": org, "column_key": column.column_key},
+            {"$setOnInsert": {"header": column.header, "category": column.category}}, upsert=True)
 
     for row in body.inductions:
         for cell in row.cells:
             # Skip cells with no information at all.
-            if not (cell.date or cell.not_held or cell.held):
+            if cell.confidence not in {"high", "medium"} or not (cell.date or cell.not_held or cell.held):
                 skipped += 1
                 continue
             existing = await db.worker_certifications.find_one(
                 {"org_id": org, "worker_id": row.worker_id,
                  "column_key": cell.column_key, "deleted_at": None},
-                {"_id": 0, "id": 1},
+                {"_id": 0, "id": 1, "expiry_date": 1},
             )
+            if existing and existing.get("expiry_date") and (not cell.date or existing["expiry_date"] > cell.date):
+                newer_preserved += 1
+                continue
             doc = {
                 "org_id": org, "worker_id": row.worker_id,
                 "name": cell.header,
@@ -397,7 +449,7 @@ async def import_xlsx_commit(body: CommitIn, user: dict = Depends(get_current_us
             }
             if existing:
                 await db.worker_certifications.update_one(
-                    {"id": existing["id"]}, {"$set": doc},
+                    {"id": existing["id"], "org_id": org}, {"$set": doc},
                 )
                 updated += 1
             else:
@@ -425,7 +477,7 @@ async def import_xlsx_commit(body: CommitIn, user: dict = Depends(get_current_us
 
     return {
         "ok": True,
-        "certifications": {"inserted": inserted, "updated": updated, "skipped": skipped},
+        "certifications": {"inserted": inserted, "updated": updated, "skipped": skipped, "newer_preserved": newer_preserved},
         "access": {"upserted": access_upserts},
     }
 
@@ -507,6 +559,12 @@ async def induction_matrix(user: dict = Depends(get_current_user)):
             "header": row["_id"]["h"],
             "category": row["_id"].get("c") or "competency",
         })
+
+    # Keep empty columns from the uploaded matrix without inventing certifications.
+    existing_keys = {c["column_key"] for c in cols}
+    async for c in db.induction_matrix_columns.find({"org_id": org, "hidden": {"$ne": True}}, {"_id": 0}):
+        if c["column_key"] not in existing_keys:
+            cols.append({"column_key": c["column_key"], "header": c["header"], "category": c["category"]})
 
     # Cells.
     cells_by_worker: dict[str, dict] = {}

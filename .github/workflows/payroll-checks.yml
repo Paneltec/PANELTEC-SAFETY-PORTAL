@@ -22,3 +22,6 @@ jobs:
         env:
           PYTHONPATH: backend
         run: python -m pytest --noconftest backend/tests/test_payroll_access.py backend/tests/test_payroll_engine.py backend/tests/test_payroll_aba.py backend/tests/test_payroll_maths.py -q
+
+      - name: Isolated induction workbook import tests
+        run: python -m unittest discover -s backend/tests/inductions_isolated -p "test_*.py"
