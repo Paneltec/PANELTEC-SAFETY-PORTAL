@@ -14,10 +14,9 @@ TARGETS = {
  'pay_payslip_batches':'Payslip batches', 'pay_payslip_delivery':'Payslip delivery activity',
  'pay_bank_exports':'Bank export activity', 'timesheet_entries':'Time entries',
  'leave_requests':'Leave requests',
- 'asset_service_records':'Fleet service activity',
 }
-RESET_SCOPE_VERSION = 'preserve-safety-2026-10-13'
-KEEP = 'Users, employees, access, settings, rates, integrations, sites, fleet assets, templates, SWMS, schedules, files, backups, audit history, pre-starts, incidents, hazards, inspections, site diaries, submitted forms, daily job assignments and site visitor activity'
+RESET_SCOPE_VERSION = 'payroll-only-2026-10-14'
+KEEP = 'Users, employees, access, settings, rates, integrations, sites, fleet assets, fleet service history, templates, SWMS, schedules, files, backups, audit history, pre-starts, incidents, hazards, inspections, site diaries, submitted forms, daily job assignments and site visitor activity'
 def now(): return datetime.now(timezone.utc)
 def iso(): return now().isoformat()
 def scope(user):
@@ -84,7 +83,7 @@ async def execute(body:Execute,request:Request,bg:BackgroundTasks,user:dict=Depe
  await unlock(UnlockIn(pin=body.pin),user)
  plan=await db.test_reset_plans.find_one({'id':body.plan_id,'org_id':user['org_id'],'actor_id':user['id'],'state':'preview'})
  if not plan or plan['expires_at']<iso():raise HTTPException(409,'Preview expired. Preview again.')
- if plan.get('scope_version')!=RESET_SCOPE_VERSION or set(plan.get('ids',{}))!=set(TARGETS):raise HTTPException(409,'Reset scope changed. Preview again; safety and job records are protected.')
+ if plan.get('scope_version')!=RESET_SCOPE_VERSION or set(plan.get('ids',{}))!=set(TARGETS):raise HTTPException(409,'Reset scope changed. Preview again; safety, job and fleet service records are protected.')
  if plan['counts']!=await counts(user):raise HTTPException(409,'Activity changed. Pause data entry and preview again.')
  job_id=str(uuid.uuid4())
  try:

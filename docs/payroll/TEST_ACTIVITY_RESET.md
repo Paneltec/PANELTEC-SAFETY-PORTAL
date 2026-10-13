@@ -2,7 +2,7 @@
 
 Adds a Reset test activity disclosure to Payroll > Manage access. Does not run a reset on deployment. Existing administrator role and PIN are enforced on the server, with the shared PIN lockout. A fresh preview, typed confirmation and paused-entry acknowledgement are required.
 
-Only the 9 named organisation-scoped activity collections in admin_test_activity_reset.TARGETS are cleared. Both divisions are included. Names containing "test" are not used to classify data. The UI shows counts before execution. New records outside the preview manifest survive. Every removed record is first retained in test_reset_archive; whole-document Mongo equality prevents deleting a concurrently changed record. An audit event and operation status are retained.
+Only the 8 named organisation-scoped activity collections in admin_test_activity_reset.TARGETS are cleared. Both divisions are included. Names containing "test" are not used to classify data. The UI shows counts before execution. New records outside the preview manifest survive. Every removed record is first retained in test_reset_archive; whole-document Mongo equality prevents deleting a concurrently changed record. An audit event and operation status are retained.
 
 Users, workers, employee configuration, rates, bank details, integrations, master assets/sites, templates, SWMS, schedules, stored files, backups, audit history remain. Saved pay-run archives are included with Stephen's explicit approval on 13 October 2026. This does not provide an absolutely empty database: integrations may reimport activity. No external service is reset. Collections without org_id are never targeted. Additional modules require explicit mapping and review; there is no dynamic delete-all.
 
@@ -14,3 +14,6 @@ Validation: 10 synthetic in-memory tests passed; frontend lint passed. Separate 
 
 ## Scope correction — 13 October 2026
 Stephen requires pre-starts, incidents, hazards, inspections, site diaries, submitted forms, daily job assignments and site visitor activity to remain. These eight collections are excluded from the server allowlist. The UI explicitly names them as protected. Old preview plans are rejected by scope version before any job or backup starts. Remaining reset groups: saved pay-run archives, worksheets, pay periods, payslip batches/delivery, bank export activity, time entries, leave requests and fleet service activity. No reset was executed for this change.
+
+## Payroll-only correction - 14 October 2026
+Fleet service history is protected, including the 65 records reported by Stephen. The remaining eight targets are payroll records, time entries and leave requests. Older previews containing fleet activity are rejected. Preservation tests include fleet history. No reset is executed by this update.
