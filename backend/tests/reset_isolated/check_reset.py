@@ -71,15 +71,15 @@ class Tests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([r['_id'] for r in reset.db.pay_run_archive.rows],['run-b'])
   self.assertTrue(any(r.get('_id')=='audit-a' for r in reset.db.audit_log.rows))
   self.assertTrue(any(r['collection']=='pay_run_archive' for r in reset.db.test_reset_archive.rows))
- async def test_all_eight_protected_activity_groups_survive(self):
-  names=['pre_starts','incidents','hazards','inspections','site_diary_entries','form_submissions','daily_job_assignments','site_visitors']
+ async def test_all_nine_protected_activity_groups_survive(self):
+  names=['pre_starts','incidents','hazards','inspections','site_diary_entries','form_submissions','daily_job_assignments','site_visitors','asset_service_records']
   for name in names:
    self.assertNotIn(name,reset.TARGETS)
    reset.db[name].rows=[{'_id':'protected','org_id':'org-a'}]
   await reset.run_reset(self.app,self.user,'job')
   for name in names:self.assertEqual(reset.db[name].rows,[{'_id':'protected','org_id':'org-a'}])
  async def test_old_preview_is_rejected_before_start(self):
-  reset.db.test_reset_plans.find_one=AsyncMock(return_value={'expires_at':'2099-01-01','counts':{},'ids':{}})
+  reset.db.test_reset_plans.find_one=AsyncMock(return_value={'expires_at':'2099-01-01','scope_version':'preserve-safety-2026-10-13','counts':{},'ids':{**{name:[] for name in reset.TARGETS},'asset_service_records':[]}})
   reset.db.test_reset_jobs.update_one=AsyncMock()
   with self.assertRaises(HTTPException) as error:
    await reset.execute(reset.Execute(plan_id='old',pin='1234',confirmation='RESET TEST ACTIVITY'),None,None,self.user)
