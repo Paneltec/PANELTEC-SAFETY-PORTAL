@@ -1372,7 +1372,7 @@ def install(app, db, require_admin):
     # ------------------------------------------------------------
     # SNAPSHOT  — admin: trigger; agent: list & download.
     # ------------------------------------------------------------
-    async def _do_snapshot() -> Dict[str, Any]:
+    async def _do_snapshot(*, preserve_existing: bool = False) -> Dict[str, Any]:
         """Core snapshot routine — reusable by both the admin-triggered
         POST endpoint AND the daily scheduler. Returns the result dict
         that the HTTP endpoint serialises back to the operator."""
@@ -1524,7 +1524,7 @@ def install(app, db, require_admin):
                                     f"paneltec-snapshot-{snap_id}.zip")
             # Before writing this snapshot, enforce the "≤ MAX_UNSHIPPED
             # pending" cap by evicting the oldest pending file(s).
-            evicted = await _enforce_pod_side_retention(db, reason="pre-write")
+            evicted = 0 if preserve_existing else await _enforce_pod_side_retention(db, reason="pre-write")
             if evicted:
                 logger.warning(
                     "backup.pod_retention pre-write evicted=%s (max_unshipped=%d)",
@@ -1563,7 +1563,8 @@ def install(app, db, require_admin):
             # added in .132jh. This does NOT clean up on-disk ZIPs
             # for shipped snapshots — the /agent/report path does
             # that immediately after a successful ship.
-            await _apply_retention_policy(db, fs)
+            if not preserve_existing:
+                await _apply_retention_policy(db, fs)
 
             await _release_backup_lock(db, ok=True)
 

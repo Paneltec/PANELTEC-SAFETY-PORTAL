@@ -1,0 +1,22 @@
+name: Test activity reset safety
+on:
+  pull_request:
+    branches: [walkers-design-handover]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reset-safety:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports: ['27017:27017']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install fastapi==0.110.1 'pydantic>=2,<3' motor==3.3.1 pymongo==4.5.0
+      - run: python backend/tests/reset_isolated/check_reset.py
+      - run: python backend/tests/reset_isolated/check_mongo_reset.py
