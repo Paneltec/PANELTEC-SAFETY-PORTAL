@@ -14,17 +14,17 @@ class MongoTests(unittest.IsolatedAsyncioTestCase):
   self.app=types.SimpleNamespace(state=types.SimpleNamespace(create_paneltec_snapshot=AsyncMock(return_value={'ok':True,'snapshot_id':'synthetic','sha256':'abc'})))
  async def asyncTearDown(self):self.client.close()
  async def test_actual_mongo_equality_archive_and_org_isolation(self):
-  await self.database.pre_starts.insert_many([{'_id':'a','org_id':'synthetic-a','nested':{'hours':0}},{'_id':'b','org_id':'synthetic-b'}])
+  await self.database.timesheet_entries.insert_many([{'_id':'a','org_id':'synthetic-a','nested':{'hours':0}},{'_id':'b','org_id':'synthetic-b'}])
   await self.database.users.insert_one({'_id':'admin','org_id':'synthetic-a'})
   await reset.run_reset(self.app,self.user,'synthetic-job')
-  self.assertIsNone(await self.database.pre_starts.find_one({'_id':'a'}))
-  self.assertIsNotNone(await self.database.pre_starts.find_one({'_id':'b'}))
+  self.assertIsNone(await self.database.timesheet_entries.find_one({'_id':'a'}))
+  self.assertIsNotNone(await self.database.timesheet_entries.find_one({'_id':'b'}))
   self.assertEqual(await self.database.users.count_documents({}),1)
   self.assertEqual(await self.database.test_reset_archive.count_documents({}),1)
  async def test_actual_mongo_changed_document_not_deleted(self):
   old={'_id':'a','org_id':'synthetic-a','value':1}
-  await self.database.pre_starts.insert_one(dict(old))
-  await self.database.pre_starts.update_one({'_id':'a'},{'$set':{'value':2}})
-  result=await self.database.pre_starts.delete_one({'_id':'a','org_id':'synthetic-a','$expr':{'$eq':['$$ROOT',{'$literal':old}]}})
+  await self.database.timesheet_entries.insert_one(dict(old))
+  await self.database.timesheet_entries.update_one({'_id':'a'},{'$set':{'value':2}})
+  result=await self.database.timesheet_entries.delete_one({'_id':'a','org_id':'synthetic-a','$expr':{'$eq':['$$ROOT',{'$literal':old}]}})
   self.assertEqual(result.deleted_count,0)
 if __name__=='__main__':unittest.main()

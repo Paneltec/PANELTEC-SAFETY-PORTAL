@@ -37,33 +37,33 @@ class Tests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   reset.db=DB();self.user={'id':'admin','org_id':'org-a','role':'admin'}
   self.app=types.SimpleNamespace(state=types.SimpleNamespace(create_paneltec_snapshot=AsyncMock(return_value={'ok':True,'snapshot_id':'synthetic-backup','sha256':'abc'})))
-  reset.db['pre_starts'].rows=[{'_id':'a','org_id':'org-a','value':'synthetic'},{'_id':'b','org_id':'org-b'}]
+  reset.db['timesheet_entries'].rows=[{'_id':'a','org_id':'org-a','value':'synthetic'},{'_id':'b','org_id':'org-b'}]
   reset.db['users'].rows=[{'_id':'u','org_id':'org-a'}]
  async def test_scoped_reset_and_archive(self):
   await reset.run_reset(self.app,self.user,'job')
-  self.assertEqual(reset.db['pre_starts'].rows,[{'_id':'b','org_id':'org-b'}]);self.assertEqual(len(reset.db.users.rows),1)
+  self.assertEqual(reset.db['timesheet_entries'].rows,[{'_id':'b','org_id':'org-b'}]);self.assertEqual(len(reset.db.users.rows),1)
   self.assertEqual(reset.db.test_reset_archive.rows[0]['document']['_id'],'a')
   self.app.state.create_paneltec_snapshot.assert_awaited_once_with(preserve_existing=True)
  async def test_failed_backup_deletes_nothing(self):
   self.app.state.create_paneltec_snapshot.return_value={'ok':False}
   await reset.run_reset(self.app,self.user,'job')
-  self.assertEqual(len(reset.db.pre_starts.rows),2);self.assertFalse(reset.db.test_reset_archive.rows)
+  self.assertEqual(len(reset.db.timesheet_entries.rows),2);self.assertFalse(reset.db.test_reset_archive.rows)
  async def test_changed_record_is_retained(self):
-  reset.db.pre_starts.change=True
+  reset.db.timesheet_entries.change=True
   await reset.run_reset(self.app,self.user,'job')
-  self.assertEqual(len(reset.db.pre_starts.rows),2)
+  self.assertEqual(len(reset.db.timesheet_entries.rows),2)
  async def test_archive_failure_stops_before_delete(self):
   reset.db.test_reset_archive.insert_one=AsyncMock(side_effect=RuntimeError('synthetic failure'))
   await reset.run_reset(self.app,self.user,'job')
-  self.assertEqual(len(reset.db.pre_starts.rows),2)
+  self.assertEqual(len(reset.db.timesheet_entries.rows),2)
  async def test_preview_has_counts_not_records(self):
   result=await reset.preview(self.user)
   self.assertEqual(result['total'],1);self.assertNotIn('synthetic',str(result));self.assertNotIn('document',str(result))
  async def test_new_records_not_in_preview_survive(self):
-  ids={name:[] for name in reset.TARGETS};ids['pre_starts']=['a']
-  reset.db.pre_starts.rows.append({'_id':'new','org_id':'org-a'})
+  ids={name:[] for name in reset.TARGETS};ids['timesheet_entries']=['a']
+  reset.db.timesheet_entries.rows.append({'_id':'new','org_id':'org-a'})
   await reset.run_reset(self.app,self.user,'job',ids)
-  self.assertIn('new',[r['_id'] for r in reset.db.pre_starts.rows])
+  self.assertIn('new',[r['_id'] for r in reset.db.timesheet_entries.rows])
  async def test_authorised_pay_run_archives_are_cleared_but_audit_stays(self):
   reset.db.pay_run_archive.rows=[{'_id':'run-a','org_id':'org-a'},{'_id':'run-b','org_id':'org-b'}]
   reset.db.audit_log.rows=[{'_id':'audit-a','org_id':'org-a'}]
@@ -71,6 +71,20 @@ class Tests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([r['_id'] for r in reset.db.pay_run_archive.rows],['run-b'])
   self.assertTrue(any(r.get('_id')=='audit-a' for r in reset.db.audit_log.rows))
   self.assertTrue(any(r['collection']=='pay_run_archive' for r in reset.db.test_reset_archive.rows))
+ async def test_all_eight_protected_activity_groups_survive(self):
+  names=['pre_starts','incidents','hazards','inspections','site_diary_entries','form_submissions','daily_job_assignments','site_visitors']
+  for name in names:
+   self.assertNotIn(name,reset.TARGETS)
+   reset.db[name].rows=[{'_id':'protected','org_id':'org-a'}]
+  await reset.run_reset(self.app,self.user,'job')
+  for name in names:self.assertEqual(reset.db[name].rows,[{'_id':'protected','org_id':'org-a'}])
+ async def test_old_preview_is_rejected_before_start(self):
+  reset.db.test_reset_plans.find_one=AsyncMock(return_value={'expires_at':'2099-01-01','counts':{},'ids':{}})
+  reset.db.test_reset_jobs.update_one=AsyncMock()
+  with self.assertRaises(HTTPException) as error:
+   await reset.execute(reset.Execute(plan_id='old',pin='1234',confirmation='RESET TEST ACTIVITY'),None,None,self.user)
+  self.assertEqual(error.exception.status_code,409)
+  reset.db.test_reset_jobs.update_one.assert_not_awaited()
  async def test_missing_org_denied(self):
   with self.assertRaises(HTTPException):await reset.preview({'id':'admin'})
  async def test_wrong_confirmation_before_pin(self):
