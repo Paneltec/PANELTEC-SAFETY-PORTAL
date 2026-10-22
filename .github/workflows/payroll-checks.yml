@@ -27,3 +27,6 @@ jobs:
         run: python -m unittest discover -s backend/tests/inductions_isolated -p "test_*.py"
       - name: Snapshot verification regression tests
         run: python backend/tests/reset_isolated/check_snapshot_verify.py
+
+      - name: NAS backup verification regression tests
+        run: python backend/tests/reset_isolated/check_nas_verify.py

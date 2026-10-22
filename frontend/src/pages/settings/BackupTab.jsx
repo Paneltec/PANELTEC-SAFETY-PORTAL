@@ -320,17 +320,24 @@ export default function BackupTab() {
                         <th style={th()}>Documents</th>
                         <th style={th()}>Collections</th>
                         <th style={th()}>SHA256</th>
+                        <th style={th()}>Storage / verification</th>
                         <th style={th()}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {snapshots.map(s => (
                         <tr key={s.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
-                          <td style={td()}>{fmtAge(s.created_at)}<div style={{ fontSize: 11, color: "#64748b" }}>{s.created_at?.slice(0,19).replace("T"," ")}</div></td>
+                          <td style={td()}>{fmtAge(s.created_at)}<div style={{ fontSize: 11, color: "#64748b" }}>{s.created_at ? new Date(s.created_at).toLocaleString("en-AU") : "—"}</div></td>
                           <td style={td()}>{fmtBytes(s.size)}</td>
                           <td style={td()}>{s.total_documents == null ? "—" : s.total_documents.toLocaleString()}</td>
                           <td style={td()}>{Array.isArray(s.collections) ? s.collections.length : "—"}</td>
                           <td style={{ ...td(), fontFamily: "monospace", fontSize: 10, color: "#475569" }}>{s.sha256 ? `${s.sha256.slice(0,16)}…` : "—"}</td>
+                          <td style={td()}>
+                            <div>{s.shipped_at ? "Saved to NAS" : "NAS delivery not confirmed"}</div>
+                            <div style={{ fontSize: 12 }}>{s.verification_state === "pending" ? "Verification pending"
+                              : s.last_verified_at ? (s.last_verified_ok ? `Verified (${s.last_verified_source === "nas" ? "NAS" : "Umbrel"})` : "Verification failed")
+                              : "Verification pending"}</div>
+                          </td>
                           <td style={td()}>
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end",
                                           flexWrap: "wrap" }}>
@@ -351,7 +358,7 @@ export default function BackupTab() {
                                 <Download className="w-3.5 h-3.5"/>Download
                               </a>
                             </div>
-                            {s.last_verified_at && (
+                            {s.last_verified_at && s.verification_state !== "pending" && (
                               <div style={{ fontSize: 10, marginTop: 4,
                                             color: s.last_verified_ok ? "#065f46" : "#7f1d1d",
                                             textAlign: "right" }}>
@@ -765,10 +772,11 @@ function VerifyButton({ snap, onDone }) {
               <div style={{ background: "#fef2f2", border: "1px solid #fecaca",
                             color: "#991b1b", padding: 12, borderRadius: 8,
                             fontSize: 13 }}>
-                <strong>Failed:</strong> {err}
+                <strong>Verification could not complete:</strong> {err}
               </div>
             )}
-            {result && (
+            {result?.pending && <div role="status" style={{ background: "#fffbeb", color: "#92400e", padding: 14, borderRadius: 8 }}>{result.detail}</div>}
+            {result && !result.pending && (
               <>
                 <div style={{
                   background: result.ok ? "#ecfdf5" : "#fef2f2",

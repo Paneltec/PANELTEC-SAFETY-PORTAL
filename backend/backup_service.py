@@ -3205,6 +3205,10 @@ def install(app, db, require_admin):
         if not snap:
             raise HTTPException(404, "snapshot not found")
 
+        if not (snap.get("filepath") and os.path.isfile(snap["filepath"])) and not snap.get("gridfs_id"):
+            from backup_nas_verify import verify_nas_snapshot
+            return await verify_nas_snapshot(db, snap)
+
         started = datetime.now(timezone.utc)
         collection_checks: List[Dict[str, Any]] = []
         manifest_check = {"name": "manifest.json", "ok": False,
@@ -3395,6 +3399,9 @@ def install(app, db, require_admin):
             await db.bk_snapshots.update_one(
                 {"id": snap_id},
                 {"$set": {
+                    "verification_state": "verified" if ok else "failed",
+                    "verification_message": "",
+                    "last_verified_source": "umbrel",
                     "last_verified_at": result["verified_at"],
                     "last_verified_ok": ok,
                     "last_verified_summary": (

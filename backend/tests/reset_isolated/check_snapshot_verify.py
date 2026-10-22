@@ -1,5 +1,7 @@
 """Exercise the actual verifier using synthetic archives; no server or database."""
 import ast
+import sys
+from unittest.mock import patch
 import hashlib
 import io
 import json
@@ -43,10 +45,12 @@ class VerifyTests(unittest.IsolatedAsyncioTestCase):
             module=ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[]))
             scope=dict(globals(),db=types.SimpleNamespace(bk_snapshots=collection),fs=fs,logger=logging.getLogger('test'),_now_iso=lambda:datetime.now(timezone.utc).isoformat())
             exec(compile(module,str(SOURCE),'exec'),scope)
-            result=await scope['verify_snapshot']('test')
+            with patch.dict(sys.modules, {'backup_nas_verify': types.SimpleNamespace(verify_nas_snapshot=AsyncMock(return_value={'pending':True}))}):
+                result=await scope['verify_snapshot']('test')
             if storage=='file': fs.open_download_stream.assert_not_awaited()
             if storage=='legacy': stream.close.assert_awaited_once()
-            collection.update_one.assert_awaited_once()
+            if storage in ("file", "legacy"):
+                collection.update_one.assert_awaited_once()
             self.assertEqual(path.read_bytes(),data)
             return result
 
@@ -58,14 +62,10 @@ class VerifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.run_verify(self.archive(),bad_hash=True))['ok'])
     async def test_missing_collection(self):
         self.assertFalse((await self.run_verify(self.archive(missing=True)))['ok'])
-    async def test_missing_archive(self):
-        with self.assertRaises(HTTPException) as error:
-            await self.run_verify(self.archive(),'missing')
-        self.assertEqual(error.exception.status_code,410)
-    async def test_metadata_only(self):
-        with self.assertRaises(HTTPException) as error:
-            await self.run_verify(self.archive(),'none')
-        self.assertEqual(error.exception.status_code,410)
+    async def test_missing_archive_routes_to_nas(self):
+        self.assertTrue((await self.run_verify(self.archive(),'missing'))['pending'])
+    async def test_metadata_only_routes_to_nas(self):
+        self.assertTrue((await self.run_verify(self.archive(),'none'))['pending'])
     async def test_invalid_zip(self):
         with self.assertRaises(HTTPException) as error:
             await self.run_verify(b'not a zip')
