@@ -1,6 +1,8 @@
 """Isolated API integration tests, using synthetic workers and an in-memory DB."""
 import sys, types, copy, os, unittest
 from pathlib import Path
+from datetime import datetime, timezone
+from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
 from fastapi import FastAPI, Header, HTTPException
@@ -229,7 +231,10 @@ class PayrollAPITests(unittest.TestCase):
         exported=client.get('/payroll/workbench/2026-10-05/report/pay').text
         self.assertIn('DRAFT - NOT PAID',exported)
         self.assertNotIn('REVIEWED WORKSHEET',exported)
-    def test_encryption_masking_and_bank_export(self):
+    @patch("payroll_banking.datetime", wraps=datetime)
+    def test_encryption_masking_and_bank_export(self, banking_clock):
+        # Keep the fixed October fixture valid as real calendar time advances.
+        banking_clock.now.return_value = datetime(2026, 10, 5, tzinfo=timezone.utc)
         self.assertEqual(self.save(True).status_code,200)
         employee={'account_name':'TEST WORKER','bsb':'062000','account_number':'00001234','verified':True}
         employer={**employee,'account_name':'TEST COMPANY','bsb':'032000','account_number':'00123456','user_name':'TEST COMPANY','remitter':'TEST COMPANY'}
