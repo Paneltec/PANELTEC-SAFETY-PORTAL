@@ -61,9 +61,9 @@ export default function BackupStatusHero({ onBackup, busy = false, onRefresh }) 
   const delivered = data.last_delivery;
   const enabled = data.backups_enabled !== false;
   const healthy = data.health === 'healthy' && !error;
-  const title = error ? 'Backup status could not be refreshed' : !enabled ? 'Automatic backups are switched off' : healthy ? 'Your backups are working' : 'Your backups need attention';
+  const title = error ? 'Backup status could not be refreshed' : !enabled ? 'Automatic backups are switched off' : healthy ? 'Latest backup delivered' : 'Your backups need attention';
   const explanation = !enabled ? 'Enable backups on the server before making a new backup.'
-    : healthy ? 'A recent backup has reached a backup destination. The details below show where it was saved.'
+    : healthy ? 'A backup destination reported successful delivery. Delivery and verification are separate; use Verify in Saved backups to check the ZIP.'
     : 'Check the last saved copy below. A backup made on Umbrel still needs to reach your NAS or an off-site destination.';
   const buttonClass = 'rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50';
   return <section data-testid="backup-status-hero" data-health={error ? 'unknown' : data.health} className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

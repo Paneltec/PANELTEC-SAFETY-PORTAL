@@ -672,12 +672,68 @@ def _nas_disk_usage() -> Dict[str, Any]:
     }
 
 
+def _verify_backup_zip(snapshot_id: str) -> Dict[str, Any]:
+    """Read only the named snapshot in the backup folder; never extract it."""
+    import uuid
+    import zipfile
+    if str(uuid.UUID(snapshot_id)) != snapshot_id:
+        raise ValueError("Invalid snapshot id")
+    root = LOCAL_DIR.resolve()
+    fp = (root / f"paneltec-civil-{snapshot_id}.zip").resolve()
+    if fp.parent != root:
+        raise ValueError("Backup path is outside the backup folder")
+    if not fp.is_file():
+        return {"available": False}
+    checks = []
+    with fp.open("rb") as source:
+        before = os.fstat(source.fileno())
+        sha = hashlib.sha256()
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            sha.update(chunk)
+        source.seek(0)
+        try:
+            with zipfile.ZipFile(source) as archive:
+                names = archive.namelist()
+                if len(names) != len(set(names)):
+                    raise ValueError("Duplicate ZIP entries")
+                if sum(i.file_size for i in archive.infolist()) > 20 * 1024**3:
+                    raise ValueError("Archive exceeds verification size limit")
+                bad = archive.testzip()
+                checks.append({"name": "ZIP integrity", "ok": bad is None,
+                               "detail": "All ZIP entries checked" if bad is None else "An archive entry failed CRC"})
+                manifest = json.loads(archive.read("manifest.json"))
+                cols = manifest.get("collections")
+                valid = (manifest.get("snapshot_id") == snapshot_id and manifest.get("scope") == "full"
+                         and isinstance(cols, list) and all(isinstance(c, str) for c in cols)
+                         and len(cols) == len(set(cols)))
+                checks.append({"name": "Manifest", "ok": valid, "detail": "Snapshot identity and collection list checked"})
+                count = 0
+                collections_ok = valid
+                for name in cols if valid else []:
+                    rows = json.loads(archive.read(f"mongo/{name}.json"))
+                    if not isinstance(rows, list):
+                        collections_ok = False
+                    else:
+                        count += len(rows)
+                checks.append({"name": "Collections and document count", "ok": collections_ok and count == manifest.get("total_documents"),
+                               "detail": f"{count} documents checked"})
+        except (ValueError, KeyError, zipfile.BadZipFile, RuntimeError):
+            checks.append({"name": "Archive contents", "ok": False, "detail": "ZIP or manifest contents could not be validated"})
+        after = os.fstat(source.fileno())
+        checks.append({"name": "File unchanged during verification", "ok": (before.st_size, before.st_mtime_ns) == (after.st_size, after.st_mtime_ns),
+                       "detail": "File size and modification time compared"})
+    return {"available": True, "snapshot_id": snapshot_id, "sha256": sha.hexdigest(), "size": before.st_size, "checks": checks}
+
+
 def _nas_execute(op_row: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a single verified op locally. Never raises — returns
     an `{"status": "done"|"error", "result"|"error"}` dict."""
     op = op_row.get("op")
     path = op_row.get("path") or ""
     try:
+        if op == "verify_backup":
+            return {"status": "done", "result": _verify_backup_zip(path)}
+
         if op == "ping":
             return {"status": "done", "result": {
                 "agent_time": time.strftime("%Y-%m-%dT%H:%M:%SZ",

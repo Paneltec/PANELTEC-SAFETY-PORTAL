@@ -3205,6 +3205,10 @@ def install(app, db, require_admin):
         if not snap:
             raise HTTPException(404, "snapshot not found")
 
+        if not (snap.get("filepath") and os.path.isfile(snap["filepath"])) and not snap.get("gridfs_id"):
+            from backup_nas_verify import verify_nas_snapshot
+            return await verify_nas_snapshot(db, snap)
+
         started = datetime.now(timezone.utc)
         collection_checks: List[Dict[str, Any]] = []
         manifest_check = {"name": "manifest.json", "ok": False,
@@ -3395,6 +3399,9 @@ def install(app, db, require_admin):
             await db.bk_snapshots.update_one(
                 {"id": snap_id},
                 {"$set": {
+                    "verification_state": "verified" if ok else "failed",
+                    "verification_message": "",
+                    "last_verified_source": "umbrel",
                     "last_verified_at": result["verified_at"],
                     "last_verified_ok": ok,
                     "last_verified_summary": (
@@ -3455,6 +3462,12 @@ def install(app, db, require_admin):
              "bytes_written": {"$gte": 1_000_000}},
             {"_id": 0}, sort=[("received_at", -1)],
         )
+        delivered_snapshot = await db.bk_snapshots.find_one(
+            {"id": last_delivery["snapshot_id"]},
+            {"_id": 0, "id": 1, "created_at": 1, "size": 1,
+             "verification_state": 1, "last_verified_at": 1,
+             "last_verified_ok": 1, "last_verified_source": 1},
+        ) if last_delivery else None
         last_failure = await db.bk_agent_logs.find_one(
             {"status": "fail"},
             {"_id": 0}, sort=[("received_at", -1)],
@@ -3546,6 +3559,7 @@ def install(app, db, require_admin):
             "down_after_min": DOWN_AFTER_MIN,
             "now": now.isoformat(),
             "last_delivery": last_delivery,
+            "delivered_snapshot": delivered_snapshot,
             "last_delivery_age_min": delivery_age_min,
             "last_failure": last_failure,
             "last_any_report_at": (last_any_report or {}).get("received_at"),
