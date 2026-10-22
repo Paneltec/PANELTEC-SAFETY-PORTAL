@@ -899,7 +899,7 @@ function LanDeliveryCard({ onRefresh }) {
 
   // Colour scheme keyed off the rollup health
   const palette = {
-    ok:     { bg: "#ecfdf5", border: "#10b981", fg: "#065f46", chip: "#10b981", chipFg: "white", label: "Healthy" },
+    ok:     { bg: "#ecfdf5", border: "#10b981", fg: "#065f46", chip: "#10b981", chipFg: "white", label: "Delivered" },
     stale:  { bg: "#fff7ed", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "white", label: "Copy overdue" },
     behind: { bg: "#fff7ed", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "white", label: "New copy pending" },
     down:   { bg: "#fef2f2", border: "#ef4444", fg: "#7f1d1d", chip: "#ef4444", chipFg: "white", label: "NAS connection offline" },
@@ -916,7 +916,7 @@ function LanDeliveryCard({ onRefresh }) {
 
   // Friendly one-line explainer per health state
   const explainer = {
-    ok:     <>Your NAS has received a backup successfully.</>,
+    ok:     <>The NAS agent reported delivery. Verification is shown separately below.</>,
     stale:  <>Last delivery is older than {s.stale_after_h}h — check the agent is still polling.</>,
     behind: <>A newer backup is ready on Umbrel. Waiting for the NAS to finish collecting it; large backups can take several minutes.</>,
     down:   <>The LAN agent hasn't checked in for {fmtMin(s.last_any_report_age_min)}. The container may be stopped.</>,
@@ -980,6 +980,20 @@ function LanDeliveryCard({ onRefresh }) {
         </div>
         {explainer && <div style={{ marginBottom: 8 }}>{explainer}</div>}
 
+        {s.last_delivery && <div data-testid="nas-backup-location" style={{ background: "white", padding: 14, borderRadius: 8, overflowWrap: "anywhere" }}>
+          <strong>Find this backup on your NAS</strong>
+          <div><strong>ZIP filename:</strong> <code>{s.last_delivery.target_path?.split(/[\\/]/).pop() || "Not reported"}</code></div>
+          <div><strong>Backup created:</strong> {s.delivered_snapshot?.created_at ? new Date(s.delivered_snapshot.created_at).toLocaleString("en-AU") : "Not recorded"}</div>
+          <div><strong>Delivered:</strong> {new Date(s.last_delivery.received_at).toLocaleString("en-AU")} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</div>
+          <div><strong>Reported target:</strong> <code>{s.last_delivery.target_path || "Not reported"}</code></div>
+          <div><strong>Verification:</strong> {s.delivered_snapshot?.verification_state === "pending" ? "Pending"
+            : s.delivered_snapshot?.last_verified_source === "nas" && s.delivered_snapshot?.last_verified_at
+              ? (s.delivered_snapshot.last_verified_ok ? "NAS ZIP verified" : "NAS verification failed") : "Pending"}</div>
+          {s.last_delivery.target_path?.startsWith("/data/") && <p className="mt-2 text-sm">
+            /data is inside the backup container. In UGREEN Docker, open the backup container’s volume settings and find the NAS folder mapped to /data. Open that folder in UGREEN Files and search for the ZIP filename above.
+          </p>}
+          <button type="button" style={btn(PAPER)} className="mt-2" onClick={() => copyToClipboard(s.last_delivery.target_path?.split(/[\\/]/).pop() || "")}><Copy className="w-3.5 h-3.5"/>Copy ZIP filename</button>
+        </div>}
         <details className="mt-3">
           <summary className="cursor-pointer font-semibold">Connection, storage and file details</summary>
           <div className="mt-3">
