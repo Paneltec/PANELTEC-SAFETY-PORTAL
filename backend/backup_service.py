@@ -3183,7 +3183,7 @@ def install(app, db, require_admin):
     @api_router.post("/snapshots/{snap_id}/verify",
                      dependencies=[Depends(require_admin)])
     async def verify_snapshot(snap_id: str):
-        """Proof-of-restore — pull the snapshot ZIP back out of GridFS,
+        """Archive verification — open a filesystem or legacy GridFS snapshot,
         parse every collection listed in the manifest, and confirm the
         archive is self-consistent. Never touches the live DB — just
         streams + parses bytes.
@@ -3217,17 +3217,39 @@ def install(app, db, require_admin):
                             "detail": "no extra archive members"}
         manifest: Optional[Dict[str, Any]] = None
 
+        buf = None
+        z = None
+        grid_out = None
         try:
-            # Pull bytes from GridFS in chunks → SHA + ZIP parse in one pass.
-            grid_out = await fs.open_download_stream(ObjectId(snap["gridfs_id"]))
+            # Match download storage selection. Hash the same open file that
+            # ZIP validation reads; do not load the whole archive into RAM.
             sha = hashlib.sha256()
-            buf = io.BytesIO()
-            while True:
-                chunk = await grid_out.readchunk()
-                if not chunk:
-                    break
-                sha.update(chunk)
-                buf.write(chunk)
+            filepath = snap.get("filepath")
+            if filepath and os.path.isfile(filepath):
+                buf = open(filepath, "rb")
+                while True:
+                    chunk = buf.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    sha.update(chunk)
+            elif snap.get("gridfs_id"):
+                import tempfile
+                buf = tempfile.TemporaryFile(mode="w+b")
+                grid_out = await fs.open_download_stream(ObjectId(snap["gridfs_id"]))
+                while True:
+                    chunk = await grid_out.readchunk()
+                    if not chunk:
+                        break
+                    sha.update(chunk)
+                    buf.write(chunk)
+            else:
+                raise HTTPException(
+                    410,
+                    "Snapshot archive is not available on this server. "
+                    "It may have been moved to the NAS; the archive must be "
+                    "available locally before it can be verified. "
+                    "This does not indicate that the NAS copy is damaged.",
+                )
             buf.seek(0)
             computed_sha = sha.hexdigest()
             sha_ok = (computed_sha == snap.get("sha256"))
@@ -3387,6 +3409,13 @@ def install(app, db, require_admin):
         except Exception as e:
             logger.exception("verify_snapshot %s failed", snap_id)
             raise HTTPException(500, f"verify failed: {e}")
+        finally:
+            if z is not None:
+                z.close()
+            if buf is not None:
+                buf.close()
+            if grid_out is not None:
+                await grid_out.close()
 
 
     @api_router.get("/lan-status", dependencies=[Depends(require_admin)])
