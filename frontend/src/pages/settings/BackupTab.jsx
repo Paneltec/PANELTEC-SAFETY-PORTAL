@@ -19,7 +19,7 @@
  * the agent install includes a token that yields read access to the
  * full DB snapshot if leaked.
  */
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import axios from "axios";
 import { TOKEN_KEY, API_BASE } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
@@ -93,6 +93,9 @@ const safeRelativeTime = (iso) => {
 
 export default function BackupTab() {
   const [snapshots, setSnapshots] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshedAt, setRefreshedAt] = useState(null);
+  const refreshSequence = useRef(0);
   const [destinations, setDestinations] = useState([]);
   const [agents, setAgents] = useState([]);
   const [discovered, setDiscovered] = useState([]);
@@ -104,23 +107,31 @@ export default function BackupTab() {
   const [freshAgent, setFreshAgent] = useState(null);
 
   const refresh = useCallback(async () => {
-    try {
-      const [snap, dst, ag, disc] = await Promise.all([
-        api.get(`${API}/snapshots`, { headers: authHdr() }),
-        api.get(`${API}/destinations`, { headers: authHdr() }),
-        api.get(`${API}/agents`, { headers: authHdr() }),
-        api.get(`${API}/discovered-smb`, { headers: authHdr() }),
-      ]);
-      setSnapshots(snap.data);
-      setDestinations(dst.data);
-      setAgents(ag.data);
-      setDiscovered(disc.data);
-      setError("");
-    } catch (e) {
-      setError(e?.response?.data?.detail || e.message);
-    } finally {
-      setLoading(false);
-    }
+    const sequence = ++refreshSequence.current;
+    setRefreshing(true);
+    const sections = [
+      ["Saved backups", "snapshots", setSnapshots],
+      ["Destinations", "destinations", setDestinations],
+      ["Agents", "agents", setAgents],
+      ["Network discovery", "discovered-smb", setDiscovered],
+    ];
+    const results = await Promise.allSettled(sections.map(([, path]) =>
+      api.get(`${API}/${path}`, { headers: authHdr(), params: { _refresh: Date.now() } })
+    ));
+    if (sequence !== refreshSequence.current) return;
+    const failures = [];
+    results.forEach((result, index) => {
+      const [label, , update] = sections[index];
+      if (result.status === "fulfilled" && Array.isArray(result.value.data)) {
+        update(result.value.data);
+        if (index === 0) setRefreshedAt(new Date());
+      } else {
+        failures.push(`${label} could not be refreshed; displayed data may be out of date.`);
+      }
+    });
+    setError(failures.join(" "));
+    setRefreshing(false);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -238,7 +249,7 @@ export default function BackupTab() {
 
       {/* ───── Live delivery health (top of page so it's the first
             thing the operator sees) ───── */}
-      <LanDeliveryCard/>
+      <LanDeliveryCard onRefresh={refresh}/>
       <details className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
         <summary className="cursor-pointer font-semibold text-slate-800">Backup setup and connection help</summary>
         <div className="mt-4"><SetupWizard/><HowItWorks/></div>
@@ -269,6 +280,12 @@ export default function BackupTab() {
               <Section title="Saved backups"
                 icon={<Server className="w-4 h-4"/>}
                 action={
+                  <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={refresh} disabled={refreshing}
+                    data-testid="backup-history-refresh" style={btn(PAPER)}>
+                    <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}/>
+                    {refreshing ? "Refreshing…" : "Refresh"}
+                  </button>
                   <button
                     type="button"
                     onClick={snapshotNow}
@@ -285,7 +302,11 @@ export default function BackupTab() {
                     <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`}/>
                     {busy ? "Building…" : "Backup now"}
                   </button>
+                  </div>
                 }>
+                {refreshedAt && <div role="status" style={{ padding: "6px 12px", fontSize: 12, color: "#64748b" }}>
+                  List refreshed {refreshedAt.toLocaleTimeString("en-AU")}
+                </div>}
                 {loading ? (
                   <div style={{ padding: 18, color: "#64748b" }}>Loading…</div>
                 ) : snapshots.length === 0 ? (
@@ -307,9 +328,9 @@ export default function BackupTab() {
                         <tr key={s.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
                           <td style={td()}>{fmtAge(s.created_at)}<div style={{ fontSize: 11, color: "#64748b" }}>{s.created_at?.slice(0,19).replace("T"," ")}</div></td>
                           <td style={td()}>{fmtBytes(s.size)}</td>
-                          <td style={td()}>{(s.total_documents || 0).toLocaleString()}</td>
-                          <td style={td()}>{(s.collections || []).length}</td>
-                          <td style={{ ...td(), fontFamily: "monospace", fontSize: 10, color: "#475569" }}>{s.sha256?.slice(0,16)}…</td>
+                          <td style={td()}>{s.total_documents == null ? "—" : s.total_documents.toLocaleString()}</td>
+                          <td style={td()}>{Array.isArray(s.collections) ? s.collections.length : "—"}</td>
+                          <td style={{ ...td(), fontFamily: "monospace", fontSize: 10, color: "#475569" }}>{s.sha256 ? `${s.sha256.slice(0,16)}…` : "—"}</td>
                           <td style={td()}>
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end",
                                           flexWrap: "wrap" }}>
@@ -689,10 +710,10 @@ function VerifyButton({ snap, onDone }) {
     try {
       const r = await api.post(
         `${API}/snapshots/${snap.id}/verify`, {},
-        { headers: authHdr(), timeout: 60000 },
+        { headers: authHdr(), timeout: 120000 },
       );
       setResult(r.data);
-      if (onDone) onDone();
+      if (onDone) await onDone();
     } catch (e) {
       setErr(e?.response?.data?.detail || e.message);
     } finally {
@@ -815,7 +836,7 @@ function VerifyButton({ snap, onDone }) {
 // landing on the NAS within the last 6 h, amber if behind/stale,
 // red if the container has gone silent. Polls every 30 s.
 // ============================================================
-function LanDeliveryCard() {
+function LanDeliveryCard({ onRefresh }) {
   const LAN_API = (process.env.REACT_APP_BACKEND_URL || "") + "/api/backup/lan-status";
   const [s, setS] = useState(null);
   const [err, setErr] = useState("");
@@ -842,7 +863,7 @@ function LanDeliveryCard() {
     setIsRefreshing(true);
     const started = Date.now();
     try {
-      await load();
+      await Promise.all([load(), onRefresh?.()]);
     } finally {
       const elapsed = Date.now() - started;
       const remaining = Math.max(0, 500 - elapsed);
@@ -852,7 +873,7 @@ function LanDeliveryCard() {
         setIsRefreshing(false);
       }
     }
-  }, [isRefreshing, load]);
+  }, [isRefreshing, load, onRefresh]);
 
   useEffect(() => {
     load();
