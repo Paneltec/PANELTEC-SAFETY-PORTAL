@@ -171,6 +171,10 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
             const src = t.price_source_snapshot || t.frozen_price_source;
             if (!src || loading) return null;
             const cfg = {
+              fuelcheck_weekly_diesel: {
+                label: `FuelCheck diesel · locked week ${t.frozen_price_week || ''}`,
+                cls: 'border-blue-200 bg-blue-50 text-blue-800',
+              },
               provisional_override: {
                 label: 'Provisional override (at import)',
                 cls: 'border-amber-400 bg-amber-100 text-amber-900',

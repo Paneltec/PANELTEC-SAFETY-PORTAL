@@ -176,6 +176,8 @@ def effective_total_price(
       · EVERY row with `litres > 0` → `litres * provisional_price`.
       · Stored `total_price` in DB stays untouched (read-time only).
     """
+    if tx.get("frozen_at") and tx.get("frozen_total_price") is not None:
+        return float(tx["frozen_total_price"])
     try:
         litres = float(tx.get("litres") or 0)
     except (TypeError, ValueError):
@@ -461,3 +463,18 @@ async def seed_default_price(org_id: str) -> bool:
         "updated_at":                   now,
     })
     return True
+
+
+def effective_price_expression(price, override):
+    """Mongo equivalent of effective_total_price, with frozen values first."""
+    litres = {"$ifNull": ["$litres", 0]}
+    stored = {"$ifNull": ["$total_price", 0]}
+    provisional = {"$or": [
+        {"$in": [{"$ifNull": ["$price_source", ""]}, list(PROVISIONAL_PRICE_SOURCES)]},
+        {"$lte": [stored, 0]},
+    ]}
+    legacy = {"$cond": [True if override else provisional,
+                        {"$round": [{"$multiply": [litres, price]}, 2]}, stored]}
+    return {"$cond": [{"$and": [{"$ne": [{"$ifNull": ["$frozen_at", None]}, None]},
+                                {"$ne": [{"$ifNull": ["$frozen_total_price", None]}, None]}]},
+                       "$frozen_total_price", legacy]}
