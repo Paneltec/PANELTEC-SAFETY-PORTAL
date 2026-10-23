@@ -30,6 +30,7 @@
  * by the backend — the dialog surfaces the `safe_mode:true` response
  * so the operator knows nothing was actually sent.
  */
+import WeeklyDieselPricing from '../components/WeeklyDieselPricing';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -121,6 +122,7 @@ export default function FuelReporting() {
   // no `fleet` resource in the permissions matrix; earlier drafts used
   // one and silently hid the Edit button for every role).
   const canEditFuel = useCan()('assets', 'edit');
+  const [weeklyEnabled, setWeeklyEnabled] = useState(false);
   const [priceSettings, setPriceSettings] = useState(null);
   const [priceHistory, setPriceHistory] = useState([]);
   const [priceEditOpen, setPriceEditOpen] = useState(false);
@@ -421,13 +423,14 @@ export default function FuelReporting() {
 
   return (
     <div className="p-6 space-y-4" data-testid="fuel-reporting-page">
+      <WeeklyDieselPricing canEdit={canEditFuel} onModeChange={setWeeklyEnabled} />
       {/* v58.13.132dh — Fuel Price Source segmented control.
           Admin flips SmartFill (real) ↔ Provisional (override all).
           When provisional_all is active, every fill in the Per-Fill
           Transactions table + Top 10 cards + Organisation total is
           repriced at read time. Non-admins see the resulting price
           but no control. */}
-      {priceSettings && (
+      {priceSettings && !weeklyEnabled && (
         <div
           className="rounded-xl border border-slate-200 bg-white p-3 flex items-center gap-3 flex-wrap"
           data-testid="fuel-price-source-toggle"
@@ -436,7 +439,7 @@ export default function FuelReporting() {
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Fuel price source</div>
             <div className="text-xs text-slate-600 mt-0.5">
               {priceSettings.override_mode === 'provisional_all'
-                ? <>Every fill (including SmartFill real) is being displayed at <b>${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L</b> — read-time override.</>
+                ? <>New fills (including SmartFill real) will be priced at <b>${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L</b>. Existing imported fills stay locked.</>
                 : <>SmartFill real prices are shown per fill. Provisional (<b>${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L</b>) is used only when a fill has no real price.</>}
             </div>
           </div>
@@ -509,7 +512,7 @@ export default function FuelReporting() {
 
       {/* v58.13.132de — admin-editable Fuel Price card (fallback for
           fills without a SmartFill-tagged real price). */}
-      {priceSettings && (
+      {priceSettings && !weeklyEnabled && (
         <div
           className={`rounded-xl border p-3 flex items-center gap-3 ${
             priceSettings.override_smartfill_real
@@ -554,7 +557,7 @@ export default function FuelReporting() {
               priceSettings.override_smartfill_real ? 'text-amber-800/90' : 'text-emerald-700/80'
             }`} data-testid="fuel-price-info-line">
               {priceSettings.override_smartfill_real ? (
-                <>⚠ OVERRIDE ACTIVE — ALL fills (including SmartFill real prices) are being displayed at ${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L. Real prices in the DB are preserved.</>
+                <>New fills will use ${Number(priceSettings.provisional_price_per_litre).toFixed(4)}/L. Existing fills keep their locked prices.</>
               ) : (
                 <>Only applies to fills without a SmartFill-tagged real price. Applies to past and future fills — real prices are never overwritten.</>
               )}
@@ -594,7 +597,7 @@ export default function FuelReporting() {
           )}
         </div>
       )}
-      {priceHistOpen && priceHistory.length > 0 && (
+      {!weeklyEnabled && priceHistOpen && priceHistory.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-3" data-testid="fuel-price-history-list">
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Price change history (last {Math.min(5, priceHistory.length)})</div>
           <ul className="space-y-1 text-xs text-slate-700">
@@ -1010,7 +1013,7 @@ export default function FuelReporting() {
               data-testid="fuel-reporting-provisional-banner"
             >
               <div className="font-bold mb-1">
-                ⚠ Fuel costs shown are <span className="italic">provisional at ${Number(priceSettings?.provisional_price_per_litre ?? 2.25).toFixed(4)}/L</span> pending supplier confirmation.
+                Fuel costs include estimates. Each imported fill keeps its locked price; different weeks may have different rates.
               </div>
               <div className="text-amber-800 text-xs">
                 Applied to fills without a SmartFill-tagged real price — past and future. Real prices are never overwritten.

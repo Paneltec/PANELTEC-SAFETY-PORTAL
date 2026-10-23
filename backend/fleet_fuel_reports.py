@@ -154,7 +154,7 @@ async def _aggregate(
         "card_number": 1, "resolved_driver_name": 1,
         "resolved_driver_worker_id": 1,
         # v58.13.132t — surface provisional-price marker
-        "price_source": 1,
+        "price_source": 1, "frozen_at": 1, "frozen_total_price": 1, "frozen_price_per_litre": 1, "frozen_price_source": 1,
     }
     txs = [d async for d in db.fuel_transactions.find(q, projection)]
 
@@ -169,6 +169,8 @@ async def _aggregate(
     # flag is on, ALL rows are re-priced — banner fires whenever
     # there is at least one fill in the range.
     def _is_provisional(t: dict) -> bool:
+        if t.get("frozen_at"):
+            return t.get("frozen_price_source") != "smartfill_real"
         if override_smartfill:
             try:
                 return float(t.get("litres") or 0) > 0
@@ -718,7 +720,7 @@ async def fuel_report_export(
             "registration": 1, "description": 1, "driver": 1,
             "resolved_driver_name": 1,
             "litres": 1, "total_price": 1,
-            "computed_price_per_litre": 1, "price_source": 1,
+            "computed_price_per_litre": 1, "price_source": 1, "frozen_at": 1, "frozen_total_price": 1, "frozen_price_per_litre": 1, "frozen_price_source": 1,
             "anomaly_flags": 1,
             # v58.13.132au — surface the SmartFill portal id in the
             # CSV so admins can cross-reference DB rows against the
@@ -727,8 +729,8 @@ async def fuel_report_export(
         }
         async for t in db.fuel_transactions.find(q, projection).sort("timestamp", -1):
             litres = t.get("litres")
-            price = t.get("total_price")
-            dpl = t.get("computed_price_per_litre")
+            price = t.get("frozen_total_price") if t.get("frozen_at") else t.get("total_price")
+            dpl = t.get("frozen_price_per_litre") if t.get("frozen_at") else t.get("computed_price_per_litre")
             if dpl is None and litres and price and litres > 0:
                 try:
                     dpl = round(float(price) / float(litres), 4)
@@ -747,7 +749,7 @@ async def fuel_report_export(
                 litres if litres is not None else "",
                 price if price is not None else "",
                 dpl if dpl is not None else "",
-                t.get("price_source") or "",
+                t.get("frozen_price_source") or t.get("price_source") or "",
                 flag_rules,
                 t.get("transaction_id") or "",
             ])

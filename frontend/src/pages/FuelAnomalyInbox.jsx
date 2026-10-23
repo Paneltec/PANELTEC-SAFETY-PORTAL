@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowLeft, Loader2, ChevronLeft, ChevronRight,
-  CheckCircle2, X as XIcon, Search, Link2, Trash2, RotateCcw,
+  CheckCircle2, X as XIcon, Search, Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -20,20 +20,34 @@ import { useCan } from '../lib/permissions';
 import FuelTransactionDetailModal from '../components/FuelTransactionDetailModal';
 
 const RULE_META = {
-  unusual_hour:        { label: 'Unusual hour',        tone: 'amber',  severity: 'low'    },
-  capacity_exceed:     { label: 'Capacity exceeded',   tone: 'rose',   severity: 'high'   },
-  stat_spike:          { label: 'Statistical spike',   tone: 'violet', severity: 'medium' },
-  reading_regress:     { label: 'Reading regression',  tone: 'violet', severity: 'medium' },
-  missing_odometer:    { label: 'No odometer',         tone: 'amber',  severity: 'low'    },
-  // v58.13.131d — top-3 $/L outliers this month (procurement signal).
-  procurement_outlier: { label: 'Procurement outlier', tone: 'violet', severity: 'medium' },
+  unusual_hour: { label: 'Outside usual hours', severity: 'low', advice: 'Check that the fill was for an approved early or late shift.' },
+  capacity_exceed: { label: 'Above tank capacity', severity: 'high', advice: 'Check the litres, tank capacity and whether additional equipment was filled.' },
+  stat_spike: { label: 'Larger than usual fill', severity: 'medium', advice: 'Compare with recent fills and confirm the amount with the driver.' },
+  reading_regress: { label: 'Meter reading went backwards', severity: 'medium', advice: 'Compare the reading with records at the time of the fill. An older imported fill or a replaced meter can explain this.' },
+  missing_odometer: { label: 'Odometer unavailable', severity: 'low', advice: 'Check the vehicle meter or tracking connection. Consumption cannot be reliably calculated without a reading.' },
+  procurement_outlier: { label: 'High price per litre', severity: 'medium', advice: 'Check the price source and supplier receipt before treating this as an unusual cost.' },
 };
 
 const SEVERITY_TONE = {
-  low:    'bg-amber-100 text-amber-800 border-amber-200',
-  medium: 'bg-violet-100 text-violet-800 border-violet-200',
-  high:   'bg-rose-100 text-rose-800 border-rose-200',
+  low: 'bg-slate-100 text-slate-700 border-slate-200',
+  medium: 'bg-amber-50 text-amber-800 border-amber-200',
+  high: 'bg-rose-50 text-rose-800 border-rose-200',
 };
+
+// Actions are per rule: one reading rule may include both kilometres and hours.
+function groupFlags(flags) {
+  const groups = new Map();
+  for (const flag of flags || []) {
+    if (!flag?.rule) continue;
+    if (!groups.has(flag.rule)) groups.set(flag.rule, []);
+    groups.get(flag.rule).push(flag);
+  }
+  return [...groups.entries()].map(([rule, entries]) => ({ rule, entries }));
+}
+function displayDate(value) {
+  const parts = String(value || '').slice(0, 10).split('-');
+  return parts.length === 3 ? parts.reverse().join('/') : 'Date unavailable';
+}
 
 const PAGE_SIZE = 50;
 
@@ -266,17 +280,6 @@ export default function FuelAnomalyInbox() {
   };
 
   const togglePageAll = () => {
-    // v58.13.132ca — When the current filter matches more rows than
-    // the visible page, promote the header checkbox to select-all-
-    // MATCHING (server-scoped, up to 2000 cap). Fires the same fetch
-    // as the amber pre-select banner. If already fully selected on
-    // the page + no cross-page rows exist, this falls through to a
-    // simple deselect. Stephen's ask: "select all" should mean all
-    // matching, not just visible-page-50.
-    if (total > filtered.length && !allOnPageSelected) {
-      selectAllMatching();
-      return;
-    }
     setSelected((prev) => {
       const pageIds = filtered.map((r) => r.id);
       const allSelected = pageIds.every((id) => prev.has(id));
@@ -337,15 +340,14 @@ export default function FuelAnomalyInbox() {
         <div className="mt-2 flex items-baseline justify-between flex-wrap gap-2">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
-              SmartFill · Anomaly inbox
+              SmartFill · Fuel review
             </div>
             <h1 className="font-display text-2xl md:text-3xl font-bold text-slate-900 mt-0.5 inline-flex items-center gap-2">
               <AlertTriangle className="text-amber-600" size={22} />
-              Fuel anomalies
+              Fuel checks & exceptions
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Flagged fuel transactions from the SmartFill CSV importer.
-              Resolve, dismiss, or manually attribute each row. No emails or SMS are sent.
+              Review fills that need a closer look. A flag is a check to investigate, not evidence of misuse.
             </p>
           </div>
           <div className="text-right">
@@ -353,6 +355,18 @@ export default function FuelAnomalyInbox() {
             <div className="text-2xl font-bold text-slate-900 tabular-nums">{total}</div>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
+        <b>How to review:</b> Open a fill to compare its readings, then resolve a check once investigated, or dismiss it if it does not apply.
+        These actions record your review; they do not correct readings or delete the fuel transaction.
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-label="Checks on this page">
+        {[
+          ['Fills on this page', filtered.length],
+          ['With open meter checks', filtered.filter(r => (r.anomaly_flags || []).some(f => !f.resolved_at && !f.deleted_at && ['reading_regress', 'missing_odometer'].includes(f.rule))).length],
+          ['With open quantity checks', filtered.filter(r => (r.anomaly_flags || []).some(f => !f.resolved_at && !f.deleted_at && ['capacity_exceed', 'stat_spike'].includes(f.rule))).length],
+        ].map(([label, count]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">{label}</div><div className="text-2xl font-semibold text-slate-900">{count}</div></div>)}
       </div>
 
       {/* ── Filters ─────────────────────────────────────── */}
@@ -366,8 +380,8 @@ export default function FuelAnomalyInbox() {
         <div className="border-b border-slate-200 -mx-3 px-3">
           <div className="flex items-center gap-1" data-testid="fuel-anomaly-status-tabs">
             {[
-              { key: 'open',     label: 'Open' },
-              { key: 'resolved', label: 'Resolved' },
+              { key: 'open',     label: 'Needs review' },
+              { key: 'resolved', label: 'Reviewed' },
               { key: 'all',      label: 'All' },
             ].map((opt) => (
               <button
@@ -396,21 +410,21 @@ export default function FuelAnomalyInbox() {
                   onChange={(e) => { setShowDeleted(e.target.checked); setPage(1); }}
                   className="h-3 w-3"
                 />
-                Show deleted
+                Show hidden dismissals
               </label>
             )}
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
-          <div className="text-xs font-semibold text-slate-500">Rule</div>
+          <div className="text-xs font-semibold text-slate-500">Check type</div>
           <select
             value={rule}
             onChange={(e) => { setRule(e.target.value); setPage(1); }}
             data-testid="fuel-anomaly-rule-filter"
-            className="text-xs px-2 py-1 border border-slate-300 rounded-md bg-white"
+            aria-label="Check type" className="text-xs px-2 py-1 border border-slate-300 rounded-md bg-white"
           >
-            <option value="">All rules</option>
+            <option value="">All check types</option>
             {Object.entries(RULE_META).map(([k, v]) => (
               <option key={k} value={k}>{v.label}</option>
             ))}
@@ -435,7 +449,7 @@ export default function FuelAnomalyInbox() {
           rows than the visible page. Makes the "act on all N matching"
           affordance discoverable without needing to tick a checkbox
           first. */}
-      {canEdit && selected.size === 0 && total > filtered.length && filtered.length > 0 && (
+      {canEdit && !q.trim() && !showDeleted && selected.size === 0 && total > filtered.length && filtered.length > 0 && (
         <div
           className="rounded-2xl border border-amber-200 bg-amber-50 text-amber-900 px-4 py-2 flex items-center gap-3 flex-wrap"
           data-testid="fuel-anomaly-preselect-banner"
@@ -478,7 +492,7 @@ export default function FuelAnomalyInbox() {
               admins can act on the full result set (not just the
               visible page). Only surfaces when there are more
               matches than currently selected. */}
-          {total > selected.size && (
+          {!q.trim() && !showDeleted && total > selected.size && (
             <button
               type="button"
               onClick={selectAllMatching}
@@ -497,7 +511,7 @@ export default function FuelAnomalyInbox() {
               data-testid="fuel-anomaly-bulk-resolve"
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 disabled:opacity-60"
             >
-              <CheckCircle2 size={12} /> Bulk Resolve
+              <CheckCircle2 size={12} /> Resolve selected
             </button>
             <button
               type="button"
@@ -506,7 +520,7 @@ export default function FuelAnomalyInbox() {
               data-testid="fuel-anomaly-bulk-dismiss"
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-600 hover:bg-slate-700 text-white border border-slate-500 disabled:opacity-60"
             >
-              <XIcon size={12} /> Bulk Dismiss
+              <XIcon size={12} /> Dismiss selected
             </button>
             <button
               type="button"
@@ -515,7 +529,7 @@ export default function FuelAnomalyInbox() {
               data-testid="fuel-anomaly-bulk-attribute"
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-700 disabled:opacity-60"
             >
-              <Link2 size={12} /> Bulk Manually Attribute
+              <Link2 size={12} /> Link selected to vehicle
             </button>
             <button
               type="button"
@@ -556,8 +570,8 @@ export default function FuelAnomalyInbox() {
                 <th className="px-3 py-2 text-left">Driver / Site</th>
                 <th className="px-3 py-2 text-right">Litres</th>
                 <th className="px-3 py-2 text-left" title="SmartFill portal transaction id (v58.13.132au)">Txn ID</th>
-                <th className="px-3 py-2 text-left">Anomaly rules</th>
-                <th className="px-3 py-2 text-left">Match</th>
+                <th className="px-3 py-2 text-left">Why flagged / next step</th>
+                <th className="px-3 py-2 text-left">Vehicle link</th>
                 {canEdit && <th className="px-3 py-2 text-left w-40">Actions</th>}
               </tr>
             </thead>
@@ -583,6 +597,7 @@ export default function FuelAnomalyInbox() {
               {!loading && filtered.map((r) => (
                 <AnomalyRow
                   key={r.id}
+                  showDeleted={showDeleted}
                   row={r}
                   canEdit={canEdit}
                   selected={selected.has(r.id)}
@@ -690,184 +705,52 @@ export default function FuelAnomalyInbox() {
 }
 
 // ─────────────────────────────────────────────────────────
-function AnomalyRow({ row, canEdit, selected, onToggle, onFlip, onMatch, onOpenDetail, onDeleteDismissal, onUndeleteDismissal }) {
-  const flags = (row.anomaly_flags || []).filter((f) => f?.rule);
-  const openFlags = flags.filter((f) => !f.resolved_at);
-  // v58.13.132ds — Dismissed flag rows may carry `deleted_at` when
-  // an admin has soft-deleted the dismissal. Rendered greyed with a
-  // strikethrough + an Undelete affordance.
-  const dismissedFlags = flags.filter(
-    (f) => f.resolved_at && (f.resolved_action === 'dismissed' || f.dismissed_at),
-  );
-  const unmatched = row.match_status === 'unmatched';
+function AnomalyRow({ showDeleted, row, canEdit, selected, onToggle, onFlip, onMatch, onOpenDetail, onDeleteDismissal, onUndeleteDismissal }) {
+  const [expanded, setExpanded] = useState(false);
+  const groups = groupFlags((row.anomaly_flags || []).filter(f => showDeleted || !f.deleted_at));
+  const unmatched = !row.match_status || row.match_status === 'unmatched';
+  const visibleGroups = groups.filter(g => g.entries.some(f => !f.deleted_at));
   return (
-    <tr data-testid={`fuel-anomaly-row-${row.id}`} className="hover:bg-slate-50">
-      {canEdit && (
-        <td className="px-3 py-2 w-8">
-          <input
-            type="checkbox"
-            checked={!!selected}
-            onChange={() => onToggle?.(row.id)}
-            aria-label="Select transaction"
-            data-testid={`fuel-anomaly-select-${row.id}`}
-            className="h-3.5 w-3.5 cursor-pointer"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </td>
-      )}
-      <td className="px-3 py-2 text-xs font-mono text-slate-700 whitespace-nowrap">
-        {/* v58.13.132ax — When cell is a click-to-detail affordance.
-            Uses button so keyboard focus lands on it too. */}
-        <button
-          type="button"
-          onClick={() => onOpenDetail?.(row)}
-          data-testid={`fuel-anomaly-open-detail-${row.id}`}
-          title="View full transaction detail"
-          className="inline-flex items-center gap-1 text-left hover:text-amber-700 focus:text-amber-700 focus:outline-none"
-        >
-          <span>{row.date_iso}</span>
-          <span className="text-slate-400"> · </span>
-          <span>{row.time_local}</span>
+    <tr data-testid={`fuel-anomaly-row-${row.id}`} className="align-top hover:bg-slate-50">
+      {canEdit && <td className="px-3 py-4"><input type="checkbox" checked={!!selected} onChange={() => onToggle?.(row.id)} aria-label={`Select transaction ${row.transaction_id || row.id}`} className="h-4 w-4" /></td>}
+      <td className="px-3 py-4 whitespace-nowrap text-xs text-slate-600">
+        <button type="button" onClick={() => onOpenDetail?.(row)} className="text-left text-blue-700 hover:underline" title="View fill details">
+          <div className="font-semibold">{displayDate(row.date_iso)}</div><div>{row.time_local || 'Time unavailable'}</div>
         </button>
       </td>
-      <td className="px-3 py-2">
-        <div className="font-mono text-sm font-semibold text-slate-800">
-          {row.registration || row.key_code || row.card_number || '—'}
-        </div>
-        <div className="text-[11px] text-slate-500 truncate max-w-[220px]">
-          {row.description || '—'}
-        </div>
-      </td>
-      <td className="px-3 py-2 text-xs text-slate-600">
-        <div>{row.driver || '—'}</div>
-        <div className="text-[11px] text-slate-400">{row.from_site || '—'}</div>
-      </td>
-      <td className="px-3 py-2 text-right font-mono text-sm text-slate-800">
-        {row.litres != null ? `${Number(row.litres).toFixed(2)} L` : '—'}
-      </td>
-      {/* v58.13.132au — SmartFill transaction id. */}
-      <td
-        className="px-3 py-2 font-mono text-[11px] text-slate-500"
-        data-testid={`fuel-anomaly-txn-id-${row.id}`}
-      >
-        {row.transaction_id || <span className="text-slate-300">—</span>}
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex flex-wrap gap-1">
-          {flags.map((f, i) => {
-            const meta = RULE_META[f.rule] || { label: f.rule, severity: f.severity };
-            const resolved = !!f.resolved_at;
-            const deleted = !!f.deleted_at;
-            return (
-              <span
-                key={`${f.rule}-${i}`}
-                title={deleted ? `${f.detail || meta.label} (hidden)` : (f.detail || meta.label)}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                  deleted
-                    ? 'bg-slate-50 text-slate-300 border-slate-100 line-through italic'
-                    : resolved
-                    ? 'bg-slate-100 text-slate-500 border-slate-200 line-through'
-                    : SEVERITY_TONE[meta.severity] || SEVERITY_TONE.low
-                }`}
-                data-testid={`fuel-anomaly-flag-${row.id}-${f.rule}`}
-              >
-                {meta.label}
-              </span>
-            );
+      <td className="px-3 py-4"><div className="font-semibold text-slate-900">{row.registration || row.key_code || row.card_number || 'Unlinked vehicle'}</div><div className="text-xs text-slate-500">{row.description || ''}</div></td>
+      <td className="px-3 py-4 text-xs"><div>{row.resolved_driver_name || row.driver || 'Driver not recorded'}</div><div className="text-slate-500 mt-1">{row.from_site || 'Site not recorded'}</div></td>
+      <td className="px-3 py-4 text-right whitespace-nowrap tabular-nums">{row.litres != null ? `${Number(row.litres).toFixed(2)} L` : '—'}</td>
+      <td className="px-3 py-4 text-xs text-slate-500">{row.transaction_id || '—'}</td>
+      <td className="px-3 py-4 min-w-[280px]">
+        <div className="space-y-3">
+          {(expanded ? groups : visibleGroups).map(({rule, entries}) => {
+            const meta = RULE_META[rule] || {label: rule.replaceAll('_', ' '), advice: 'Open the fill details and check the source record.', severity: 'low'};
+            const open = entries.some(f => !f.resolved_at && !f.deleted_at);
+            const details = [...new Set(entries.map(f => f.detail).filter(Boolean))];
+            const dismissed = entries.find(f => f.resolved_action === 'dismissed' || f.dismissed_at);
+            return <div key={rule} className="border-b border-slate-100 pb-2 last:border-0">
+              <span className={`inline-block rounded border px-2 py-1 text-xs font-semibold ${open ? SEVERITY_TONE[meta.severity] : SEVERITY_TONE.low}`}>{meta.label}{!open ? ' · Reviewed' : ''}</span>
+              {expanded && <>
+                {details.map(detail => <p key={detail} className="text-xs text-slate-700 mt-2">{detail}</p>)}
+                <p className="text-xs text-slate-500 mt-2">{meta.advice}</p>
+                {canEdit && open && <div className="flex gap-2 mt-3">
+                  <button type="button" onClick={() => onFlip(row, rule, 'resolve')} className="rounded-md bg-emerald-600 text-white px-3 py-2 text-xs font-semibold" aria-label={`Resolve ${meta.label}`}><CheckCircle2 size={12} className="inline mr-1" />Resolve check</button>
+                  <button type="button" onClick={() => onFlip(row, rule, 'dismiss')} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold" aria-label={`Dismiss ${meta.label}`}>Dismiss check</button>
+                </div>}
+                {canEdit && dismissed && <button type="button" onClick={() => dismissed.deleted_at ? onUndeleteDismissal?.(row, rule) : onDeleteDismissal?.(row, rule)} className="mt-2 text-xs text-slate-500 underline">{dismissed.deleted_at ? 'Show dismissal again' : 'Hide dismissal'}</button>}
+              </>}
+            </div>;
           })}
         </div>
+        <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} className="mt-3 text-xs font-semibold text-blue-700 hover:underline">{expanded ? 'Hide checks' : 'Review checks →'}</button>
       </td>
-      <td className="px-3 py-2">
-        <MatchPill status={row.match_status} />
-      </td>
-      {canEdit && (
-        <td className="px-3 py-2">
-          <div className="flex flex-wrap gap-1">
-            {openFlags.map((f) => (
-              <React.Fragment key={f.rule}>
-                <button
-                  type="button"
-                  onClick={() => onFlip(row, f.rule, 'resolve')}
-                  data-testid={`fuel-anomaly-resolve-${row.id}-${f.rule}`}
-                  title="Marks this flag as resolved — reversible via Undo toast"
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 transition-colors"
-                >
-                  <CheckCircle2 size={12} /> Resolve
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onFlip(row, f.rule, 'dismiss')}
-                  data-testid={`fuel-anomaly-dismiss-${row.id}-${f.rule}`}
-                  title="Dismisses this flag — reversible via Undo toast"
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border bg-slate-600 hover:bg-slate-700 text-white border-slate-700 transition-colors"
-                >
-                  <XIcon size={12} /> Dismiss
-                </button>
-              </React.Fragment>
-            ))}
-            {/* v58.13.132ds — Per-dismissal soft-delete affordance.
-                Only surfaces on flags in a dismissed state; when the
-                flag is already soft-deleted, show Undelete instead. */}
-            {dismissedFlags.map((f) => (
-              f.deleted_at ? (
-                <button
-                  key={`undel-${f.rule}`}
-                  type="button"
-                  onClick={() => onUndeleteDismissal?.(row, f.rule)}
-                  data-testid={`fuel-anomaly-undelete-dismissal-${row.id}-${f.rule}`}
-                  title="Restore this dismissal to the visible list"
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-                >
-                  <RotateCcw size={10} /> Undelete
-                </button>
-              ) : (
-                <button
-                  key={`del-${f.rule}`}
-                  type="button"
-                  onClick={() => onDeleteDismissal?.(row, f.rule)}
-                  data-testid={`fuel-anomaly-delete-dismissal-${row.id}-${f.rule}`}
-                  title="Hide this dismissal from view (soft-delete, preserves audit)"
-                  className="inline-flex items-center justify-center w-6 h-6 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"
-                  aria-label="Delete dismissal"
-                >
-                  <Trash2 size={12} />
-                </button>
-              )
-            ))}
-            {unmatched && (
-              <button
-                type="button"
-                onClick={onMatch}
-                data-testid={`fuel-anomaly-match-${row.id}`}
-                title="Manually attribute this transaction to a fleet asset"
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-300 text-blue-800 hover:bg-blue-50"
-              >
-                <Link2 size={10} /> Match
-              </button>
-            )}
-          </div>
-        </td>
-      )}
+      <td className="px-3 py-4"><span className={`text-xs ${unmatched ? 'text-amber-700' : 'text-emerald-700'}`}>{unmatched ? 'Needs linking' : row.match_status === 'matched_via_fuel_card' ? 'Linked by fuel card' : row.match_status === 'manual' ? 'Linked manually' : 'Linked'}</span></td>
+      {canEdit && <td className="px-3 py-4 space-y-2">
+        <button type="button" onClick={() => onOpenDetail?.(row)} className="block rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold">View fill</button>
+        {unmatched && <button type="button" onClick={onMatch} className="text-xs font-semibold text-blue-700">Link vehicle</button>}
+      </td>}
     </tr>
-  );
-}
-
-const MATCH_TONE = {
-  matched:   'bg-emerald-100 text-emerald-800',
-  manual:    'bg-violet-100 text-violet-800',
-  unmatched: 'bg-amber-100 text-amber-800',
-};
-
-function MatchPill({ status }) {
-  const s = status || 'unmatched';
-  return (
-    <span
-      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-        MATCH_TONE[s] || MATCH_TONE.unmatched
-      }`}
-    >
-      {s}
-    </span>
   );
 }
 

@@ -1,4 +1,4 @@
-"""v58.13.131b — SmartFill Fuel CSV Importer (backend only).
+"""v58.13.131b â€” SmartFill Fuel CSV Importer (backend only).
 
 Confirmed schema per user's Portal Transaction-detail screenshot.
 See `/app/memory/smartfill_discovery_v58_13_131.md` (`.131b addendum`).
@@ -6,37 +6,37 @@ See `/app/memory/smartfill_discovery_v58_13_131.md` (`.131b addendum`).
 Endpoints (all `/api/fleet/fuel/*`, guarded by
 `FLEET_REGISTER_ENABLED` + existing `assets.view` / `assets.edit`):
 
-  · POST   /fleet/fuel/import-csv
-  · GET    /fleet/fuel/batches
-  · GET    /fleet/fuel/batches/{id}
-  · DELETE /fleet/fuel/batches/{id}
-  · GET    /fleet/fuel/transactions
-  · GET    /fleet/fuel/anomalies
-  · POST   /fleet/fuel/anomalies/{txn_id}/resolve
-  · POST   /fleet/fuel/anomalies/{txn_id}/dismiss
-  · POST   /fleet/fuel/transactions/{txn_id}/match
-  · GET    /fleet/fuel/stats
-  · GET    /fleet/assets/{asset_id}/fuel
-  · GET    /fleet/fuel/export
+  Â· POST   /fleet/fuel/import-csv
+  Â· GET    /fleet/fuel/batches
+  Â· GET    /fleet/fuel/batches/{id}
+  Â· DELETE /fleet/fuel/batches/{id}
+  Â· GET    /fleet/fuel/transactions
+  Â· GET    /fleet/fuel/anomalies
+  Â· POST   /fleet/fuel/anomalies/{txn_id}/resolve
+  Â· POST   /fleet/fuel/anomalies/{txn_id}/dismiss
+  Â· POST   /fleet/fuel/transactions/{txn_id}/match
+  Â· GET    /fleet/fuel/stats
+  Â· GET    /fleet/assets/{asset_id}/fuel
+  Â· GET    /fleet/fuel/export
 
 Dedupe:
-  · Primary: `transaction_id` UNIQUE.
-  · Fallback (txn_id missing): `(key_code, timestamp, litres)`.
+  Â· Primary: `transaction_id` UNIQUE.
+  Â· Fallback (txn_id missing): `(key_code, timestamp, litres)`.
 
 Match order (per row):
-  1. key_code    → assets.smartfill_key_code
-  2. card_number → assets.smartfill_card_number
-  3. registration→ assets.rego_serial  (case-insensitive)
-  4. Fuzzy description → assets.name   (difflib 0.85)
+  1. key_code    â†’ assets.smartfill_key_code
+  2. card_number â†’ assets.smartfill_card_number
+  3. registrationâ†’ assets.rego_serial  (case-insensitive)
+  4. Fuzzy description â†’ assets.name   (difflib 0.85)
   5. Else unmatched.
 
 Anomaly rules (evaluated on-insert, per-row post-match):
-  · R1 unusual_hour       — local hour outside [05:00, 19:00). LOW.
-  · R2 capacity_exceed    — litres > cap × 1.10. HIGH.
-  · R3 stat_spike         — μ + 2σ vs last 20 fills, activate at ≥ 5 prior. MEDIUM.
-  · R4 reading_regress    — odometer OR engine_hours below last known. MEDIUM.
-  · R5 missing_odometer   — odometer==0 AND asset has prior >0 reading. LOW.
-  · R6 unit_mismatch      — Units column != "Litres" → HARD-REJECT (not a flag).
+  Â· R1 unusual_hour       â€” local hour outside [05:00, 19:00). LOW.
+  Â· R2 capacity_exceed    â€” litres > cap Ã— 1.10. HIGH.
+  Â· R3 stat_spike         â€” Î¼ + 2Ïƒ vs last 20 fills, activate at â‰¥ 5 prior. MEDIUM.
+  Â· R4 reading_regress    â€” odometer OR engine_hours below last known. MEDIUM.
+  Â· R5 missing_odometer   â€” odometer==0 AND asset has prior >0 reading. LOW.
+  Â· R6 unit_mismatch      â€” Units column != "Litres" â†’ HARD-REJECT (not a flag).
 
 Never emails/SMS. Inbox-only. No cron.
 """
@@ -78,8 +78,8 @@ _ROLLING_WINDOW = 20
 _ROLLING_MIN_PRIOR = 5
 _FUZZY_CUTOFF = 0.85
 
-# v58.13.131n — Fuel import upsert-on-duplicate feature flag.
-#   Default ON — matches the shipping user directive ("act on real-world
+# v58.13.131n â€” Fuel import upsert-on-duplicate feature flag.
+#   Default ON â€” matches the shipping user directive ("act on real-world
 #   re-exports of the SmartFill CSV with new columns without losing the
 #   original 547 rows"). Flip to `false` in supervisor env to fall back
 #   to the pre-.131n behaviour (reject-as-duplicate).
@@ -89,7 +89,7 @@ _FUEL_UPSERT_ENABLED = (
 )
 
 # Fields eligible for upsert-fill on duplicate. All are NULLABLE in
-# the fuel_transactions shape — the immutable identity fields
+# the fuel_transactions shape â€” the immutable identity fields
 # (`id`, `org_id`, `timestamp`, `litres`, `dedupe_hash`,
 # `raw_row_hash`, `import_batch_id`, `imported_at`, `imported_by`,
 # `source`) are NOT in this list and are never touched by an upsert.
@@ -107,8 +107,8 @@ _UPSERT_ANOMALY_TRIGGER_FIELDS: frozenset[str] = frozenset({
 })
 
 
-# v58.13.131o (post-ship amendment) — Compute $/L from
-# Total Price ÷ Litres per row. SmartFill's own `Unit Price` column
+# v58.13.131o (post-ship amendment) â€” Compute $/L from
+# Total Price Ã· Litres per row. SmartFill's own `Unit Price` column
 # is stale on this account (Pricing Module wasn't updated weekly, so
 # it reads a constant $3.000 all year). `total_price` is what the
 # operator actually paid, so we trust that + the litre count.
@@ -127,7 +127,7 @@ def _compute_price_per_litre(total_price, litres) -> Optional[float]:
         return None
     return round(tp / lt, 3)
 
-# Canonical field → CSV header aliases. Normaliser strips non-alnum
+# Canonical field â†’ CSV header aliases. Normaliser strips non-alnum
 # + lowercases before comparing, so "Transaction Id", "TransactionID",
 # "TRANS_ID", "trans-id" all resolve to the same key.
 _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
@@ -148,9 +148,9 @@ _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "engine_hours":   ("enginehours", "hours"),
     "driver":         ("driver", "drivername", "drivername1", "drivernamefull"),
     "total_price":    ("totalprice", "price", "cost", "total",
-                       # v58.13.131g — real-world CSV alias expansion.
+                       # v58.13.131g â€” real-world CSV alias expansion.
                        "amount", "value", "$"),
-    # v58.13.131n — Job costing columns from the new SmartFill export.
+    # v58.13.131n â€” Job costing columns from the new SmartFill export.
     "job":            ("job", "jobname", "jobreference", "jobref"),
     "job_code":       ("jobcode", "jobno", "jobnumber", "jobid"),
     # `Price per Litre` is derivable from total_price/litres, but we
@@ -162,9 +162,9 @@ _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
 _ALL_ALIASES = {a for al in _COLUMN_ALIASES.values() for a in al} | {"actions"}
 
 
-# ── Utilities ────────────────────────────────────────────────────
+# â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _norm_header(h: str) -> str:
-    """Lowercase + strip non-alnum. `Transaction Id` → `transactionid`."""
+    """Lowercase + strip non-alnum. `Transaction Id` â†’ `transactionid`."""
     return re.sub(r"[^a-z0-9]", "", (h or "").lower())
 
 
@@ -182,7 +182,7 @@ def _map_headers(fieldnames: list[str]) -> tuple[dict, list[str]]:
 
 def _parse_date(raw: str) -> Optional[str]:
     raw = (raw or "").strip()
-    # v58.13.132ap — SmartFill Transactions:Read emits `16 May 2025`
+    # v58.13.132ap â€” SmartFill Transactions:Read emits `16 May 2025`
     # style dates. Added `%d %b %Y` + `%d %B %Y` so those rows land
     # in the same pipeline as CSV imports.
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y",
@@ -196,7 +196,7 @@ def _parse_date(raw: str) -> Optional[str]:
 
 def _parse_time(raw: str) -> Optional[str]:
     raw = (raw or "").strip()
-    # v58.13.132ap — SmartFill emits `2:30pm` (no space before AM/PM).
+    # v58.13.132ap â€” SmartFill emits `2:30pm` (no space before AM/PM).
     # Python's `%p` needs upper-case AM/PM, so we upper the AM/PM
     # segment before parsing.
     up = raw
@@ -213,7 +213,7 @@ def _parse_time(raw: str) -> Optional[str]:
 
 
 def _parse_datetime(raw: str) -> Optional[tuple[str, str]]:
-    """Combined `Date/Time` field parser — returns `(date_iso, time_local)`."""
+    """Combined `Date/Time` field parser â€” returns `(date_iso, time_local)`."""
     raw = (raw or "").strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
                 "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
@@ -266,7 +266,7 @@ def _row_hash(row: dict) -> str:
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 
-# ── Vehicle matching ────────────────────────────────────────────
+# â”€â”€ Vehicle matching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def _resolve_asset(
     *, org_id: str, key_code: str, card_number: str, registration: str,
     description: str, _asset_cache: Optional[list[dict]] = None,
@@ -274,23 +274,23 @@ async def _resolve_asset(
     """Returns `(asset_id, worker_id, match_status, attribution_pending)`.
 
     `match_status` enum:
-        matched                    — resolved via key_code/card/rego/fuzzy
-        matched_via_fuel_card      — resolved from fuel_cards mapping
-        matched_worker_via_card    — fuel_cards says attribution_kind=worker
-        shared_via_fuel_card       — fuel_cards says attribution_kind=shared
-        unmatched                  — nothing resolved
+        matched                    â€” resolved via key_code/card/rego/fuzzy
+        matched_via_fuel_card      â€” resolved from fuel_cards mapping
+        matched_worker_via_card    â€” fuel_cards says attribution_kind=worker
+        shared_via_fuel_card       â€” fuel_cards says attribution_kind=shared
+        unmatched                  â€” nothing resolved
 
     `attribution_pending` is True when the card either has no
-    `fuel_cards` doc yet or its doc is `attribution_kind=unassigned` —
+    `fuel_cards` doc yet or its doc is `attribution_kind=unassigned` â€”
     signals the ingest to stamp `attribution_pending: true` on the fill
     so admin knows to review.
 
-    v58.13.132w — Step 0 consults `fuel_cards` before the legacy
+    v58.13.132w â€” Step 0 consults `fuel_cards` before the legacy
     key_code/card/rego/fuzzy waterfall. When a brand-new card_number
     is seen, an `unassigned` `fuel_cards` doc is auto-created so the
     admin UI can surface it for manual attribution.
     """
-    # ── Step 0 — fuel_cards lookup + auto-create for new cards ──
+    # â”€â”€ Step 0 â€” fuel_cards lookup + auto-create for new cards â”€â”€
     fc = None
     if card_number:
         fc = await db.fuel_cards.find_one(
@@ -304,7 +304,7 @@ async def _resolve_asset(
                 return None, fc["worker_id"], "matched_worker_via_card", False
             if kind == "shared":
                 return None, None, "shared_via_fuel_card", False
-            # attribution_kind == "unassigned" — fall through to
+            # attribution_kind == "unassigned" â€” fall through to
             # legacy waterfall but flag pending.
     # Track pending intent for the final return; legacy resolution
     # may still succeed via key_code/rego and give admin a hint about
@@ -364,7 +364,7 @@ async def _resolve_asset(
                     )
                     return a["id"], None, "matched", pending
 
-    # No asset resolved — but still ensure a fuel_cards doc exists so
+    # No asset resolved â€” but still ensure a fuel_cards doc exists so
     # the admin UI surfaces this new card for manual attribution.
     await _ensure_fuel_card_doc(org_id, card_number, description, registration)
     return None, None, "unmatched", pending
@@ -373,8 +373,8 @@ async def _resolve_asset(
 async def _ensure_fuel_card_doc(
     org_id: str, card_number: str, description: str, registration: str,
 ) -> None:
-    """v58.13.132w — Auto-create an `unassigned` `fuel_cards` row for
-    any brand-new card_number seen at ingest. Idempotent — the unique
+    """v58.13.132w â€” Auto-create an `unassigned` `fuel_cards` row for
+    any brand-new card_number seen at ingest. Idempotent â€” the unique
     index on (org_id, card_number) plus a find-first guard prevents
     duplicates. Existing docs are NOT mutated (admin's manual
     assignment wins)."""
@@ -395,7 +395,7 @@ async def _ensure_fuel_card_doc(
         "worker_id": None,
         "smartfill_description": description or None,
         "smartfill_registration": registration or None,
-        "notes": "Seen at ingest — awaiting attribution.",
+        "notes": "Seen at ingest â€” awaiting attribution.",
         "fill_count": 1,
         "first_seen_at": None,
         "last_seen_at": None,
@@ -407,8 +407,8 @@ async def _ensure_fuel_card_doc(
     })
 
 
-# ── Anomaly detection ───────────────────────────────────────────
-# v58.13.131g — Rule set is now conditional per batch and per org.
+# â”€â”€ Anomaly detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# v58.13.131g â€” Rule set is now conditional per batch and per org.
 # `_ALL_RULES` names every rule the detector CAN emit; `_evaluate_
 # anomalies` accepts an `enabled` set so the caller can suppress
 # specific rules for this batch (odometerless fleet) or globally
@@ -422,14 +422,14 @@ def _compose_dedupe_hash(
     *, card_number: str, key_code: str, registration: str,
     timestamp: str, litres: float,
 ) -> Optional[str]:
-    """v58.13.131g — SHA256 composite hash for dedupe when
+    """v58.13.131g â€” SHA256 composite hash for dedupe when
     `transaction_id` is absent. Real-world SmartFill exports without
     txn_id use `(card|key|rego, timestamp, litres)` as a natural key.
 
-    v58.13.132au — Canonicalise `timestamp` to minute precision
+    v58.13.132au â€” Canonicalise `timestamp` to minute precision
     before hashing. Historical bug: the SmartFill CSV export encoded
     seconds (`06:28:07`) while the SmartFill Transactions:Read API
-    only exposes minute precision (`6:28am` → `06:28:00`). The old
+    only exposes minute precision (`6:28am` â†’ `06:28:00`). The old
     second-precision hash therefore failed to dedupe API rows
     against pre-existing CSV rows for the same fill, producing 542
     duplicate rows (~10 % of the DB, XT02AX Sep 1-8 inflated 42.7%).
@@ -440,7 +440,7 @@ def _compose_dedupe_hash(
     normalises stored hashes on all live rows.
 
     Returns None only if all three identifier fields are blank AND
-    there's therefore nothing meaningful to hash — the row will have
+    there's therefore nothing meaningful to hash â€” the row will have
     already been rejected upstream in that case.
     """
     import hashlib
@@ -449,9 +449,9 @@ def _compose_dedupe_hash(
         return None
     # Canonicalise timestamp: keep everything up to and including the
     # minute, zero the seconds. ISO shapes we handle:
-    #   2026-09-04T06:28:07+00:00 → 2026-09-04T06:28:00+00:00
-    #   2026-09-04T06:28:07.123+00:00 → 2026-09-04T06:28:00+00:00
-    #   2026-09-04T06:28    (no seconds) → 2026-09-04T06:28:00
+    #   2026-09-04T06:28:07+00:00 â†’ 2026-09-04T06:28:00+00:00
+    #   2026-09-04T06:28:07.123+00:00 â†’ 2026-09-04T06:28:00+00:00
+    #   2026-09-04T06:28    (no seconds) â†’ 2026-09-04T06:28:00
     canon = timestamp or ""
     try:
         # Split off the timezone / offset first so we only reshape
@@ -489,7 +489,7 @@ def _compose_dedupe_hash(
 
 
 async def _fleet_tracks_odometers(org_id: str) -> bool:
-    """v58.13.131g — Deprecated stub. Original .131g brief called
+    """v58.13.131g â€” Deprecated stub. Original .131g brief called
     for an org-scoped toggle; the amendment replaced that with per-
     row Navixy enrichment (shipping in .131h). Kept as a stub so
     existing callers/tests don't crash; always returns True (i.e.
@@ -498,12 +498,12 @@ async def _fleet_tracks_odometers(org_id: str) -> bool:
     return True
 
 
-# ── v58.13.131o — SmartFill card→worker resolution ──────────────
+# â”€â”€ v58.13.131o â€” SmartFill cardâ†’worker resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Fuel CSV rows carry a `Card Number` (e.g. 21318) but no human
 # name. Admins link cards to workers via
 # `POST /api/workers/{worker_id}/smartfill-cards`. At import (both
 # CSV path and SmartFill API sync via `.131m`), we compute
-# `resolved_driver_name` off the linkage — used by the per-employee
+# `resolved_driver_name` off the linkage â€” used by the per-employee
 # fuel report to show "Stephen Guy" instead of "Card 21318".
 #
 # Historical re-assignment is supported: a card entry with
@@ -513,14 +513,14 @@ async def _fleet_tracks_odometers(org_id: str) -> bool:
 # on or after `assigned_from` (or always if `assigned_from` is null).
 
 async def _load_card_worker_index(org_id: str) -> dict:
-    """Load a card_number → list[{worker_id, worker_name,
+    """Load a card_number â†’ list[{worker_id, worker_name,
     assigned_from, assigned_to}] index for the org. Multiple entries
     per card_number happen when a card is historically reassigned
     between workers.
 
     v58.13.131o hardening: unit-test mocks (`_FakeDB`) don't expose a
     `workers` collection, so we tolerate `AttributeError` and return
-    an empty index — the caller then behaves as if no card links exist.
+    an empty index â€” the caller then behaves as if no card links exist.
     """
     index: dict[str, list[dict]] = {}
     try:
@@ -556,9 +556,9 @@ def resolve_driver_by_card(
     matching worker entry from the pre-built `index` or None.
 
     Match rule:
-      · date_iso within [assigned_from, assigned_to] window
+      Â· date_iso within [assigned_from, assigned_to] window
         (either bound null = unbounded on that side).
-      · If multiple entries match, prefer the one with the tighter
+      Â· If multiple entries match, prefer the one with the tighter
         window (both bounds set) over an open-ended active one.
     """
     if not card_number:
@@ -574,8 +574,8 @@ def resolve_driver_by_card(
             continue
         if at and date_iso and date_iso > at:
             continue
-        # Score: closed windows (both bounds set) → tightest match.
-        # Open-ended active → looser. Fully unbounded → loosest.
+        # Score: closed windows (both bounds set) â†’ tightest match.
+        # Open-ended active â†’ looser. Fully unbounded â†’ loosest.
         score = (1 if af else 0) + (1 if at else 0)
         candidates.append((score, e))
     if not candidates:
@@ -612,7 +612,7 @@ async def _evaluate_anomalies(
         local = dt_utc.astimezone(ZoneInfo(local_tz))
         if local.hour not in _HOUR_WINDOW:
             _flag("unusual_hour", "low",
-                  f"Fill at local hour {local.hour:02d} (expected 05–18)")
+                  f"Fill at local hour {local.hour:02d} (expected 05â€“18)")
     except (ValueError, KeyError):
         pass
 
@@ -631,11 +631,11 @@ async def _evaluate_anomalies(
             threshold = float(cap) * 1.10
             if litres > threshold:
                 _flag("capacity_exceed", "high",
-                      f"{litres:.3f}L > {threshold:.2f}L (cap {cap}L × 1.10)")
+                      f"{litres:.3f}L > {threshold:.2f}L (cap {cap}L Ã— 1.10)")
         except (TypeError, ValueError):
             pass
 
-    # R3 stat_spike — last 20 fills for this asset.
+    # R3 stat_spike â€” last 20 fills for this asset.
     try:
         cursor = (db.fuel_transactions
                   .find({"org_id": org_id, "asset_id": asset_id, "deleted_at": None},
@@ -649,7 +649,7 @@ async def _evaluate_anomalies(
             threshold = mu + 2 * sigma
             if sigma > 0 and litres > threshold:
                 _flag("stat_spike", "medium",
-                      f"{litres:.3f}L > μ+2σ ({threshold:.2f}L, n={len(samples)})")
+                      f"{litres:.3f}L > Î¼+2Ïƒ ({threshold:.2f}L, n={len(samples)})")
     except statistics.StatisticsError:
         pass
 
@@ -665,7 +665,7 @@ async def _evaluate_anomalies(
             _flag("reading_regress", "medium",
                   f"hours {engine_hours}h < last known {float(prev_h):.1f}h")
 
-    # R5 missing_odometer — v58.13.131i fires when Navixy has no odo
+    # R5 missing_odometer â€” v58.13.131i fires when Navixy has no odo
     # for this asset (`odometer_source == "unknown"`), matching how the
     # `.131h` migration flags rows. Falls back to legacy odo==0 check.
     if odometer_source == "unknown":
@@ -680,7 +680,7 @@ async def _evaluate_anomalies(
     return flags
 
 
-# ── CSV import ──────────────────────────────────────────────────
+# â”€â”€ CSV import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class ImportResult(BaseModel):
     batch_id: str
     rows_total: int
@@ -689,11 +689,11 @@ class ImportResult(BaseModel):
     rows_unmatched: int
     rows_anomalous: int
     rows_rejected: int
-    # v58.13.131n — Upsert path counters. `rows_upserted` counts rows
+    # v58.13.131n â€” Upsert path counters. `rows_upserted` counts rows
     # that MATCHED an existing doc AND had at least one previously-null
     # column filled. `rows_unchanged` counts rows that MATCHED but had
     # nothing to add (either the incoming payload was a subset of the
-    # existing one, or every non-null field conflicted — see
+    # existing one, or every non-null field conflicted â€” see
     # `upsert_conflicts_count` for the latter).
     rows_upserted: int = 0
     rows_unchanged: int = 0
@@ -716,14 +716,15 @@ async def _import_csv(
     fieldnames = reader.fieldnames or []
     mapping, ignored = _map_headers(fieldnames)
 
-    # v58.13.132dx — Load the org's price setting ONCE per import
+    # v58.13.132dx â€” Load the org's price setting ONCE per import
     # batch so every row imported in the same batch stamps with the
-    # same price + toggle snapshot. Later admin changes never touch
-    # these rows again.
-    from fuel_price_settings import freeze_price_snapshot as _freeze
+    # same fallback policy. Weekly diesel is resolved by fill date.
+    # Later admin changes never touch these rows again.
+    from fuel_weekly_prices import freeze_for_import
+    _weekly_cache = {}
     _batch_provisional, _batch_override = await get_org_price_state(org_id)
     _batch_price_setting = await db.fuel_price_settings.find_one(
-        {"org_id": org_id}, {"_id": 1},
+        {"org_id": org_id},
     )
     _batch_price_setting_id = (str(_batch_price_setting["_id"])
                                 if _batch_price_setting else None)
@@ -733,7 +734,7 @@ async def _import_csv(
         header_warnings.append(f"Ignored columns: {ignored}")
 
     # Must have (transaction_id OR (date AND time) OR datetime) + litres.
-    # v58.13.131g — At-least-one-identifier requirement dropped at the
+    # v58.13.131g â€” At-least-one-identifier requirement dropped at the
     # HEADER level; missing identifiers are enforced row-by-row (with
     # description-fallback for unmatched cases).
     has_ts = ("transaction_id" in mapping
@@ -746,7 +747,7 @@ async def _import_csv(
         raise HTTPException(status_code=400,
                             detail="CSV missing required column: Litres")
 
-    # ── v58.13.131g — Peek at every data row so the pre-loop can
+    # â”€â”€ v58.13.131g â€” Peek at every data row so the pre-loop can
     # decide which rules to suppress for this batch. This is one
     # linear scan of the CSV in memory; the main loop rewinds and
     # re-parses via a fresh iterator.
@@ -775,32 +776,32 @@ async def _import_csv(
         if total_data_rows else 100.0
     )
 
-    # Rule enablement — v58.13.131h removed the .131g interim R4/R5
+    # Rule enablement â€” v58.13.131h removed the .131g interim R4/R5
     # auto-suppress. R5 now fires per-row when Navixy enrichment
     # returns `odometer_source == "unknown"` (see enrichment path
     # below). R4 runs against enriched values.
     enabled_rules = set(_ALL_RULES)
     rules_suppressed: list[dict] = []
 
-    # R7 (procurement_outlier) still needs ≥3 priced rows this month.
+    # R7 (procurement_outlier) still needs â‰¥3 priced rows this month.
     r7_will_skip = price_rows < 3
     if r7_will_skip:
         rules_suppressed.append({
             "rules": ["procurement_outlier"],
-            "reason": "No price data on ≥3 rows this batch — R7 has no math.",
+            "reason": "No price data on â‰¥3 rows this batch â€” R7 has no math.",
             "scope": "batch",
         })
 
     batch_id = new_id()
     inserted = duplicate = unmatched = anomalous = rejected = 0
-    # v58.13.131n — upsert counters (see ImportResult docstring).
+    # v58.13.131n â€” upsert counters (see ImportResult docstring).
     upserted = unchanged = upsert_conflicts = 0
     upsert_events: list[dict] = []  # last-N audit trail for the batch doc
     unmatched_set: set[str] = set()
     errors: list[dict] = []
     preview_sample: list[dict] = []
 
-    # v58.13.131o — Preload SmartFill card→worker index once so each
+    # v58.13.131o â€” Preload SmartFill cardâ†’worker index once so each
     # row's driver resolution is O(1) against the in-memory dict.
     _card_index = await _load_card_worker_index(org_id)
 
@@ -811,9 +812,9 @@ async def _import_csv(
         )
     ]
 
-    # v58.13.131i — Preload Navixy asset snapshots once so each row's
+    # v58.13.131i â€” Preload Navixy asset snapshots once so each row's
     # enrichment call is O(1) against the in-memory dict. `.131h`
-    # ship memo item #6 claimed this was wired but wasn't — this is
+    # ship memo item #6 claimed this was wired but wasn't â€” this is
     # the actual wire-up.
     from fleet_fuel_enrich import enrich_fill, load_asset_snapshots
     _asset_snapshots = await load_asset_snapshots(db)
@@ -825,7 +826,7 @@ async def _import_csv(
             if len(preview_sample) < 5:
                 preview_sample.append(dict(raw_row))
 
-            # ── R6 unit_mismatch — hard-reject before any other work.
+            # â”€â”€ R6 unit_mismatch â€” hard-reject before any other work.
             units_raw = (raw_row.get(mapping.get("units", ""), "") or "").strip()
             if units_raw and units_raw.lower() not in ("litres", "liters", "l"):
                 rejected += 1
@@ -835,7 +836,7 @@ async def _import_csv(
                 })
                 continue
 
-            # Datetime — prefer combined `datetime` column, else Date+Time.
+            # Datetime â€” prefer combined `datetime` column, else Date+Time.
             date_iso: Optional[str] = None
             time_local: Optional[str] = None
             if "datetime" in mapping:
@@ -851,7 +852,7 @@ async def _import_csv(
             key_code = (raw_row.get(mapping.get("key_code", ""), "") or "").strip()
             card_number = (raw_row.get(mapping.get("card_number", ""), "") or "").strip()
             registration = (raw_row.get(mapping.get("registration", ""), "") or "").strip().upper()
-            # v58.13.131g — Parse description early so the identifier
+            # v58.13.131g â€” Parse description early so the identifier
             # fallback check can consider it as a soft-identity hint.
             description = (raw_row.get(mapping.get("description", ""), "") or "").strip()
 
@@ -860,7 +861,7 @@ async def _import_csv(
                 errors.append({"row": row_num, "error": "Missing/invalid date/time/litres"})
                 continue
             if not (transaction_id or key_code or card_number or registration or description):
-                # v58.13.131g — Reject only when ALL identifiers +
+                # v58.13.131g â€” Reject only when ALL identifiers +
                 # description are blank. Rows with a description
                 # (like "Daniel Butler" / "Office") fall through to
                 # unmatched with the description as the hint.
@@ -881,14 +882,14 @@ async def _import_csv(
             odometer_km = _parse_int(raw_row.get(mapping.get("odometer_km", ""), ""))
             engine_hours = _parse_float(raw_row.get(mapping.get("engine_hours", ""), ""))
             total_price = _parse_float(raw_row.get(mapping.get("total_price", ""), ""))
-            # v58.13.131n — Two new columns from the SmartFill full-year re-export.
+            # v58.13.131n â€” Two new columns from the SmartFill full-year re-export.
             unit_price = _parse_float(raw_row.get(mapping.get("unit_price", ""), ""))
             job = (raw_row.get(mapping.get("job", ""), "") or "").strip() or None
             job_code = (raw_row.get(mapping.get("job_code", ""), "") or "").strip() or None
             driver_raw = (raw_row.get(mapping.get("driver", ""), "") or "").strip()
             driver = None if driver_raw.lower() in ("", "no driver is assigned.", "none") else driver_raw
 
-            # Dedupe — v58.13.131g composite-hash fallback.
+            # Dedupe â€” v58.13.131g composite-hash fallback.
             #   1. `transaction_id` unique per org (SmartFill portal).
             #   2. Composite SHA256 of (card|key|rego, timestamp, litres)
             #      stored in `dedupe_hash`. Handles the real-world
@@ -924,7 +925,7 @@ async def _import_csv(
                         projection={"_id": 0} if _FUEL_UPSERT_ENABLED else {"id": 1},
                     )
             if dup:
-                # v58.13.131n — Upsert-on-duplicate path.
+                # v58.13.131n â€” Upsert-on-duplicate path.
                 #   Feature-flag: FUEL_IMPORT_UPSERT_ENABLED (default true).
                 #   When off: keep pre-.131n behaviour (reject-as-duplicate).
                 #   When on:  merge new columns onto the existing doc.
@@ -937,7 +938,7 @@ async def _import_csv(
                 # Incoming candidate values keyed by fuel_transactions
                 # field name. Blank strings are pre-normalised to None
                 # so the "already present" check is `current is not
-                # None` — clean semantics for `existing == "" is not
+                # None` â€” clean semantics for `existing == "" is not
                 # None`.
                 incoming = {
                     "transaction_id": transaction_id,
@@ -983,7 +984,7 @@ async def _import_csv(
                         upsert_conflicts += 1
                         # Persist the conflict audit trail on the
                         # existing doc even when we don't fill any
-                        # new columns — otherwise the conflict is
+                        # new columns â€” otherwise the conflict is
                         # visible only in the batch summary and lost
                         # from the row-level provenance.
                         prior_conflicts = list(dup.get("_upsert_conflicts") or [])
@@ -1001,10 +1002,10 @@ async def _import_csv(
                             batch_id, row_num, dup.get("id"), len(conflicts),
                         )
                     continue
-                # ── At least one previously-null field is being filled.
-                # v58.13.131o — If card_number was among the fills OR
+                # â”€â”€ At least one previously-null field is being filled.
+                # v58.13.131o â€” If card_number was among the fills OR
                 # the existing doc has a card_number but no resolved
-                # name, re-run the card→worker resolver against the
+                # name, re-run the cardâ†’worker resolver against the
                 # merged doc so `resolved_driver_name` populates.
                 merged_card = (
                     incoming.get("card_number") or dup.get("card_number")
@@ -1039,7 +1040,7 @@ async def _import_csv(
                     )
                     existing_flags = list(dup.get("anomaly_flags") or [])
                     # Keep flags that a human has explicitly resolved
-                    # or dismissed — never re-raise them.
+                    # or dismissed â€” never re-raise them.
                     keep = [
                         f for f in existing_flags
                         if f.get("resolved_at") or f.get("dismissed_at")
@@ -1053,7 +1054,7 @@ async def _import_csv(
                 now = now_iso()
                 prior_added = list(dup.get("_upsert_columns_added") or [])
                 prior_conflicts = list(dup.get("_upsert_conflicts") or [])
-                # v58.13.131o (post-ship amendment) — refresh
+                # v58.13.131o (post-ship amendment) â€” refresh
                 # `computed_price_per_litre` whenever the upsert filled
                 # `total_price` (or when the doc has total_price but
                 # never computed the price/L, e.g. pre-.131o rows).
@@ -1064,7 +1065,7 @@ async def _import_csv(
                     updates["computed_price_per_litre"] = new_cpl
                     if "computed_price_per_litre" not in columns_added:
                         columns_added.append("computed_price_per_litre")
-                # v58.13.132t — When a real total_price arrives on an
+                # v58.13.132t â€” When a real total_price arrives on an
                 # upsert (i.e. it is present in `updates` OR the merged
                 # value is genuinely populated), any provisional-price
                 # marker on the existing doc becomes stale and must be
@@ -1114,7 +1115,7 @@ async def _import_csv(
                 unmatched += 1
                 unmatched_set.add(registration or key_code or card_number or "?")
 
-            # v58.13.131i — Navixy enrichment BEFORE anomaly evaluation
+            # v58.13.131i â€” Navixy enrichment BEFORE anomaly evaluation
             # so R4/R5 see the enriched odometer, not the raw CSV value.
             _enrich = await enrich_fill(
                 db,
@@ -1144,11 +1145,11 @@ async def _import_csv(
                 "import_batch_id": batch_id,
                 "import_row_number": row_num,
                 "source": source,
-                # v58.13.132w — attribution surfaced from fuel_cards
+                # v58.13.132w â€” attribution surfaced from fuel_cards
                 # lookup (or fallback resolution). `worker_id` is null
                 # unless the card is worker-attributed. `attribution_pending`
                 # is True when the card has no fuel_cards row yet OR
-                # its row is unassigned — signals admin UI to review.
+                # its row is unassigned â€” signals admin UI to review.
                 "worker_id": worker_id,
                 "attribution_pending": attribution_pending,
                 # Time.
@@ -1164,7 +1165,7 @@ async def _import_csv(
                     or (f"REGO:{registration}" if registration else "")
                     or card_number
                 ),
-                # v58.13.131g — Composite dedupe hash + audit of the
+                # v58.13.131g â€” Composite dedupe hash + audit of the
                 # suppressed rule set at import time.
                 "dedupe_hash": dedupe_hash,
                 "_rules_suppressed_at_import": sorted(_ALL_RULES - enabled_rules),
@@ -1179,12 +1180,12 @@ async def _import_csv(
                 # Metrics.
                 "litres": litres,
                 "total_price": total_price,
-                # v58.13.131n — new columns from SmartFill full-year re-export.
+                # v58.13.131n â€” new columns from SmartFill full-year re-export.
                 "unit_price": unit_price,
-                # v58.13.131o — Trust total_price ÷ litres, NOT the
+                # v58.13.131o â€” Trust total_price Ã· litres, NOT the
                 # stale unit_price column. See _compute_price_per_litre.
                 "computed_price_per_litre": _compute_price_per_litre(total_price, litres),
-                # v58.13.132ar — Tag real-priced SmartFill rows so the
+                # v58.13.132ar â€” Tag real-priced SmartFill rows so the
                 # Fuel Report can distinguish them from the legacy
                 # `provisional_static_3.00` back-fill. Any non-null,
                 # positive Total Price coming from SmartFill counts as
@@ -1197,7 +1198,7 @@ async def _import_csv(
                 ),
                 "job": job,
                 "job_code": job_code,
-                # v58.13.131o — Card→worker resolution at insert time.
+                # v58.13.131o â€” Cardâ†’worker resolution at insert time.
                 # Computed from the pre-loaded `_card_index` so no DB
                 # hit per row. Null when the card isn't linked to a
                 # worker OR when no card_number is present on the row.
@@ -1215,7 +1216,7 @@ async def _import_csv(
                 ),
                 "odometer_km": odometer_km,
                 "engine_hours": engine_hours,
-                # v58.13.131i — Navixy enrichment provenance.
+                # v58.13.131i â€” Navixy enrichment provenance.
                 "odometer_source": _enrich.get("odometer_source", "unknown"),
                 "engine_hours_source": _enrich.get("engine_hours_source", "unknown"),
                 "_enrichment_confidence": _enrich.get("_enrichment_confidence"),
@@ -1235,11 +1236,10 @@ async def _import_csv(
                 "created_at": now_iso(),
                 "updated_at": now_iso(),
             }
-            # v58.13.132dx — Stamp frozen snapshot ONE-WAY at write time.
+            # v58.13.132dx â€” Stamp frozen snapshot ONE-WAY at write time.
             # Later admin toggle/price changes never touch these fields.
-            doc.update(_freeze(doc, _batch_provisional,
-                               _batch_override,
-                               _batch_price_setting_id))
+            doc.update(await freeze_for_import(doc, _batch_price_setting or {}, _batch_provisional,
+                                               _batch_override, _batch_price_setting_id, _weekly_cache))
             await db.fuel_transactions.insert_one(doc)
             inserted += 1
         except Exception as e:  # pylint: disable=broad-except
@@ -1255,7 +1255,7 @@ async def _import_csv(
         "rows_total": total, "rows_inserted": inserted,
         "rows_duplicate": duplicate, "rows_unmatched": unmatched,
         "rows_anomalous": anomalous, "rows_rejected": rejected,
-        # v58.13.131n — upsert-on-duplicate counters + sample audit.
+        # v58.13.131n â€” upsert-on-duplicate counters + sample audit.
         "rows_upserted": upserted, "rows_unchanged": unchanged,
         "upsert_conflicts_count": upsert_conflicts,
         "upsert_events": upsert_events,
@@ -1264,10 +1264,10 @@ async def _import_csv(
         "header_warnings": header_warnings,
         "preview_sample": preview_sample,
         "status": "complete", "error_summary": errors[:20],
-        # v58.13.131m — Batch provenance.
+        # v58.13.131m â€” Batch provenance.
         "source": source,
         "triggered_by": triggered_by,
-        # v58.13.131g — Rule config audit + coverage stats +
+        # v58.13.131g â€” Rule config audit + coverage stats +
         # detected column set (verbatim from the CSV header, so a
         # future dropped column is diagnosable from the batch doc
         # alone).
@@ -1279,7 +1279,7 @@ async def _import_csv(
         "deleted_at": None,
     })
 
-    # v58.13.131d — R7 procurement_outlier post-import pass. Recomputes
+    # v58.13.131d â€” R7 procurement_outlier post-import pass. Recomputes
     # the top-3 $/L transactions for the CURRENT calendar month across
     # all matched rows, and flags them with R7 (severity=medium).
     # Idempotent: clears prior R7 flags in the same month first so
@@ -1297,7 +1297,7 @@ async def _import_csv(
     )
 
 
-# ── R7 procurement_outlier ──────────────────────────────────────
+# â”€â”€ R7 procurement_outlier â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def _reflag_procurement_outliers(*, org_id: str, local_tz: str) -> int:
     """Recompute R7 top-3 $/L for the current calendar month.
 
@@ -1328,7 +1328,7 @@ async def _reflag_procurement_outliers(*, org_id: str, local_tz: str) -> int:
     )]
 
     # Compute $/L and rank.
-    # v58.13.131o (post-ship amendment) — Prefer the stored
+    # v58.13.131o (post-ship amendment) â€” Prefer the stored
     # `computed_price_per_litre` (total_price / litres) over the
     # ad-hoc `price / litres` compute below. Semantics identical for
     # rows imported .131o and later; the fallback covers pre-.131o
@@ -1398,16 +1398,16 @@ async def _reflag_procurement_outliers(*, org_id: str, local_tz: str) -> int:
 
 
 def _require_admin(user: dict) -> None:
-    # v58.13.131c — Strict `admin` role only. CSV imports mutate
+    # v58.13.131c â€” Strict `admin` role only. CSV imports mutate
     # fleet-wide financial + fuel data, so `hseq_lead` (also has
     # `assets.edit`) is intentionally excluded here. Per-row anomaly
     # actions (resolve / dismiss / manual-match) remain on
-    # `assets.edit` — see `_flip_anomaly` / `match_txn`.
+    # `assets.edit` â€” see `_flip_anomaly` / `match_txn`.
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="admin only")
 
 
-# ── Endpoints ───────────────────────────────────────────────────
+# â”€â”€ Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @router.post("/import-csv", response_model=ImportResult)
 async def import_csv_ep(
     file: UploadFile = File(...),
@@ -1427,7 +1427,7 @@ async def import_csv_ep(
     )
 
 
-# ── v58.13.131m — SmartFill auto-sync (JSON-RPC Transactions:Read) ──
+# â”€â”€ v58.13.131m â€” SmartFill auto-sync (JSON-RPC Transactions:Read) â”€â”€
 # Reuses the CSV import pipeline by serialising the SmartFill columnar
 # response into an in-memory CSV bytes buffer and piping it through
 # `_import_csv` with `source="smartfill_api"`. Zero code duplication on
@@ -1464,7 +1464,7 @@ class SmartFillStatus(BaseModel):
     rate_limit_state: dict
     auto_sync_enabled: bool
     cron_registered: bool
-    # False when neither the env nor Settings → Integrations → SmartFill
+    # False when neither the env nor Settings â†’ Integrations â†’ SmartFill
     # holds credentials on this server (Sync now would fail).
     configured: bool = True
 
@@ -1486,7 +1486,7 @@ async def sync_from_smartfill(
     next default `from_iso` is a resume-cursor.
     """
     from integrations_smartfill import smartfill_fetch_transactions
-    # Resume cursor — if caller didn't supply `from_iso`, resume from
+    # Resume cursor â€” if caller didn't supply `from_iso`, resume from
     # the last synced timestamp for this org.
     if from_iso is None:
         settings = await db.org_settings.find_one({"org_id": org_id}, {"_id": 0}) or {}
@@ -1690,17 +1690,17 @@ async def list_transactions(
               .sort("timestamp", -1)
               .skip((page - 1) * size).limit(size))
     items = [d async for d in cursor]
-    # v58.13.132dh — Reprice `total_price` + `computed_price_per_litre`
+    # v58.13.132dh â€” Reprice `total_price` + `computed_price_per_litre`
     # at read time so the Per-Fill Transactions table follows the
     # currently effective toggle. Stored values in Mongo are never
-    # mutated — this is a pure display overlay. Under
+    # mutated â€” this is a pure display overlay. Under
     # `provisional_all`, EVERY row (including real SmartFill) shows
     # provisional $/L. Under `smartfill_with_fallback`, only
     # provisional-tagged / imputed rows are rewritten (matches the
     # aggregations in `_aggregate` + `asset_fuel_summary`).
     provisional_price, override_smartfill = await get_org_price_state(user["org_id"])
     for it in items:
-        # v58.13.132dx — Prefer frozen fields (stamped at import).
+        # v58.13.132dx â€” Prefer frozen fields (stamped at import).
         # Fall back to on-the-fly `effective_total_price` for legacy
         # rows that migration hasn't yet touched (defensive; the
         # migration script covers all real rows).
@@ -1719,7 +1719,7 @@ async def list_transactions(
             if litres > 0:
                 it["computed_price_per_litre"] = round(new_total / litres, 4)
     return {"items": items, "total": total, "page": page, "size": size,
-            # v58.13.132dh — Surface the effective settings so the FE
+            # v58.13.132dh â€” Surface the effective settings so the FE
             # can render the "Provisional override active" badge
             # without a second round-trip.
             "price_state": {
@@ -1743,7 +1743,7 @@ async def list_anomalies(
 ):
     q: dict = {"org_id": user["org_id"], "deleted_at": None,
                "anomaly_flags": {"$ne": []}}
-    # v58.13.132ds — Individual anomaly_flag entries carry per-flag
+    # v58.13.132ds â€” Individual anomaly_flag entries carry per-flag
     # `deleted_at`/`deleted_by` for admin-driven soft-delete of
     # dismissals. Default view hides deleted flags; the FE Show-
     # deleted toggle passes `include_deleted=true` to bring them back.
@@ -1767,7 +1767,7 @@ async def list_anomalies(
         # No rule/status filter, but still hide fully-deleted-flag txns
         q["anomaly_flags"] = {"$elemMatch": {"deleted_at": None}}
     total = await db.fuel_transactions.count_documents(q)
-    # v58.13.131c — `count_only=true` short-circuits the full page fetch.
+    # v58.13.131c â€” `count_only=true` short-circuits the full page fetch.
     # Powers the FleetRegister anomaly banner without paying for the
     # 50-row body payload every render.
     if count_only:
@@ -1778,7 +1778,7 @@ async def list_anomalies(
     return {"items": [d async for d in cursor], "total": total, "page": page, "size": size}
 
 
-# v58.13.132bw — Return the flat txn_id list for the current
+# v58.13.132bw â€” Return the flat txn_id list for the current
 # filter set, up to a hard cap. Powers the "Select all N matching"
 # affordance on the Fuel Anomaly Inbox bulk bar so admins can act
 # on the full result set (not just the visible page) in one shot.
@@ -1872,7 +1872,7 @@ async def dismiss_anomaly(
     return await _flip_anomaly(txn_id, user["org_id"], user["id"], payload, "dismissed")
 
 
-# v58.13.132bp — Reopen an accidentally-resolved anomaly flag.
+# v58.13.132bp â€” Reopen an accidentally-resolved anomaly flag.
 # Powers the Undo action on the Fuel Anomaly Inbox Sonner toast.
 class AnomalyReopenIn(BaseModel):
     rule: str
@@ -1921,7 +1921,7 @@ async def reopen_anomaly(
     return {"txn_id": txn_id, "rule": payload.rule, "reopened": reopened}
 
 
-# ── v58.13.132ds — Soft-delete on anomaly-flag dismissals ─────────
+# â”€â”€ v58.13.132ds â€” Soft-delete on anomaly-flag dismissals â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # A "dismissal" is an `anomaly_flags[]` entry with `resolved_action
 # == "dismissed"` (or `dismissed_at != None`). Admins can soft-delete
 # these dismissal records from the Fuel Anomaly Inbox Resolved tab
@@ -1944,7 +1944,7 @@ async def delete_anomaly_dismissal(
     _flag: None = Depends(require_fleet_register_enabled),
     user: dict = Depends(require_permission("assets", "edit")),
 ):
-    """v58.13.132ds — Soft-delete a dismissed anomaly flag. Admin-only.
+    """v58.13.132ds â€” Soft-delete a dismissed anomaly flag. Admin-only.
     Stamps `deleted_at`/`deleted_by` on the matching flag; leaves
     `resolved_at`/`dismissed_at` intact for audit reconstruction.
     404 for unknown txn; 400 if the rule isn't found or isn't in a
@@ -1979,7 +1979,7 @@ async def undelete_anomaly_dismissal(
     _flag: None = Depends(require_fleet_register_enabled),
     user: dict = Depends(require_permission("assets", "edit")),
 ):
-    """v58.13.132ds — Restore a soft-deleted dismissal so it re-appears
+    """v58.13.132ds â€” Restore a soft-deleted dismissal so it re-appears
     in the default Resolved-tab view. Admin-only."""
     _require_admin_role(user)
     tx = await db.fuel_transactions.find_one(
@@ -2000,11 +2000,11 @@ async def undelete_anomaly_dismissal(
     return {"ok": True, "txn_id": txn_id, "rule": payload.rule}
 
 
-# ── v58.13.132bs — bulk anomaly actions ────────────────────────
+# â”€â”€ v58.13.132bs â€” bulk anomaly actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Powers the multi-select toolbar on the Fuel Anomaly Inbox. Each
 # endpoint caps at MAX_BULK txn_ids to keep round-trip latency
 # bounded + prevent a runaway request.
-# v58.13.132bw — Raised the cap from 500 → 2000 so admins can blast
+# v58.13.132bw â€” Raised the cap from 500 â†’ 2000 so admins can blast
 # through a full-filter sweep in a single call.
 MAX_BULK = 2000
 
@@ -2022,7 +2022,7 @@ def _validate_bulk_ids(ids: list[str]) -> None:
     if not ids:
         raise HTTPException(400, "txn_ids required")
     if len(ids) > MAX_BULK:
-        raise HTTPException(400, f"batch too large — max {MAX_BULK} txn_ids per call")
+        raise HTTPException(400, f"batch too large â€” max {MAX_BULK} txn_ids per call")
 
 
 async def _bulk_flip(org_id: str, user_id: str, txn_ids: list[str],
@@ -2031,7 +2031,7 @@ async def _bulk_flip(org_id: str, user_id: str, txn_ids: list[str],
     txn. Returns per-txn counts + a `failed` list for unknown/empty
     rows.
 
-    v58.13.132bv — For `action == "dismissed"`, also stamp
+    v58.13.132bv â€” For `action == "dismissed"`, also stamp
     `dismissed_at` alongside `resolved_at` so downstream analytics
     can distinguish user-triggered dismissal from a genuine
     resolution. The list filter (`resolved=false`) continues to key
@@ -2106,7 +2106,7 @@ async def bulk_attribute_anomalies(
     user: dict = Depends(require_permission("assets", "edit")),
 ):
     """Attribute every listed txn to the given vehicle. Idempotent per
-    txn — a txn already pointing at the requested vehicle is counted
+    txn â€” a txn already pointing at the requested vehicle is counted
     as `no_change`, not attributed again."""
     _validate_bulk_ids(body.txn_ids)
     veh_id = (body.vehicle_id or "").strip()
@@ -2206,7 +2206,7 @@ async def get_transaction(
     _flag: None = Depends(require_fleet_register_enabled),
     user: dict = Depends(require_permission("assets", "view")),
 ):
-    """v58.13.132ax — Single-transaction fetch for the reusable
+    """v58.13.132ax â€” Single-transaction fetch for the reusable
     `FuelTransactionDetailModal`. Returns the full doc (same shape
     as `/transactions` list rows) so the modal can render every
     field including `raw_row`, anomaly_flags, odometer_source
@@ -2222,15 +2222,15 @@ async def get_transaction(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="tx not found")
-    # v58.13.132dj — Preserve the raw SmartFill values as audit
+    # v58.13.132dj â€” Preserve the raw SmartFill values as audit
     # references, then reprice at read time to match the list
     # endpoint + aggregations. Under `provisional_all`, EVERY row's
-    # displayed total + $/L is `litres × provisional_price`.
+    # displayed total + $/L is `litres Ã— provisional_price`.
     # Stored values in Mongo are never mutated.
     raw_total = doc.get("total_price")
     raw_dpl   = doc.get("computed_price_per_litre")
     provisional_price, override_smartfill = await get_org_price_state(user["org_id"])
-    # v58.13.132dx — Prefer frozen snapshot when present. Fall back to
+    # v58.13.132dx â€” Prefer frozen snapshot when present. Fall back to
     # `effective_total_price` for legacy rows (defensive).
     if doc.get("frozen_at"):
         new_total = doc.get("frozen_total_price") or 0
@@ -2245,7 +2245,7 @@ async def get_transaction(
             litres = 0.0
         if litres > 0:
             doc["computed_price_per_litre"] = round(new_total / litres, 4)
-    # Audit references — always populated so the FE can display
+    # Audit references â€” always populated so the FE can display
     # the raw SmartFill numbers alongside the effective ones when
     # override is active.
     doc["raw_total_price"] = raw_total
@@ -2372,7 +2372,7 @@ async def asset_fuel_feed(
     }
 
 
-# ── v58.13.132bi — Fuel & SmartFill panel summary ─────────────
+# â”€â”€ v58.13.132bi â€” Fuel & SmartFill panel summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #
 # Aggregation is scan-heavy on high-volume orgs (a hot vehicle can
 # carry 500+ fills), so we keep an in-process TTL cache. The endpoint
@@ -2403,7 +2403,7 @@ def _match_confidence(asset: dict, latest_tx: Optional[dict]) -> str:
     if tx_card and asset_card and tx_card == asset_card:
         return "matched_card"
     # matched_via_fuel_card (attribution_kind=vehicle) implies the
-    # fuel_cards mapping resolved the card to this asset — still a
+    # fuel_cards mapping resolved the card to this asset â€” still a
     # card match from the operator's PoV.
     if latest_tx.get("match_status") in ("matched_via_fuel_card",):
         return "matched_card"
@@ -2441,68 +2441,38 @@ async def asset_fuel_summary(
 
     base_q = {"org_id": org_id, "asset_id": asset_id, "deleted_at": None}
 
-    # v58.13.132df — Read-time re-pricing pipeline stage. Splits each
+    # v58.13.132df â€” Read-time re-pricing pipeline stage. Splits each
     # window's price sum into two buckets so we can apply the current
     # provisional rate at read time:
-    #   · `real_total_price`     — sum of `total_price` on rows with
+    #   Â· `real_total_price`     â€” sum of `total_price` on rows with
     #                              a real SmartFill price
     #                              (`price_source` NOT in the
     #                              provisional set AND total_price>0).
-    #   · `provisional_litres`   — sum of `litres` on rows that are
+    #   Â· `provisional_litres`   â€” sum of `litres` on rows that are
     #                              provisional-tagged OR missing a
     #                              real price. These are priced in
     #                              Python via `litres * current_price`.
-    _prov_price_sources = list(PROVISIONAL_PRICE_SOURCES)
-    _is_provisional_expr = {
-        "$or": [
-            {"$in": [{"$ifNull": ["$price_source", ""]}, _prov_price_sources]},
-            {"$and": [
-                {"$gt": [{"$ifNull": ["$litres", 0]}, 0]},
-                {"$lte": [{"$ifNull": ["$total_price", 0]}, 0]},
-            ]},
-        ],
-    }
+    provisional_price, override_smartfill = await get_org_price_state(org_id)
+    from fuel_price_settings import effective_price_expression
     _group_split = {
         "_id": None,
         "total_litres": {"$sum": {"$ifNull": ["$litres", 0]}},
-        "real_total_price": {
-            "$sum": {
-                "$cond": [
-                    _is_provisional_expr,
-                    0,
-                    {"$ifNull": ["$total_price", 0]},
-                ],
-            },
-        },
-        "provisional_litres": {
-            "$sum": {
-                "$cond": [
-                    _is_provisional_expr,
-                    {"$ifNull": ["$litres", 0]},
-                    0,
-                ],
-            },
-        },
+        "real_total_price": {"$sum": effective_price_expression(provisional_price, override_smartfill)},
         "count": {"$sum": 1},
     }
-    # v58.13.132dg — Fetch price + override in a single round-trip.
-    # When override_smartfill=True, the split above still runs but
-    # we ignore `real_total_price` in the Python payload — every
-    # litre is repriced at provisional × current price.
-    provisional_price, override_smartfill = await get_org_price_state(org_id)
 
     # 1. Latest transaction (drives last_fill + match_confidence).
     latest = await db.fuel_transactions.find_one(
         base_q, {"_id": 0}, sort=[("timestamp", -1)],
     )
 
-    # 2. YTD totals — split real vs provisional.
+    # 2. YTD totals â€” split real vs provisional.
     ytd_agg = await db.fuel_transactions.aggregate([
         {"$match": {**base_q, "timestamp": {"$gte": ytd_start}}},
         {"$group": _group_split},
     ]).to_list(1)
 
-    # 3. Rolling 30d — split + odometer/hours range for consumption.
+    # 3. Rolling 30d â€” split + odometer/hours range for consumption.
     d30_agg = await db.fuel_transactions.aggregate([
         {"$match": {**base_q, "timestamp": {"$gte": d30_start}}},
         {"$group": {
@@ -2520,7 +2490,7 @@ async def asset_fuel_summary(
         "anomaly_flags": {"$ne": []},
     })
 
-    # 5. Top driver 90d — group by non-empty driver, pick single max.
+    # 5. Top driver 90d â€” group by non-empty driver, pick single max.
     driver_agg = await db.fuel_transactions.aggregate([
         {"$match": {**base_q, "timestamp": {"$gte": d90_start},
                     "driver": {"$nin": [None, ""]}}},
@@ -2537,29 +2507,17 @@ async def asset_fuel_summary(
     if not last_sync and latest:
         last_sync = latest.get("imported_at")
 
-    # ── Build payload ─────────────────────────────────────────
+    # â”€â”€ Build payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ytd = ytd_agg[0] if ytd_agg else {}
     d30 = d30_agg[0] if d30_agg else {}
     ytd_litres = float(ytd.get("total_litres") or 0)
-    # v58.13.132df / .132dg — Reprice at read-time: real portion is
+    # v58.13.132df / .132dg â€” Reprice at read-time: real portion is
     # stored, provisional portion is `litres * current_provisional_price`.
     # When override_smartfill=True, ALL litres get repriced (real
     # portion is folded into provisional).
-    if override_smartfill:
-        ytd_price = ytd_litres * provisional_price
-    else:
-        ytd_price = (
-            float(ytd.get("real_total_price") or 0)
-            + float(ytd.get("provisional_litres") or 0) * provisional_price
-        )
+    ytd_price = float(ytd.get("real_total_price") or 0)
     d30_litres = float(d30.get("total_litres") or 0)
-    if override_smartfill:
-        d30_price = d30_litres * provisional_price
-    else:
-        d30_price = (
-            float(d30.get("real_total_price") or 0)
-            + float(d30.get("provisional_litres") or 0) * provisional_price
-        )
+    d30_price = float(d30.get("real_total_price") or 0)
     d30_count = int(d30.get("count") or 0)
 
     # Consumption: prefer odometer basis when both min & max are
@@ -2583,7 +2541,7 @@ async def asset_fuel_summary(
         }
 
     # Top driver: only surface when there's a single dominant driver
-    # (>=2 fills AND ≥30% of the vehicle's 90d attributions AND not
+    # (>=2 fills AND â‰¥30% of the vehicle's 90d attributions AND not
     # tied with the runner-up).
     top_driver = None
     if driver_agg and driver_agg[0]["count"] >= 2:
@@ -2605,7 +2563,7 @@ async def asset_fuel_summary(
             "date": latest.get("date_iso") if latest else None,
             "time_local": (latest.get("time_local") or "")[:5] if latest else None,
             "litres": latest.get("litres") if latest else None,
-            # v58.13.132df / .132dg — Reprice at read-time; passes
+            # v58.13.132df / .132dg â€” Reprice at read-time; passes
             # the override flag through so real prices are folded
             # into provisional when the toggle is on.
             "total_price": (
@@ -2643,13 +2601,13 @@ def _timedelta_days(n: int):
     return timedelta(days=n)
 
 
-# ── v58.13.132bo — SmartFill card drill-down endpoints ─────────
+# â”€â”€ v58.13.132bo â€” SmartFill card drill-down endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #
-# Powers the Fuel dashboard's Top 10 leaderboards → click-through
+# Powers the Fuel dashboard's Top 10 leaderboards â†’ click-through
 # drawer. Three routes, all read-heavy:
-#   · GET  /fleet/fuel/cards/{card_number}/summary
-#   · GET  /fleet/fuel/cards/{card_number}/transactions
-#   · POST /fleet/fuel/cards/{card_number}/assign
+#   Â· GET  /fleet/fuel/cards/{card_number}/summary
+#   Â· GET  /fleet/fuel/cards/{card_number}/transactions
+#   Â· POST /fleet/fuel/cards/{card_number}/assign
 _CARD_SUMMARY_CACHE: dict[tuple, tuple[float, dict]] = {}
 _CARD_SUMMARY_TTL = 60
 
@@ -2680,32 +2638,14 @@ async def card_summary(
 
     base = {"org_id": org_id, "card_number": card_number, "deleted_at": None}
 
-    # v58.13.132df — Read-time re-pricing pipeline stage (same shape
+    # v58.13.132df â€” Read-time re-pricing pipeline stage (same shape
     # as `asset_fuel_summary`). Real SmartFill prices flow through
     # unchanged; provisional-tagged or price-less rows get priced at
     # `litres * current_provisional_price` in Python below.
-    _prov_price_sources = list(PROVISIONAL_PRICE_SOURCES)
-    _is_provisional_expr = {
-        "$or": [
-            {"$in": [{"$ifNull": ["$price_source", ""]}, _prov_price_sources]},
-            {"$and": [
-                {"$gt": [{"$ifNull": ["$litres", 0]}, 0]},
-                {"$lte": [{"$ifNull": ["$total_price", 0]}, 0]},
-            ]},
-        ],
-    }
-    _split_sums = {
-        "real_total_price": {
-            "$sum": {"$cond": [_is_provisional_expr, 0,
-                               {"$ifNull": ["$total_price", 0]}]},
-        },
-        "provisional_litres": {
-            "$sum": {"$cond": [_is_provisional_expr,
-                               {"$ifNull": ["$litres", 0]}, 0]},
-        },
-    }
-    # v58.13.132dg — Price + override toggle in one round-trip.
     provisional_price, override_smartfill = await get_org_price_state(org_id)
+    from fuel_price_settings import effective_price_expression
+    _split_sums = {"real_total_price": {"$sum": effective_price_expression(provisional_price, override_smartfill)}}
+
 
     all_agg = await db.fuel_transactions.aggregate([
         {"$match": base},
@@ -2755,20 +2695,10 @@ async def card_summary(
     all0 = all_agg[0] if all_agg else {}
     ytd0 = ytd_agg[0] if ytd_agg else {}
     all_litres = float(all0.get("total_litres") or 0)
-    # v58.13.132df / .132dg — Reprice at read-time. Override=True
+    # v58.13.132df / .132dg â€” Reprice at read-time. Override=True
     # folds real prices into the provisional bucket.
-    if override_smartfill:
-        all_price = all_litres * provisional_price
-        ytd_price = float(ytd0.get("total_litres") or 0) * provisional_price
-    else:
-        all_price = (
-            float(all0.get("real_total_price") or 0)
-            + float(all0.get("provisional_litres") or 0) * provisional_price
-        )
-        ytd_price = (
-            float(ytd0.get("real_total_price") or 0)
-            + float(ytd0.get("provisional_litres") or 0) * provisional_price
-        )
+    all_price = float(all0.get("real_total_price") or 0)
+    ytd_price = float(ytd0.get("real_total_price") or 0)
     payload = {
         "card_number": card_number,
         "generated_at": now.isoformat(),
@@ -2795,7 +2725,7 @@ async def card_summary(
         "top_driver_90d": top_driver,
     }
 
-    # v58.13.132bu — When the card is not formally linked to a vehicle
+    # v58.13.132bu â€” When the card is not formally linked to a vehicle
     # (`assets.smartfill_card_number` unset), compute an inferred rego
     # from the majority `asset_id` across the last 90 days. Surfaces
     # the fact that the SmartFill importer's per-txn matcher already
@@ -2866,7 +2796,7 @@ async def card_assign(
 ):
     """Link an unlinked SmartFill card to a vehicle by writing the
     card number onto the vehicle's `smartfill_card_number` field.
-    Idempotent — re-assigning the same card to the same vehicle
+    Idempotent â€” re-assigning the same card to the same vehicle
     returns 200 with `no_change=True`."""
     if not card_number or not (body.vehicle_id or "").strip():
         raise HTTPException(400, "card_number and vehicle_id required")
@@ -2879,7 +2809,7 @@ async def card_assign(
     if (veh.get("smartfill_card_number") or "").strip() == card_number.strip():
         return {"card_number": card_number, "vehicle_id": veh["id"],
                 "vehicle_rego": veh.get("rego_serial"), "no_change": True}
-    # Refuse if another vehicle already claims this card — force manual
+    # Refuse if another vehicle already claims this card â€” force manual
     # unlink to avoid silent overwrites.
     conflict = await db.assets.find_one(
         {"org_id": user["org_id"],
@@ -2957,11 +2887,11 @@ async def export_csv_ep(
     )
 
 
-# ── Ensure indexes on module import ─────────────────────────────
+# â”€â”€ Ensure indexes on module import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def ensure_indexes() -> None:
     await db.fuel_transactions.create_index([("org_id", 1), ("timestamp", -1)])
     await db.fuel_transactions.create_index([("org_id", 1), ("asset_id", 1), ("timestamp", -1)])
-    # v58.13.131h — Soft-delete + partial-unique-index fix. The
+    # v58.13.131h â€” Soft-delete + partial-unique-index fix. The
     # partial filter now also requires `deleted_at: null` so that
     # re-importing an identical CSV after a batch delete works.
     try:
@@ -3003,7 +2933,7 @@ async def ensure_indexes() -> None:
     await db.fuel_import_batches.create_index([("id", 1)], unique=True)
 
 
-# ── v58.13.132x — Fuel-card attribution admin endpoints ────────
+# â”€â”€ v58.13.132x â€” Fuel-card attribution admin endpoints â”€â”€â”€â”€â”€â”€â”€â”€
 class _FuelCardUpdate(BaseModel):
     attribution_kind: str  # vehicle | worker | shared | unassigned
     asset_id: Optional[str] = None
@@ -3045,7 +2975,7 @@ async def list_fuel_cards(
         a = a_by_id.get(r.get("asset_id") or "")
         w = w_by_id.get(r.get("worker_id") or "")
         r["asset_label"] = (
-            f"{a['name']} · {a.get('rego_serial') or ''}".strip(" ·")
+            f"{a['name']} Â· {a.get('rego_serial') or ''}".strip(" Â·")
             if a else None
         )
         r["worker_label"] = (

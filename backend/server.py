@@ -694,6 +694,8 @@ api.include_router(fleet_fuel_reports_router)
 # v58.13.132de — admin-editable fuel-price settings + audit history.
 from fuel_price_settings import router as fuel_price_settings_router  # noqa: E402
 api.include_router(fuel_price_settings_router)
+from fuel_weekly_prices import router as fuel_weekly_router, refresh_if_enabled
+api.include_router(fuel_weekly_router)
 api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)
@@ -1930,6 +1932,7 @@ async def on_startup():
                                   coalesce=True, replace_existing=True)
             except Exception as e:
                 log.warning("leave_inbox_poll scheduler hook failed: %s", e)
+            scheduler.add_job(refresh_if_enabled, "cron", hour=3, minute=15, timezone="Australia/Hobart", id="weekly_diesel", replace_existing=True)
             scheduler.start()
             app.state.scheduler = scheduler
             # v58.13.17 — Asset-service overnight generation cron.
