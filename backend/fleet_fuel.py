@@ -1793,16 +1793,14 @@ async def anomalies_matching_ids(
 ):
     q: dict = {"org_id": user["org_id"], "deleted_at": None,
                "anomaly_flags": {"$ne": []}}
+    flag_match = {"deleted_at": None}
     if resolved is True:
-        q["anomaly_flags"] = {"$elemMatch": {
-            "resolved_at": {"$ne": None}, **({"rule": rule} if rule else {})
-        }}
+        flag_match["resolved_at"] = {"$ne": None}
     elif resolved is False:
-        q["anomaly_flags"] = {"$elemMatch": {
-            "resolved_at": None, **({"rule": rule} if rule else {})
-        }}
-    elif rule:
-        q["anomaly_flags.rule"] = rule
+        flag_match["resolved_at"] = None
+    if rule:
+        flag_match["rule"] = rule
+    q["anomaly_flags"] = {"$elemMatch": flag_match}
     if search and search.strip():
         needle = search.strip()
         rx = {"$regex": re.escape(needle), "$options": "i"}
