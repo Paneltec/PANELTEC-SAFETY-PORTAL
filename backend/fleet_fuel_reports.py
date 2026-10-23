@@ -292,7 +292,8 @@ async def _aggregate(
             # v58.13.132aj — Carry the provisional marker + per-fill
             # metadata through so the Top 5 · Highest fills and
             # $/L-outliers panels can render honestly.
-            "price_source": t.get("price_source"),
+            "price_source": t.get("frozen_price_source") or t.get("price_source"),
+            "estimated": _is_provisional(t),
             "registration": t.get("registration") or "",
             "description": t.get("description") or "",
             "driver": (t.get("resolved_driver_name")
@@ -424,7 +425,7 @@ async def _aggregate(
     # $/L outlier signal is real, not driven by the $3.00 placeholder.
     real_priced = [r for r in outlier_rows
                     if r["dpl"] is not None
-                    and r.get("price_source") not in ("provisional_static_3.00", "provisional_static_2.25")]
+                    and not r.get("estimated")]
     real_priced.sort(key=lambda r: (-r["dpl"], r["date_iso"]))
     # v58.13.132bz — Enrich outlier rows with linked / inferred rego
     # so the FE outlier table can show the vehicle involved in each

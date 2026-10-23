@@ -37,15 +37,15 @@ export default function FuelAnomalyBanner() {
         </div>
         <div>
           <div className="text-sm font-bold text-amber-900">
-            {count} open fuel {count === 1 ? 'anomaly' : 'anomalies'}
+            {count} {count === 1 ? 'fill needs' : 'fills need'} review
           </div>
           <div className="text-[11px] text-amber-800/80">
-            Review flagged transactions from the SmartFill CSV importer.
+            Check readings, fill quantities and vehicle links.
           </div>
         </div>
       </div>
       <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-900">
-        Open inbox <ChevronRight size={13} />
+        Review checks <ChevronRight size={13} />
       </span>
     </Link>
   );
