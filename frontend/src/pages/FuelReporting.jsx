@@ -93,6 +93,27 @@ function presetRange(key) {
   return { from: '', to: '', label: 'Custom' };
 }
 
+// Use the same local calendar date as the visible Last fill timestamp.
+function groupFuelRowsByDate(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const timestamp = row.latest_fill_timestamp;
+    const dt = timestamp ? new Date(timestamp) : null;
+    let date = '';
+    if (dt && !Number.isNaN(dt.getTime())) {
+      date = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    } else {
+      const fallback = row.latest_fill_date_iso;
+      if (typeof fallback === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fallback)) date = fallback;
+    }
+    if (!groups.has(date)) groups.set(date, []);
+    groups.get(date).push(row);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, groupedRows]) => ({ date, rows: groupedRows }));
+}
+
 export default function FuelReporting() {
   const canEdit = useCan()('assets', 'edit');
   // v58.13.132de — admin-editable fuel-price fallback.
@@ -385,6 +406,7 @@ export default function FuelReporting() {
   }, [canEditFuel, priceSettings, loadPriceSettings, txnListOpen, loadTxnList, txnListSize]);
 
   const rows = data?.rows || [];
+  const dateGroups = groupFuelRowsByDate(rows);
   const periods = data?.periods || [];
   const outliers = data?.top_dpl_outliers || [];
   // v58.13.132aj — new payload keys.
@@ -1283,7 +1305,15 @@ export default function FuelReporting() {
                       </td>
                     </tr>
                   )}
-                  {rows.map((r) => {
+                  {dateGroups.map((group) => (
+                    <React.Fragment key={group.date || 'undated'}>
+                      <tr className="bg-slate-100" data-testid="fuel-report-date-group">
+                        <th colSpan={8} scope="colgroup" className="px-3 py-2 text-left font-semibold text-slate-700">
+                          {group.date ? `Last fill · ${fmtAusDate(group.date)}` : 'Last fill · Date unavailable'}
+                          <span className="ml-2 text-xs font-normal text-slate-500">{group.rows.length} {group.rows.length === 1 ? 'row' : 'rows'}</span>
+                        </th>
+                      </tr>
+                  {group.rows.map((r) => {
                     // v58.13.132bz — Restore per-row click → open the
                     // SmartFillCardDrawer for card rows OR the txn
                     // detail modal for vehicle rows. Also apply the
@@ -1355,6 +1385,8 @@ export default function FuelReporting() {
                     </tr>
                   );
                   })}
+                    </React.Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
