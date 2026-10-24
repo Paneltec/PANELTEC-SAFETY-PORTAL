@@ -31,6 +31,7 @@
  * so the operator knows nothing was actually sent.
  */
 import WeeklyDieselPricing from '../components/WeeklyDieselPricing';
+import { summarizeFuelRows } from '../lib/fuelReportTotals';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -112,7 +113,7 @@ function groupFuelRowsByDate(rows) {
   }
   return [...groups.entries()]
     .sort(([a], [b]) => b.localeCompare(a))
-    .map(([date, groupedRows]) => ({ date, rows: groupedRows }));
+    .map(([date, groupedRows]) => ({ date, rows: groupedRows, subtotal: summarizeFuelRows(groupedRows) }));
 }
 
 export default function FuelReporting() {
@@ -124,7 +125,7 @@ export default function FuelReporting() {
   const canEditFuel = useCan()('assets', 'edit');
   const currentUser = getUser();
   const isAdmin = (currentUser?.role === 'admin');
-  const [scope, setScope] = useState('admin');
+  const [scope, setScope] = useState('vehicle');
   const [period, setPeriod] = useState('monthly');
   const [presetKey, setPresetKey] = useState('this-month');
   const initial = presetRange('this-month');
@@ -934,6 +935,9 @@ export default function FuelReporting() {
             className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
             data-testid="fuel-reporting-rows-table"
           >
+            <p className="px-3 py-3 text-xs text-slate-600 border-b border-slate-200">
+              Grouped by last fill. Coloured subtotals add the rows shown for the selected reporting period.
+            </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
@@ -1040,6 +1044,20 @@ export default function FuelReporting() {
                     </tr>
                   );
                   })}
+                      <tr className="bg-blue-100 text-blue-950 font-semibold border-t-2 border-blue-300" data-testid="fuel-report-date-subtotal">
+                        <th colSpan={2} scope="row" className="px-3 py-3 text-left">
+                          Subtotal · {group.date ? fmtAusDate(group.date) : 'Date unavailable'}
+                          <span className="block mt-0.5 text-xs font-normal text-blue-800">
+                            {group.subtotal.rowCount} {group.subtotal.rowCount === 1 ? 'row' : 'rows'} · {group.subtotal.fills} {group.subtotal.fills === 1 ? 'fill' : 'fills'}
+                          </span>
+                        </th>
+                        <td className="px-3 py-3 text-right tabular-nums" title="Total litres for the rows above">{group.subtotal.litres.toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums" title="Total cost for the rows above">${group.subtotal.totalPrice.toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums" title="Combined litres divided by the number of fills">{group.subtotal.avgFill != null ? group.subtotal.avgFill.toFixed(2) : '—'}</td>
+                        <td className="px-3 py-3 text-right tabular-nums" title={`Average weighted by ${group.subtotal.consumptionSamples} qualifying consumption readings`}>{group.subtotal.avgLp100 != null ? group.subtotal.avgLp100.toFixed(2) : '—'}</td>
+                        <td className="px-3 py-3 text-right tabular-nums font-mono" title="Combined cost divided by combined litres">{group.subtotal.pricePerLitre != null ? `$${group.subtotal.pricePerLitre.toFixed(4)}` : '—'}</td>
+                        <td className="px-3 py-3 text-right" title="Litres-weighted average of available row price changes"><DeltaChip d={group.subtotal.deltaDpl} /></td>
+                      </tr>
                     </React.Fragment>
                   ))}
                 </tbody>
