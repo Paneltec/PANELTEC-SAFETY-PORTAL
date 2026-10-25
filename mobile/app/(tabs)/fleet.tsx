@@ -241,7 +241,7 @@ export default function FleetScreen() {
       </View>
 
       {/* Tag filter dropdown */}
-      {tagOptions.length > 0 && (
+      {(tagOptions.length > 0 || selectedTag) && (
         <TouchableOpacity
           testID="fleet-tag-filter"
           style={s.tagFilterBtn}
