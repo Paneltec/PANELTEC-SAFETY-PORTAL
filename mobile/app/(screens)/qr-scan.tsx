@@ -12,7 +12,7 @@
  *   XT96AZ                           (plain rego string)
  *   {uuid}                           (plain UUID)
  */
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   Modal, ActivityIndicator, Linking, Dimensions,
@@ -20,7 +20,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView } from 'expo-camera';
+import { useScannerCamera } from '../../src/hooks/useScannerCamera';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../src/theme/colors';
 import { authGet } from '../../src/services/apiClient';
@@ -119,7 +120,7 @@ async function lookupInFleet(identifier: string): Promise<FleetAsset | null> {
 export default function QRScanScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [camPermission, requestCamPermission] = useCameraPermissions();
+  const camera = useScannerCamera();
   const [scanned, setScanned] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -127,13 +128,6 @@ export default function QRScanScreen() {
   const [manualInput, setManualInput] = useState('');
   const [showManual, setShowManual] = useState(false);
   const cooldownRef = useRef(false);
-
-  // Request permission on mount
-  useEffect(() => {
-    if (camPermission && !camPermission.granted && camPermission.canAskAgain) {
-      requestCamPermission();
-    }
-  }, [camPermission, requestCamPermission]);
 
   const handleScanResult = useCallback(async (identifier: string) => {
     if (cooldownRef.current || resolving) return;
@@ -196,59 +190,43 @@ export default function QRScanScreen() {
     cooldownRef.current = false;
   };
 
-  // ── Permission denied screen ──
-  if (camPermission && !camPermission.granted && !camPermission.canAskAgain) {
-    return (
-      <View testID="qr-scan-perm-denied" style={[st.container, { paddingTop: insets.top }]}>
-        <View style={st.permCard}>
-          <View style={st.permIconWrap}>
-            <Ionicons name="camera-outline" size={48} color={Colors.textTertiary} />
-          </View>
-          <Text style={st.permTitle}>Camera Access Required</Text>
-          <Text style={st.permText}>
-            Grant camera access to scan vehicle QR stickers. Open Settings and enable Camera for Paneltec.
-          </Text>
-          <TouchableOpacity
-            testID="qr-scan-open-settings"
-            style={st.permBtn}
-            onPress={() => Linking.openSettings()}
-          >
-            <Ionicons name="settings-outline" size={18} color={Colors.white} />
-            <Text style={st.permBtnText}>Open Settings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID="qr-scan-close-perm"
-            style={st.closeTextBtn}
-            onPress={() => router.back()}
-          >
-            <Text style={st.closeTextBtnLabel}>Go back</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
   // ── Main scanner ──
   return (
     <View testID="qr-scan-screen" style={st.container}>
       {/* Camera fills entire screen */}
-      {camPermission?.granted ? (
+      {camera.cameraReady ? (
         <CameraView
           testID="qr-scan-camera"
           style={StyleSheet.absoluteFill}
           facing="back"
+          onMountError={camera.cameraFailed}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
           onBarcodeScanned={scanned ? undefined : handleBarcodeScan}
         />
       ) : (
         <View style={[StyleSheet.absoluteFill, st.camLoading]}>
-          <ActivityIndicator size="large" color={Colors.white} />
-          <Text style={st.camLoadingText}>Requesting camera…</Text>
+          <View style={st.permCard} testID="qr-scan-camera-status">
+            <Ionicons name="camera-outline" size={48} color={Colors.textTertiary} />
+            <Text style={st.permTitle}>{camera.requesting ? 'Camera permission' : 'Scan a vehicle'}</Text>
+            <Text style={st.permText}>{camera.message}</Text>
+            {camera.requesting ? <ActivityIndicator size="large" color={Colors.white} /> : camera.needsSettings ? (
+              <TouchableOpacity testID="qr-scan-open-settings" style={st.permBtn} onPress={() => Linking.openSettings()}>
+                <Text style={st.permBtnText}>Open Settings</Text>
+              </TouchableOpacity>
+            ) : camera.canRequest ? (
+              <TouchableOpacity testID="qr-scan-enable-camera" style={st.permBtn} onPress={camera.enableCamera}>
+                <Text style={st.permBtnText}>{camera.requestLabel}</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity testID="qr-scan-manual-fallback" style={st.closeTextBtn} onPress={() => setShowManual(true)}>
+              <Text style={st.permBtnText}>Enter rego or asset ID</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
       {/* Dimmed overlay with transparent reticle */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {camera.cameraReady && <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {/* Top dim */}
         <View style={st.dimTop} />
         {/* Middle row: left dim + reticle + right dim */}
@@ -264,7 +242,7 @@ export default function QRScanScreen() {
         </View>
         {/* Bottom dim */}
         <View style={st.dimBottom} />
-      </View>
+      </View>}
 
       {/* Close button (top-left) */}
       <TouchableOpacity
@@ -286,7 +264,7 @@ export default function QRScanScreen() {
       </TouchableOpacity>
 
       {/* Bottom hint + resolving indicator */}
-      <View style={[st.bottomBar, { paddingBottom: insets.bottom + 20 }]}>
+      {(camera.cameraReady || resolving || errorMsg) && <View style={[st.bottomBar, { paddingBottom: insets.bottom + 20 }]}>
         {resolving ? (
           <View style={st.resolvingRow}>
             <ActivityIndicator size="small" color={Colors.orange} />
@@ -300,7 +278,7 @@ export default function QRScanScreen() {
         ) : (
           <Text style={st.hintText}>Point at the QR sticker inside the vehicle door</Text>
         )}
-      </View>
+      </View>}
 
       {/* No-match modal */}
       <Modal visible={showNoMatchModal} transparent animationType="fade" onRequestClose={handleRetry}>

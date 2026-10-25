@@ -4,8 +4,9 @@
  * Only imported/rendered when the user explicitly taps "Scan QR".
  */
 import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Linking } from 'react-native';
+import { CameraView } from 'expo-camera';
+import { useScannerCamera } from '../../hooks/useScannerCamera';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { lookupAsset } from '../../services/pickerApi';
@@ -34,25 +35,11 @@ interface AssetScannerProps {
 }
 
 export default function AssetScanner({ onResolved, onCancel, onFallbackManual, testId }: AssetScannerProps) {
-  const [camPermission, requestCamPermission] = useCameraPermissions();
+  const camera = useScannerCamera();
   const [resolving, setResolving] = useState(false);
   const [scanErr, setScanErr] = useState('');
   const [scanned, setScanned] = useState(false);
   const [resolved, setResolved] = useState<any>(null);
-  const [permDenied, setPermDenied] = useState(false);
-
-  // Request camera permission on mount
-  React.useEffect(() => {
-    if (!camPermission?.granted) {
-      requestCamPermission().then((result) => {
-        if (!result.granted) {
-          setPermDenied(true);
-          setScanErr('Camera permission denied. Use manual search instead.');
-        }
-      });
-    }
-  }, [camPermission, requestCamPermission]);
-
   const handleBarcodeScan = useCallback(async ({ data }: { data: string }) => {
     if (scanned || resolving) return;
     setScanned(true);
@@ -79,17 +66,25 @@ export default function AssetScanner({ onResolved, onCancel, onFallbackManual, t
     }
   }, [scanned, resolving]);
 
-  // Permission denied — fallback
-  if (permDenied) {
+  // Camera failures are terminal until the user deliberately retries.
+  if (!camera.cameraReady) {
     return (
-      <View style={ss.permDeniedWrap}>
-        <View style={ss.scanErrRow}>
-          <Ionicons name="alert-circle" size={14} color={Colors.warning} />
-          <Text style={ss.scanErrText}>{scanErr || 'Camera permission denied.'}</Text>
-        </View>
+      <View testID={`${testId}-camera-status`} style={ss.permDeniedWrap}>
+        <Text style={ss.scanHint}>{camera.message}</Text>
+        {camera.requesting ? <ActivityIndicator color={Colors.info} /> : camera.needsSettings ? (
+          <TouchableOpacity style={ss.scanManualBtn} onPress={() => Linking.openSettings()}>
+            <Text style={ss.scanManualBtnText}>Open Settings</Text>
+          </TouchableOpacity>
+        ) : camera.canRequest ? (
+          <TouchableOpacity testID={`${testId}-enable-camera`} style={ss.scanManualBtn} onPress={camera.enableCamera}>
+            <Text style={ss.scanManualBtnText}>{camera.requestLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity testID={`${testId}-scanner-manual`} style={ss.scanManualBtn} onPress={onFallbackManual}>
-          <Ionicons name="search" size={14} color={Colors.info} />
           <Text style={ss.scanManualBtnText}>Search manually instead</Text>
+        </TouchableOpacity>
+        <TouchableOpacity testID={`${testId}-scanner-close`} style={ss.scanCloseBtn} onPress={onCancel}>
+          <Text style={ss.scanCloseBtnText}>Cancel</Text>
         </TouchableOpacity>
       </View>
     );
@@ -135,19 +130,13 @@ export default function AssetScanner({ onResolved, onCancel, onFallbackManual, t
   return (
     <View testID={`${testId}-scanner`} style={ss.scannerWrap}>
       <View style={ss.cameraBox}>
-        {camPermission?.granted ? (
-          <CameraView
-            style={ss.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ['qr', 'code128', 'ean13', 'ean8'] }}
-            onBarcodeScanned={scanned ? undefined : handleBarcodeScan}
-          />
-        ) : (
-          <View style={ss.camLoading}>
-            <ActivityIndicator size="small" color="#FFFFFF" />
-            <Text style={ss.camLoadingText}>Requesting camera…</Text>
-          </View>
-        )}
+        <CameraView
+          style={ss.camera}
+          facing="back"
+          onMountError={camera.cameraFailed}
+          barcodeScannerSettings={{ barcodeTypes: ['qr', 'code128', 'ean13', 'ean8'] }}
+          onBarcodeScanned={scanned ? undefined : handleBarcodeScan}
+        />
         {resolving && (
           <View style={ss.scanOverlay}>
             <ActivityIndicator size="small" color="#FFFFFF" />
