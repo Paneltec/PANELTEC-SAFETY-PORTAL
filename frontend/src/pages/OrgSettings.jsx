@@ -220,12 +220,11 @@ export default function OrgSettings() {
     }
   };
 
-  // v58.13.132ds — Staff Login URL copy-to-clipboard. Same pattern as
-  // Portal URL. The URL itself is READ-ONLY (server-computed from
-  // PUBLIC_APP_URL); Emergent controls the value so admins can only
-  // copy it, never edit.
+  // Staff login follows this deployment; use the current origin when
+  // the server has no public URL configured.
+  const staffLoginUrl = doc?.staff_login_url || window.location.origin;
   const copyStaffLoginUrl = async () => {
-    const url = (doc.staff_login_url || '').trim();
+    const url = staffLoginUrl.trim();
     if (!url) { toast.error('No Staff Login URL to copy'); return; }
     try {
       await navigator.clipboard.writeText(url);
@@ -419,7 +418,7 @@ export default function OrgSettings() {
                 copy-to-clipboard square button. Hover / press states
                 give the click a tactile feel. */}
             <Field label="Portal URL"
-                   hint="Rendered on the footer of every PDF report so recipients can find the login.">
+                   hint="Shown in newly generated PDF report footers. Use an address your recipients can access.">
               <div className="flex items-stretch gap-2">
                 <input
                   className={inputClass + ' flex-1'}
@@ -445,15 +444,15 @@ export default function OrgSettings() {
                 (which lands on public PDF footers); Staff Login is
                 the internal sign-in URL shared with office staff. */}
             <Field label="Staff Login URL"
-                   hint="This is your active login portal — share this URL with office staff so they can access the app. Once your production domain is live, use Portal URL for public-facing PDF reports.">
+                   hint="Your portal sign-in address, taken from this server’s configuration. Local network addresses work only on your network.">
               <div className="flex items-stretch gap-2">
                 <input
                   className={inputClass + ' flex-1 bg-slate-50 text-slate-700 cursor-not-allowed'}
-                  value={doc.staff_login_url || ''}
+                  value={staffLoginUrl}
                   readOnly
                   disabled
                   data-testid="org-field-staff_login_url"
-                  title="Emergent-managed — read-only"
+                  title="Server-configured — read-only"
                 />
                 <button
                   type="button"
