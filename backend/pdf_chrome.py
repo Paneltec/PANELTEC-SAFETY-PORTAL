@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from portal_urls import report_portal_url
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
@@ -181,19 +182,9 @@ class BrandedCanvas(Canvas):
         self.setFont("Helvetica", 6.5)
         self.drawRightString(w - MARGIN_MM * mm, FOOTER_MM * mm - 10 * mm,
                              datetime.now(timezone.utc).strftime("Generated %d %b %Y · %H:%M UTC"))
-        # v58.13.132dp — Portal URL on the footer (subtle, centre-below
-        # the confidentiality line). Prefer `org.portal_url` (set by
-        # admins via the Org settings page); fall back to the
-        # `PUBLIC_APP_URL` env or the preview-domain default so a PDF
-        # rendered by a code path that doesn't load the org doc still
-        # carries a valid link.
-        import os as _os  # noqa: WPS433
-        portal = (
-            (self._org or {}).get("portal_url")
-            or _os.environ.get("PUBLIC_APP_URL")
-            or "https://whs-compliance.preview.emergentagent.com"
-        )
-        portal = portal.rstrip("/")
+        # Use the organisation's report link or this deployment's URL.
+        # Omit an unconfigured link instead of pointing to a demo server.
+        portal = report_portal_url(self._org)
         if portal:
             self.setFont("Helvetica", 6.5)
             self.setFillColor(MUTED_INK)
