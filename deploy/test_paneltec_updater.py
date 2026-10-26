@@ -125,4 +125,57 @@ class UpdaterTests(unittest.TestCase):
         with patch.dict(u.os.environ, {'PANELTEC_UPDATER_TOKEN': 'x' * 40}):
             self.assertTrue(handler.authorized())
 
+class PrivateGitHubTests(unittest.TestCase):
+    def test_missing_token_is_actionable_and_does_not_call_github(self):
+        with patch.dict(u.os.environ, {}, clear=True), patch.object(u, 'urlopen') as request:
+            with self.assertRaisesRegex(u.UpdateCheckError, 'PANELTEC_GITHUB_TOKEN'):
+                u.github('/actions/workflows/build-images.yml/runs')
+            request.assert_not_called()
+
+    def test_token_sent_only_to_repository_api(self):
+        from unittest.mock import MagicMock
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"workflow_runs": []}'
+        with patch.dict(u.os.environ, {'PANELTEC_GITHUB_TOKEN': 'test-only-token'}, clear=True), patch.object(u, 'urlopen', return_value=response) as request:
+            self.assertEqual(u.github('/actions/workflows/build-images.yml/runs'), {'workflow_runs': []})
+            sent = request.call_args.args[0]
+            self.assertTrue(sent.full_url.startswith('https://api.github.com/repos/' + u.REPO + '/'))
+            self.assertEqual(sent.get_header('Authorization'), 'Bearer test-only-token')
+
+    def test_auth_errors_hide_remote_details(self):
+        for status in (401, 403, 404):
+            with self.subTest(status=status), patch.dict(u.os.environ, {'PANELTEC_GITHUB_TOKEN': 'test-only-token'}), patch.object(u, 'urlopen', side_effect=u.HTTPError('https://api.github.com', status, 'private response content', {}, None)):
+                with self.assertRaises(u.UpdateCheckError) as error:
+                    u.github('/actions/workflows/build-images.yml/runs')
+                self.assertIn('Actions read access', str(error.exception))
+                self.assertNotIn('test-only-token', str(error.exception))
+                self.assertNotIn('private response content', str(error.exception))
+
+    def test_network_failure_has_separate_message(self):
+        with patch.dict(u.os.environ, {'PANELTEC_GITHUB_TOKEN': 'test-only-token'}), patch.object(u, 'urlopen', side_effect=u.URLError('private network details')):
+            with self.assertRaisesRegex(u.UpdateCheckError, 'internet connection'):
+                u.github('/actions/workflows/build-images.yml/runs')
+
+    def test_registry_credentials_only_sent_for_image_pulls(self):
+        from unittest.mock import MagicMock
+        import json
+        import base64
+        connection = MagicMock()
+        connection.getresponse.return_value.status = 200
+        connection.getresponse.return_value.read.return_value = b'{}'
+        with patch.dict(u.os.environ, {'PANELTEC_GITHUB_TOKEN': 'test-only-token', 'PANELTEC_REGISTRY_TOKEN': 'test-registry-token'}, clear=True), patch.object(u, 'DockerConnection', return_value=connection):
+            u.docker('GET', '/containers/example/json')
+            self.assertNotIn('X-Registry-Auth', connection.request.call_args.kwargs['headers'])
+            u.docker('POST', '/images/create?fromImage=ghcr.io/paneltec/example')
+            auth = json.loads(base64.urlsafe_b64decode(connection.request.call_args.kwargs['headers']['X-Registry-Auth']))
+            self.assertEqual(auth, {'username': 'Paneltec', 'password': 'test-registry-token', 'serveraddress': 'ghcr.io'})
+
+    def test_check_endpoint_returns_only_safe_error(self):
+        handler = object.__new__(u.Handler)
+        handler.path = '/check'
+        with patch.object(handler, 'authorized', return_value=True), patch.object(u, 'current', return_value={}), patch.object(u, 'release', side_effect=u.UpdateCheckError('GitHub access needs configuration.')), patch.object(handler, 'reply') as reply:
+            handler.do_GET()
+            reply.assert_called_once_with(503, {'detail': 'GitHub access needs configuration.'})
+
+
 if __name__ == '__main__': unittest.main()
