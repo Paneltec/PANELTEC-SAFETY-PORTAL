@@ -10,6 +10,7 @@ from pydantic import BaseModel, EmailStr, Field
 from auth import get_current_user
 from db import db
 from models import now_iso
+from portal_urls import configured_portal_url
 
 router = APIRouter(prefix="/api/org", tags=["org"])
 
@@ -19,29 +20,13 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 def _default_portal_url() -> str:
-    """v58.13.132dp — Default Portal URL for a fresh org. Sourced from
-    the `PUBLIC_APP_URL` env; falls back to the preview domain so
-    older orgs already have something sensible on their PDF footers."""
-    return (
-        os.environ.get("PUBLIC_APP_URL")
-        or "https://whs-compliance.preview.emergentagent.com"
-    ).rstrip("/")
+    """Default report link from this deployment's public/frontend URL."""
+    return configured_portal_url()
 
 
 def _default_staff_login_url() -> str:
-    """v58.13.132ds — Server-computed Staff Login URL. This is the live
-    Emergent preview URL where office staff sign in. It is DISTINCT
-    from `portal_url` (which is rendered on public PDF report footers
-    and can be a customer-facing production domain once live).
-
-    Read-only in the UI — Emergent controls this URL. Sourced from
-    the same `PUBLIC_APP_URL` env as the portal default, with the
-    preview-domain fallback so a fresh install still surfaces a
-    working link on the settings page."""
-    return (
-        os.environ.get("PUBLIC_APP_URL")
-        or "https://whs-compliance.preview.emergentagent.com"
-    ).rstrip("/")
+    """Read-only staff login address from this deployment's configuration."""
+    return configured_portal_url()
 
 
 def _is_admin(user: dict) -> bool:
@@ -164,9 +149,8 @@ def _decorate_get(doc: dict) -> dict:
     have to duplicate the fallback logic."""
     if "portal_url" not in doc or not doc.get("portal_url"):
         doc["portal_url"] = _default_portal_url()
-    # v58.13.132ds — Staff Login URL is ALWAYS server-computed and
-    # overwrites any stashed value. Emergent controls this URL;
-    # admins can't override it from the UI.
+    # v58.13.132ds — Staff Login URL reflects the deployment configuration,
+    # regardless of any value left in an imported organisation record.
     doc["staff_login_url"] = _default_staff_login_url()
     doc.setdefault("previous_slugs", [])
     doc["insurance_status"] = insurance_status(doc)
