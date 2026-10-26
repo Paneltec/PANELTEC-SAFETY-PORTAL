@@ -3,6 +3,7 @@
 Only the two named recovery app containers are managed. Mongo and volumes are
 never deleted. Retained containers support image rollback (not DB migrations).
 """
+import base64
 import copy
 import hmac
 import http.client
@@ -16,6 +17,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 PROJECT = 'paneltec-recovery'
 REPO = 'Paneltec/PANELTEC-SAFETY-PORTAL'
@@ -38,11 +40,27 @@ class DockerConnection(http.client.HTTPConnection):
         self.sock.connect('/var/run/docker.sock')
 
 
+class UpdateCheckError(RuntimeError):
+    """A fixed, safe explanation that can be shown without leaking secrets."""
+
+
+def registry_headers():
+    token = (os.environ.get('PANELTEC_REGISTRY_TOKEN') or os.environ.get('PANELTEC_GITHUB_TOKEN') or '').strip()
+    if not token:
+        return {}
+    auth = {'username': os.environ.get('PANELTEC_GITHUB_USERNAME', 'Paneltec'),
+            'password': token, 'serveraddress': 'ghcr.io'}
+    return {'X-Registry-Auth': base64.urlsafe_b64encode(json.dumps(auth).encode()).decode()}
+
+
 def docker(method, path, data=None, missing=False, stream=False):
     conn = DockerConnection()
     try:
         body = json.dumps(data).encode() if data is not None else None
-        conn.request(method, path, body=body, headers={'Content-Type': 'application/json'})
+        headers = {'Content-Type': 'application/json'}
+        if method == 'POST' and path.startswith('/images/create?'):
+            headers.update(registry_headers())
+        conn.request(method, path, body=body, headers=headers)
         response = conn.getresponse()
         if missing and response.status == 404:
             return None
@@ -88,10 +106,26 @@ def save(**changes):
 
 
 def github(path):
+    token = (os.environ.get('PANELTEC_GITHUB_TOKEN') or '').strip()
+    if not token:
+        raise UpdateCheckError(
+            'GitHub access is not configured for the private Paneltec repository. '
+            'Add PANELTEC_GITHUB_TOKEN to the updater container in Portainer, then check again.')
     request = Request('https://api.github.com/repos/' + REPO + path,
-                      headers={'User-Agent': 'Paneltec-Updater', 'Accept': 'application/vnd.github+json'})
-    with urlopen(request, timeout=20) as response:
-        return json.load(response)
+                      headers={'User-Agent': 'Paneltec-Updater', 'Accept': 'application/vnd.github+json',
+                               'Authorization': 'Bearer ' + token})
+    try:
+        with urlopen(request, timeout=20) as response:
+            return json.load(response)
+    except HTTPError as exc:
+        if exc.code in (401, 403, 404):
+            raise UpdateCheckError(
+                'GitHub did not allow access to the Paneltec release history. '
+                'Check the updater token is valid and has Actions read access to '
+                'Paneltec/PANELTEC-SAFETY-PORTAL; a GitHub rate limit can also cause this.') from None
+        raise UpdateCheckError('GitHub is temporarily unavailable. Try the update check again shortly.') from None
+    except (URLError, TimeoutError):
+        raise UpdateCheckError('The updater could not reach GitHub. Check the Umbrel internet connection and try again.') from None
 
 
 def release():
@@ -99,7 +133,7 @@ def release():
         'branch': CHANNEL, 'status': 'success', 'per_page': 1,
     })).get('workflow_runs') or []
     if not runs:
-        raise RuntimeError('No successful release is available.')
+        raise UpdateCheckError('No successful release build is available yet. Check again after the GitHub build finishes.')
     run = runs[0]
     sha = run['head_sha']
     if (run.get('conclusion') != 'success' or run.get('head_branch') != CHANNEL
@@ -278,8 +312,10 @@ class Handler(BaseHTTPRequestHandler):
                 result['release'] = release()
                 result['available'] = any(v != result['release']['sha'] for v in result.get('current', {}).values())
             self.reply(200, result)
+        except UpdateCheckError as exc:
+            self.reply(503, {'detail': str(exc)})
         except Exception:
-            self.reply(503, {'detail': 'Could not check the updater, Docker or GitHub. Try again shortly.'})
+            self.reply(503, {'detail': 'The updater could not inspect the Paneltec app containers. Check the updater container and Docker connection in Portainer.'})
 
     def do_POST(self):
         if not self.authorized():
