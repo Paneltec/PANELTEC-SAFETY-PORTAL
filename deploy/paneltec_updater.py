@@ -107,22 +107,26 @@ def save(**changes):
 
 def github(path):
     token = (os.environ.get('PANELTEC_GITHUB_TOKEN') or '').strip()
-    if not token:
-        raise UpdateCheckError(
-            'GitHub access is not configured for the private Paneltec repository. '
-            'Add PANELTEC_GITHUB_TOKEN to the updater container in Portainer, then check again.')
-    request = Request('https://api.github.com/repos/' + REPO + path,
-                      headers={'User-Agent': 'Paneltec-Updater', 'Accept': 'application/vnd.github+json',
-                               'Authorization': 'Bearer ' + token})
+    headers = {'User-Agent': 'Paneltec-Updater', 'Accept': 'application/vnd.github+json'}
+    # Public repositories work anonymously. Keep explicit authentication for
+    # private deployments and higher GitHub rate limits when configured.
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    request = Request('https://api.github.com/repos/' + REPO + path, headers=headers)
     try:
         with urlopen(request, timeout=20) as response:
             return json.load(response)
     except HTTPError as exc:
         if exc.code in (401, 403, 404):
-            raise UpdateCheckError(
-                'GitHub did not allow access to the Paneltec release history. '
-                'Check the updater token is valid and has Actions read access to '
-                'Paneltec/PANELTEC-SAFETY-PORTAL; a GitHub rate limit can also cause this.') from None
+            if token:
+                detail = ('GitHub did not allow access to the Paneltec release history. '
+                          'Check the updater token is valid and has Actions read access to '
+                          'Paneltec/PANELTEC-SAFETY-PORTAL; a GitHub rate limit can also cause this.')
+            else:
+                detail = ('GitHub did not allow anonymous access to the Paneltec release history. '
+                          'The repository may be private or GitHub may be rate limiting requests. '
+                          'If access is required, configure PANELTEC_GITHUB_TOKEN in the updater container.')
+            raise UpdateCheckError(detail) from None
         raise UpdateCheckError('GitHub is temporarily unavailable. Try the update check again shortly.') from None
     except (URLError, TimeoutError):
         raise UpdateCheckError('The updater could not reach GitHub. Check the Umbrel internet connection and try again.') from None

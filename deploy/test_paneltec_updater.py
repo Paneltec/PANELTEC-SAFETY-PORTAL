@@ -125,12 +125,26 @@ class UpdaterTests(unittest.TestCase):
         with patch.dict(u.os.environ, {'PANELTEC_UPDATER_TOKEN': 'x' * 40}):
             self.assertTrue(handler.authorized())
 
-class PrivateGitHubTests(unittest.TestCase):
-    def test_missing_token_is_actionable_and_does_not_call_github(self):
-        with patch.dict(u.os.environ, {}, clear=True), patch.object(u, 'urlopen') as request:
-            with self.assertRaisesRegex(u.UpdateCheckError, 'PANELTEC_GITHUB_TOKEN'):
-                u.github('/actions/workflows/build-images.yml/runs')
-            request.assert_not_called()
+class GitHubAccessTests(unittest.TestCase):
+    def test_public_repository_needs_no_token(self):
+        from unittest.mock import MagicMock
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"workflow_runs": []}'
+        for settings in ({}, {'PANELTEC_GITHUB_TOKEN': '  '}):
+            with self.subTest(settings=settings), patch.dict(u.os.environ, settings, clear=True), patch.object(u, 'urlopen', return_value=response) as request:
+                self.assertEqual(u.github('/actions/workflows/build-images.yml/runs'), {'workflow_runs': []})
+                sent = request.call_args.args[0]
+                self.assertIsNone(sent.get_header('Authorization'))
+                self.assertTrue(sent.full_url.startswith('https://api.github.com/repos/' + u.REPO + '/'))
+
+    def test_anonymous_access_failure_explains_private_or_rate_limited(self):
+        for status in (401, 403, 404):
+            with self.subTest(status=status), patch.dict(u.os.environ, {}, clear=True), patch.object(u, 'urlopen', side_effect=u.HTTPError('https://api.github.com', status, 'private response content', {}, None)):
+                with self.assertRaises(u.UpdateCheckError) as error:
+                    u.github('/actions/workflows/build-images.yml/runs')
+                self.assertIn('anonymous access', str(error.exception))
+                self.assertIn('PANELTEC_GITHUB_TOKEN', str(error.exception))
+                self.assertNotIn('private response content', str(error.exception))
 
     def test_token_sent_only_to_repository_api(self):
         from unittest.mock import MagicMock
