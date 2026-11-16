@@ -75,6 +75,8 @@ import WorkerIdCardPrint from '@/pages/print/WorkerIdCardPrint';
 import WorkerScanResolver from '@/pages/WorkerScanResolver';
 import UsersManagement from '@/pages/UsersManagement';
 import MyApps from '@/pages/MyApps';
+import OfficeDashboard from '@/pages/OfficeDashboard';
+import OfficeProgramsAdmin from '@/pages/OfficeProgramsAdmin';
 import PermissionPresetsAdmin from '@/pages/PermissionPresetsAdmin';
 // v160.3.9.31-4a — Phase 4a: Roles Admin (system-role viewer + custom-role editor).
 import RolesAdmin from '@/pages/RolesAdmin';
@@ -229,7 +231,9 @@ function App() {
             <Route path="/print/worker-id-card/:workerId" element={<WorkerIdCardPrint />} />
 
             <Route path="/app" element={<MustChangePasswordGuard><AppShell /></MustChangePasswordGuard>}>
-              <Route index element={<Navigate to="/app/dashboard" replace />} />
+              <Route index element={<Navigate to="/app/office" replace />} />
+              <Route path="office" element={<OfficeDashboard />} />
+              <Route path="office/programs" element={<OfficeProgramsAdmin />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="ask" element={<Ask />} />
 

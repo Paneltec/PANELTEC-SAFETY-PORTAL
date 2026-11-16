@@ -8,9 +8,9 @@ import api, { TOKEN_KEY, USER_KEY } from './api';
  *   - protocol-relative URLs (`//evil.com`)
  *   - anything not starting with `/`
  *   - paths starting with `\` (backslash quirks)
- * Falls back to `defaultPath` ("/app/dashboard") when invalid or absent.
+ * Falls back to `defaultPath` ("/app/office") when invalid or absent.
  */
-export function safeNext(search, defaultPath = '/app/dashboard') {
+export function safeNext(search, defaultPath = '/app/office') {
   try {
     const sp = new URLSearchParams(typeof search === 'string' ? search : (search?.toString?.() ?? ''));
     const raw = sp.get('next');

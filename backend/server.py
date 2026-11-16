@@ -101,6 +101,7 @@ from metrics_routes import (  # noqa: E402
 from renewals import public_router as renewals_public_router, router as renewals_router  # noqa: E402
 from seed import ensure_indexes, seed_all  # noqa: E402
 from users import router as users_router  # noqa: E402
+from office_apps import router as office_apps_router  # noqa: E402
 from workspaces import router as workspaces_router  # noqa: E402
 # v58.13.132cb — Sites admin router (Phase A of workspaces/sites merge).
 # Lives at /api/sites/admin so it doesn't collide with the pre-existing
@@ -490,6 +491,7 @@ api.include_router(m365_router)
 api.include_router(textmagic_router)
 api.include_router(ask_router)
 api.include_router(users_router)
+api.include_router(office_apps_router)
 from permission_presets import router as preset_router, apply_router as preset_apply_router  # noqa: E402
 api.include_router(preset_router)
 api.include_router(preset_apply_router)

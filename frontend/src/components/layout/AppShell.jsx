@@ -18,6 +18,7 @@ import {
 // are baked into the component name (24Regular/24Filled).
 import {
   Board24Regular, Board24Filled,
+  Apps24Regular, Apps24Filled,
   Sparkle24Regular, Sparkle24Filled,
   DocumentText24Regular, DocumentText24Filled,
   ClipboardCheckmark24Regular, ClipboardCheckmark24Filled,
@@ -71,6 +72,7 @@ import AdminPillsLock from './AdminPillsLock';
 
 const NAV = [
   { section: 'Overview', items: [
+    { to: '/app/office', label: 'Office Dashboard', icon: Apps24Regular, iconActive: Apps24Filled, testid: 'nav-office', pastel: 'coral' },
     { to: '/app/dashboard', label: 'Dashboard', icon: Board24Regular, iconActive: Board24Filled, testid: 'nav-dashboard', pastel: 'coral' },
     { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkle24Regular, iconActive: Sparkle24Filled, testid: 'nav-ask', pastel: 'lilac' },
   ]},
