@@ -840,11 +840,15 @@ def render_inspection_pdf(insp: dict) -> bytes:
         ('Workspace', (insp.get('workspace_id') or '')[:8] or None),
         ('Reference', (insp.get('id') or '')[:8] or None),
     ])]
+    story += P.section_label('Inspector notes')
+    story += [P.field_grid([
+        ('Notes', insp.get('notes')),
+    ])]
     story += P.section_label('Checklist')
     if items:
         rows = []
         for i, it in enumerate(items):
-            rows.append([str(i + 1), it.get('item', ''),
+            rows.append([str(i + 1), it.get('label') or it.get('item', ''),
                          (it.get('response') or '').upper() or '—',
                          it.get('notes') or '—'])
         story += [P.data_table(['#', 'Item', 'Result', 'Notes'], rows,
@@ -856,7 +860,7 @@ def render_inspection_pdf(insp: dict) -> bytes:
     for i, it in enumerate(items):
         if it.get('photo_url'):
             photo_atts.append({
-                'name': f"item-{i+1}-{(it.get('item') or 'photo')[:40]}",
+                'name': f"item-{i+1}-{(it.get('label') or it.get('item') or 'photo')[:40]}",
                 'kind': 'inspection photo',
             })
     story += P.section_label('Attachments')
