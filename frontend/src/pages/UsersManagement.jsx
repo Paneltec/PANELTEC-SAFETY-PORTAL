@@ -2320,7 +2320,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-violet-900">Mobile onboarding card</div>
-                <div className="text-[11px] text-violet-800/70">Prints a QR that binds this user's phone on first launch.</div>
+                <div className="text-[11px] text-violet-800/70">Prints two QR codes: one to install the app, and one to link this user's device.</div>
               </div>
               <button
                 type="button"

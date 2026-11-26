@@ -24,6 +24,7 @@ import Wordmark from '../../src/components/Wordmark';
 import {
   pinLogin, isPreviewSession, getDeviceId,
   fetchDeviceHint, fullWipe, clearDeviceHintCache,
+  isAccountDevice, accountPinLogin,
   type DeviceHintResponse,
 } from '../../src/services/auth';
 import * as Application from 'expo-application';
@@ -51,6 +52,7 @@ export default function PinEntryScreen() {
   const [deviceId, setDeviceIdState] = useState<string | null>(null);
   const [hint, setHint] = useState<DeviceHintResponse | null>(null);
   const [hintLoading, setHintLoading] = useState(true);
+  const [accountDevice, setAccountDevice] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -62,6 +64,7 @@ export default function PinEntryScreen() {
     }
     (async () => {
       const id = await getDeviceId();
+      setAccountDevice(await isAccountDevice());
       setDeviceIdState(id);
       if (id) {
         const h = await fetchDeviceHint(id);
@@ -109,6 +112,16 @@ export default function PinEntryScreen() {
 
     if (val.length === 4) {
       setState('submitting');
+      if (accountDevice && deviceId) {
+        const result = await accountPinLogin(val, deviceId);
+        if (result === 'ok') { router.replace('/(tabs)/home'); return; }
+        setPin('');
+        setState('error');
+        setErrorMsg(result === 'locked' ? 'Account locked. Wait a minute before trying again.' : result === 'invalid' ? 'Incorrect PIN. Please try again.' : 'Unable to sign in. Check your connection or contact your supervisor.');
+        shake();
+        setTimeout(() => setState('ready'), 200);
+        return;
+      }
       const result = await pinLogin(val, deviceId || undefined);
 
       if (result.ok) {
@@ -128,7 +141,7 @@ export default function PinEntryScreen() {
         setTimeout(() => setState('ready'), 200);
       }
     }
-  }, [state, deviceId, router, shake]);
+  }, [state, deviceId, accountDevice, router, shake]);
 
   const handleNotYou = useCallback(() => {
     Alert.alert(
@@ -228,7 +241,7 @@ export default function PinEntryScreen() {
           <>
             <Text testID="pin-entry-title" style={s.title}>Enter your 4-digit PIN</Text>
             <Text style={s.sub}>
-              First-time setup — your device will be linked{'\n'}to your account after login
+              {accountDevice ? 'Enter the PIN you chose during account setup' : 'First-time setup — your device will be linked\nto your account after login'}
             </Text>
           </>
         )}
@@ -263,7 +276,7 @@ export default function PinEntryScreen() {
       <PinPad
         value={pin}
         onChangeValue={handlePinChange}
-        disabled={state === 'submitting'}
+        disabled={state === 'submitting' || hintLoading}
       />
 
       {state === 'submitting' && (
@@ -275,13 +288,13 @@ export default function PinEntryScreen() {
       )}
 
       {/* "Not you?" link — only when device is bound */}
-      {isBound && (
+      {deviceId && (
         <TouchableOpacity
           testID="not-you-btn"
           style={s.notYouBtn}
           onPress={handleNotYou}
         >
-          <Text style={s.notYouText}>Not you? Sign in as a different user</Text>
+          <Text style={s.notYouText}>Use a different account or account QR</Text>
         </TouchableOpacity>
       )}
 
