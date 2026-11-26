@@ -53,6 +53,35 @@ function detectPlatform() {
   return 'desktop';
 }
 
+export function MobileInstallLanding() {
+  const platform = useMemo(() => detectPlatform(), []);
+  const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const [mirrorQrDataUrl, setMirrorQrDataUrl] = useState(null);
+  useEffect(() => {
+    if (platform === 'desktop' && currentUrl) {
+      QRCode.toDataURL(currentUrl, { margin: 1, width: 320 })
+        .then(setMirrorQrDataUrl)
+        .catch(() => setMirrorQrDataUrl(null));
+    }
+  }, [platform, currentUrl]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center px-5 py-12" data-testid="mobile-install-landing">
+      <h1 className="text-2xl font-bold text-slate-900 text-center mb-3">Install the Paneltec Civil Field App</h1>
+      <p className="text-slate-600 text-center text-sm mb-6 max-w-md">
+        This page only installs the app. After installation, open the app and scan the separate account QR on your card to link your device.
+      </p>
+      {platform === 'android' && <AndroidPanel />}
+      {platform === 'ios' && (
+        <p className="max-w-md rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+          The iOS App Store listing is not yet available. Please contact your administrator for installation instructions.
+        </p>
+      )}
+      {platform === 'desktop' && <DesktopPanel mirrorQrDataUrl={mirrorQrDataUrl} currentUrl={currentUrl} installOnly />}
+    </div>
+  );
+}
+
 export default function OnboardMobileLanding() {
   const { token } = useParams();
   const [sp] = useSearchParams();
@@ -309,23 +338,23 @@ function AndroidPanel({ deepLink }) {
         normal for direct installs. Approve the prompt and the app will
         install.
       </p>
-      <a
+      {deepLink && <a
         href={deepLink}
         data-testid="android-open-btn"
         className="w-full inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-900 font-semibold py-3 rounded-xl text-sm border border-slate-300"
       >
         Already installed? Open in app
-      </a>
+      </a>}
       <div className="mt-5 border-t border-slate-100 pt-4 text-xs text-slate-500 space-y-1">
         <p><span className="font-semibold text-slate-700">1.</span> Tap <em>Download &amp; install</em> above.</p>
         <p><span className="font-semibold text-slate-700">2.</span> Approve the "unknown sources" prompt, then open the app.</p>
-        <p><span className="font-semibold text-slate-700">3.</span> Re-scan this QR (or tap <em>Open in app</em>) to sign in.</p>
+        <p><span className="font-semibold text-slate-700">3.</span> {deepLink ? <>Re-scan this QR (or tap <em>Open in app</em>) to sign in.</> : 'Scan the separate account QR inside the app to link your device.'}</p>
       </div>
     </div>
   );
 }
 
-function DesktopPanel({ mirrorQrDataUrl, currentUrl }) {
+function DesktopPanel({ mirrorQrDataUrl, currentUrl, installOnly = false }) {
   return (
     <div
       className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-center"
@@ -351,9 +380,9 @@ function DesktopPanel({ mirrorQrDataUrl, currentUrl }) {
         </div>
       )}
       <p className="mt-4 text-[11px] text-slate-400 break-all">{currentUrl}</p>
-      <div className="mt-4 inline-flex items-center gap-1.5 text-xs text-emerald-700">
+      {!installOnly && <div className="mt-4 inline-flex items-center gap-1.5 text-xs text-emerald-700">
         <CheckCircle2 size={13} /> This card is valid.
-      </div>
+      </div>}
     </div>
   );
 }

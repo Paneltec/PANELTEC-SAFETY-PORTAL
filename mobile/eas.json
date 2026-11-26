@@ -102,6 +102,9 @@
         "ascApiKeyId": "9UP969M2KF",
         "ascApiKeyIssuerId": "5f5e11d2-1c69-465a-94b6-6ebf334315ff"
       }
+    },
+    "testflight": {
+      "extends": "production"
     }
   }
 }

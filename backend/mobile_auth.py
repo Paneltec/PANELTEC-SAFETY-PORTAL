@@ -212,10 +212,12 @@ async def redeem_onboarding_token(body: RedeemIn):
         raise HTTPException(400, "Onboarding token has expired")
 
     # Mark used
-    await db.mobile_onboarding_tokens.update_one(
-        {"token": body.token},
+    result = await db.mobile_onboarding_tokens.update_one(
+        {"token": body.token, "used": False},
         {"$set": {"used": True, "used_at": now_iso(), "device_id": body.device_id}},
     )
+    if not result.modified_count:
+        raise HTTPException(400, "Invalid or already-used onboarding token")
 
     # Find associated worker
     worker = await db.workers.find_one(
@@ -290,6 +292,8 @@ async def pin_set(body: PinSetIn, request: Request):
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(404, "User not found")
+    if (user.get("status") or "").lower() == "disabled" or user.get("activation_status") == "pending_activation":
+        raise HTTPException(403, "Account is not active")
 
     # Hash and store PIN
     pin_hash = _hash_pin(body.pin_hash)
@@ -339,6 +343,8 @@ async def pin_verify(body: PinVerifyIn):
     user = await db.users.find_one(query, {"_id": 0})
     if not user:
         raise HTTPException(404, "No mobile user found for this device")
+    if (user.get("status") or "").lower() == "disabled" or user.get("activation_status") == "pending_activation":
+        raise HTTPException(403, "Account is not active")
 
     if not user.get("mobile_pin_hash"):
         raise HTTPException(400, "PIN not set — complete onboarding first")

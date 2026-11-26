@@ -2,9 +2,8 @@
 
 `GET /api/mobile/onboarding/cards.pdf` — admin-only endpoint that
 returns a printable PDF of onboarding cards. Each card is
-100×62mm (business-card-plus) and encodes a fresh
-`paneltec://onboard?token=<opaque>&preload=<civil|viatec>` deep
-link that the mobile app redeems via `POST /api/mobile/onboarding/redeem`.
+100×62mm (business-card-plus), with an install-only QR and a separate
+account QR containing a token for `POST /api/mobile/onboarding/redeem`.
 
 Modes:
   ?worker_id=X               single card (single page 100×62mm)
@@ -169,8 +168,14 @@ def _install_url(token: str, worker: dict) -> str:
     return f"{base}/m/onboard/{token}?preload={preload}"
 
 
+def _app_install_url() -> str:
+    """Public install page without an account token."""
+    return f"{_public_base_url()}/m/install"
+
+
 def _render_card(c: Canvas, x0: float, y0: float, w: float, h: float,
-                 worker_name: str, install_url: str, version_tag: str) -> None:
+                 worker_name: str, install_url: str, account_url: str,
+                 version_tag: str) -> None:
     """Draw one onboarding card into the canvas at (x0, y0) with size (w, h)."""
     # ── Header band (navy strip + orange chevron + wordmark) ──
     band_h = 14 * mm
@@ -179,23 +184,26 @@ def _render_card(c: Canvas, x0: float, y0: float, w: float, h: float,
         eyebrow="FIELD APP",
     )
 
-    # ── QR block (centered, sized to card) ──
-    qr_size = min(28 * mm, h - band_h - 24 * mm)
-    qr_x = x0 + (w - qr_size) / 2
-    qr_y = y0 + h - band_h - qr_size - 4 * mm
-    c.drawImage(qr_image(install_url, box_size=8, border=1),
-                qr_x, qr_y, width=qr_size, height=qr_size,
-                preserveAspectRatio=True, mask='auto')
-
-    # ── 3-step instructions ──
+    # ── Separate install and account QR blocks ──
+    qr_size = min(25 * mm, h - band_h - 23 * mm)
+    qr_y = y0 + h - band_h - qr_size - 5 * mm
     c.setFillColor(SLATE_INK)
     c.setFont("Helvetica-Bold", 6.5)
-    steps_y = qr_y - 4 * mm
-    c.drawCentredString(x0 + w / 2, steps_y,
-                        "1. Open camera   2. Scan QR   3. Install & sign in")
+    for center, label, payload in (
+        (x0 + w * 0.25, "1. INSTALL APP", install_url),
+        (x0 + w * 0.75, "2. CONNECT ACCOUNT", account_url),
+    ):
+        c.drawCentredString(center, qr_y + qr_size + 1.5 * mm, label)
+        c.drawImage(qr_image(payload, box_size=8, border=4),
+                    center - qr_size / 2, qr_y, width=qr_size, height=qr_size,
+                    preserveAspectRatio=True, mask='auto')
+
+    c.setFont("Helvetica", 6)
+    steps_y = qr_y - 3 * mm
+    c.drawCentredString(x0 + w / 2, steps_y, "Install first, then scan account QR in the app.")
 
     # ── Employee name line (pre-filled, dashed underline) ──
-    name_y = steps_y - 7 * mm
+    name_y = steps_y - 5 * mm
     c.setFont("Helvetica", 6)
     c.setFillColor(SLATE_MUTED)
     c.drawString(x0 + 5 * mm, name_y + 1 * mm, "Employee name:")
@@ -332,10 +340,11 @@ async def onboarding_cards_pdf(
             continue
 
         name = f"{w.get('first_name','')} {w.get('last_name','')}".strip() or "—"
-        install_url = _install_url(token, w)
+        install_url = _app_install_url()
+        account_url = _install_url(token, w)
 
         if single_card and len(workers) == 1:
-            _render_card(c, 0, 0, CARD_W, CARD_H, name, install_url, version_tag)
+            _render_card(c, 0, 0, CARD_W, CARD_H, name, install_url, account_url, version_tag)
             c.showPage()
             generated += 1
             break
@@ -345,7 +354,7 @@ async def onboarding_cards_pdf(
         row = slot // 2
         x = GRID_MARGIN + col * (SLOT_W + GRID_GUTTER)
         y = A4_H - GRID_MARGIN - (row + 1) * SLOT_H - row * GRID_GUTTER
-        _render_card(c, x, y, SLOT_W, SLOT_H, name, install_url, version_tag)
+        _render_card(c, x, y, SLOT_W, SLOT_H, name, install_url, account_url, version_tag)
         generated += 1
         slot += 1
         if slot >= 4:

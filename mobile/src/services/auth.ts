@@ -65,6 +65,7 @@ const KEYS = {
   // Legacy keys for backward compat (preview mode, etc.)
   jwt:             'paneltec_jwt',
   employeeId:      'paneltec_employee_id',
+  accountDevice:   'paneltec_account_device',
 } as const;
 
 // ── Types ────────────────────────────────────────────────────────
@@ -111,6 +112,60 @@ export async function setDeviceId(id: string): Promise<void> {
 export async function isProvisioned(): Promise<boolean> {
   const id = await getDeviceId();
   return !!id;
+}
+
+export async function redeemAccount(token: string, deviceId: string): Promise<string> {
+  const response = await fetch(`${API}/api/mobile/onboarding/redeem`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, device_id: deviceId }),
+  });
+  if (!response.ok) {
+    if (response.status === 400) throw new Error('This account QR is invalid, expired or already used. Ask your supervisor for a new one.');
+    throw new Error('Could not redeem the account QR. Ask your supervisor for help.');
+  }
+  const data = await response.json();
+  if (typeof data.temp_session !== 'string' || !data.temp_session) throw new Error('Invalid response. Ask your supervisor for a new account QR.');
+  return data.temp_session;
+}
+
+async function saveAccountSession(data: any): Promise<void> {
+  if (typeof data.token !== 'string' || !data.token || !data.user?.id) throw new Error('Invalid server response');
+  await Storage.setItem(KEYS.user, JSON.stringify(data.user));
+  await Storage.setItem(KEYS.jwt, data.token);
+  await Storage.setItem(KEYS.sessionToken, data.token);
+}
+
+export async function setAccountPin(pin: string, deviceId: string, tempSession: string): Promise<void> {
+  const response = await fetch(`${API}/api/mobile/auth/pin-set`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tempSession}` },
+    body: JSON.stringify({ pin_hash: pin, device_id: deviceId }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Setup expired. Ask your supervisor for a new account QR.');
+    throw new Error('Could not set your PIN. Try again or contact your supervisor.');
+  }
+  const data = await response.json();
+  await setDeviceId(deviceId);
+  await Storage.setItem(KEYS.accountDevice, '1');
+  await saveAccountSession(data);
+}
+
+export async function isAccountDevice(): Promise<boolean> {
+  return (await Storage.getItem(KEYS.accountDevice)) === '1';
+}
+
+export async function accountPinLogin(pin: string, deviceId: string): Promise<'ok' | 'invalid' | 'locked' | 'network'> {
+  try {
+    const response = await fetch(`${API}/api/mobile/auth/pin-verify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin_hash: pin, device_id: deviceId }),
+    });
+    if (response.status === 429) return 'locked';
+    if (response.status === 401) return 'invalid';
+    if (!response.ok) return 'network';
+    await saveAccountSession(await response.json());
+    return 'ok';
+  } catch { return 'network'; }
 }
 
 // ── Device Hint (v58.13.132cl) ───────────────────────────────────
@@ -294,6 +349,7 @@ export async function clearSession(): Promise<void> {
 export async function fullWipe(): Promise<void> {
   await clearSession();
   await Storage.deleteItem(KEYS.deviceId);
+  await Storage.deleteItem(KEYS.accountDevice);
   clearDeviceHintCache();
 }
 

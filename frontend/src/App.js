@@ -198,7 +198,7 @@ import FormSubmissions from '@/pages/FormSubmissions';
 // Phase 4.7 — public token-driven password flows + must-change guard.
 import Onboard, { ResetPasswordPage } from '@/pages/Onboard';
 // v58.13.132ae — Public QR-landing page for onboarding cards.
-import OnboardMobileLanding from '@/pages/OnboardMobileLanding';
+import OnboardMobileLanding, { MobileInstallLanding } from '@/pages/OnboardMobileLanding';
 import { MustChangePasswordGuard } from '@/components/auth/AuthBundle';
 // Phase 4.7.3 — Comms Safe Mode admin page.
 import CommsSafeMode from '@/pages/CommsSafeMode';
@@ -272,6 +272,7 @@ function App() {
                 and drives users into the App Store / Play Store, then
                 deep-links into the installed app. */}
             <Route path="/m/onboard/:token" element={<OnboardMobileLanding />} />
+            <Route path="/m/install" element={<MobileInstallLanding />} />
             <Route path="/reset" element={<ResetPasswordPage />} />
             <Route path="/renew/:token" element={<PublicRenewal />} />
             <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />

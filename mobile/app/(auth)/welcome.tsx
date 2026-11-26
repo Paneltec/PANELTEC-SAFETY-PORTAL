@@ -1,20 +1,22 @@
 /**
  * QR-Scan Device Provisioning — v58.13.132cj.
  *
- * First-launch only: scan a QR code from the web install landing page
- * to provision the device_id. If already provisioned, skip to PIN.
- * On web preview: manual text input fallback (camera not available).
+ * First-launch only: scan a device ID QR code to provision the device.
+ * If already provisioned, skip to PIN. Manual entry remains available.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { CameraView } from 'expo-camera';
+import { useScannerCamera } from '../../src/hooks/useScannerCamera';
 import { Colors } from '../../src/theme/colors';
-import { isProvisioned, setDeviceId, isPreviewSession, hasValidSession } from '../../src/services/auth';
+import { isProvisioned, setDeviceId, isPreviewSession, hasValidSession, redeemAccount, setAccountPin } from '../../src/services/auth';
+import { classifyOnboardingQr } from '../../src/services/onboardingQr';
 import * as Application from 'expo-application';
 import { SHIP_LABEL } from '../../src/lib/version';
 
@@ -25,6 +27,12 @@ export default function WelcomeScreen() {
   const [manualId, setManualId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const camera = useScannerCamera();
+  const provisioning = useRef(false);
+  const [setup, setSetup] = useState<{ session: string; deviceId: string } | null>(null);
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [scanPaused, setScanPaused] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -48,20 +56,59 @@ export default function WelcomeScreen() {
   }, []);
 
   const handleProvision = async (deviceId: string) => {
+    if (provisioning.current) return;
     const cleaned = deviceId.trim();
     if (!cleaned) {
       setError('Please enter or scan a valid device ID');
       return;
     }
+    const qr = classifyOnboardingQr(cleaned);
+    if (qr.kind === 'install') {
+      setError('This QR installs the app only. Ask your supervisor for your account QR.');
+      return;
+    }
+    if (qr.kind === 'url') {
+      setError('This link is not a recognised account QR or device ID.');
+      return;
+    }
+    provisioning.current = true;
     setSaving(true);
     setError('');
     try {
+      if (qr.kind === 'account') {
+        const platformId = Platform.OS === 'android' ? Application.getAndroidId() :
+          Platform.OS === 'ios' ? await Application.getIosIdForVendorAsync() : globalThis.crypto?.randomUUID?.();
+        if (!platformId) throw new Error('Unable to identify this device. Contact your supervisor.');
+        const deviceId = `${platformId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+        const session = await redeemAccount(qr.token, deviceId);
+        setSetup({ session, deviceId });
+        return;
+      }
       await setDeviceId(cleaned);
       router.replace('/(auth)/pin-entry');
-    } catch {
-      setError('Failed to save device ID');
+    } catch (e) {
+      setError(qr.kind === 'account' ? (e instanceof Error && e.message !== 'Network request failed' ? e.message : 'Connection failed. The QR may have been used; ask your supervisor before trying again.') : 'Failed to save device ID');
+    } finally {
+      provisioning.current = false;
+      setSaving(false);
     }
-    setSaving(false);
+  };
+
+  const finishSetup = async () => {
+    if (!setup || saving) return;
+    if (!/^\d{4}$/.test(newPin) || newPin !== confirmPin) {
+      setError('Enter the same 4-digit PIN twice.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await setAccountPin(newPin, setup.deviceId, setup.session);
+      setSetup(null);
+      router.replace('/(tabs)/home');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not complete setup. Try again.');
+    } finally { setSaving(false); }
   };
 
   if (checking) {
@@ -72,6 +119,17 @@ export default function WelcomeScreen() {
       </View>
     );
   }
+
+  if (setup) return (
+    <View style={[s.container, { paddingTop: insets.top + 60 }]}>
+      <Text style={s.title}>Set your account PIN</Text>
+      <Text style={s.subtitle}>Choose a 4-digit PIN. This replaces any existing mobile PIN for this account.</Text>
+      <TextInput testID="account-pin" style={s.input} value={newPin} onChangeText={setNewPin} placeholder="4-digit PIN" placeholderTextColor="rgba(255,255,255,0.3)" keyboardType="number-pad" maxLength={4} secureTextEntry />
+      <TextInput testID="account-pin-confirm" style={s.input} value={confirmPin} onChangeText={setConfirmPin} placeholder="Confirm PIN" placeholderTextColor="rgba(255,255,255,0.3)" keyboardType="number-pad" maxLength={4} secureTextEntry />
+      {!!error && <Text style={s.error}>{error}</Text>}
+      <TouchableOpacity testID="account-pin-submit" style={s.devBtn} disabled={saving} onPress={finishSetup}><Text style={s.devBtnText}>{saving ? 'Saving…' : 'Complete setup'}</Text></TouchableOpacity>
+    </View>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -86,21 +144,37 @@ export default function WelcomeScreen() {
           </View>
           <Text style={s.title}>Paneltec Group</Text>
           <Text style={s.subtitle}>
-            Scan the QR code from your admin install page to provision this device.
+            Scan your account QR or device ID QR to set up this device.
           </Text>
         </View>
 
-        {/* QR Scanner placeholder — on web we show manual input */}
+        {/* QR Scanner */}
         <View style={s.scanSection}>
           <View style={s.scanFrame}>
-            <Ionicons name="scan-outline" size={80} color="rgba(255,255,255,0.2)" />
-            <Text style={s.scanHint}>
-              {Platform.OS === 'web'
-                ? 'Camera not available on web preview.\nEnter device ID manually below.'
-                : 'Point camera at the QR code'}
-            </Text>
+            {camera.cameraReady ? (
+              <CameraView
+                testID="welcome-camera"
+                style={StyleSheet.absoluteFill}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onMountError={camera.cameraFailed}
+                onBarcodeScanned={saving || scanPaused ? undefined : ({ data }) => { setScanPaused(true); handleProvision(data); }}
+              />
+            ) : (
+              <>
+                <Ionicons name="scan-outline" size={40} color="rgba(255,255,255,0.4)" />
+                <Text style={s.scanHint}>{camera.message}</Text>
+                {camera.requesting ? <ActivityIndicator color={Colors.white} /> : camera.needsSettings ? (
+                  <TouchableOpacity onPress={() => Linking.openSettings()}><Text style={s.cameraButton}>Open Settings</Text></TouchableOpacity>
+                ) : camera.canRequest ? (
+                  <TouchableOpacity testID="welcome-enable-camera" onPress={camera.enableCamera}><Text style={s.cameraButton}>{camera.requestLabel}</Text></TouchableOpacity>
+                ) : null}
+              </>
+            )}
           </View>
         </View>
+
+        {scanPaused && !saving && <TouchableOpacity onPress={() => { setError(''); setScanPaused(false); }}><Text style={s.cameraButton}>Scan again</Text></TouchableOpacity>}
 
         {/* Manual entry fallback */}
         <View style={s.manualSection}>
@@ -186,12 +260,13 @@ const s = StyleSheet.create({
   scanFrame: {
     width: 200, height: 200, borderRadius: 20,
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.12)', borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center', gap: 12,
+    alignItems: 'center', justifyContent: 'center', gap: 12, overflow: 'hidden',
   },
   scanHint: {
     color: 'rgba(255,255,255,0.35)', fontSize: 12, textAlign: 'center',
     lineHeight: 18, paddingHorizontal: 16,
   },
+  cameraButton: { color: Colors.orange, fontSize: 14, fontWeight: '700' },
 
   manualSection: { marginBottom: 16, gap: 8 },
   manualLabel: {
