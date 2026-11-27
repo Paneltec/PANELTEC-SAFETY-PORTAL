@@ -57,12 +57,14 @@ def test_role_label_fallback_covers_four_core_roles():
         assert f'"{r}"' in src, f"missing fallback label for {r}"
 
 
-def test_device_id_captured_on_login():
+def test_pin_login_requires_an_existing_qr_pairing():
     src = _read(BACKEND / "auth_mobile_pin.py")
-    # Optional field on the request model.
+    # A login device must already exist in the QR-created pairing list.
     assert "device_id: Optional[str]" in src
-    # Stored non-destructively on the user.
-    assert 'mobile_device_ids' in src
+    assert '"mobile_devices.device_id": device_id' in src
+    assert '"error": "device_not_paired"' in src
+    # Login can update the hint only; it must not create pairings.
+    assert '"$addToSet": {"mobile_device_ids"' not in src
     assert 'last_mobile_device_id' in src
 
 

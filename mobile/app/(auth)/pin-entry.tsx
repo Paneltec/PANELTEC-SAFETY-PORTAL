@@ -36,6 +36,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_pin: 'Incorrect PIN. Please try again.',
   account_disabled: 'Your account has been disabled. Contact your supervisor.',
   pin_expired: 'Your PIN has expired. Please contact your admin for a new one.',
+  device_not_paired: 'This device is not paired. Use “Use a different account or account QR” below, then scan your account QR.',
   network: 'Network error. Check your connection and try again.',
 };
 
@@ -117,7 +118,7 @@ export default function PinEntryScreen() {
         if (result === 'ok') { router.replace('/(tabs)/home'); return; }
         setPin('');
         setState('error');
-        setErrorMsg(result === 'locked' ? 'Account locked. Wait a minute before trying again.' : result === 'invalid' ? 'Incorrect PIN. Please try again.' : 'Unable to sign in. Check your connection or contact your supervisor.');
+        setErrorMsg(result === 'locked' ? 'Account locked. Wait a minute before trying again.' : result === 'invalid' ? 'Incorrect PIN. Please try again.' : result === 'unpaired' ? ERROR_MESSAGES.device_not_paired : 'Unable to sign in. Check your connection or contact your supervisor.');
         shake();
         setTimeout(() => setState('ready'), 200);
         return;
@@ -241,7 +242,7 @@ export default function PinEntryScreen() {
           <>
             <Text testID="pin-entry-title" style={s.title}>Enter your 4-digit PIN</Text>
             <Text style={s.sub}>
-              {accountDevice ? 'Enter the PIN you chose during account setup' : 'First-time setup — your device will be linked\nto your account after login'}
+              {accountDevice ? 'Enter the PIN you chose during account setup' : 'This device must be paired with an account QR before you can sign in.'}
             </Text>
           </>
         )}

@@ -228,6 +228,12 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token",
                             headers={"X-Auth-Reason": "jwt-invalid"})
 
+    if payload.get("type") == "mobile_temp":
+        raise HTTPException(
+            status_code=401, detail="Onboarding setup token cannot access this resource",
+            headers={"X-Auth-Reason": "mobile-temp-not-authorized"},
+        )
+
     # v58.13.132j — Preview-mode JWT support for the Permission Presets
     # admin's Live Preview iframe. Preview tokens are minted by
     # `/api/mobile/preview-user` and:

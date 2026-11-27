@@ -1,8 +1,8 @@
 /**
  * QR-Scan Device Provisioning — v58.13.132cj.
  *
- * First-launch only: scan a device ID QR code to provision the device.
- * If already provisioned, skip to PIN. Manual entry remains available.
+ * First-launch only: scan an account QR code to pair the device.
+ * If already paired, skip to PIN.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -15,10 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView } from 'expo-camera';
 import { useScannerCamera } from '../../src/hooks/useScannerCamera';
 import { Colors } from '../../src/theme/colors';
-import { isProvisioned, setDeviceId, isPreviewSession, hasValidSession, redeemAccount, setAccountPin } from '../../src/services/auth';
+import { isProvisioned, isPreviewSession, hasValidSession, redeemAccount, setAccountPin } from '../../src/services/auth';
 import { classifyOnboardingQr } from '../../src/services/onboardingQr';
 import * as Application from 'expo-application';
 import { SHIP_LABEL } from '../../src/lib/version';
+
+const SHOW_DEVICE_ID_OPTIONS = false;
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -59,7 +61,7 @@ export default function WelcomeScreen() {
     if (provisioning.current) return;
     const cleaned = deviceId.trim();
     if (!cleaned) {
-      setError('Please enter or scan a valid device ID');
+      setError('Please scan a valid account QR.');
       return;
     }
     const qr = classifyOnboardingQr(cleaned);
@@ -67,8 +69,12 @@ export default function WelcomeScreen() {
       setError('This QR installs the app only. Ask your supervisor for your account QR.');
       return;
     }
+    if (qr.kind === 'device') {
+      setError('This device ID QR cannot pair an account. Ask your supervisor for an account QR.');
+      return;
+    }
     if (qr.kind === 'url') {
-      setError('This link is not a recognised account QR or device ID.');
+      setError('This link is not a recognised account QR. Ask your supervisor for an account QR.');
       return;
     }
     provisioning.current = true;
@@ -84,8 +90,6 @@ export default function WelcomeScreen() {
         setSetup({ session, deviceId });
         return;
       }
-      await setDeviceId(cleaned);
-      router.replace('/(auth)/pin-entry');
     } catch (e) {
       setError(qr.kind === 'account' ? (e instanceof Error && e.message !== 'Network request failed' ? e.message : 'Connection failed. The QR may have been used; ask your supervisor before trying again.') : 'Failed to save device ID');
     } finally {
@@ -124,8 +128,8 @@ export default function WelcomeScreen() {
     <View style={[s.container, { paddingTop: insets.top + 60 }]}>
       <Text style={s.title}>Set your account PIN</Text>
       <Text style={s.subtitle}>Choose a 4-digit PIN. This replaces any existing mobile PIN for this account.</Text>
-      <TextInput testID="account-pin" style={s.input} value={newPin} onChangeText={setNewPin} placeholder="4-digit PIN" placeholderTextColor="rgba(255,255,255,0.3)" keyboardType="number-pad" maxLength={4} secureTextEntry />
-      <TextInput testID="account-pin-confirm" style={s.input} value={confirmPin} onChangeText={setConfirmPin} placeholder="Confirm PIN" placeholderTextColor="rgba(255,255,255,0.3)" keyboardType="number-pad" maxLength={4} secureTextEntry />
+      <TextInput testID="account-pin" style={[s.input, s.pinInput]} value={newPin} onChangeText={setNewPin} placeholder="4-digit PIN" placeholderTextColor="rgba(255,255,255,0.3)" keyboardType="number-pad" maxLength={4} secureTextEntry />
+      <TextInput testID="account-pin-confirm" style={[s.input, s.pinInput]} value={confirmPin} onChangeText={setConfirmPin} placeholder="Confirm PIN" placeholderTextColor="rgba(255,255,255,0.3)" keyboardType="number-pad" maxLength={4} secureTextEntry />
       {!!error && <Text style={s.error}>{error}</Text>}
       <TouchableOpacity testID="account-pin-submit" style={s.devBtn} disabled={saving} onPress={finishSetup}><Text style={s.devBtnText}>{saving ? 'Saving…' : 'Complete setup'}</Text></TouchableOpacity>
     </View>
@@ -144,7 +148,7 @@ export default function WelcomeScreen() {
           </View>
           <Text style={s.title}>Paneltec Group</Text>
           <Text style={s.subtitle}>
-            Scan your account QR or device ID QR to set up this device.
+            Scan your account QR to pair this device.
           </Text>
         </View>
 
@@ -176,8 +180,11 @@ export default function WelcomeScreen() {
 
         {scanPaused && !saving && <TouchableOpacity onPress={() => { setError(''); setScanPaused(false); }}><Text style={s.cameraButton}>Scan again</Text></TouchableOpacity>}
 
-        {/* Manual entry fallback */}
-        <View style={s.manualSection}>
+        {!!error && (
+          <Text testID="provision-error" style={s.error}>{error}</Text>
+        )}
+
+        {__DEV__ && SHOW_DEVICE_ID_OPTIONS && <View style={s.manualSection}>
           <Text style={s.manualLabel}>Or enter device ID manually:</Text>
           <View style={s.inputRow}>
             <TextInput
@@ -203,13 +210,10 @@ export default function WelcomeScreen() {
               )}
             </TouchableOpacity>
           </View>
-          {!!error && (
-            <Text testID="provision-error" style={s.error}>{error}</Text>
-          )}
-        </View>
+        </View>}
 
         {/* Dev shortcut: auto-provision with a generated ID */}
-        <TouchableOpacity
+        {__DEV__ && SHOW_DEVICE_ID_OPTIONS && <TouchableOpacity
           testID="auto-provision-btn"
           style={s.devBtn}
           onPress={() => {
@@ -219,10 +223,10 @@ export default function WelcomeScreen() {
         >
           <Ionicons name="flash-outline" size={16} color={Colors.orange} />
           <Text style={s.devBtnText}>Quick setup (generate device ID)</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
 
         <Text style={s.footer}>
-          Your device ID links this phone to your worker account.{'\n'}
+          Your account QR links this phone to your account.{'\n'}
           Contact your supervisor if you don&apos;t have a QR code.
         </Text>
 
@@ -235,6 +239,7 @@ export default function WelcomeScreen() {
 }
 
 const s = StyleSheet.create({
+  pinInput: { flex: 0, height: 48, paddingVertical: 0, marginBottom: 10 },
   container: {
     flex: 1, backgroundColor: Colors.navy,
     paddingHorizontal: 24,

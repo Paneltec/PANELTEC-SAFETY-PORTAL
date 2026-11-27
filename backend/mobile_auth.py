@@ -82,22 +82,24 @@ def _verify_pin(plain: str, hashed: str) -> bool:
     except Exception:
         return False
 
-def _create_temp_session(user_id: str) -> str:
+def _create_temp_session(user_id: str, device_id: str) -> str:
     """Short-lived JWT for the onboarding flow (15 min)."""
     payload = {
         "sub": user_id,
         "type": "mobile_temp",
+        "device_id": device_id,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
     }
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
 
-def _create_mobile_jwt(user_id: str, email: str) -> str:
+def _create_mobile_jwt(user_id: str, email: str, token_version: int = 0) -> str:
     """Standard mobile JWT — 90 day expiry."""
     payload = {
         "sub": user_id,
         "email": email,
         "type": "mobile",
         "scope": "mobile",
+        "tv": token_version,
         "exp": datetime.now(timezone.utc) + timedelta(days=90),
     }
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
@@ -197,6 +199,10 @@ async def validate_onboarding_token(token: str):
 
 @router.post("/mobile/onboarding/redeem")
 async def redeem_onboarding_token(body: RedeemIn):
+    device_id = body.device_id.strip()
+    if not device_id:
+        raise HTTPException(400, "A device ID is required for account pairing")
+
     doc = await db.mobile_onboarding_tokens.find_one(
         {"token": body.token, "used": False},
         {"_id": 0},
@@ -214,7 +220,7 @@ async def redeem_onboarding_token(body: RedeemIn):
     # Mark used
     result = await db.mobile_onboarding_tokens.update_one(
         {"token": body.token, "used": False},
-        {"$set": {"used": True, "used_at": now_iso(), "device_id": body.device_id}},
+        {"$set": {"used": True, "used_at": now_iso(), "device_id": device_id}},
     )
     if not result.modified_count:
         raise HTTPException(400, "Invalid or already-used onboarding token")
@@ -258,7 +264,7 @@ async def redeem_onboarding_token(body: RedeemIn):
         if comp:
             company_name = comp.get("name", company_name)
 
-    temp_session = _create_temp_session(existing_user["id"])
+    temp_session = _create_temp_session(existing_user["id"], device_id)
 
     return {
         "user": {
@@ -288,6 +294,10 @@ async def pin_set(body: PinSetIn, request: Request):
     if payload.get("type") != "mobile_temp":
         raise HTTPException(401, "Invalid session type — must use onboarding temp session")
 
+    device_id = body.device_id.strip()
+    if not device_id or payload.get("device_id") != device_id:
+        raise HTTPException(401, "Setup session is not valid for this paired device")
+
     user_id = payload["sub"]
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
@@ -298,7 +308,7 @@ async def pin_set(body: PinSetIn, request: Request):
     # Hash and store PIN
     pin_hash = _hash_pin(body.pin_hash)
     device_entry = {
-        "device_id": body.device_id,
+        "device_id": device_id,
         "device_token": None,
         "registered_at": now_iso(),
     }
@@ -312,7 +322,9 @@ async def pin_set(body: PinSetIn, request: Request):
     )
 
     # Issue full mobile JWT
-    mobile_jwt = _create_mobile_jwt(user_id, user.get("email", ""))
+    mobile_jwt = _create_mobile_jwt(
+        user_id, user.get("email", ""), user.get("token_version", 0)
+    )
 
     return {
         "token": mobile_jwt,
@@ -331,18 +343,16 @@ async def pin_set(body: PinSetIn, request: Request):
 
 @router.post("/mobile/auth/pin-verify")
 async def pin_verify(body: PinVerifyIn):
-    # Find user by device_id or simpro_employee_id
-    query = {}
-    if body.device_id:
-        query = {"mobile_devices.device_id": body.device_id}
-    elif body.simpro_employee_id:
-        query = {"simpro_employee_id": body.simpro_employee_id}
-    else:
-        raise HTTPException(400, "device_id or simpro_employee_id required")
+    # Employee IDs identify an account but do not prove that this device
+    # was paired through the account-QR flow.
+    device_id = (body.device_id or "").strip()
+    if not device_id:
+        raise HTTPException(403, detail={"error": "device_not_paired"})
+    query = {"mobile_devices.device_id": device_id}
 
     user = await db.users.find_one(query, {"_id": 0})
     if not user:
-        raise HTTPException(404, "No mobile user found for this device")
+        raise HTTPException(403, detail={"error": "device_not_paired"})
     if (user.get("status") or "").lower() == "disabled" or user.get("activation_status") == "pending_activation":
         raise HTTPException(403, "Account is not active")
 
@@ -384,7 +394,9 @@ async def pin_verify(body: PinVerifyIn):
         {"$set": {"mobile_pin_attempts": 0}, "$unset": {"mobile_pin_lockout": ""}},
     )
 
-    mobile_jwt = _create_mobile_jwt(user["id"], user.get("email", ""))
+    mobile_jwt = _create_mobile_jwt(
+        user["id"], user.get("email", ""), user.get("token_version", 0)
+    )
     return {
         "token": mobile_jwt,
         "user": {

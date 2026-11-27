@@ -186,7 +186,17 @@ async def pin_login(body: MobilePinLoginIn, request: Request) -> dict:
     if not PIN_RE.match(body.pin):
         raise HTTPException(400, detail={"error": "invalid_pin_format"})
 
-    bucket = _bucket_key(body.device_id, request)
+    device_id = (body.device_id or "").strip()
+    if not device_id:
+        raise HTTPException(403, detail={"error": "device_not_paired"})
+
+    paired_user = await db.users.find_one(
+        {"mobile_devices.device_id": device_id}, {"_id": 0, "id": 1}
+    )
+    if not paired_user:
+        raise HTTPException(403, detail={"error": "device_not_paired"})
+
+    bucket = _bucket_key(device_id, request)
     await _check_lockout(bucket)
 
     # v58.13.132cp / .132cx — Mobile PIN field precedence:
@@ -200,7 +210,8 @@ async def pin_login(body: MobilePinLoginIn, request: Request) -> dict:
     matched_field: Optional[str] = None
 
     async for u in db.users.find(
-        {"mobile_pin_hash": {"$exists": True, "$ne": None}},
+        {"id": paired_user["id"], "mobile_devices.device_id": device_id,
+         "mobile_pin_hash": {"$exists": True, "$ne": None}},
         {"_id": 0, "id": 1, "email": 1, "name": 1, "role": 1,
          "role_id": 1, "org_id": 1, "mobile_pin_hash": 1,
          "status": 1, "token_version": 1, "activation_status": 1},
@@ -217,7 +228,8 @@ async def pin_login(body: MobilePinLoginIn, request: Request) -> dict:
     if not match:
         # Fallback — legacy `pin_hash` (invite-flow), with expiry.
         async for u in db.users.find(
-            {"pin_hash": {"$exists": True, "$ne": None}},
+            {"id": paired_user["id"], "mobile_devices.device_id": device_id,
+             "pin_hash": {"$exists": True, "$ne": None}},
             {"_id": 0, "id": 1, "email": 1, "name": 1, "role": 1,
              "role_id": 1, "org_id": 1, "pin_hash": 1, "pin_expires_at": 1,
              "status": 1, "token_version": 1, "activation_status": 1},
@@ -273,19 +285,13 @@ async def pin_login(body: MobilePinLoginIn, request: Request) -> dict:
     # Success — reset the bucket, mint a JWT, snapshot identity.
     await _reset_attempts(bucket)
 
-    # Register a device_id on the user (best-effort — not enforced yet).
-    if body.device_id:
-        await db.users.update_one(
-            {"id": match["id"]},
-            {"$addToSet": {"mobile_device_ids": body.device_id.strip()},
-             "$set": {"last_mobile_device_id": body.device_id.strip(),
-                      "last_mobile_login_at": _now().isoformat()}},
-        )
-    else:
-        await db.users.update_one(
-            {"id": match["id"]},
-            {"$set": {"last_mobile_login_at": _now().isoformat()}},
-        )
+    # Pairing is established only during account-QR setup. PIN login
+    # must never enroll or claim a device.
+    await db.users.update_one(
+        {"id": match["id"]},
+        {"$set": {"last_mobile_device_id": device_id,
+                  "last_mobile_login_at": _now().isoformat()}},
+    )
 
     # Session token — reuse the same 30-day HS256 JWT the rest of the
     # app uses so any middleware guardrails apply uniformly.
