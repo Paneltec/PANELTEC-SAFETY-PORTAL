@@ -92,7 +92,7 @@ export interface DeviceHintResponse {
 }
 
 export interface PinLoginError {
-  error: 'invalid_pin' | 'account_disabled' | 'pin_expired';
+  error: 'invalid_pin' | 'account_disabled' | 'pin_expired' | 'device_not_paired';
 }
 
 export interface RateLimitError {
@@ -154,7 +154,7 @@ export async function isAccountDevice(): Promise<boolean> {
   return (await Storage.getItem(KEYS.accountDevice)) === '1';
 }
 
-export async function accountPinLogin(pin: string, deviceId: string): Promise<'ok' | 'invalid' | 'locked' | 'network'> {
+export async function accountPinLogin(pin: string, deviceId: string): Promise<'ok' | 'invalid' | 'locked' | 'unpaired' | 'network'> {
   try {
     const response = await fetch(`${API}/api/mobile/auth/pin-verify`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -162,6 +162,12 @@ export async function accountPinLogin(pin: string, deviceId: string): Promise<'o
     });
     if (response.status === 429) return 'locked';
     if (response.status === 401) return 'invalid';
+    if (response.status === 403) {
+      try {
+        const error = (await response.json())?.detail?.error;
+        if (error === 'device_not_paired') return 'unpaired';
+      } catch { /* ignore */ }
+    }
     if (!response.ok) return 'network';
     await saveAccountSession(await response.json());
     return 'ok';
@@ -217,7 +223,7 @@ export async function pinLogin(
   deviceId?: string,
 ): Promise<
   | { ok: true; data: PinLoginResponse }
-  | { ok: false; error: 'invalid_pin' | 'account_disabled' | 'pin_expired' }
+  | { ok: false; error: 'invalid_pin' | 'account_disabled' | 'pin_expired' | 'device_not_paired' }
   | { ok: false; error: 'rate_limited'; retryAfterSeconds: number }
   | { ok: false; error: 'network' }
 > {
@@ -246,10 +252,20 @@ export async function pinLogin(
       try {
         const errBody = await resp.json();
         const errorCode = errBody?.detail?.error || 'invalid_pin';
-        return { ok: false, error: errorCode as 'invalid_pin' | 'account_disabled' | 'pin_expired' };
+        return { ok: false, error: errorCode as 'invalid_pin' | 'account_disabled' | 'pin_expired' | 'device_not_paired' };
       } catch {
         return { ok: false, error: 'invalid_pin' as const };
       }
+    }
+
+    if (resp.status === 403) {
+      try {
+        const errBody = await resp.json();
+        const errorCode = errBody?.detail?.error;
+        if (errorCode === 'device_not_paired') {
+          return { ok: false, error: 'device_not_paired' as const };
+        }
+      } catch { /* ignore */ }
     }
 
     if (!resp.ok) {

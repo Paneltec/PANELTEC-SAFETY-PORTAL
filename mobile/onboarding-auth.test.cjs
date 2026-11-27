@@ -47,3 +47,19 @@ test('failed redemption and verification do not create a session', async () => {
   assert.equal(await auth.accountPinLogin('1234', 'device'), 'locked');
   assert.equal(await auth.hasValidSession(), false);
 });
+
+test('unpaired devices receive account-QR recovery guidance from both PIN flows', async () => {
+  values.clear();
+  global.fetch = async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({ detail: { error: 'device_not_paired' } }),
+  });
+
+  assert.equal(await auth.accountPinLogin('1234', 'legacy-device'), 'unpaired');
+  assert.deepEqual(await auth.pinLogin('1234', 'legacy-device'), {
+    ok: false,
+    error: 'device_not_paired',
+  });
+  assert.equal(await auth.hasValidSession(), false);
+});
